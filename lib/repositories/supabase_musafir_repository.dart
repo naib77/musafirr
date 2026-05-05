@@ -6,16 +6,20 @@ import 'musafir_repository.dart';
 
 class SupabaseMusafirRepository implements MusafirRepository {
   @override
-  int get availableCount => throw UnimplementedError('Replace with Supabase query');
+  int get availableCount =>
+      throw UnimplementedError('Replace with Supabase query');
 
   @override
-  List<Booking> get bookings => throw UnimplementedError('Replace with Supabase query');
+  List<Booking> get bookings =>
+      throw UnimplementedError('Replace with Supabase query');
 
   @override
-  List<Listing> get listings => throw UnimplementedError('Replace with Supabase query');
+  List<Listing> get listings =>
+      throw UnimplementedError('Replace with Supabase query');
 
   @override
-  int get ownerCount => throw UnimplementedError('Replace with Supabase query');
+  int get ownerCount =>
+      throw UnimplementedError('Replace with Supabase query');
 
   @override
   Booking createBooking({

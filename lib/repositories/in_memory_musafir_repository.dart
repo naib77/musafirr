@@ -8,7 +8,8 @@ import '../models/listing_type.dart';
 import '../models/owner_registration_draft.dart';
 import 'musafir_repository.dart';
 
-class InMemoryMusafirRepository extends ChangeNotifier implements MusafirRepository {
+class InMemoryMusafirRepository extends ChangeNotifier
+    implements MusafirRepository {
   InMemoryMusafirRepository() {
     _seed();
   }

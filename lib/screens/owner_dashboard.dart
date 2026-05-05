@@ -50,7 +50,8 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
       children: [
         const SectionTitle(
           title: 'Register a Property',
-          subtitle: 'House owners register with mobile number, map coordinates, facilities, and rates.',
+          subtitle:
+              'House owners register with mobile number, map coordinates, facilities, and rates.',
         ),
         const SizedBox(height: 16),
         Form(
@@ -78,9 +79,15 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
               const SizedBox(height: 12),
               DropdownButtonFormField<ListingType>(
                 value: selectedType,
-                decoration: const InputDecoration(labelText: 'Rental Type', border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                  labelText: 'Rental Type',
+                  border: OutlineInputBorder(),
+                ),
                 items: ListingType.values
-                    .map((type) => DropdownMenuItem(value: type, child: Text(type.title)))
+                    .map(
+                      (type) =>
+                          DropdownMenuItem(value: type, child: Text(type.title)),
+                    )
                     .toList(),
                 onChanged: (type) {
                   if (type != null) {

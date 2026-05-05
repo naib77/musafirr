@@ -38,13 +38,16 @@ class AreaMapPreview extends StatelessWidget {
             top: 16,
             left: 16,
             child: Text(
-              'Map area around ${centerLat.toStringAsFixed(3)}, ${centerLng.toStringAsFixed(3)}',
+              'Map area around ${centerLat.toStringAsFixed(3)}, '
+              '${centerLng.toStringAsFixed(3)}',
               style: Theme.of(context).textTheme.titleSmall,
             ),
           ),
           ...listings.map((listing) {
-            final left = ((listing.longitude - centerLng + 0.12) / 0.24).clamp(0.08, 0.88);
-            final top = ((listing.latitude - centerLat + 0.12) / 0.24).clamp(0.12, 0.82);
+            final left =
+                ((listing.longitude - centerLng + 0.12) / 0.24).clamp(0.08, 0.88);
+            final top =
+                ((listing.latitude - centerLat + 0.12) / 0.24).clamp(0.12, 0.82);
             return Positioned(
               left: left * 300,
               top: (1 - top) * 180,
@@ -56,7 +59,11 @@ class AreaMapPreview extends StatelessWidget {
                       color: Color(0xFF0B7285),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.location_on, color: Colors.white, size: 18),
+                    child: const Icon(
+                      Icons.location_on,
+                      color: Colors.white,
+                      size: 18,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Container(

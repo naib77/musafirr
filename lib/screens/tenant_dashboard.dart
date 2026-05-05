@@ -55,7 +55,8 @@ class _TenantDashboardState extends State<TenantDashboard> {
       children: [
         const SectionTitle(
           title: 'Find by Area',
-          subtitle: 'Tenants choose a map area and see available seats, rooms, or full houses.',
+          subtitle:
+              'Tenants choose a map area and see available seats, rooms, or full houses.',
         ),
         const SizedBox(height: 12),
         AppTextField(
@@ -147,7 +148,10 @@ class _TenantDashboardState extends State<TenantDashboard> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(listing.title, style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    listing.title,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<BookingDuration>(
                     value: selectedDuration,
@@ -156,7 +160,12 @@ class _TenantDashboardState extends State<TenantDashboard> {
                       border: OutlineInputBorder(),
                     ),
                     items: durations
-                        .map((item) => DropdownMenuItem(value: item, child: Text(item.label)))
+                        .map(
+                          (item) => DropdownMenuItem(
+                            value: item,
+                            child: Text(item.label),
+                          ),
+                        )
                         .toList(),
                     onChanged: (value) {
                       if (value != null) {

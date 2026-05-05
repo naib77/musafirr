@@ -25,7 +25,10 @@ class ListingCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: Text(listing.title, style: Theme.of(context).textTheme.titleLarge),
+                  child: Text(
+                    listing.title,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                 ),
                 Chip(label: Text(listing.type.title)),
               ],

@@ -16,7 +16,9 @@ class ListingSummaryCard extends StatelessWidget {
         contentPadding: const EdgeInsets.all(16),
         leading: CircleAvatar(child: Text(listing.type.title[0])),
         title: Text(listing.title),
-        subtitle: Text('${listing.address}\n${listing.hourlyRate.toStringAsFixed(0)} BDT / hour'),
+        subtitle: Text(
+          '${listing.address}\n${listing.hourlyRate.toStringAsFixed(0)} BDT / hour',
+        ),
         isThreeLine: true,
         trailing: Chip(
           label: Text(listing.available ? 'Available' : 'Booked'),
