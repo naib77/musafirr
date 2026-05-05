@@ -1,0 +1,58 @@
+workflows:
+  analyze_and_test:
+    name: Analyze and Test
+    instance_type: mac_mini_m1
+    max_build_duration: 30
+    environment:
+      flutter: stable
+    scripts:
+      - name: Install packages
+        script: flutter pub get
+      - name: Check formatting
+        script: dart format --output=none --set-exit-if-changed .
+      - name: Static analysis
+        script: flutter analyze
+      - name: Run tests
+        script: flutter test
+
+  android_debug:
+    name: Android Debug Build
+    instance_type: mac_mini_m1
+    max_build_duration: 45
+    environment:
+      flutter: stable
+    scripts:
+      - name: Install packages
+        script: flutter pub get
+      - name: Build debug APK
+        script: flutter build apk --debug
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk
+
+  ios_debug:
+    name: iOS Debug Build
+    instance_type: mac_mini_m1
+    max_build_duration: 45
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Install packages
+        script: flutter pub get
+      - name: Build iOS without codesign
+        script: flutter build ios --debug --no-codesign
+
+  web_preview:
+    name: Web Preview
+    instance_type: mac_mini_m1
+    max_build_duration: 30
+    environment:
+      flutter: stable
+    scripts:
+      - name: Install packages
+        script: flutter pub get
+      - name: Build web
+        script: flutter build web
+    artifacts:
+      - build/web/**
