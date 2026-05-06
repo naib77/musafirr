@@ -6,6 +6,7 @@ import '../models/owner_registration_draft.dart';
 import '../repositories/musafir_repository.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/listing_summary_card.dart';
+import '../widgets/location_picker.dart';
 import '../widgets/section_title.dart';
 
 class OwnerDashboard extends StatefulWidget {
@@ -41,6 +42,24 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
     dailyController.dispose();
     monthlyController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickLocationOnMap() async {
+    final result = await LocationPicker.show(
+      context,
+      initialLatitude: double.tryParse(latController.text) ?? 23.7806,
+      initialLongitude: double.tryParse(lngController.text) ?? 90.4070,
+    );
+
+    if (result != null) {
+      setState(() {
+        latController.text = result.latitude.toStringAsFixed(6);
+        lngController.text = result.longitude.toStringAsFixed(6);
+        if (result.address != null && result.address!.isNotEmpty) {
+          addressController.text = result.address!;
+        }
+      });
+    }
   }
 
   @override
@@ -118,6 +137,12 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _pickLocationOnMap,
+                icon: const Icon(Icons.map_outlined),
+                label: const Text('Pick Location on Map'),
               ),
               const SizedBox(height: 12),
               Row(

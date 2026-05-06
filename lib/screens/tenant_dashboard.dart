@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import '../models/booking_duration.dart';
 import '../models/listing.dart';
 import '../repositories/musafir_repository.dart';
+import '../services/location_service.dart';
 import '../widgets/app_text_field.dart';
-import '../widgets/area_map_preview.dart';
 import '../widgets/info_card.dart';
 import '../widgets/listing_card.dart';
+import '../widgets/musafir_map.dart';
+import '../widgets/place_search_field.dart';
 import '../widgets/section_title.dart';
 
 class TenantDashboard extends StatefulWidget {
@@ -19,11 +21,14 @@ class TenantDashboard extends StatefulWidget {
 }
 
 class _TenantDashboardState extends State<TenantDashboard> {
-  final areaLatController = TextEditingController(text: '23.8103');
-  final areaLngController = TextEditingController(text: '90.4125');
-  final areaDeltaController = TextEditingController(text: '0.08');
   final tenantNameController = TextEditingController(text: 'Guest Tenant');
+  final _locationService = LocationService();
+
+  double _centerLat = 23.8103;
+  double _centerLng = 90.4125;
+  double _searchDelta = 0.08;
   List<Listing> results = [];
+  bool _isLoadingLocation = false;
 
   static const durations = [
     BookingDuration(label: '1 Hour', unitLabel: 'hour', multiplier: 1),
@@ -41,11 +46,32 @@ class _TenantDashboardState extends State<TenantDashboard> {
 
   @override
   void dispose() {
-    areaLatController.dispose();
-    areaLngController.dispose();
-    areaDeltaController.dispose();
     tenantNameController.dispose();
     super.dispose();
+  }
+
+  Future<void> _useMyLocation() async {
+    setState(() => _isLoadingLocation = true);
+
+    final position = await _locationService.getCurrentLocation();
+
+    if (mounted) {
+      setState(() => _isLoadingLocation = false);
+
+      if (position != null) {
+        setState(() {
+          _centerLat = position.latitude;
+          _centerLng = position.longitude;
+        });
+        _search();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not get your location. Please check permissions.'),
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -56,7 +82,7 @@ class _TenantDashboardState extends State<TenantDashboard> {
         const SectionTitle(
           title: 'Find by Area',
           subtitle:
-              'Tenants choose a map area and see available seats, rooms, or full houses.',
+              'Search for available rentals by location. Tap on the map or use your current location.',
         ),
         const SizedBox(height: 12),
         AppTextField(
@@ -64,50 +90,74 @@ class _TenantDashboardState extends State<TenantDashboard> {
           label: 'Tenant Name',
           hint: 'Your name',
         ),
+        const SizedBox(height: 16),
+        PlaceSearchField(
+          hintText: 'Search for a location...',
+          onPlaceSelected: (result) {
+            setState(() {
+              _centerLat = result.latitude;
+              _centerLng = result.longitude;
+            });
+            _search();
+          },
+        ),
         const SizedBox(height: 12),
         Row(
           children: [
             Expanded(
-              child: AppTextField(
-                controller: areaLatController,
-                label: 'Center Latitude',
-                hint: '23.8103',
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              child: OutlinedButton.icon(
+                onPressed: _isLoadingLocation ? null : _useMyLocation,
+                icon: _isLoadingLocation
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.my_location),
+                label: const Text('Use My Location'),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: AppTextField(
-                controller: areaLngController,
-                label: 'Center Longitude',
-                hint: '90.4125',
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              child: FilledButton.icon(
+                onPressed: _search,
+                icon: const Icon(Icons.search),
+                label: const Text('Search'),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 12),
-        AppTextField(
-          controller: areaDeltaController,
-          label: 'Search Radius Delta',
-          hint: '0.08',
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        ),
-        const SizedBox(height: 12),
-        FilledButton.icon(
-          onPressed: _search,
-          icon: const Icon(Icons.search),
-          label: const Text('Search Available Rentals'),
-        ),
-        const SizedBox(height: 20),
-        AreaMapPreview(
-          centerLat: double.tryParse(areaLatController.text) ?? 23.8103,
-          centerLng: double.tryParse(areaLngController.text) ?? 90.4125,
+        const SizedBox(height: 16),
+        MusafirMap(
+          centerLat: _centerLat,
+          centerLng: _centerLng,
           listings: results,
+          height: 280,
+          onTap: (lat, lng) {
+            setState(() {
+              _centerLat = lat;
+              _centerLng = lng;
+            });
+            _search();
+          },
+          onListingTap: (listing) => _showBookingSheet(context, listing),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 8),
+        Text(
+          'Searching around ${_centerLat.toStringAsFixed(4)}, ${_centerLng.toStringAsFixed(4)}',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.outline,
+              ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 16),
+        Text(
+          '${results.length} rental${results.length == 1 ? '' : 's'} found',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 12),
         if (results.isEmpty)
-          const InfoCard(message: 'No available results in this area.')
+          const InfoCard(message: 'No available results in this area. Try a different location.')
         else
           ...results.map(
             (listing) => ListingCard(
@@ -122,9 +172,9 @@ class _TenantDashboardState extends State<TenantDashboard> {
   void _search() {
     setState(() {
       results = widget.repository.searchByArea(
-        centerLat: double.tryParse(areaLatController.text.trim()) ?? 23.8103,
-        centerLng: double.tryParse(areaLngController.text.trim()) ?? 90.4125,
-        delta: double.tryParse(areaDeltaController.text.trim()) ?? 0.08,
+        centerLat: _centerLat,
+        centerLng: _centerLng,
+        delta: _searchDelta,
       );
     });
   }

@@ -153,3 +153,9 @@ The initial backend artifacts are included here:
 3. Add real map support with Google Maps or Mapbox.
 4. Add booking conflict checks against exact start/end times.
 5. Add admin approval for new owner listings.
+
+
+Demo Credentials
+
+- Email: demo@musafir.com
+- Password: password123
