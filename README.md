@@ -146,11 +146,53 @@ The initial backend artifacts are included here:
 - [backend_schema.md](./docs/backend_schema.md)
 - [001_initial_schema.sql](./supabase/migrations/001_initial_schema.sql)
 
+## Google Maps setup
+
+The app now uses `google_maps_flutter` for:
+
+- tenant area browsing
+- owner listing location picking
+- host listing location picking
+
+To make map rendering work on device, add platform API keys locally.
+
+### Android
+
+`android/app/build.gradle.kts` reads `GOOGLE_MAPS_API_KEY` from `local.properties`, which is already gitignored.
+
+Add this line to `android/local.properties`:
+
+```properties
+GOOGLE_MAPS_API_KEY=YOUR_ANDROID_GOOGLE_MAPS_API_KEY
+```
+
+### iOS
+
+Copy the example file and add your iOS key:
+
+```bash
+cp ios/Flutter/Maps.local.xcconfig.example ios/Flutter/Maps.local.xcconfig
+```
+
+Then set:
+
+```xcconfig
+GOOGLE_MAPS_API_KEY=YOUR_IOS_GOOGLE_MAPS_API_KEY
+```
+
+`ios/Flutter/Maps.local.xcconfig` is gitignored.
+
+### Notes
+
+- Android and iOS should use separate restricted API keys.
+- Enable the Maps SDK for Android and Maps SDK for iOS in Google Cloud.
+- The place search field still uses the `geocoding` package, not Google Places Autocomplete.
+
 ## Suggested next steps
 
 1. Add authentication by mobile OTP for house owners and tenants.
 2. Replace the in-memory repository with a REST API.
-3. Add real map support with Google Maps or Mapbox.
+3. Replace the basic address search with Google Places Autocomplete.
 4. Add booking conflict checks against exact start/end times.
 5. Add admin approval for new owner listings.
 

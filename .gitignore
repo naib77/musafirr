@@ -8,10 +8,18 @@ build/
 # IDE
 .idea/
 .vscode/
+*.iml
 
 # macOS / iOS
 DerivedData/
+ios/Flutter/Maps.local.xcconfig
 
 # Android
 local.properties
 **/gradle-wrapper.jar
+
+# Local tooling
+.claude/
+
+# Stray Windows device-name artifact
+/nul
