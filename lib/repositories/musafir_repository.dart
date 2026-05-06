@@ -63,4 +63,18 @@ abstract class MusafirRepository {
     required int guestCount,
   });
   void cancelBooking(String bookingId);
+
+  // Availability & conflict checking methods
+  List<Booking> getBookingsForListing(String listingId);
+  List<Booking> getActiveBookingsForListing(String listingId);
+  bool isTimeSlotAvailable({
+    required String listingId,
+    required DateTime checkIn,
+    required DateTime checkOut,
+  });
+  List<Booking> getConflictingBookings({
+    required String listingId,
+    required DateTime checkIn,
+    required DateTime checkOut,
+  });
 }

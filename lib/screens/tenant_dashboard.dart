@@ -26,7 +26,7 @@ class _TenantDashboardState extends State<TenantDashboard> {
 
   double _centerLat = 23.8103;
   double _centerLng = 90.4125;
-  double _searchDelta = 0.08;
+  final double _searchDelta = 0.08;
   List<Listing> results = [];
   bool _isLoadingLocation = false;
 
@@ -207,7 +207,7 @@ class _TenantDashboardState extends State<TenantDashboard> {
                   ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<BookingDuration>(
-                    value: selectedDuration,
+                    initialValue: selectedDuration,
                     decoration: const InputDecoration(
                       labelText: 'Booking Duration',
                       border: OutlineInputBorder(),

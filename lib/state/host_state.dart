@@ -1,8 +1,5 @@
 import 'package:flutter/foundation.dart';
 
-import '../models/listing.dart';
-import '../models/booking.dart';
-
 class HostStateNotifier extends ChangeNotifier {
   bool _isHostMode = false;
   bool _isLoading = false;

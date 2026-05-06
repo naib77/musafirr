@@ -5,7 +5,6 @@ import '../models/booking.dart';
 import '../models/booking_duration.dart';
 import '../models/booking_status.dart';
 import '../models/listing.dart';
-import '../models/listing_type.dart';
 import '../models/owner_registration_draft.dart';
 import '../models/review.dart';
 import '../models/search_filters.dart';
@@ -349,6 +348,57 @@ class InMemoryMusafirRepository extends ChangeNotifier
       );
       notifyListeners();
     }
+  }
+
+  // Availability & conflict checking methods
+
+  @override
+  List<Booking> getBookingsForListing(String listingId) {
+    return _bookings.where((b) => b.listingId == listingId).toList()
+      ..sort((a, b) => a.effectiveCheckIn.compareTo(b.effectiveCheckIn));
+  }
+
+  @override
+  List<Booking> getActiveBookingsForListing(String listingId) {
+    return _bookings
+        .where((b) => b.listingId == listingId && b.status.isActive)
+        .toList()
+      ..sort((a, b) => a.effectiveCheckIn.compareTo(b.effectiveCheckIn));
+  }
+
+  @override
+  bool isTimeSlotAvailable({
+    required String listingId,
+    required DateTime checkIn,
+    required DateTime checkOut,
+  }) {
+    final conflicts = getConflictingBookings(
+      listingId: listingId,
+      checkIn: checkIn,
+      checkOut: checkOut,
+    );
+    return conflicts.isEmpty;
+  }
+
+  @override
+  List<Booking> getConflictingBookings({
+    required String listingId,
+    required DateTime checkIn,
+    required DateTime checkOut,
+  }) {
+    final activeBookings = getActiveBookingsForListing(listingId);
+
+    return activeBookings.where((booking) {
+      final bookingStart = booking.effectiveCheckIn;
+      final bookingEnd = booking.effectiveCheckOut;
+
+      // Check for overlap:
+      // Two ranges overlap if: start1 < end2 AND start2 < end1
+      final hasOverlap = checkIn.isBefore(bookingEnd) &&
+                         bookingStart.isBefore(checkOut);
+
+      return hasOverlap;
+    }).toList();
   }
 
   void _seed() {

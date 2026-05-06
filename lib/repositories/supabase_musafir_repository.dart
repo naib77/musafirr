@@ -149,4 +149,34 @@ class SupabaseMusafirRepository implements MusafirRepository {
   void cancelBooking(String bookingId) {
     throw UnimplementedError('Implement Supabase booking cancellation');
   }
+
+  // Availability & conflict checking methods
+
+  @override
+  List<Booking> getBookingsForListing(String listingId) {
+    throw UnimplementedError('Implement Supabase listing bookings query');
+  }
+
+  @override
+  List<Booking> getActiveBookingsForListing(String listingId) {
+    throw UnimplementedError('Implement Supabase active listing bookings query');
+  }
+
+  @override
+  bool isTimeSlotAvailable({
+    required String listingId,
+    required DateTime checkIn,
+    required DateTime checkOut,
+  }) {
+    throw UnimplementedError('Implement Supabase availability check');
+  }
+
+  @override
+  List<Booking> getConflictingBookings({
+    required String listingId,
+    required DateTime checkIn,
+    required DateTime checkOut,
+  }) {
+    throw UnimplementedError('Implement Supabase conflict check');
+  }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../models/booking.dart';
 import '../../models/listing.dart';
 import '../../models/review.dart';
 import '../../repositories/in_memory_musafir_repository.dart';
@@ -603,6 +604,8 @@ class _ReviewCard extends StatelessWidget {
   }
 }
 
+enum DurationType { hourly, daily, monthly }
+
 class _BookingSheet extends StatefulWidget {
   const _BookingSheet({
     required this.listing,
@@ -619,19 +622,117 @@ class _BookingSheet extends StatefulWidget {
 }
 
 class _BookingSheetState extends State<_BookingSheet> {
+  DurationType _durationType = DurationType.daily;
+
+  // Daily booking
   DateTimeRange? _dateRange;
+
+  // Hourly booking
+  DateTime? _hourlyDate;
+  TimeOfDay? _startTime;
+  int _hours = 1;
+
+  // Monthly booking
+  DateTime? _monthlyStartDate;
+  int _months = 1;
+
   int _guestCount = 1;
   bool _isBooking = false;
 
-  double get _totalPrice {
-    if (_dateRange == null) return 0;
-    final nights = _dateRange!.end.difference(_dateRange!.start).inDays;
-    return widget.listing.displayPrice * nights;
+  // Conflict tracking
+  List<Booking> _conflictingBookings = [];
+  bool _isCheckingAvailability = false;
+
+  bool get _hasConflict => _conflictingBookings.isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    // Check for conflicts when selection changes
   }
 
-  int get _nights {
-    if (_dateRange == null) return 0;
-    return _dateRange!.end.difference(_dateRange!.start).inDays;
+  void _checkAvailability() {
+    if (!_isSelectionComplete) {
+      setState(() => _conflictingBookings = []);
+      return;
+    }
+
+    setState(() => _isCheckingAvailability = true);
+
+    final conflicts = widget.repository.getConflictingBookings(
+      listingId: widget.listing.id,
+      checkIn: _checkIn,
+      checkOut: _checkOut,
+    );
+
+    setState(() {
+      _conflictingBookings = conflicts;
+      _isCheckingAvailability = false;
+    });
+  }
+
+  double get _rate {
+    return switch (_durationType) {
+      DurationType.hourly => widget.listing.hourlyRate,
+      DurationType.daily => widget.listing.dailyRate,
+      DurationType.monthly => widget.listing.monthlyRate,
+    };
+  }
+
+  String get _rateLabel {
+    return switch (_durationType) {
+      DurationType.hourly => 'hour',
+      DurationType.daily => 'night',
+      DurationType.monthly => 'month',
+    };
+  }
+
+  int get _duration {
+    return switch (_durationType) {
+      DurationType.hourly => _hours,
+      DurationType.daily => _dateRange != null
+          ? _dateRange!.end.difference(_dateRange!.start).inDays
+          : 0,
+      DurationType.monthly => _months,
+    };
+  }
+
+  double get _totalPrice {
+    return _rate * _duration;
+  }
+
+  bool get _isSelectionComplete {
+    return switch (_durationType) {
+      DurationType.hourly => _hourlyDate != null && _startTime != null,
+      DurationType.daily => _dateRange != null,
+      DurationType.monthly => _monthlyStartDate != null,
+    };
+  }
+
+  DateTime get _checkIn {
+    return switch (_durationType) {
+      DurationType.hourly => DateTime(
+          _hourlyDate!.year,
+          _hourlyDate!.month,
+          _hourlyDate!.day,
+          _startTime!.hour,
+          _startTime!.minute,
+        ),
+      DurationType.daily => _dateRange!.start,
+      DurationType.monthly => _monthlyStartDate!,
+    };
+  }
+
+  DateTime get _checkOut {
+    return switch (_durationType) {
+      DurationType.hourly => _checkIn.add(Duration(hours: _hours)),
+      DurationType.daily => _dateRange!.end,
+      DurationType.monthly => DateTime(
+          _monthlyStartDate!.year,
+          _monthlyStartDate!.month + _months,
+          _monthlyStartDate!.day,
+        ),
+    };
   }
 
   Future<void> _selectDates() async {
@@ -643,13 +744,63 @@ class _BookingSheetState extends State<_BookingSheet> {
     );
     if (picked != null) {
       setState(() => _dateRange = picked);
+      _checkAvailability();
+    }
+  }
+
+  Future<void> _selectHourlyDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _hourlyDate ?? DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) {
+      setState(() => _hourlyDate = picked);
+      _checkAvailability();
+    }
+  }
+
+  Future<void> _selectStartTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _startTime ?? TimeOfDay.now(),
+    );
+    if (picked != null) {
+      setState(() => _startTime = picked);
+      _checkAvailability();
+    }
+  }
+
+  Future<void> _selectMonthlyStartDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _monthlyStartDate ?? DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) {
+      setState(() => _monthlyStartDate = picked);
+      _checkAvailability();
     }
   }
 
   Future<void> _confirmBooking() async {
-    if (_dateRange == null) {
+    if (!_isSelectionComplete) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select dates')),
+        const SnackBar(content: Text('Please complete your selection')),
+      );
+      return;
+    }
+
+    // Double-check availability before booking
+    _checkAvailability();
+    if (_hasConflict) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This time slot is no longer available'),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
@@ -669,8 +820,8 @@ class _BookingSheetState extends State<_BookingSheet> {
         listingId: widget.listing.id,
         userId: user.id,
         userName: user.name,
-        checkIn: _dateRange!.start,
-        checkOut: _dateRange!.end,
+        checkIn: _checkIn,
+        checkOut: _checkOut,
         guestCount: _guestCount,
       );
 
@@ -737,48 +888,68 @@ class _BookingSheetState extends State<_BookingSheet> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
 
-            // Date selection
-            GestureDetector(
-              onTap: _selectDates,
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  border: Border.all(color: theme.colorScheme.outline),
-                  borderRadius: BorderRadius.circular(12),
+            // Duration type selector
+            SegmentedButton<DurationType>(
+              segments: const [
+                ButtonSegment(
+                  value: DurationType.hourly,
+                  label: Text('Hourly'),
+                  icon: Icon(Icons.schedule),
                 ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.calendar_today),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Dates',
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                          Text(
-                            _dateRange != null
-                                ? '${_formatDate(_dateRange!.start)} - ${_formatDate(_dateRange!.end)}'
-                                : 'Select dates',
-                            style: theme.textTheme.bodyLarge,
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(
-                      Icons.chevron_right,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ],
+                ButtonSegment(
+                  value: DurationType.daily,
+                  label: Text('Daily'),
+                  icon: Icon(Icons.today),
                 ),
+                ButtonSegment(
+                  value: DurationType.monthly,
+                  label: Text('Monthly'),
+                  icon: Icon(Icons.calendar_month),
+                ),
+              ],
+              selected: {_durationType},
+              onSelectionChanged: (selected) {
+                setState(() => _durationType = selected.first);
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // Rate display
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '\$${_rate.toStringAsFixed(0)}',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                  Text(
+                    ' / $_rateLabel',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: theme.colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                ],
               ),
             ),
+            const SizedBox(height: 12),
+
+            // Existing bookings preview
+            _buildExistingBookingsPreview(theme),
+            const SizedBox(height: 16),
+
+            // Duration-specific selection UI
+            ..._buildDurationSelector(theme),
             const SizedBox(height: 16),
 
             // Guest count
@@ -832,15 +1003,117 @@ class _BookingSheetState extends State<_BookingSheet> {
                 ],
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
+
+            // Conflict warning
+            if (_hasConflict) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: Colors.red.shade700,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Time slot not available',
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: Colors.red.shade700,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${_conflictingBookings.length} existing booking${_conflictingBookings.length > 1 ? 's' : ''} conflict with your selection',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: Colors.red.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              // Show conflicting bookings
+              ..._conflictingBookings.map((booking) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.event_busy,
+                        size: 16,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${_formatDateTime(booking.effectiveCheckIn)} - ${_formatDateTime(booking.effectiveCheckOut)}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )),
+              const SizedBox(height: 8),
+            ],
+
+            // Availability indicator
+            if (_isSelectionComplete && !_hasConflict && !_isCheckingAvailability) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.check_circle,
+                      color: Colors.green.shade700,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'This time slot is available',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: Colors.green.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
 
             // Price breakdown
-            if (_dateRange != null) ...[
+            if (_isSelectionComplete && !_hasConflict) ...[
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    '\$${widget.listing.displayPrice.toStringAsFixed(0)} x $_nights nights',
+                    '\$${_rate.toStringAsFixed(0)} x $_duration ${_rateLabel}${_duration > 1 ? 's' : ''}',
                     style: theme.textTheme.bodyLarge,
                   ),
                   Text(
@@ -872,9 +1145,12 @@ class _BookingSheetState extends State<_BookingSheet> {
 
             // Confirm button
             FilledButton(
-              onPressed: _isBooking ? null : _confirmBooking,
+              onPressed: (_isBooking || _hasConflict || !_isSelectionComplete)
+                  ? null
+                  : _confirmBooking,
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: _hasConflict ? Colors.grey : null,
               ),
               child: _isBooking
                   ? const SizedBox(
@@ -885,9 +1161,11 @@ class _BookingSheetState extends State<_BookingSheet> {
                         color: Colors.white,
                       ),
                     )
-                  : Text(_dateRange != null
-                      ? 'Confirm Booking'
-                      : 'Select Dates to Continue'),
+                  : Text(_hasConflict
+                      ? 'Time Slot Unavailable'
+                      : _isSelectionComplete
+                          ? 'Confirm Booking'
+                          : 'Complete Selection to Continue'),
             ),
             const SizedBox(height: 16),
           ],
@@ -896,21 +1174,496 @@ class _BookingSheetState extends State<_BookingSheet> {
     );
   }
 
+  List<Widget> _buildDurationSelector(ThemeData theme) {
+    return switch (_durationType) {
+      DurationType.hourly => _buildHourlySelector(theme),
+      DurationType.daily => _buildDailySelector(theme),
+      DurationType.monthly => _buildMonthlySelector(theme),
+    };
+  }
+
+  List<Widget> _buildHourlySelector(ThemeData theme) {
+    return [
+      // Date selection
+      GestureDetector(
+        onTap: _selectHourlyDate,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            border: Border.all(color: theme.colorScheme.outline),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.calendar_today),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Date',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    Text(
+                      _hourlyDate != null
+                          ? _formatDate(_hourlyDate!)
+                          : 'Select date',
+                      style: theme.textTheme.bodyLarge,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
+
+      // Time and hours in a row
+      Row(
+        children: [
+          // Start time
+          Expanded(
+            child: GestureDetector(
+              onTap: _selectStartTime,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  border: Border.all(color: theme.colorScheme.outline),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Start Time',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.access_time, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          _startTime != null
+                              ? _formatTime(_startTime!)
+                              : 'Select',
+                          style: theme.textTheme.bodyLarge,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // Hours selector
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border.all(color: theme.colorScheme.outline),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Duration',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline),
+                        onPressed: _hours > 1
+                            ? () {
+                                setState(() => _hours--);
+                                _checkAvailability();
+                              }
+                            : null,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          '$_hours hr${_hours > 1 ? 's' : ''}',
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline),
+                        onPressed: _hours < 12
+                            ? () {
+                                setState(() => _hours++);
+                                _checkAvailability();
+                              }
+                            : null,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+
+      // End time preview
+      if (_hourlyDate != null && _startTime != null) ...[
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 18,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Ends at ${_formatTime(TimeOfDay(hour: (_startTime!.hour + _hours) % 24, minute: _startTime!.minute))}',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ];
+  }
+
+  List<Widget> _buildDailySelector(ThemeData theme) {
+    return [
+      GestureDetector(
+        onTap: _selectDates,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            border: Border.all(color: theme.colorScheme.outline),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.calendar_today),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Dates',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    Text(
+                      _dateRange != null
+                          ? '${_formatDate(_dateRange!.start)} - ${_formatDate(_dateRange!.end)}'
+                          : 'Select dates',
+                      style: theme.textTheme.bodyLarge,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _buildMonthlySelector(ThemeData theme) {
+    return [
+      // Start date
+      GestureDetector(
+        onTap: _selectMonthlyStartDate,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            border: Border.all(color: theme.colorScheme.outline),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.calendar_today),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Start Date',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    Text(
+                      _monthlyStartDate != null
+                          ? _formatDate(_monthlyStartDate!)
+                          : 'Select start date',
+                      style: theme.textTheme.bodyLarge,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
+
+      // Months selector
+      Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          border: Border.all(color: theme.colorScheme.outline),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.calendar_month),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Duration',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  Text(
+                    '$_months month${_months > 1 ? 's' : ''}',
+                    style: theme.textTheme.bodyLarge,
+                  ),
+                ],
+              ),
+            ),
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.remove_circle_outline),
+                  onPressed: _months > 1
+                      ? () {
+                          setState(() => _months--);
+                          _checkAvailability();
+                        }
+                      : null,
+                ),
+                Text(
+                  '$_months',
+                  style: theme.textTheme.titleMedium,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline),
+                  onPressed: _months < 12
+                      ? () {
+                          setState(() => _months++);
+                          _checkAvailability();
+                        }
+                      : null,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+
+      // End date preview
+      if (_monthlyStartDate != null) ...[
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 18,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Ends on ${_formatDate(DateTime(_monthlyStartDate!.year, _monthlyStartDate!.month + _months, _monthlyStartDate!.day))}',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ];
+  }
+
+  Widget _buildExistingBookingsPreview(ThemeData theme) {
+    final activeBookings = widget.repository.getActiveBookingsForListing(
+      widget.listing.id,
+    );
+
+    // Filter to show only future bookings
+    final now = DateTime.now();
+    final upcomingBookings = activeBookings
+        .where((b) => b.effectiveCheckOut.isAfter(now))
+        .take(5)
+        .toList();
+
+    if (upcomingBookings.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: const EdgeInsets.only(bottom: 8),
+      leading: Icon(
+        Icons.event_note,
+        color: theme.colorScheme.primary,
+      ),
+      title: Text(
+        'View booked dates',
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.primary,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      subtitle: Text(
+        '${upcomingBookings.length} upcoming booking${upcomingBookings.length > 1 ? 's' : ''}',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+      children: upcomingBookings.map((booking) {
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 4,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${_formatDate(booking.effectiveCheckIn)} - ${_formatDate(booking.effectiveCheckOut)}',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _getBookingTimeDescription(booking),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  String _getBookingTimeDescription(Booking booking) {
+    final checkIn = booking.effectiveCheckIn;
+    final checkOut = booking.effectiveCheckOut;
+    final duration = checkOut.difference(checkIn);
+
+    if (duration.inHours < 24) {
+      return '${duration.inHours} hour${duration.inHours > 1 ? 's' : ''} (${_formatTimeFromDateTime(checkIn)} - ${_formatTimeFromDateTime(checkOut)})';
+    } else if (duration.inDays < 30) {
+      return '${duration.inDays} night${duration.inDays > 1 ? 's' : ''}';
+    } else {
+      final months = (duration.inDays / 30).round();
+      return '$months month${months > 1 ? 's' : ''}';
+    }
+  }
+
+  String _formatTimeFromDateTime(DateTime dateTime) {
+    final hour = dateTime.hour % 12 == 0 ? 12 : dateTime.hour % 12;
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    final period = dateTime.hour < 12 ? 'AM' : 'PM';
+    return '$hour:$minute $period';
+  }
+
   String _formatDate(DateTime date) {
     final months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec'
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
     ];
-    return '${months[date.month - 1]} ${date.day}';
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
+  String _formatTime(TimeOfDay time) {
+    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+    final minute = time.minute.toString().padLeft(2, '0');
+    final period = time.period == DayPeriod.am ? 'AM' : 'PM';
+    return '$hour:$minute $period';
+  }
+
+  String _formatDateTime(DateTime dateTime) {
+    final months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final hour = dateTime.hour % 12 == 0 ? 12 : dateTime.hour % 12;
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    final period = dateTime.hour < 12 ? 'AM' : 'PM';
+    return '${months[dateTime.month - 1]} ${dateTime.day}, $hour:$minute $period';
   }
 }

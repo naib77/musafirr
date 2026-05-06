@@ -97,7 +97,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<ListingType>(
-                value: selectedType,
+                initialValue: selectedType,
                 decoration: const InputDecoration(
                   labelText: 'Rental Type',
                   border: OutlineInputBorder(),

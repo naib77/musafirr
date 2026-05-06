@@ -239,7 +239,7 @@ class _ListingCard extends StatelessWidget {
 
                 // Location
                 Text(
-                  '${listing.city ?? listing.address}',
+                  listing.city ?? listing.address,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),

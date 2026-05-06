@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../models/listing.dart';
+import '../models/listing_type.dart';
 import '../services/location_service.dart';
 
 class MusafirMap extends StatefulWidget {
