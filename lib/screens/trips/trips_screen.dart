@@ -67,18 +67,16 @@ class _TripsScreenState extends State<TripsScreen>
 
           final now = DateTime.now();
           final upcomingBookings = allBookings
-              .where((b) =>
-                  b.status.isActive && b.effectiveCheckIn.isAfter(now))
+              .where(
+                  (b) => b.status.isActive && b.effectiveCheckIn.isAfter(now))
               .toList()
-            ..sort(
-                (a, b) => a.effectiveCheckIn.compareTo(b.effectiveCheckIn));
+            ..sort((a, b) => a.effectiveCheckIn.compareTo(b.effectiveCheckIn));
 
           final pastBookings = allBookings
-              .where((b) =>
-                  b.status.isPast || b.effectiveCheckOut.isBefore(now))
+              .where(
+                  (b) => b.status.isPast || b.effectiveCheckOut.isBefore(now))
               .toList()
-            ..sort(
-                (a, b) => b.effectiveCheckIn.compareTo(a.effectiveCheckIn));
+            ..sort((a, b) => b.effectiveCheckIn.compareTo(a.effectiveCheckIn));
 
           return TabBarView(
             controller: _tabController,
@@ -337,8 +335,18 @@ class _BookingCard extends StatelessWidget {
 
   String _formatDate(DateTime date) {
     final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     return '${months[date.month - 1]} ${date.day}';
   }
@@ -414,7 +422,8 @@ class _BookingDetailsSheet extends StatelessWidget {
             _DetailRow(
               icon: Icons.people,
               label: 'Guests',
-              value: '${booking.guestCount} guest${booking.guestCount > 1 ? 's' : ''}',
+              value:
+                  '${booking.guestCount} guest${booking.guestCount > 1 ? 's' : ''}',
             ),
             const SizedBox(height: 16),
             _DetailRow(
@@ -458,8 +467,18 @@ class _BookingDetailsSheet extends StatelessWidget {
   String _formatFullDate(DateTime date) {
     final weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December'
     ];
     return '${weekdays[date.weekday - 1]}, ${months[date.month - 1]} ${date.day}, ${date.year}';
   }

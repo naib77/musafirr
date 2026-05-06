@@ -261,7 +261,8 @@ class InMemoryMusafirRepository extends ChangeNotifier
   double getAverageRating(String listingId) {
     final reviews = getReviewsForListing(listingId);
     if (reviews.isEmpty) return 0;
-    return reviews.map((r) => r.rating).reduce((a, b) => a + b) / reviews.length;
+    return reviews.map((r) => r.rating).reduce((a, b) => a + b) /
+        reviews.length;
   }
 
   @override

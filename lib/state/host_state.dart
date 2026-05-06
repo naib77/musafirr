@@ -77,11 +77,13 @@ class CreateListingData {
   List<String> amenities;
   List<String> imageUrls;
 
-  bool get isBasicsComplete =>
-      title.isNotEmpty && propertyType != null;
+  bool get isBasicsComplete => title.isNotEmpty && propertyType != null;
 
   bool get isLocationComplete =>
-      address.isNotEmpty && city.isNotEmpty && latitude != null && longitude != null;
+      address.isNotEmpty &&
+      city.isNotEmpty &&
+      latitude != null &&
+      longitude != null;
 
   bool get isDetailsComplete =>
       maxGuests > 0 && bedrooms > 0 && beds > 0 && bathrooms > 0;
@@ -89,7 +91,10 @@ class CreateListingData {
   bool get isPricingComplete => pricePerNight > 0;
 
   bool get isComplete =>
-      isBasicsComplete && isLocationComplete && isDetailsComplete && isPricingComplete;
+      isBasicsComplete &&
+      isLocationComplete &&
+      isDetailsComplete &&
+      isPricingComplete;
 
   CreateListingData copyWith({
     String? title,

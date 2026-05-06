@@ -181,7 +181,8 @@ class SearchStateNotifier extends ChangeNotifier {
         final searchLower = _filters.location!.toLowerCase();
         final matchesCity =
             listing.city?.toLowerCase().contains(searchLower) ?? false;
-        final matchesAddress = listing.address.toLowerCase().contains(searchLower);
+        final matchesAddress =
+            listing.address.toLowerCase().contains(searchLower);
         final matchesTitle = listing.title.toLowerCase().contains(searchLower);
         if (!matchesCity && !matchesAddress && !matchesTitle) {
           return false;

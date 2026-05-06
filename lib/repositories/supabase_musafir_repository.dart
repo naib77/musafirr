@@ -21,8 +21,7 @@ class SupabaseMusafirRepository implements MusafirRepository {
       throw UnimplementedError('Replace with Supabase query');
 
   @override
-  int get ownerCount =>
-      throw UnimplementedError('Replace with Supabase query');
+  int get ownerCount => throw UnimplementedError('Replace with Supabase query');
 
   @override
   Booking createBooking({

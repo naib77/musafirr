@@ -103,7 +103,8 @@ class _LocationPickerState extends State<LocationPicker> {
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Could not get your location. Please check permissions.'),
+          content:
+              Text('Could not get your location. Please check permissions.'),
         ),
       );
     }
@@ -226,7 +227,8 @@ class _LocationPickerState extends State<LocationPicker> {
                               child: SizedBox(
                                 width: 20,
                                 height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
                               ),
                             )
                           : _searchController.text.isNotEmpty
@@ -339,7 +341,8 @@ class _LocationPickerState extends State<LocationPicker> {
                               const Text('Loading address...')
                             else
                               Text(
-                                _currentAddress ?? 'Move map to select location',
+                                _currentAddress ??
+                                    'Move map to select location',
                                 style: Theme.of(context).textTheme.bodyMedium,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,

@@ -523,7 +523,8 @@ class _LocationStep extends StatelessWidget {
   final TextEditingController cityController;
   final double latitude;
   final double longitude;
-  final void Function(double lat, double lng, String? address) onLocationChanged;
+  final void Function(double lat, double lng, String? address)
+      onLocationChanged;
   final VoidCallback onChanged;
 
   @override

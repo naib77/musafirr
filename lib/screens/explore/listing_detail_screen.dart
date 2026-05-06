@@ -114,7 +114,8 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                                 color: isFavorite ? Colors.red : Colors.black,
                               ),
                               onPressed: () {
-                                widget.favoritesState.toggleFavorite(listing.id);
+                                widget.favoritesState
+                                    .toggleFavorite(listing.id);
                               },
                             ),
                           );
@@ -585,8 +586,18 @@ class _ReviewCard extends StatelessWidget {
 
   String _formatDate(DateTime date) {
     final months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December'
     ];
     return '${months[date.month - 1]} ${date.year}';
   }
@@ -887,8 +898,18 @@ class _BookingSheetState extends State<_BookingSheet> {
 
   String _formatDate(DateTime date) {
     final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     return '${months[date.month - 1]} ${date.day}';
   }

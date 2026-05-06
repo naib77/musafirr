@@ -47,7 +47,8 @@ class _MusafirMapState extends State<MusafirMap> {
           position: LatLng(listing.latitude, listing.longitude),
           infoWindow: InfoWindow(
             title: listing.title,
-            snippet: '${listing.type.title} - ${listing.dailyRate.toInt()} BDT/day',
+            snippet:
+                '${listing.type.title} - ${listing.dailyRate.toInt()} BDT/day',
             onTap: () => widget.onListingTap?.call(listing),
           ),
           icon: BitmapDescriptor.defaultMarkerWithHue(
@@ -65,7 +66,8 @@ class _MusafirMapState extends State<MusafirMap> {
         Marker(
           markerId: const MarkerId('selected'),
           position: _selectedLocation!,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
+          icon:
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
         ),
       );
     }
@@ -89,7 +91,8 @@ class _MusafirMapState extends State<MusafirMap> {
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Could not get your location. Please check permissions.'),
+          content:
+              Text('Could not get your location. Please check permissions.'),
         ),
       );
     }
@@ -103,7 +106,8 @@ class _MusafirMapState extends State<MusafirMap> {
   }
 
   void _onCameraMove(CameraPosition position) {
-    widget.onCameraMove?.call(position.target.latitude, position.target.longitude);
+    widget.onCameraMove
+        ?.call(position.target.latitude, position.target.longitude);
   }
 
   @override

@@ -73,8 +73,8 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
           final now = DateTime.now();
 
           final upcomingBookings = hostBookings
-              .where((b) =>
-                  b.status.isActive && b.effectiveCheckIn.isAfter(now))
+              .where(
+                  (b) => b.status.isActive && b.effectiveCheckIn.isAfter(now))
               .toList()
             ..sort((a, b) => a.effectiveCheckIn.compareTo(b.effectiveCheckIn));
 
@@ -86,8 +86,8 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
               .toList();
 
           final pastBookings = hostBookings
-              .where((b) =>
-                  b.status.isPast || b.effectiveCheckOut.isBefore(now))
+              .where(
+                  (b) => b.status.isPast || b.effectiveCheckOut.isBefore(now))
               .toList()
             ..sort((a, b) => b.effectiveCheckIn.compareTo(a.effectiveCheckIn));
 
@@ -371,8 +371,18 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
   String _formatFullDate(DateTime date) {
     final weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     return '${weekdays[date.weekday - 1]}, ${months[date.month - 1]} ${date.day}';
   }
@@ -491,8 +501,18 @@ class _ReservationCard extends StatelessWidget {
 
   String _formatDate(DateTime date) {
     final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     return '${months[date.month - 1]} ${date.day}';
   }

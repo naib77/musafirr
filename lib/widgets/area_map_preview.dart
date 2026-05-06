@@ -44,10 +44,10 @@ class AreaMapPreview extends StatelessWidget {
             ),
           ),
           ...listings.map((listing) {
-            final left =
-                ((listing.longitude - centerLng + 0.12) / 0.24).clamp(0.08, 0.88);
-            final top =
-                ((listing.latitude - centerLat + 0.12) / 0.24).clamp(0.12, 0.82);
+            final left = ((listing.longitude - centerLng + 0.12) / 0.24)
+                .clamp(0.08, 0.88);
+            final top = ((listing.latitude - centerLat + 0.12) / 0.24)
+                .clamp(0.12, 0.82);
             return Positioned(
               left: left * 300,
               top: (1 - top) * 180,
@@ -67,7 +67,8 @@ class AreaMapPreview extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(999),

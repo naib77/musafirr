@@ -39,7 +39,8 @@ class ListingCardModern extends StatelessWidget {
                           width: double.infinity,
                           height: double.infinity,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => _buildPlaceholder(theme),
+                          errorBuilder: (_, __, ___) =>
+                              _buildPlaceholder(theme),
                           loadingBuilder: (context, child, loadingProgress) {
                             if (loadingProgress == null) return child;
                             return _buildPlaceholder(theme);

@@ -104,8 +104,8 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                 ),
                 items: ListingType.values
                     .map(
-                      (type) =>
-                          DropdownMenuItem(value: type, child: Text(type.title)),
+                      (type) => DropdownMenuItem(
+                          value: type, child: Text(type.title)),
                     )
                     .toList(),
                 onChanged: (type) {
@@ -122,7 +122,8 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                       controller: latController,
                       label: 'Latitude',
                       hint: '23.7806',
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
                       validatorOverride: _validateNumber,
                     ),
                   ),
@@ -132,7 +133,8 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                       controller: lngController,
                       label: 'Longitude',
                       hint: '90.4070',
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
                       validatorOverride: _validateNumber,
                     ),
                   ),
@@ -152,7 +154,8 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                       controller: hourlyController,
                       label: 'Hourly Rate (BDT)',
                       hint: '100',
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
                       validatorOverride: _validateNumber,
                     ),
                   ),
@@ -162,7 +165,8 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                       controller: dailyController,
                       label: 'Daily Rate (BDT)',
                       hint: '1000',
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
                       validatorOverride: _validateNumber,
                     ),
                   ),
@@ -173,7 +177,8 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                 controller: monthlyController,
                 label: 'Monthly Rate (BDT)',
                 hint: '18000',
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
                 validatorOverride: _validateNumber,
               ),
               const SizedBox(height: 16),
@@ -218,10 +223,12 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
         const SizedBox(height: 28),
         const SectionTitle(
           title: 'Your Listings',
-          subtitle: 'Newly registered entries appear immediately from in-memory storage.',
+          subtitle:
+              'Newly registered entries appear immediately from in-memory storage.',
         ),
         const SizedBox(height: 12),
-        ...widget.repository.listings.map((listing) => ListingSummaryCard(listing: listing)),
+        ...widget.repository.listings
+            .map((listing) => ListingSummaryCard(listing: listing)),
       ],
     );
   }

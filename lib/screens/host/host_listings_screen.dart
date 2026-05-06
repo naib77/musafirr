@@ -175,9 +175,8 @@ class _ListingCard extends StatelessWidget {
     final theme = Theme.of(context);
 
     // Get booking count for this listing
-    final bookings = repository.bookings
-        .where((b) => b.listingId == listing.id)
-        .length;
+    final bookings =
+        repository.bookings.where((b) => b.listingId == listing.id).length;
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -252,7 +251,8 @@ class _ListingCard extends StatelessWidget {
                   children: [
                     _StatChip(
                       icon: Icons.attach_money,
-                      label: '\$${listing.displayPrice.toStringAsFixed(0)}/night',
+                      label:
+                          '\$${listing.displayPrice.toStringAsFixed(0)}/night',
                       theme: theme,
                     ),
                     const SizedBox(width: 8),
@@ -280,9 +280,7 @@ class _ListingCard extends StatelessWidget {
                       child: OutlinedButton.icon(
                         onPressed: onToggleAvailability,
                         icon: Icon(
-                          listing.available
-                              ? Icons.pause
-                              : Icons.play_arrow,
+                          listing.available ? Icons.pause : Icons.play_arrow,
                         ),
                         label: Text(listing.available ? 'Pause' : 'Activate'),
                       ),

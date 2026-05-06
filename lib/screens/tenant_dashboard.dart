@@ -67,7 +67,8 @@ class _TenantDashboardState extends State<TenantDashboard> {
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Could not get your location. Please check permissions.'),
+            content:
+                Text('Could not get your location. Please check permissions.'),
           ),
         );
       }
@@ -157,7 +158,9 @@ class _TenantDashboardState extends State<TenantDashboard> {
         ),
         const SizedBox(height: 12),
         if (results.isEmpty)
-          const InfoCard(message: 'No available results in this area. Try a different location.')
+          const InfoCard(
+              message:
+                  'No available results in this area. Try a different location.')
         else
           ...results.map(
             (listing) => ListingCard(
@@ -224,7 +227,8 @@ class _TenantDashboardState extends State<TenantDashboard> {
                     },
                   ),
                   const SizedBox(height: 12),
-                  Text('Estimated price: ${estimatedCost.toStringAsFixed(0)} BDT'),
+                  Text(
+                      'Estimated price: ${estimatedCost.toStringAsFixed(0)} BDT'),
                   const SizedBox(height: 16),
                   FilledButton(
                     onPressed: () {

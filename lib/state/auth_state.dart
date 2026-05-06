@@ -64,11 +64,17 @@ class AuthStateNotifier extends ChangeNotifier {
         // Create new user on the fly for any email with correct password
         final newUser = User(
           id: 'user_${DateTime.now().millisecondsSinceEpoch}',
-          name: email.split('@').first.replaceAll('.', ' ').split(' ').map(
+          name: email
+              .split('@')
+              .first
+              .replaceAll('.', ' ')
+              .split(' ')
+              .map(
                 (word) => word.isNotEmpty
                     ? '${word[0].toUpperCase()}${word.substring(1)}'
                     : '',
-              ).join(' '),
+              )
+              .join(' '),
           email: email.toLowerCase(),
           role: UserRole.tenant,
           createdAt: DateTime.now(),

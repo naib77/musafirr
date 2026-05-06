@@ -47,7 +47,8 @@ class Booking {
   DateTime get effectiveCheckIn => checkIn ?? startAt;
   DateTime get effectiveCheckOut => checkOut ?? endAt;
 
-  int get numberOfNights => effectiveCheckOut.difference(effectiveCheckIn).inDays;
+  int get numberOfNights =>
+      effectiveCheckOut.difference(effectiveCheckIn).inDays;
 
   bool get isUpcoming =>
       status.isActive && effectiveCheckIn.isAfter(DateTime.now());

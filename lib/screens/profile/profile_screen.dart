@@ -67,7 +67,8 @@ class ProfileScreen extends StatelessWidget {
                                   Expanded(
                                     child: Text(
                                       user.name,
-                                      style: theme.textTheme.titleLarge?.copyWith(
+                                      style:
+                                          theme.textTheme.titleLarge?.copyWith(
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
@@ -79,7 +80,8 @@ class ProfileScreen extends StatelessWidget {
                                         vertical: 4,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: theme.colorScheme.primaryContainer,
+                                        color:
+                                            theme.colorScheme.primaryContainer,
                                         borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: Row(
@@ -93,7 +95,8 @@ class ProfileScreen extends StatelessWidget {
                                           const SizedBox(width: 4),
                                           Text(
                                             'Host',
-                                            style: theme.textTheme.labelSmall?.copyWith(
+                                            style: theme.textTheme.labelSmall
+                                                ?.copyWith(
                                               color: theme.colorScheme.primary,
                                               fontWeight: FontWeight.bold,
                                             ),
@@ -288,7 +291,8 @@ class ProfileScreen extends StatelessWidget {
             Navigator.pop(context);
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Welcome to hosting! You can now create listings.'),
+                content:
+                    Text('Welcome to hosting! You can now create listings.'),
                 backgroundColor: Colors.green,
               ),
             );
@@ -368,7 +372,8 @@ class _SettingsSection extends StatelessWidget {
                   ListTile(
                     leading: Icon(item.icon),
                     title: Text(item.title),
-                    subtitle: item.subtitle != null ? Text(item.subtitle!) : null,
+                    subtitle:
+                        item.subtitle != null ? Text(item.subtitle!) : null,
                     trailing: const Icon(Icons.chevron_right),
                     onTap: item.onTap,
                   ),
