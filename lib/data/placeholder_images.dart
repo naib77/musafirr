@@ -65,8 +65,19 @@ class PlaceholderImages {
     'https://images.unsplash.com/photo-1540518614846-7eded433c457?w=800',
   ];
 
-  // Avatar placeholders
-  static String avatar(int index) => 'https://i.pravatar.cc/150?img=$index';
+  // Avatar placeholders - using ui-avatars.com which is CORS-friendly
+  static const List<String> _avatarNames = [
+    'Ahmed', 'Fatima', 'Karim', 'Nadia', 'Omar',
+    'Sara', 'Yusuf', 'Aisha', 'Hassan', 'Layla',
+    'Ibrahim', 'Maryam', 'Ali', 'Zainab', 'Tariq',
+  ];
+
+  static String avatar(int index) {
+    final name = _avatarNames[index % _avatarNames.length];
+    final colors = ['0B7285', '1098AD', '0CA678', '37B24D', '7048E8'];
+    final bg = colors[index % colors.length];
+    return 'https://ui-avatars.com/api/?name=$name&background=$bg&color=fff&size=150';
+  }
 
   // Get a set of images for a listing based on index
   static List<String> forListing(int index) {

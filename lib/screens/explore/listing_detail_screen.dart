@@ -823,6 +823,8 @@ class _BookingSheetState extends State<_BookingSheet> {
         checkIn: _checkIn,
         checkOut: _checkOut,
         guestCount: _guestCount,
+        totalPrice: _totalPrice,
+        unitLabel: _rateLabel,
       );
 
       if (mounted) {

@@ -41,7 +41,9 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   int _beds = 1;
   int _bathrooms = 1;
   final Set<String> _selectedAmenities = {'Wi-Fi', 'Attached Bath'};
-  final _priceController = TextEditingController(text: '1500');
+  final _hourlyPriceController = TextEditingController(text: '150');
+  final _dailyPriceController = TextEditingController(text: '1500');
+  final _monthlyPriceController = TextEditingController(text: '35000');
 
   bool _isSubmitting = false;
 
@@ -52,7 +54,9 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
     _descriptionController.dispose();
     _addressController.dispose();
     _cityController.dispose();
-    _priceController.dispose();
+    _hourlyPriceController.dispose();
+    _dailyPriceController.dispose();
+    _monthlyPriceController.dispose();
     super.dispose();
   }
 
@@ -86,8 +90,12 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
       case 3: // Details
         return _maxGuests > 0 && _bedrooms > 0 && _beds > 0 && _bathrooms > 0;
       case 4: // Pricing
-        return double.tryParse(_priceController.text) != null &&
-            double.parse(_priceController.text) > 0;
+        final hourly = double.tryParse(_hourlyPriceController.text);
+        final daily = double.tryParse(_dailyPriceController.text);
+        final monthly = double.tryParse(_monthlyPriceController.text);
+        return hourly != null && hourly > 0 &&
+            daily != null && daily > 0 &&
+            monthly != null && monthly > 0;
       default:
         return false;
     }
@@ -100,7 +108,9 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
 
     try {
       final user = widget.authState.currentUser;
-      final price = double.parse(_priceController.text);
+      final hourlyRate = double.parse(_hourlyPriceController.text);
+      final dailyRate = double.parse(_dailyPriceController.text);
+      final monthlyRate = double.parse(_monthlyPriceController.text);
 
       // Get random images for the listing
       final listingIndex = widget.repository.listings.length;
@@ -121,10 +131,10 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         type: _propertyType,
         latitude: _latitude,
         longitude: _longitude,
-        pricePerNight: price,
-        hourlyRate: price / 10,
-        dailyRate: price,
-        monthlyRate: price * 25,
+        pricePerNight: dailyRate,
+        hourlyRate: hourlyRate,
+        dailyRate: dailyRate,
+        monthlyRate: monthlyRate,
         imageUrls: images,
         maxGuests: _maxGuests,
         bedrooms: _bedrooms,
@@ -244,7 +254,9 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                   },
                 ),
                 _PricingStep(
-                  priceController: _priceController,
+                  hourlyPriceController: _hourlyPriceController,
+                  dailyPriceController: _dailyPriceController,
+                  monthlyPriceController: _monthlyPriceController,
                   onChanged: () => setState(() {}),
                 ),
               ],
@@ -755,11 +767,15 @@ class _CounterRow extends StatelessWidget {
 // Step 5: Pricing
 class _PricingStep extends StatelessWidget {
   const _PricingStep({
-    required this.priceController,
+    required this.hourlyPriceController,
+    required this.dailyPriceController,
+    required this.monthlyPriceController,
     required this.onChanged,
   });
 
-  final TextEditingController priceController;
+  final TextEditingController hourlyPriceController;
+  final TextEditingController dailyPriceController;
+  final TextEditingController monthlyPriceController;
   final VoidCallback onChanged;
 
   @override
@@ -772,31 +788,53 @@ class _PricingStep extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Set your price',
+            'Set your prices',
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'You can change this anytime. Include all fees in your price.',
+            'Set rates for different booking durations. You can change these anytime.',
             style: theme.textTheme.bodyLarge?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 32),
-          AppTextField(
-            controller: priceController,
-            label: 'Price per night (\$)',
-            hint: '1500',
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            prefix: const Padding(
-              padding: EdgeInsets.only(left: 12),
-              child: Text('\$'),
-            ),
-            onFieldSubmitted: (_) => onChanged(),
+
+          // Hourly rate
+          _PriceField(
+            controller: hourlyPriceController,
+            label: 'Hourly rate',
+            icon: Icons.schedule,
+            hint: '150',
+            helperText: 'For short stays (1-12 hours)',
+            onChanged: onChanged,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
+
+          // Daily rate
+          _PriceField(
+            controller: dailyPriceController,
+            label: 'Daily rate (per night)',
+            icon: Icons.today,
+            hint: '1500',
+            helperText: 'For overnight stays',
+            onChanged: onChanged,
+          ),
+          const SizedBox(height: 20),
+
+          // Monthly rate
+          _PriceField(
+            controller: monthlyPriceController,
+            label: 'Monthly rate',
+            icon: Icons.calendar_month,
+            hint: '35000',
+            helperText: 'For long-term stays (1+ months)',
+            onChanged: onChanged,
+          ),
+          const SizedBox(height: 24),
+
           Card(
             color: theme.colorScheme.surfaceContainerHighest,
             child: Padding(
@@ -821,9 +859,9 @@ class _PricingStep extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '• Similar listings in your area charge \$800 - \$3000 per night\n'
-                    '• New listings often start lower to get initial bookings\n'
-                    '• You can adjust prices for weekends or special dates',
+                    '• Hourly: Great for meeting rooms, workspaces\n'
+                    '• Daily: Standard vacation rental pricing\n'
+                    '• Monthly: Offer a discount for long-term stays',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -834,6 +872,66 @@ class _PricingStep extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _PriceField extends StatelessWidget {
+  const _PriceField({
+    required this.controller,
+    required this.label,
+    required this.icon,
+    required this.hint,
+    required this.helperText,
+    required this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final IconData icon;
+  final String hint;
+  final String helperText;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 20, color: theme.colorScheme.primary),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        AppTextField(
+          controller: controller,
+          label: '',
+          hint: hint,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          prefix: const Padding(
+            padding: EdgeInsets.only(left: 12),
+            child: Text('\$'),
+          ),
+          onFieldSubmitted: (_) => onChanged(),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          helperText,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
     );
   }
 }

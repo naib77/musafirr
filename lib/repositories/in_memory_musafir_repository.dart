@@ -306,14 +306,13 @@ class InMemoryMusafirRepository extends ChangeNotifier
     required DateTime checkIn,
     required DateTime checkOut,
     required int guestCount,
+    required double totalPrice,
+    required String unitLabel,
   }) {
     final listing = getListingById(listingId);
     if (listing == null) {
       throw Exception('Listing not found');
     }
-
-    final nights = checkOut.difference(checkIn).inDays;
-    final totalPrice = listing.displayPrice * nights;
 
     final booking = Booking(
       id: 'booking_${_bookings.length + 1}',
@@ -325,7 +324,7 @@ class InMemoryMusafirRepository extends ChangeNotifier
       checkIn: checkIn,
       checkOut: checkOut,
       totalPrice: totalPrice,
-      unitLabel: 'night',
+      unitLabel: unitLabel,
       status: BookingStatus.confirmed,
       guestCount: guestCount,
       createdAt: DateTime.now(),

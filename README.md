@@ -79,8 +79,10 @@ That will generate the standard Android and iOS project folders around the exist
 Run:
 
 ```bash
+flutter clean
 flutter create . --platforms=android,ios
 flutter pub get
+flutter run -d chrome
 ```
 
 ### 2. Push to GitHub

@@ -141,6 +141,8 @@ class SupabaseMusafirRepository implements MusafirRepository {
     required DateTime checkIn,
     required DateTime checkOut,
     required int guestCount,
+    required double totalPrice,
+    required String unitLabel,
   }) {
     throw UnimplementedError('Implement Supabase marketplace booking insert');
   }
