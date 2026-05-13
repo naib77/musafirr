@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/listing.dart';
 import '../../models/listing_type.dart';
-import '../../repositories/in_memory_musafir_repository.dart';
+import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
 import '../../state/search_state.dart';
@@ -19,7 +19,7 @@ class ExploreScreen extends StatefulWidget {
     required this.searchState,
   });
 
-  final InMemoryMusafirRepository repository;
+  final MusafirRepository repository;
   final AuthStateNotifier authState;
   final FavoritesStateNotifier favoritesState;
   final SearchStateNotifier searchState;

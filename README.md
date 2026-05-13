@@ -116,37 +116,103 @@ For real iPhone builds, you still need:
 - provisioning profile
 - signing certificate
 
-### 5. Future backend
+### 5. Supabase backend
 
-When you replace in-memory data, use:
+The app supports both in-memory (demo) and Supabase (production) modes. See the Supabase setup section below.
 
-- Flutter frontend
-- PostgreSQL database
-- PostGIS for area/map queries
-- a REST API or GraphQL API
+## Supabase setup
 
-Supabase is a strong online-first option because it combines PostgreSQL, auth, and hosted APIs.
+Supabase is a Backend-as-a-Service that provides PostgreSQL + Authentication + REST API + Realtime subscriptions. The app automatically uses in-memory mode if Supabase is not configured.
 
-## Backend-ready direction
+### Option 1: Supabase Cloud (Easiest)
 
-The repository layer is already separated from the UI:
+Free tier at [supabase.com](https://supabase.com):
 
-- `MusafirRepository` defines the contract
-- `InMemoryMusafirRepository` powers the current app
-- `SupabaseMusafirRepository` is a placeholder for the real implementation
+1. Create account and new project
+2. Go to SQL Editor and run the schema from `docs/supabase_schema.sql`
+3. Copy your **URL** and **anon key** from Settings → API
+4. Update `lib/config/supabase_config.dart`:
 
-When you move to Supabase/PostgreSQL, the next technical steps are:
+```dart
+static const String url = 'https://your-project.supabase.co';
+static const String anonKey = 'your-anon-key';
+```
 
-1. Add `supabase_flutter` to `pubspec.yaml`.
-2. Create tables for `users`, `listings`, `facilities`, and `bookings`.
-3. Store listing coordinates with PostGIS-compatible fields.
-4. Add booking conflict checks in SQL or RPC functions.
-5. Swap the injected repository from in-memory to Supabase.
+5. Run the app - it will use Supabase automatically
 
-The initial backend artifacts are included here:
+**Free tier includes:** 500MB database, 1GB storage, 50k monthly active users
 
-- [backend_schema.md](./docs/backend_schema.md)
-- [001_initial_schema.sql](./supabase/migrations/001_initial_schema.sql)
+### Option 2: Local Development (Docker)
+
+Requires Docker Desktop installed.
+
+```bash
+# Install Supabase CLI
+npm install -g supabase
+
+# Initialize in your project
+supabase init
+
+# Start local Supabase (PostgreSQL + Auth + API + Studio)
+supabase start
+```
+
+This gives you:
+
+- API URL: `http://localhost:54321`
+- anon key: shown in terminal output
+- Studio (web dashboard): `http://localhost:54323`
+
+Update `lib/config/supabase_config.dart`:
+
+```dart
+static const String url = 'http://localhost:54321';
+static const String anonKey = 'eyJhbG...';  // from terminal output
+```
+
+To stop: `supabase stop`
+
+### Option 3: Self-Hosted Server
+
+For production on your own server (VPS, AWS, DigitalOcean, etc.):
+
+```bash
+# Clone Supabase Docker setup
+git clone https://github.com/supabase/supabase
+cd supabase/docker
+
+# Copy and edit environment variables
+cp .env.example .env
+# Edit .env with your secrets and domain
+
+# Start all services
+docker compose up -d
+```
+
+This runs PostgreSQL, Auth, REST API, Realtime, and Studio on your server.
+
+### Which option to use?
+
+| Stage | Recommendation |
+|-------|----------------|
+| Getting started | Cloud free tier (no setup) |
+| Local development | Docker or Cloud free tier |
+| Production | Cloud paid tier or Self-hosted |
+
+## Backend architecture
+
+The repository layer is separated from the UI:
+
+- `MusafirRepository` - abstract interface
+- `InMemoryMusafirRepository` - demo mode with mock data
+- `SupabaseMusafirRepository` - production mode with real database
+
+The app automatically switches based on whether Supabase credentials are configured in `lib/config/supabase_config.dart`.
+
+Backend documentation:
+
+- [docs/backend_schema.md](./docs/backend_schema.md) - database design
+- [docs/supabase_schema.sql](./docs/supabase_schema.sql) - SQL to create tables
 
 ## Google Maps setup
 

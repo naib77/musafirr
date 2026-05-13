@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../core/currency/currency.dart';
 import '../../data/facility_catalog.dart';
 import '../../data/placeholder_images.dart';
 import '../../models/listing.dart';
 import '../../models/listing_type.dart';
-import '../../repositories/in_memory_musafir_repository.dart';
+import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
 import '../../widgets/app_text_field.dart';
 import '../../widgets/location_picker.dart';
@@ -16,7 +17,7 @@ class CreateListingScreen extends StatefulWidget {
     required this.authState,
   });
 
-  final InMemoryMusafirRepository repository;
+  final MusafirRepository repository;
   final AuthStateNotifier authState;
 
   @override
@@ -918,9 +919,9 @@ class _PriceField extends StatelessWidget {
           label: '',
           hint: hint,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          prefix: const Padding(
-            padding: EdgeInsets.only(left: 12),
-            child: Text('\$'),
+          prefix: Padding(
+            padding: const EdgeInsets.only(left: 12),
+            child: Text(Currency.BDT.symbol),
           ),
           onFieldSubmitted: (_) => onChanged(),
         ),

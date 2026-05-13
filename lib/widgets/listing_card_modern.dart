@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/listing.dart';
+import 'price_display.dart';
 
 class ListingCardModern extends StatelessWidget {
   const ListingCardModern({
@@ -131,23 +132,10 @@ class ListingCardModern extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           // Price
-          RichText(
-            text: TextSpan(
-              style: theme.textTheme.bodyMedium,
-              children: [
-                TextSpan(
-                  text: '\$${listing.displayPrice.toStringAsFixed(0)}',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                TextSpan(
-                  text: ' / night',
-                  style: TextStyle(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.normal,
-                  ),
-                ),
-              ],
-            ),
+          PriceDisplay(
+            amount: listing.displayPriceMoney,
+            perUnit: 'night',
+            style: PriceDisplayStyle.normal,
           ),
         ],
       ),

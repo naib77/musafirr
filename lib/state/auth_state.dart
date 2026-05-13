@@ -14,7 +14,7 @@ class AuthStateNotifier extends ChangeNotifier {
   String? get error => _error;
   bool get isHost => _currentUser?.isHost ?? false;
 
-  // Mock users database
+  // Mock users database (keyed by email)
   final Map<String, User> _users = {
     'demo@musafir.com': const User(
       id: 'user_1',
@@ -23,6 +23,7 @@ class AuthStateNotifier extends ChangeNotifier {
       avatarUrl: 'https://ui-avatars.com/api/?name=Demo+User&background=0B7285&color=fff&size=150',
       role: UserRole.tenant,
       phone: '+880 1712345678',
+      registrationMethod: RegistrationMethod.email,
     ),
     'owner@musafir.com': User(
       id: 'user_2',
@@ -36,6 +37,7 @@ class AuthStateNotifier extends ChangeNotifier {
       bio: 'Experienced host with multiple properties in Dhaka.',
       responseRate: 98,
       responseTime: 'within an hour',
+      registrationMethod: RegistrationMethod.email,
     ),
     'admin@musafir.com': const User(
       id: 'user_3',
@@ -44,8 +46,12 @@ class AuthStateNotifier extends ChangeNotifier {
       avatarUrl: 'https://ui-avatars.com/api/?name=Admin+User&background=7048E8&color=fff&size=150',
       role: UserRole.admin,
       phone: '+880 1912345678',
+      registrationMethod: RegistrationMethod.email,
     ),
   };
+
+  // Phone to user ID mapping for phone-based users
+  final Map<String, String> _phoneToUserId = {};
 
   Future<bool> login(String email, String password) async {
     _isLoading = true;
@@ -153,7 +159,9 @@ class AuthStateNotifier extends ChangeNotifier {
       role: UserRole.owner,
     );
 
-    _users[_currentUser!.email.toLowerCase()] = updatedUser;
+    if (_currentUser!.email != null) {
+      _users[_currentUser!.email!.toLowerCase()] = updatedUser;
+    }
     _currentUser = updatedUser;
 
     _isLoading = false;
@@ -163,7 +171,9 @@ class AuthStateNotifier extends ChangeNotifier {
 
   /// Update user profile
   void updateUser(User updatedUser) {
-    _users[updatedUser.email.toLowerCase()] = updatedUser;
+    if (updatedUser.email != null) {
+      _users[updatedUser.email!.toLowerCase()] = updatedUser;
+    }
     if (_currentUser?.id == updatedUser.id) {
       _currentUser = updatedUser;
     }
@@ -189,5 +199,106 @@ class AuthStateNotifier extends ChangeNotifier {
   // Get user by email (for repository use)
   User? getUserByEmail(String email) {
     return _users[email.toLowerCase()];
+  }
+
+  // Get user by phone number
+  User? getUserByPhone(String phone) {
+    final normalized = _normalizePhone(phone);
+    final userId = _phoneToUserId[normalized];
+    if (userId == null) return null;
+    return _users.values.where((u) => u.id == userId).firstOrNull;
+  }
+
+  /// Normalize phone number for storage
+  String _normalizePhone(String phone) {
+    var normalized = phone.replaceAll(RegExp(r'[\s\-\(\)\+]'), '');
+    if (normalized.startsWith('880')) {
+      normalized = '0${normalized.substring(3)}';
+    }
+    return normalized;
+  }
+
+  /// Sign up with phone number (after OTP verification)
+  Future<bool> signupWithPhone({
+    required String phone,
+    required String name,
+    required String nid,
+    String? email,
+  }) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    // Simulate network delay
+    await Future.delayed(const Duration(milliseconds: 800));
+
+    final normalizedPhone = _normalizePhone(phone);
+
+    // Check if phone already exists
+    if (_phoneToUserId.containsKey(normalizedPhone)) {
+      _error = 'An account with this phone number already exists';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+
+    // Check if email already exists (if provided)
+    if (email != null && email.isNotEmpty && _users.containsKey(email.toLowerCase())) {
+      _error = 'An account with this email already exists';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+
+    // Create new user
+    final userId = 'user_${DateTime.now().millisecondsSinceEpoch}';
+    final newUser = User(
+      id: userId,
+      name: name,
+      email: email,
+      phone: '+880 $normalizedPhone',
+      role: UserRole.tenant,
+      createdAt: DateTime.now(),
+      nid: nid,
+      nidVerified: true,
+      phoneVerified: true,
+      registrationMethod: RegistrationMethod.phone,
+    );
+
+    // Store user
+    if (email != null && email.isNotEmpty) {
+      _users[email.toLowerCase()] = newUser;
+    }
+    _phoneToUserId[normalizedPhone] = userId;
+    // Also store in _users with a phone-based key
+    _users['phone:$normalizedPhone'] = newUser;
+
+    _currentUser = newUser;
+    _isLoading = false;
+    notifyListeners();
+    return true;
+  }
+
+  /// Login with phone number (for returning phone-registered users)
+  Future<bool> loginWithPhone(String phone) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    // Simulate network delay
+    await Future.delayed(const Duration(milliseconds: 800));
+
+    final user = getUserByPhone(phone);
+    if (user != null) {
+      _currentUser = user;
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    }
+
+    _error = 'No account found with this phone number';
+    _isLoading = false;
+    notifyListeners();
+    return false;
   }
 }

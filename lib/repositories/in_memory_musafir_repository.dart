@@ -116,7 +116,7 @@ class InMemoryMusafirRepository extends ChangeNotifier
   @override
   User? getUserByEmail(String email) {
     return _users.values
-        .where((u) => u.email.toLowerCase() == email.toLowerCase())
+        .where((u) => u.email?.toLowerCase() == email.toLowerCase())
         .firstOrNull;
   }
 

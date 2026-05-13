@@ -1,3 +1,5 @@
+import '../core/currency/currency.dart';
+import '../core/currency/money.dart';
 import 'facility.dart';
 import 'listing_type.dart';
 
@@ -30,6 +32,8 @@ class Listing {
     this.rating,
     this.reviewCount = 0,
     this.isSuperhost = false,
+    // Currency
+    this.currency = Currency.BDT,
   });
 
   final String id;
@@ -61,8 +65,21 @@ class Listing {
   final int reviewCount;
   final bool isSuperhost;
 
-  // Computed property for display price
+  // Currency for all prices
+  final Currency currency;
+
+  // Money-typed getters for type-safe currency handling
+  Money get hourlyRateMoney => Money(hourlyRate, currency);
+  Money get dailyRateMoney => Money(dailyRate, currency);
+  Money get monthlyRateMoney => Money(monthlyRate, currency);
+  Money? get pricePerNightMoney =>
+      pricePerNight != null ? Money(pricePerNight!, currency) : null;
+
+  // Computed property for display price (double - backward compatible)
   double get displayPrice => pricePerNight ?? dailyRate;
+
+  // Money-typed display price
+  Money get displayPriceMoney => Money(displayPrice, currency);
 
   // Get amenity names from facilities
   List<String> get amenityNames => facilities.map((f) => f.name).toList();
@@ -97,6 +114,7 @@ class Listing {
     double? rating,
     int? reviewCount,
     bool? isSuperhost,
+    Currency? currency,
   }) {
     return Listing(
       id: id ?? this.id,
@@ -125,6 +143,7 @@ class Listing {
       rating: rating ?? this.rating,
       reviewCount: reviewCount ?? this.reviewCount,
       isSuperhost: isSuperhost ?? this.isSuperhost,
+      currency: currency ?? this.currency,
     );
   }
 }

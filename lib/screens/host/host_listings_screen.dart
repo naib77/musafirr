@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../models/listing.dart';
-import '../../repositories/in_memory_musafir_repository.dart';
+import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
+import '../../widgets/price_display.dart';
 import 'create_listing_screen.dart';
 
 class HostListingsScreen extends StatelessWidget {
@@ -12,7 +13,7 @@ class HostListingsScreen extends StatelessWidget {
     required this.authState,
   });
 
-  final InMemoryMusafirRepository repository;
+  final MusafirRepository repository;
   final AuthStateNotifier authState;
 
   @override
@@ -168,7 +169,7 @@ class _ListingCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onToggleAvailability;
-  final InMemoryMusafirRepository repository;
+  final MusafirRepository repository;
 
   @override
   Widget build(BuildContext context) {
@@ -252,7 +253,7 @@ class _ListingCard extends StatelessWidget {
                     _StatChip(
                       icon: Icons.attach_money,
                       label:
-                          '\$${listing.displayPrice.toStringAsFixed(0)}/night',
+                          '${listing.displayPriceMoney.format(showDecimal: false)}/night',
                       theme: theme,
                     ),
                     const SizedBox(width: 8),

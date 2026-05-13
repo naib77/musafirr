@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 import '../../models/booking.dart';
 import '../../models/booking_status.dart';
 import '../../models/listing.dart';
-import '../../repositories/in_memory_musafir_repository.dart';
+import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
+import '../../widgets/price_display.dart';
 
 class HostReservationsScreen extends StatefulWidget {
   const HostReservationsScreen({
@@ -13,7 +14,7 @@ class HostReservationsScreen extends StatefulWidget {
     required this.authState,
   });
 
-  final InMemoryMusafirRepository repository;
+  final MusafirRepository repository;
   final AuthStateNotifier authState;
 
   @override
@@ -301,12 +302,10 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
                     'Total earnings',
                     style: theme.textTheme.titleMedium,
                   ),
-                  Text(
-                    '\$${booking.totalPrice.toStringAsFixed(0)}',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.primary,
-                    ),
+                  PriceDisplay(
+                    amount: booking.totalPriceMoney,
+                    style: PriceDisplayStyle.large,
+                    color: theme.colorScheme.primary,
                   ),
                 ],
               ),
@@ -456,7 +455,7 @@ class _ReservationCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    '\$${booking.totalPrice.toStringAsFixed(0)}',
+                    booking.totalPriceMoney.format(showDecimal: false),
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: theme.colorScheme.primary,

@@ -1,3 +1,5 @@
+import '../core/currency/currency.dart';
+import '../core/currency/money.dart';
 import 'booking_status.dart';
 import 'listing.dart';
 
@@ -21,6 +23,10 @@ class Booking {
     this.listingTitle,
     this.listingImageUrl,
     this.listingCity,
+    // Currency and pricing
+    this.currency = Currency.BDT,
+    this.serviceFee,
+    this.discount,
   });
 
   final String id;
@@ -42,6 +48,30 @@ class Booking {
   final String? listingTitle;
   final String? listingImageUrl;
   final String? listingCity;
+
+  // Currency and pricing
+  final Currency currency;
+  final double? serviceFee;
+  final double? discount;
+
+  // Money-typed getters for type-safe currency handling
+  Money get totalPriceMoney => Money(totalPrice, currency);
+  Money? get serviceFeeMoney =>
+      serviceFee != null ? Money(serviceFee!, currency) : null;
+  Money? get discountMoney =>
+      discount != null ? Money(discount!, currency) : null;
+
+  // Subtotal before fees and discounts
+  Money get subtotalMoney {
+    var subtotal = totalPriceMoney;
+    if (serviceFeeMoney != null) {
+      subtotal = subtotal.subtract(serviceFeeMoney!);
+    }
+    if (discountMoney != null) {
+      subtotal = subtotal.add(discountMoney!);
+    }
+    return subtotal;
+  }
 
   // Computed properties
   DateTime get effectiveCheckIn => checkIn ?? startAt;
@@ -79,6 +109,9 @@ class Booking {
     String? listingTitle,
     String? listingImageUrl,
     String? listingCity,
+    Currency? currency,
+    double? serviceFee,
+    double? discount,
   }) {
     return Booking(
       id: id ?? this.id,
@@ -98,6 +131,9 @@ class Booking {
       listingTitle: listingTitle ?? this.listingTitle,
       listingImageUrl: listingImageUrl ?? this.listingImageUrl,
       listingCity: listingCity ?? this.listingCity,
+      currency: currency ?? this.currency,
+      serviceFee: serviceFee ?? this.serviceFee,
+      discount: discount ?? this.discount,
     );
   }
 }

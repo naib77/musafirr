@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../core/currency/currency.dart';
+import '../../core/currency/money.dart';
 import '../../models/listing.dart';
 import '../../models/booking.dart';
-import '../../repositories/in_memory_musafir_repository.dart';
+import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
 import 'create_listing_screen.dart';
 import 'host_listings_screen.dart';
@@ -16,7 +18,7 @@ class HostDashboardScreen extends StatelessWidget {
     required this.onExitHostMode,
   });
 
-  final InMemoryMusafirRepository repository;
+  final MusafirRepository repository;
   final AuthStateNotifier authState;
   final VoidCallback onExitHostMode;
 
@@ -56,9 +58,9 @@ class HostDashboardScreen extends StatelessWidget {
               .where((b) => b.effectiveCheckIn.isAfter(DateTime.now()))
               .toList();
 
-          final totalEarnings = hostBookings.fold<double>(
-            0,
-            (sum, b) => sum + b.totalPrice,
+          final totalEarnings = hostBookings.fold<Money>(
+            Money.zero(Currency.BDT),
+            (sum, b) => sum.add(b.totalPriceMoney),
           );
 
           return SingleChildScrollView(
@@ -108,7 +110,7 @@ class HostDashboardScreen extends StatelessWidget {
                     Expanded(
                       child: _StatCard(
                         icon: Icons.attach_money,
-                        value: '\$${totalEarnings.toStringAsFixed(0)}',
+                        value: totalEarnings.format(showDecimal: false),
                         label: 'Earnings',
                         color: Colors.green,
                         theme: theme,
@@ -212,7 +214,7 @@ class HostDashboardScreen extends StatelessWidget {
                             '${_formatDate(booking.effectiveCheckIn)} - ${_formatDate(booking.effectiveCheckOut)}',
                           ),
                           trailing: Text(
-                            '\$${booking.totalPrice.toStringAsFixed(0)}',
+                            booking.totalPriceMoney.format(showDecimal: false),
                             style: theme.textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.bold,
                               color: theme.colorScheme.primary,

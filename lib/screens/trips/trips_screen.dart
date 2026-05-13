@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 import '../../data/mock_data.dart';
 import '../../models/booking.dart';
 import '../../models/booking_status.dart';
-import '../../repositories/in_memory_musafir_repository.dart';
+import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
+import '../../widgets/price_display.dart';
 
 class TripsScreen extends StatefulWidget {
   const TripsScreen({
@@ -13,7 +14,7 @@ class TripsScreen extends StatefulWidget {
     required this.authState,
   });
 
-  final InMemoryMusafirRepository repository;
+  final MusafirRepository repository;
   final AuthStateNotifier authState;
 
   @override
@@ -359,7 +360,7 @@ class _BookingDetailsSheet extends StatelessWidget {
   });
 
   final Booking booking;
-  final InMemoryMusafirRepository repository;
+  final MusafirRepository repository;
 
   @override
   Widget build(BuildContext context) {
@@ -429,7 +430,7 @@ class _BookingDetailsSheet extends StatelessWidget {
             _DetailRow(
               icon: Icons.attach_money,
               label: 'Total',
-              value: '\$${booking.totalPrice.toStringAsFixed(0)}',
+              value: booking.totalPriceMoney.format(showDecimal: false),
             ),
             const SizedBox(height: 16),
             _DetailRow(

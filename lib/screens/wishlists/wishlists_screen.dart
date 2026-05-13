@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/listing.dart';
-import '../../repositories/in_memory_musafir_repository.dart';
+import '../../repositories/musafir_repository.dart';
 import '../../state/favorites_state.dart';
 import '../../widgets/listing_card_modern.dart';
 
@@ -12,7 +12,7 @@ class WishlistsScreen extends StatelessWidget {
     required this.favoritesState,
   });
 
-  final InMemoryMusafirRepository repository;
+  final MusafirRepository repository;
   final FavoritesStateNotifier favoritesState;
 
   @override

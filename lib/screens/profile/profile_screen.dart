@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../repositories/in_memory_musafir_repository.dart';
+import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
 import '../host/become_host_screen.dart';
 import '../host/host_dashboard_screen.dart';
@@ -13,7 +13,7 @@ class ProfileScreen extends StatelessWidget {
   });
 
   final AuthStateNotifier authState;
-  final InMemoryMusafirRepository repository;
+  final MusafirRepository repository;
 
   @override
   Widget build(BuildContext context) {
@@ -107,12 +107,13 @@ class ProfileScreen extends StatelessWidget {
                                 ],
                               ),
                               const SizedBox(height: 4),
-                              Text(
-                                user.email,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
+                              if (user.email != null)
+                                Text(
+                                  user.email!,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
                                 ),
-                              ),
                               if (user.phone != null) ...[
                                 const SizedBox(height: 2),
                                 Text(

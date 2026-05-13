@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../../core/currency/money.dart';
 import '../../models/booking.dart';
 import '../../models/listing.dart';
 import '../../models/review.dart';
-import '../../repositories/in_memory_musafir_repository.dart';
+import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
+import '../../widgets/price_breakdown_card.dart';
+import '../../widgets/price_display.dart';
 
 class ListingDetailScreen extends StatefulWidget {
   const ListingDetailScreen({
@@ -17,7 +20,7 @@ class ListingDetailScreen extends StatefulWidget {
   });
 
   final Listing listing;
-  final InMemoryMusafirRepository repository;
+  final MusafirRepository repository;
   final AuthStateNotifier authState;
   final FavoritesStateNotifier favoritesState;
 
@@ -254,25 +257,10 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
               child: Row(
                 children: [
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        RichText(
-                          text: TextSpan(
-                            style: theme.textTheme.titleMedium,
-                            children: [
-                              TextSpan(
-                                text:
-                                    '\$${listing.displayPrice.toStringAsFixed(0)}',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold),
-                              ),
-                              const TextSpan(text: ' / night'),
-                            ],
-                          ),
-                        ),
-                      ],
+                    child: PriceDisplay(
+                      amount: listing.displayPriceMoney,
+                      perUnit: 'night',
+                      style: PriceDisplayStyle.normal,
                     ),
                   ),
                   FilledButton(
@@ -614,7 +602,7 @@ class _BookingSheet extends StatefulWidget {
   });
 
   final Listing listing;
-  final InMemoryMusafirRepository repository;
+  final MusafirRepository repository;
   final AuthStateNotifier authState;
 
   @override
@@ -679,6 +667,14 @@ class _BookingSheetState extends State<_BookingSheet> {
     };
   }
 
+  Money get _rateMoney {
+    return switch (_durationType) {
+      DurationType.hourly => widget.listing.hourlyRateMoney,
+      DurationType.daily => widget.listing.dailyRateMoney,
+      DurationType.monthly => widget.listing.monthlyRateMoney,
+    };
+  }
+
   String get _rateLabel {
     return switch (_durationType) {
       DurationType.hourly => 'hour',
@@ -699,6 +695,10 @@ class _BookingSheetState extends State<_BookingSheet> {
 
   double get _totalPrice {
     return _rate * _duration;
+  }
+
+  Money get _totalPriceMoney {
+    return _rateMoney.multiply(_duration.toDouble());
   }
 
   bool get _isSelectionComplete {
@@ -925,23 +925,14 @@ class _BookingSheetState extends State<_BookingSheet> {
                 color: theme.colorScheme.primaryContainer,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    '\$${_rate.toStringAsFixed(0)}',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                  Text(
-                    ' / $_rateLabel',
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: theme.colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                ],
+              child: Center(
+                child: PriceDisplay(
+                  amount: _rateMoney,
+                  perUnit: _rateLabel,
+                  style: PriceDisplayStyle.large,
+                  color: theme.colorScheme.onPrimaryContainer,
+                  alignment: CrossAxisAlignment.center,
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -1111,18 +1102,11 @@ class _BookingSheetState extends State<_BookingSheet> {
 
             // Price breakdown
             if (_isSelectionComplete && !_hasConflict) ...[
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '\$${_rate.toStringAsFixed(0)} x $_duration ${_rateLabel}${_duration > 1 ? 's' : ''}',
-                    style: theme.textTheme.bodyLarge,
-                  ),
-                  Text(
-                    '\$${_totalPrice.toStringAsFixed(0)}',
-                    style: theme.textTheme.bodyLarge,
-                  ),
-                ],
+              PriceSummaryRow(
+                basePrice: _rateMoney,
+                units: _duration,
+                unitType: _rateLabel,
+                total: _totalPriceMoney,
               ),
               const Divider(height: 24),
               Row(
@@ -1135,7 +1119,7 @@ class _BookingSheetState extends State<_BookingSheet> {
                     ),
                   ),
                   Text(
-                    '\$${_totalPrice.toStringAsFixed(0)}',
+                    _totalPriceMoney.format(),
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),

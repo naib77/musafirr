@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../models/booking.dart';
 import '../models/booking_duration.dart';
 import '../models/listing.dart';
@@ -6,7 +8,11 @@ import '../models/review.dart';
 import '../models/search_filters.dart';
 import '../models/user.dart';
 
-abstract class MusafirRepository {
+/// Abstract repository interface for Musafir data operations.
+///
+/// Extends [Listenable] to support reactive UI updates via [ListenableBuilder].
+/// Implementations should call [notifyListeners] after data mutations.
+abstract class MusafirRepository implements Listenable {
   // Existing getters
   List<Listing> get listings;
   List<Booking> get bookings;

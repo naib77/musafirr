@@ -8,10 +8,12 @@ class LoginScreen extends StatefulWidget {
     super.key,
     required this.authState,
     required this.onSignupTap,
+    required this.onPhoneSignupTap,
   });
 
   final AuthStateNotifier authState;
   final VoidCallback onSignupTap;
+  final VoidCallback onPhoneSignupTap;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -205,6 +207,17 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 24),
 
+                // Phone signup button
+                OutlinedButton.icon(
+                  onPressed: widget.onPhoneSignupTap,
+                  icon: const Text('🇧🇩', style: TextStyle(fontSize: 18)),
+                  label: const Text('Continue with Phone'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
                 // Sign up link
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -215,7 +228,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     TextButton(
                       onPressed: widget.onSignupTap,
-                      child: const Text('Sign up'),
+                      child: const Text('Sign up with Email'),
                     ),
                   ],
                 ),

@@ -1,10 +1,13 @@
 import 'user_role.dart';
 
+/// Registration method for the user account
+enum RegistrationMethod { email, phone }
+
 class User {
   const User({
     required this.id,
     required this.name,
-    required this.email,
+    this.email,
     this.avatarUrl,
     required this.role,
     this.phone,
@@ -14,11 +17,15 @@ class User {
     this.bio,
     this.responseRate,
     this.responseTime,
+    this.nid,
+    this.nidVerified = false,
+    this.phoneVerified = false,
+    this.registrationMethod,
   });
 
   final String id;
   final String name;
-  final String email;
+  final String? email; // Now optional for phone-based registration
   final String? avatarUrl;
   final UserRole role;
   final String? phone;
@@ -30,6 +37,71 @@ class User {
   final String? bio;
   final int? responseRate; // percentage
   final String? responseTime; // e.g., "within an hour"
+
+  // Verification fields
+  final String? nid; // National ID number
+  final bool nidVerified; // NID verification status
+  final bool phoneVerified; // Phone verification status
+  final RegistrationMethod? registrationMethod; // 'email' or 'phone'
+
+  /// Get the photo URL (alias for avatarUrl)
+  String? get photoUrl => avatarUrl;
+
+  factory User.fromJson(Map<String, dynamic> json) {
+    return User(
+      id: json['id'] as String,
+      name: json['name'] as String? ?? json['full_name'] as String? ?? 'Unknown',
+      email: json['email'] as String?,
+      avatarUrl: json['avatar_url'] as String? ?? json['photo_url'] as String?,
+      role: json['role'] != null
+          ? UserRole.values.firstWhere(
+              (r) => r.name == json['role'],
+              orElse: () => UserRole.guest,
+            )
+          : UserRole.guest,
+      phone: json['phone'] as String?,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : null,
+      isHost: json['is_host'] as bool? ?? false,
+      hostSince: json['host_since'] != null
+          ? DateTime.parse(json['host_since'] as String)
+          : null,
+      bio: json['bio'] as String?,
+      responseRate: json['response_rate'] as int?,
+      responseTime: json['response_time'] as String?,
+      nid: json['nid'] as String?,
+      nidVerified: json['nid_verified'] as bool? ?? false,
+      phoneVerified: json['phone_verified'] as bool? ?? false,
+      registrationMethod: json['registration_method'] != null
+          ? RegistrationMethod.values.firstWhere(
+              (m) => m.name == json['registration_method'],
+              orElse: () => RegistrationMethod.email,
+            )
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'email': email,
+      'avatar_url': avatarUrl,
+      'role': role.name,
+      'phone': phone,
+      'created_at': createdAt?.toIso8601String(),
+      'is_host': isHost,
+      'host_since': hostSince?.toIso8601String(),
+      'bio': bio,
+      'response_rate': responseRate,
+      'response_time': responseTime,
+      'nid': nid,
+      'nid_verified': nidVerified,
+      'phone_verified': phoneVerified,
+      'registration_method': registrationMethod?.name,
+    };
+  }
 
   User copyWith({
     String? id,
@@ -44,6 +116,10 @@ class User {
     String? bio,
     int? responseRate,
     String? responseTime,
+    String? nid,
+    bool? nidVerified,
+    bool? phoneVerified,
+    RegistrationMethod? registrationMethod,
   }) {
     return User(
       id: id ?? this.id,
@@ -58,6 +134,10 @@ class User {
       bio: bio ?? this.bio,
       responseRate: responseRate ?? this.responseRate,
       responseTime: responseTime ?? this.responseTime,
+      nid: nid ?? this.nid,
+      nidVerified: nidVerified ?? this.nidVerified,
+      phoneVerified: phoneVerified ?? this.phoneVerified,
+      registrationMethod: registrationMethod ?? this.registrationMethod,
     );
   }
 }
