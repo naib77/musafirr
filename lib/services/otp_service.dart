@@ -121,13 +121,19 @@ class OtpService {
   Future<SmsSendResult> sendOtp(String phoneNumber) async {
     final normalized = normalizePhoneNumber(phoneNumber);
 
+    debugPrint('[OTP Service] sendOtp called for: $normalized');
+    debugPrint('[OTP Service] Current resend timestamps: $_resendTimestamps');
+
     // Check resend cooldown
     if (isResendCooldownActive(normalized)) {
       final remaining = getResendCooldownRemaining(normalized);
+      debugPrint('[OTP Service] Cooldown active! Remaining: $remaining seconds');
       return SmsSendResult.failure(
         'Please wait $remaining seconds before requesting a new code',
       );
     }
+
+    debugPrint('[OTP Service] No cooldown, proceeding to send OTP...');
 
     // Generate OTP
     final otp = _generateOtp();

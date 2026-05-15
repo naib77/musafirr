@@ -9,10 +9,12 @@ class PhoneEntryScreen extends StatefulWidget {
     super.key,
     required this.otpState,
     required this.onEmailSignupTap,
+    this.onEmailLoginTap,
   });
 
   final OtpStateNotifier otpState;
   final VoidCallback onEmailSignupTap;
+  final VoidCallback? onEmailLoginTap;
 
   @override
   State<PhoneEntryScreen> createState() => _PhoneEntryScreenState();
@@ -75,7 +77,7 @@ class _PhoneEntryScreenState extends State<PhoneEntryScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Sign up with your phone number',
+                  'Log in with your phone number',
                   style: theme.textTheme.bodyLarge?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -163,12 +165,23 @@ class _PhoneEntryScreenState extends State<PhoneEntryScreen> {
                 ),
                 const SizedBox(height: 24),
 
+                // Email login button
+                OutlinedButton.icon(
+                  onPressed: widget.onEmailLoginTap,
+                  icon: const Icon(Icons.email_outlined),
+                  label: const Text('Continue with Email'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
                 // Email signup link
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      'Prefer email? ',
+                      "Don't have an account? ",
                       style: theme.textTheme.bodyMedium,
                     ),
                     TextButton(

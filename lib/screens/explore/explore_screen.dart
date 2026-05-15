@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/listing.dart';
 import '../../models/listing_type.dart';
+import '../../models/search_filters.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
@@ -251,17 +252,45 @@ class _ExploreScreenState extends State<ExploreScreen> {
     final filters = widget.searchState.filters;
     final parts = <String>[];
 
-    if (filters.checkIn != null && filters.checkOut != null) {
-      parts.add(
-          '${_formatDate(filters.checkIn!)} - ${_formatDate(filters.checkOut!)}');
+    // Property type
+    if (filters.propertyTypes.isNotEmpty) {
+      if (filters.propertyTypes.length == 1) {
+        parts.add(filters.propertyTypes.first.title);
+      } else {
+        parts.add('${filters.propertyTypes.length} types');
+      }
+    }
+
+    // Date/time
+    if (filters.dateMode == SearchDateMode.dateRange) {
+      if (filters.checkIn != null && filters.checkOut != null) {
+        parts.add(
+            '${_formatDate(filters.checkIn!)} - ${_formatDate(filters.checkOut!)}');
+      } else {
+        parts.add('Any week');
+      }
     } else {
-      parts.add('Any week');
+      if (filters.singleDate != null) {
+        var dateStr = _formatDate(filters.singleDate!);
+        if (filters.startTime != null && filters.endTime != null) {
+          dateStr += ' ${_formatTime(filters.startTime!)} - ${_formatTime(filters.endTime!)}';
+        }
+        parts.add(dateStr);
+      } else {
+        parts.add('Any day');
+      }
     }
 
     parts
         .add('${filters.guestCount} guest${filters.guestCount > 1 ? 's' : ''}');
 
     return parts.join(' · ');
+  }
+
+  String _formatTime(TimeOfDay time) {
+    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+    final period = time.period == DayPeriod.am ? 'AM' : 'PM';
+    return '$hour$period';
   }
 
   String _formatDate(DateTime date) {
@@ -301,19 +330,31 @@ class _SearchSheet extends StatefulWidget {
 class _SearchSheetState extends State<_SearchSheet> {
   late int _guestCount;
   DateTimeRange? _dateRange;
+  List<ListingType> _selectedTypes = [];
+  SearchDateMode _dateMode = SearchDateMode.dateRange;
+  DateTime? _singleDate;
+  TimeOfDay? _startTime;
+  TimeOfDay? _endTime;
 
   @override
   void initState() {
     super.initState();
-    _guestCount = widget.searchState.filters.guestCount;
-    widget.searchController.text = widget.searchState.filters.location ?? '';
-    if (widget.searchState.filters.checkIn != null &&
-        widget.searchState.filters.checkOut != null) {
+    final filters = widget.searchState.filters;
+    _guestCount = filters.guestCount;
+    _selectedTypes = List.from(filters.propertyTypes);
+    _dateMode = filters.dateMode;
+    widget.searchController.text = filters.location ?? '';
+
+    if (filters.checkIn != null && filters.checkOut != null) {
       _dateRange = DateTimeRange(
-        start: widget.searchState.filters.checkIn!,
-        end: widget.searchState.filters.checkOut!,
+        start: filters.checkIn!,
+        end: filters.checkOut!,
       );
     }
+
+    _singleDate = filters.singleDate;
+    _startTime = filters.startTime;
+    _endTime = filters.endTime;
   }
 
   Future<void> _selectDateRange() async {
@@ -328,17 +369,65 @@ class _SearchSheetState extends State<_SearchSheet> {
     }
   }
 
+  Future<void> _selectSingleDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _singleDate ?? DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) {
+      setState(() => _singleDate = picked);
+    }
+  }
+
+  Future<void> _selectStartTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _startTime ?? const TimeOfDay(hour: 9, minute: 0),
+    );
+    if (picked != null) {
+      setState(() => _startTime = picked);
+    }
+  }
+
+  Future<void> _selectEndTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _endTime ?? const TimeOfDay(hour: 17, minute: 0),
+    );
+    if (picked != null) {
+      setState(() => _endTime = picked);
+    }
+  }
+
+  void _togglePropertyType(ListingType type) {
+    setState(() {
+      if (_selectedTypes.contains(type)) {
+        _selectedTypes.remove(type);
+      } else {
+        _selectedTypes.add(type);
+      }
+    });
+  }
+
   void _applySearch() {
     widget.searchState.updateFilters(
       widget.searchState.filters.copyWith(
         location: widget.searchController.text.isEmpty
             ? null
             : widget.searchController.text,
-        checkIn: _dateRange?.start,
-        checkOut: _dateRange?.end,
+        checkIn: _dateMode == SearchDateMode.dateRange ? _dateRange?.start : null,
+        checkOut: _dateMode == SearchDateMode.dateRange ? _dateRange?.end : null,
         guestCount: _guestCount,
+        propertyTypes: _selectedTypes,
+        dateMode: _dateMode,
+        singleDate: _dateMode == SearchDateMode.singleDateWithTime ? _singleDate : null,
+        startTime: _dateMode == SearchDateMode.singleDateWithTime ? _startTime : null,
+        endTime: _dateMode == SearchDateMode.singleDateWithTime ? _endTime : null,
         clearLocation: widget.searchController.text.isEmpty,
-        clearDates: _dateRange == null,
+        clearDates: _dateMode == SearchDateMode.dateRange && _dateRange == null,
+        clearTime: _dateMode == SearchDateMode.dateRange,
       ),
     );
     widget.onSearch();
@@ -384,6 +473,34 @@ class _SearchSheetState extends State<_SearchSheet> {
             ),
             const SizedBox(height: 24),
 
+            // Property Type Filter
+            Text(
+              'Property Type',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilterChip(
+                  label: const Text('All'),
+                  selected: _selectedTypes.isEmpty,
+                  onSelected: (_) {
+                    setState(() => _selectedTypes.clear());
+                  },
+                ),
+                ...ListingType.values.map((type) => FilterChip(
+                  label: Text(type.title),
+                  selected: _selectedTypes.contains(type),
+                  onSelected: (_) => _togglePropertyType(type),
+                )),
+              ],
+            ),
+            const SizedBox(height: 20),
+
             // Location
             TextField(
               controller: widget.searchController,
@@ -396,49 +513,206 @@ class _SearchSheetState extends State<_SearchSheet> {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
 
-            // Dates
-            GestureDetector(
-              onTap: _selectDateRange,
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  border: Border.all(color: theme.colorScheme.outline),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.calendar_today),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'When',
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                          Text(
-                            _dateRange != null
-                                ? '${_formatDate(_dateRange!.start)} - ${_formatDate(_dateRange!.end)}'
-                                : 'Add dates',
-                            style: theme.textTheme.bodyLarge,
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (_dateRange != null)
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => setState(() => _dateRange = null),
-                      ),
-                  ],
-                ),
+            // Date Mode Toggle
+            Text(
+              'When',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
               ),
             ),
+            const SizedBox(height: 12),
+            SegmentedButton<SearchDateMode>(
+              segments: const [
+                ButtonSegment(
+                  value: SearchDateMode.dateRange,
+                  label: Text('Date Range'),
+                  icon: Icon(Icons.date_range),
+                ),
+                ButtonSegment(
+                  value: SearchDateMode.singleDateWithTime,
+                  label: Text('Single Day'),
+                  icon: Icon(Icons.schedule),
+                ),
+              ],
+              selected: {_dateMode},
+              onSelectionChanged: (selected) {
+                setState(() => _dateMode = selected.first);
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // Date Range Selection (shown when dateRange mode)
+            if (_dateMode == SearchDateMode.dateRange) ...[
+              GestureDetector(
+                onTap: _selectDateRange,
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: theme.colorScheme.outline),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.calendar_today),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Check-in - Check-out',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            Text(
+                              _dateRange != null
+                                  ? '${_formatDate(_dateRange!.start)} - ${_formatDate(_dateRange!.end)}'
+                                  : 'Select dates',
+                              style: theme.textTheme.bodyLarge,
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_dateRange != null)
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => setState(() => _dateRange = null),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+
+            // Single Date with Time Selection
+            if (_dateMode == SearchDateMode.singleDateWithTime) ...[
+              // Date picker
+              GestureDetector(
+                onTap: _selectSingleDate,
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: theme.colorScheme.outline),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.calendar_today),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Date',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            Text(
+                              _singleDate != null
+                                  ? _formatDate(_singleDate!)
+                                  : 'Select date',
+                              style: theme.textTheme.bodyLarge,
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_singleDate != null)
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => setState(() => _singleDate = null),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Time range row
+              Row(
+                children: [
+                  // Start time
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _selectStartTime,
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: theme.colorScheme.outline),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Start Time',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                const Icon(Icons.access_time, size: 20),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _startTime != null
+                                      ? _formatTime(_startTime!)
+                                      : 'Select',
+                                  style: theme.textTheme.bodyLarge,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // End time
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _selectEndTime,
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: theme.colorScheme.outline),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'End Time',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                const Icon(Icons.access_time, size: 20),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _endTime != null
+                                      ? _formatTime(_endTime!)
+                                      : 'Select',
+                                  style: theme.textTheme.bodyLarge,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 16),
 
             // Guests
@@ -532,5 +806,12 @@ class _SearchSheetState extends State<_SearchSheet> {
       'Dec'
     ];
     return '${months[date.month - 1]} ${date.day}';
+  }
+
+  String _formatTime(TimeOfDay time) {
+    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+    final minute = time.minute.toString().padLeft(2, '0');
+    final period = time.period == DayPeriod.am ? 'AM' : 'PM';
+    return '$hour:$minute $period';
   }
 }

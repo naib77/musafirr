@@ -36,6 +36,8 @@ class OtpStateNotifier extends ChangeNotifier {
 
   /// Set phone number and send OTP
   Future<bool> sendOtp(String phoneNumber) async {
+    debugPrint('[OTP State] sendOtp called with: $phoneNumber');
+
     _isLoading = true;
     _error = null;
     notifyListeners();
@@ -43,8 +45,10 @@ class OtpStateNotifier extends ChangeNotifier {
     final normalized = _otpService.normalizePhoneNumber(phoneNumber);
     _phoneNumber = normalized;
 
+    debugPrint('[OTP State] Calling OtpService.sendOtp for: $normalized');
     final result = await _otpService.sendOtp(normalized);
 
+    debugPrint('[OTP State] Result: success=${result.success}, error=${result.errorMessage}');
     _isLoading = false;
 
     if (result.success) {

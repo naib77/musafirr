@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../data/mock_data.dart';
 import '../models/booking.dart';
+import '../models/booking_conflict_exception.dart';
 import '../models/booking_duration.dart';
 import '../models/booking_status.dart';
 import '../models/listing.dart';
@@ -314,6 +315,34 @@ class InMemoryMusafirRepository extends ChangeNotifier
       throw Exception('Listing not found');
     }
 
+    // Check for listing conflicts (same seat/room can't be double-booked)
+    final listingConflicts = getConflictingBookings(
+      listingId: listingId,
+      checkIn: checkIn,
+      checkOut: checkOut,
+    );
+    if (listingConflicts.isNotEmpty) {
+      throw BookingConflictException(
+        'This time slot is already booked by another user',
+        conflictType: ConflictType.listing,
+        conflictingBookings: listingConflicts,
+      );
+    }
+
+    // Check for user conflicts (same user can't book multiple places at same time)
+    final userConflicts = getUserConflictingBookings(
+      userId: userId,
+      checkIn: checkIn,
+      checkOut: checkOut,
+    );
+    if (userConflicts.isNotEmpty) {
+      throw BookingConflictException(
+        'You already have a booking during this time period',
+        conflictType: ConflictType.user,
+        conflictingBookings: userConflicts,
+      );
+    }
+
     final booking = Booking(
       id: 'booking_${_bookings.length + 1}',
       listingId: listingId,
@@ -398,6 +427,46 @@ class InMemoryMusafirRepository extends ChangeNotifier
 
       return hasOverlap;
     }).toList();
+  }
+
+  @override
+  List<Booking> getUserConflictingBookings({
+    required String userId,
+    required DateTime checkIn,
+    required DateTime checkOut,
+    String? excludeListingId,
+  }) {
+    // Get all active bookings for this user
+    final userBookings = _bookings.where((b) =>
+      b.userId == userId &&
+      b.status.isActive &&
+      (excludeListingId == null || b.listingId != excludeListingId)
+    ).toList();
+
+    return userBookings.where((booking) {
+      final bookingStart = booking.effectiveCheckIn;
+      final bookingEnd = booking.effectiveCheckOut;
+
+      // Check for overlap
+      final hasOverlap = checkIn.isBefore(bookingEnd) &&
+                         bookingStart.isBefore(checkOut);
+
+      return hasOverlap;
+    }).toList();
+  }
+
+  @override
+  bool canUserBookDuring({
+    required String userId,
+    required DateTime checkIn,
+    required DateTime checkOut,
+  }) {
+    final conflicts = getUserConflictingBookings(
+      userId: userId,
+      checkIn: checkIn,
+      checkOut: checkOut,
+    );
+    return conflicts.isEmpty;
   }
 
   void _seed() {

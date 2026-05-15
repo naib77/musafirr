@@ -12,6 +12,7 @@ class AppTextField extends StatelessWidget {
     this.obscureText = false,
     this.textInputAction,
     this.onFieldSubmitted,
+    this.onChanged,
     this.suffix,
     this.prefix,
     this.textCapitalization = TextCapitalization.none,
@@ -33,6 +34,7 @@ class AppTextField extends StatelessWidget {
   final bool obscureText;
   final TextInputAction? textInputAction;
   final void Function(String)? onFieldSubmitted;
+  final void Function(String)? onChanged;
   final Widget? suffix;
   final Widget? prefix;
   final TextCapitalization textCapitalization;
@@ -52,6 +54,7 @@ class AppTextField extends StatelessWidget {
       obscureText: obscureText,
       textInputAction: textInputAction,
       onFieldSubmitted: onFieldSubmitted,
+      onChanged: onChanged,
       textCapitalization: textCapitalization,
       maxLines: obscureText ? 1 : maxLines,
       minLines: minLines,

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 
 import '../models/listing.dart';
 import '../models/listing_type.dart';
@@ -48,7 +49,35 @@ class SearchStateNotifier extends ChangeNotifier {
     _filters = _filters.copyWith(
       checkIn: checkIn,
       checkOut: checkOut,
+      dateMode: SearchDateMode.dateRange,
     );
+    _applyFilters();
+  }
+
+  // Update single date with time range
+  void updateSingleDateWithTime({
+    DateTime? date,
+    TimeOfDay? startTime,
+    TimeOfDay? endTime,
+  }) {
+    _filters = _filters.copyWith(
+      singleDate: date,
+      startTime: startTime,
+      endTime: endTime,
+      dateMode: SearchDateMode.singleDateWithTime,
+    );
+    _applyFilters();
+  }
+
+  // Update date mode
+  void updateDateMode(SearchDateMode mode) {
+    _filters = _filters.copyWith(dateMode: mode);
+    _applyFilters();
+  }
+
+  // Clear time selection
+  void clearTime() {
+    _filters = _filters.copyWith(clearTime: true);
     _applyFilters();
   }
 

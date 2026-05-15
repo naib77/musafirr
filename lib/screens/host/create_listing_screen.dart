@@ -505,7 +505,7 @@ class _BasicsStep extends StatelessWidget {
             controller: titleController,
             label: 'Listing title',
             hint: 'e.g., Cozy room in the heart of Gulshan',
-            onFieldSubmitted: (_) => onChanged(),
+            onChanged: (_) => onChanged(),
           ),
           const SizedBox(height: 16),
           AppTextField(
@@ -513,7 +513,7 @@ class _BasicsStep extends StatelessWidget {
             label: 'Description (optional)',
             hint: 'Describe the unique features of your space...',
             maxLines: 5,
-            onFieldSubmitted: (_) => onChanged(),
+            onChanged: (_) => onChanged(),
           ),
         ],
       ),
@@ -567,14 +567,14 @@ class _LocationStep extends StatelessWidget {
             controller: addressController,
             label: 'Street address',
             hint: 'e.g., Road 27, House 5',
-            onFieldSubmitted: (_) => onChanged(),
+            onChanged: (_) => onChanged(),
           ),
           const SizedBox(height: 16),
           AppTextField(
             controller: cityController,
             label: 'City / Area',
             hint: 'e.g., Gulshan, Dhaka',
-            onFieldSubmitted: (_) => onChanged(),
+            onChanged: (_) => onChanged(),
           ),
           const SizedBox(height: 16),
           OutlinedButton.icon(
@@ -923,7 +923,7 @@ class _PriceField extends StatelessWidget {
             padding: const EdgeInsets.only(left: 12),
             child: Text(Currency.BDT.symbol),
           ),
-          onFieldSubmitted: (_) => onChanged(),
+          onChanged: (_) => onChanged(),
         ),
         const SizedBox(height: 4),
         Text(

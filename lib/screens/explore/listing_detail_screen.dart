@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/currency/money.dart';
 import '../../models/booking.dart';
+import '../../models/booking_conflict_exception.dart';
 import '../../models/listing.dart';
 import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
@@ -9,6 +12,7 @@ import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
 import '../../widgets/price_breakdown_card.dart';
 import '../../widgets/price_display.dart';
+import 'navigation_screen.dart';
 
 class ListingDetailScreen extends StatefulWidget {
   const ListingDetailScreen({
@@ -197,6 +201,10 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                     _HostInfoCard(listing: listing),
                     const Divider(height: 32),
 
+                    // Location & Navigation
+                    _LocationSection(listing: listing),
+                    const Divider(height: 32),
+
                     // Property details
                     _PropertyDetails(listing: listing),
                     const Divider(height: 32),
@@ -352,6 +360,156 @@ class _HostInfoCard extends StatelessWidget {
                 ),
             ],
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LocationSection extends StatefulWidget {
+  const _LocationSection({required this.listing});
+
+  final Listing listing;
+
+  @override
+  State<_LocationSection> createState() => _LocationSectionState();
+}
+
+class _LocationSectionState extends State<_LocationSection> {
+  GoogleMapController? _mapController;
+
+  LatLng get _location => LatLng(widget.listing.latitude, widget.listing.longitude);
+
+  Set<Marker> get _markers => {
+    Marker(
+      markerId: MarkerId(widget.listing.id),
+      position: _location,
+      infoWindow: InfoWindow(
+        title: widget.listing.title,
+        snippet: widget.listing.address,
+      ),
+    ),
+  };
+
+  void _openDirections() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => NavigationScreen(listing: widget.listing),
+      ),
+    );
+  }
+
+  Future<void> _openInMaps() async {
+    final lat = widget.listing.latitude;
+    final lng = widget.listing.longitude;
+
+    final googleMapsUrl = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+    );
+
+    try {
+      await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open maps: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _mapController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Location',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // Address
+        Row(
+          children: [
+            Icon(
+              Icons.location_on,
+              size: 20,
+              color: theme.colorScheme.primary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                widget.listing.address,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // Google Map
+        Container(
+          height: 200,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: _location,
+              zoom: 15,
+            ),
+            markers: _markers,
+            onMapCreated: (controller) {
+              _mapController = controller;
+            },
+            zoomControlsEnabled: false,
+            mapToolbarEnabled: false,
+            myLocationButtonEnabled: false,
+            scrollGesturesEnabled: true,
+            zoomGesturesEnabled: true,
+            rotateGesturesEnabled: false,
+            tiltGesturesEnabled: false,
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // Action buttons
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _openInMaps,
+                icon: const Icon(Icons.map_outlined),
+                label: const Text('View on Map'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _openDirections,
+                icon: const Icon(Icons.directions),
+                label: const Text('Get Directions'),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -629,9 +787,12 @@ class _BookingSheetState extends State<_BookingSheet> {
 
   // Conflict tracking
   List<Booking> _conflictingBookings = [];
+  List<Booking> _userConflictingBookings = [];
   bool _isCheckingAvailability = false;
 
-  bool get _hasConflict => _conflictingBookings.isNotEmpty;
+  bool get _hasListingConflict => _conflictingBookings.isNotEmpty;
+  bool get _hasUserConflict => _userConflictingBookings.isNotEmpty;
+  bool get _hasConflict => _hasListingConflict || _hasUserConflict;
 
   @override
   void initState() {
@@ -641,20 +802,36 @@ class _BookingSheetState extends State<_BookingSheet> {
 
   void _checkAvailability() {
     if (!_isSelectionComplete) {
-      setState(() => _conflictingBookings = []);
+      setState(() {
+        _conflictingBookings = [];
+        _userConflictingBookings = [];
+      });
       return;
     }
 
     setState(() => _isCheckingAvailability = true);
 
-    final conflicts = widget.repository.getConflictingBookings(
+    // Check listing conflicts (same room/seat already booked)
+    final listingConflicts = widget.repository.getConflictingBookings(
       listingId: widget.listing.id,
       checkIn: _checkIn,
       checkOut: _checkOut,
     );
 
+    // Check user conflicts (user already has a booking during this time)
+    List<Booking> userConflicts = [];
+    final user = widget.authState.currentUser;
+    if (user != null) {
+      userConflicts = widget.repository.getUserConflictingBookings(
+        userId: user.id,
+        checkIn: _checkIn,
+        checkOut: _checkOut,
+      );
+    }
+
     setState(() {
-      _conflictingBookings = conflicts;
+      _conflictingBookings = listingConflicts;
+      _userConflictingBookings = userConflicts;
       _isCheckingAvailability = false;
     });
   }
@@ -836,6 +1013,26 @@ class _BookingSheetState extends State<_BookingSheet> {
           ),
         );
       }
+    } on BookingConflictException catch (e) {
+      if (mounted) {
+        // Refresh conflict check to show updated conflicts
+        _checkAvailability();
+
+        String message;
+        if (e.conflictType == ConflictType.user) {
+          message = 'You already have a booking during this time. You cannot book multiple places at the same time.';
+        } else {
+          message = 'This time slot was just booked by someone else. Please select different dates.';
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -998,8 +1195,81 @@ class _BookingSheetState extends State<_BookingSheet> {
             ),
             const SizedBox(height: 16),
 
-            // Conflict warning
-            if (_hasConflict) ...[
+            // User conflict warning (you already have a booking)
+            if (_hasUserConflict) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.person_off,
+                      color: Colors.orange.shade700,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'You have another booking',
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: Colors.orange.shade700,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'You cannot book multiple places at the same time',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: Colors.orange.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              // Show user's conflicting bookings
+              ..._userConflictingBookings.map((booking) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.event_busy,
+                        size: 16,
+                        color: Colors.orange.shade600,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${booking.listingTitle ?? 'Your booking'}: ${_formatDateTime(booking.effectiveCheckIn)} - ${_formatDateTime(booking.effectiveCheckOut)}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: Colors.orange.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )),
+              const SizedBox(height: 8),
+            ],
+
+            // Listing conflict warning (this place is already booked)
+            if (_hasListingConflict) ...[
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(

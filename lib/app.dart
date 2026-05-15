@@ -120,7 +120,7 @@ class AuthNavigator extends StatefulWidget {
 }
 
 class _AuthNavigatorState extends State<AuthNavigator> {
-  AuthScreen _currentScreen = AuthScreen.login;
+  AuthScreen _currentScreen = AuthScreen.phoneEntry;
   final OtpStateNotifier _otpState = OtpStateNotifier();
 
   @override
@@ -183,6 +183,7 @@ class _AuthNavigatorState extends State<AuthNavigator> {
         return PhoneEntryScreen(
           otpState: _otpState,
           onEmailSignupTap: () => _navigateTo(AuthScreen.emailSignup),
+          onEmailLoginTap: () => _navigateTo(AuthScreen.login),
         );
 
       case AuthScreen.otpVerification:

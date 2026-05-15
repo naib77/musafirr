@@ -85,4 +85,19 @@ abstract class MusafirRepository implements Listenable {
     required DateTime checkIn,
     required DateTime checkOut,
   });
+
+  /// Check if user has any active booking during the given time period
+  List<Booking> getUserConflictingBookings({
+    required String userId,
+    required DateTime checkIn,
+    required DateTime checkOut,
+    String? excludeListingId,
+  });
+
+  /// Check if user can book during the given time period
+  bool canUserBookDuring({
+    required String userId,
+    required DateTime checkIn,
+    required DateTime checkOut,
+  });
 }
