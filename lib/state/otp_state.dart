@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../config/supabase_config.dart';
+import '../services/auth/auth_service.dart';
+import '../services/auth/auth_service_factory.dart';
 import '../services/otp_service.dart';
 
 /// Steps in the OTP flow
@@ -22,8 +25,14 @@ class OtpStateNotifier extends ChangeNotifier {
   int _expiryCountdown = 0;
   Timer? _resendTimer;
   Timer? _expiryTimer;
+  bool _isExistingUser = false;
 
   final OtpService _otpService = OtpService.instance;
+  late final AuthService _authService;
+
+  OtpStateNotifier() {
+    _authService = AuthServiceFactory.instance;
+  }
 
   // Getters
   OtpFlowStep get currentStep => _currentStep;
@@ -33,10 +42,15 @@ class OtpStateNotifier extends ChangeNotifier {
   int get resendCountdown => _resendCountdown;
   int get expiryCountdown => _expiryCountdown;
   bool get canResend => _resendCountdown == 0;
+  bool get isExistingUser => _isExistingUser;
+
+  /// Check if using Supabase for OTP
+  bool get _useSupabase => SupabaseConfig.isConfigured;
 
   /// Set phone number and send OTP
   Future<bool> sendOtp(String phoneNumber) async {
     debugPrint('[OTP State] sendOtp called with: $phoneNumber');
+    debugPrint('[OTP State] Using Supabase: $_useSupabase');
 
     _isLoading = true;
     _error = null;
@@ -45,13 +59,27 @@ class OtpStateNotifier extends ChangeNotifier {
     final normalized = _otpService.normalizePhoneNumber(phoneNumber);
     _phoneNumber = normalized;
 
-    debugPrint('[OTP State] Calling OtpService.sendOtp for: $normalized');
-    final result = await _otpService.sendOtp(normalized);
+    bool success;
+    String? errorMessage;
 
-    debugPrint('[OTP State] Result: success=${result.success}, error=${result.errorMessage}');
+    if (_useSupabase) {
+      // Use Supabase auth OTP
+      debugPrint('[OTP State] Calling AuthService.sendOtp for: $normalized');
+      final result = await _authService.sendOtp(normalized);
+      success = result.success;
+      errorMessage = result.error;
+    } else {
+      // Use local OTP service (mock mode)
+      debugPrint('[OTP State] Calling OtpService.sendOtp for: $normalized');
+      final result = await _otpService.sendOtp(normalized);
+      success = result.success;
+      errorMessage = result.errorMessage;
+    }
+
+    debugPrint('[OTP State] Result: success=$success, error=$errorMessage');
     _isLoading = false;
 
-    if (result.success) {
+    if (success) {
       _currentStep = OtpFlowStep.otpVerification;
       _startResendCountdown();
       _startExpiryCountdown();
@@ -59,7 +87,7 @@ class OtpStateNotifier extends ChangeNotifier {
       return true;
     }
 
-    _error = result.errorMessage ?? 'Failed to send OTP';
+    _error = errorMessage ?? 'Failed to send OTP';
     notifyListeners();
     return false;
   }
@@ -76,23 +104,57 @@ class OtpStateNotifier extends ChangeNotifier {
     _error = null;
     notifyListeners();
 
-    // Simulate slight delay for UX
-    await Future.delayed(const Duration(milliseconds: 300));
+    bool success;
+    String? errorMessage;
+    int? attemptsRemaining;
 
-    final result = _otpService.verifyOtp(_phoneNumber!, otp);
+    if (_useSupabase) {
+      // Use Supabase auth OTP verification
+      debugPrint('[OTP State] Calling AuthService.verifyOtp');
+      final result = await _authService.verifyOtp(_phoneNumber!, otp);
+      success = result.success;
+      errorMessage = result.error;
+      attemptsRemaining = result.attemptsRemaining;
+
+      if (success) {
+        // Use the isExistingUser flag from verifyOtp result
+        _isExistingUser = result.isExistingUser;
+        debugPrint('[OTP State] isExistingUser: $_isExistingUser');
+      }
+    } else {
+      // Use local OTP service (mock mode)
+      // Simulate slight delay for UX
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      final result = _otpService.verifyOtp(_phoneNumber!, otp);
+      success = result.success;
+      errorMessage = result.errorMessage;
+      attemptsRemaining = result.attemptsRemaining;
+
+      if (success) {
+        // Check if this is an existing user
+        final existingUser = _authService.getUserByPhone(_phoneNumber!);
+        _isExistingUser = existingUser != null;
+      }
+    }
 
     _isLoading = false;
 
-    if (result.success) {
+    if (success) {
       _stopTimers();
-      _currentStep = OtpFlowStep.profileCompletion;
+      // If existing user, skip profile completion
+      if (_isExistingUser) {
+        _currentStep = OtpFlowStep.complete;
+      } else {
+        _currentStep = OtpFlowStep.profileCompletion;
+      }
       notifyListeners();
       return true;
     }
 
-    _error = result.errorMessage;
-    if (result.attemptsRemaining != null && result.attemptsRemaining! > 0) {
-      _error = '${result.errorMessage}. ${result.attemptsRemaining} attempts remaining.';
+    _error = errorMessage;
+    if (attemptsRemaining != null && attemptsRemaining > 0) {
+      _error = '${errorMessage ?? 'Invalid OTP'}. $attemptsRemaining attempts remaining.';
     }
     notifyListeners();
     return false;
@@ -116,18 +178,29 @@ class OtpStateNotifier extends ChangeNotifier {
     _error = null;
     notifyListeners();
 
-    final result = await _otpService.sendOtp(_phoneNumber!);
+    bool success;
+    String? errorMessage;
+
+    if (_useSupabase) {
+      final result = await _authService.sendOtp(_phoneNumber!);
+      success = result.success;
+      errorMessage = result.error;
+    } else {
+      final result = await _otpService.sendOtp(_phoneNumber!);
+      success = result.success;
+      errorMessage = result.errorMessage;
+    }
 
     _isLoading = false;
 
-    if (result.success) {
+    if (success) {
       _startResendCountdown();
       _startExpiryCountdown();
       notifyListeners();
       return true;
     }
 
-    _error = result.errorMessage ?? 'Failed to resend OTP';
+    _error = errorMessage ?? 'Failed to resend OTP';
     notifyListeners();
     return false;
   }
@@ -143,6 +216,7 @@ class OtpStateNotifier extends ChangeNotifier {
     _stopTimers();
     _currentStep = OtpFlowStep.phoneEntry;
     _error = null;
+    _isExistingUser = false;
     notifyListeners();
   }
 
@@ -155,6 +229,7 @@ class OtpStateNotifier extends ChangeNotifier {
     _error = null;
     _resendCountdown = 0;
     _expiryCountdown = 0;
+    _isExistingUser = false;
     notifyListeners();
   }
 

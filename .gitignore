@@ -9,6 +9,7 @@ build/
 .idea/
 .vscode/
 *.iml
+.agents
 
 # macOS / iOS
 DerivedData/

@@ -9,8 +9,10 @@ import 'screens/auth/phone_entry_screen.dart';
 import 'screens/auth/profile_completion_screen.dart';
 import 'screens/auth/signup_screen.dart';
 import 'screens/main_shell.dart';
+import 'services/notifications/notification_service_factory.dart';
 import 'state/auth_state.dart';
 import 'state/favorites_state.dart';
+import 'state/notification_state.dart';
 import 'state/otp_state.dart';
 import 'state/search_state.dart';
 
@@ -29,6 +31,7 @@ class _MusafirAppState extends State<MusafirApp> {
   final AuthStateNotifier authState = AuthStateNotifier();
   final FavoritesStateNotifier favoritesState = FavoritesStateNotifier();
   final SearchStateNotifier searchState = SearchStateNotifier();
+  late final NotificationStateNotifier notificationState;
 
   @override
   void initState() {
@@ -44,11 +47,29 @@ class _MusafirAppState extends State<MusafirApp> {
       _inMemoryRepo = inMemory;
     }
 
+    // Initialize notification state with appropriate service
+    notificationState = NotificationStateNotifier(
+      service: NotificationServiceFactory.instance,
+    );
+
     // Initialize search state with listings
     _initializeSearchState();
 
     // Listen for repository changes (only for in-memory repo)
     _inMemoryRepo?.addListener(_onRepositoryChange);
+
+    // Listen for auth changes to initialize/clear notifications
+    authState.addListener(_onAuthStateChanged);
+  }
+
+  void _onAuthStateChanged() {
+    if (authState.isLoggedIn && authState.currentUser != null) {
+      // User logged in - initialize notifications
+      notificationState.initialize(authState.currentUser!.id);
+    } else {
+      // User logged out - clear notifications
+      notificationState.clear();
+    }
   }
 
   Future<void> _initializeSearchState() async {
@@ -61,11 +82,13 @@ class _MusafirAppState extends State<MusafirApp> {
 
   @override
   void dispose() {
+    authState.removeListener(_onAuthStateChanged);
     _inMemoryRepo?.removeListener(_onRepositoryChange);
     _inMemoryRepo?.dispose();
     authState.dispose();
     favoritesState.dispose();
     searchState.dispose();
+    notificationState.dispose();
     super.dispose();
   }
 
@@ -91,6 +114,7 @@ class _MusafirAppState extends State<MusafirApp> {
               authState: authState,
               favoritesState: favoritesState,
               searchState: searchState,
+              notificationState: notificationState,
             );
           }
           return AuthNavigator(authState: authState);

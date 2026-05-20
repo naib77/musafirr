@@ -260,13 +260,12 @@ DECLARE
     v_host_id UUID;
     v_guest_id UUID;
     v_listing_title TEXT;
-    v_notification_type notification_type;
 BEGIN
-    -- Get listing and host info
-    SELECT l.host_id, l.title INTO v_host_id, v_listing_title
+    -- Get listing owner (host) and title
+    SELECT l.owner_id, l.title INTO v_host_id, v_listing_title
     FROM listings l WHERE l.id = NEW.listing_id;
 
-    v_guest_id := NEW.user_id;
+    v_guest_id := NEW.tenant_id;
 
     -- Determine notification type based on status change
     IF TG_OP = 'INSERT' THEN
@@ -276,20 +275,24 @@ BEGIN
             v_host_id,
             'booking_request',
             'New Booking Request',
-            format('%s wants to book "%s"', NEW.guest_name, v_listing_title),
+            format('%s wants to book "%s"', COALESCE(NEW.tenant_name, 'A guest'), v_listing_title),
             'high',
             jsonb_build_object(
                 'booking_id', NEW.id,
                 'listing_id', NEW.listing_id,
-                'guest_name', NEW.guest_name
+                'tenant_id', NEW.tenant_id,
+                'tenant_name', NEW.tenant_name,
+                'starts_at', NEW.starts_at,
+                'ends_at', NEW.ends_at,
+                'total_price', NEW.total_price
             ),
             format('/host/reservations/%s', NEW.id),
             format('booking_%s', NEW.id)
         );
     ELSIF TG_OP = 'UPDATE' THEN
         -- Status changed
-        IF OLD.status != NEW.status THEN
-            CASE NEW.status
+        IF OLD.booking_status IS DISTINCT FROM NEW.booking_status THEN
+            CASE NEW.booking_status
                 WHEN 'confirmed' THEN
                     -- Notify guest of confirmation
                     INSERT INTO notifications (user_id, type, title, body, priority, data, action_url, group_key)
@@ -299,7 +302,12 @@ BEGIN
                         'Booking Confirmed!',
                         format('Your booking at "%s" has been confirmed', v_listing_title),
                         'high',
-                        jsonb_build_object('booking_id', NEW.id, 'listing_id', NEW.listing_id),
+                        jsonb_build_object(
+                            'booking_id', NEW.id,
+                            'listing_id', NEW.listing_id,
+                            'starts_at', NEW.starts_at,
+                            'ends_at', NEW.ends_at
+                        ),
                         format('/trips/%s', NEW.id),
                         format('booking_%s', NEW.id)
                     );
@@ -327,6 +335,19 @@ BEGIN
                         format('/host/reservations/%s', NEW.id),
                         format('booking_%s', NEW.id)
                     );
+                WHEN 'completed' THEN
+                    -- Notify guest to leave a review
+                    INSERT INTO notifications (user_id, type, title, body, priority, data, action_url, group_key)
+                    VALUES (
+                        v_guest_id,
+                        'review_reminder',
+                        'How was your stay?',
+                        format('Share your experience at "%s"', v_listing_title),
+                        'normal',
+                        jsonb_build_object('booking_id', NEW.id, 'listing_id', NEW.listing_id),
+                        format('/review/%s', NEW.id),
+                        format('booking_%s', NEW.id)
+                    );
                 ELSE
                     -- No notification for other status changes
                     NULL;
@@ -338,12 +359,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Note: This trigger requires a bookings table with appropriate columns
--- Uncomment when bookings table exists:
--- CREATE TRIGGER booking_notification_trigger
---     AFTER INSERT OR UPDATE ON bookings
---     FOR EACH ROW
---     EXECUTE FUNCTION notify_on_booking_change();
+-- Trigger for booking notifications
+CREATE TRIGGER booking_notification_trigger
+    AFTER INSERT OR UPDATE ON bookings
+    FOR EACH ROW
+    EXECUTE FUNCTION notify_on_booking_change();
 
 -- =============================================================
 -- SCHEDULED NOTIFICATION JOBS (requires pg_cron extension)

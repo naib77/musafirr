@@ -8,13 +8,16 @@
 class SupabaseConfig {
   /// Your Supabase project URL
   /// Example: https://xxxxxxxxxxxxx.supabase.co
-  static const String url = 'YOUR_SUPABASE_URL';
+  static const String url = 'https://bojkmonskqlhuakxhzcb.supabase.co';
 
   /// Your Supabase anonymous (public) key
   /// This is safe to use in client-side code
-  static const String anonKey = 'YOUR_SUPABASE_ANON_KEY';
+  static const String anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJvamttb25za3FsaHVha3hoemNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMjI1ODUsImV4cCI6MjA5NDc5ODU4NX0.CPPAG0gh7vj5QSRMAVbcEP9FsPMjouFVIxfVJE-La7o';
 
   /// Check if Supabase is configured with real credentials
   static bool get isConfigured =>
-      url != 'YOUR_SUPABASE_URL' && anonKey != 'YOUR_SUPABASE_ANON_KEY';
+      url.isNotEmpty &&
+      url != 'YOUR_SUPABASE_URL' &&
+      anonKey.isNotEmpty &&
+      anonKey != 'YOUR_SUPABASE_ANON_KEY';
 }
