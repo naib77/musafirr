@@ -36,6 +36,7 @@ class _MusafirMapState extends State<MusafirMap> {
   final _locationService = LocationService();
   bool _isLoadingLocation = false;
   LatLng? _selectedLocation;
+  bool _mapCreated = false;
 
   Set<Marker> get _markers {
     final markers = <Marker>{};
@@ -123,6 +124,15 @@ class _MusafirMapState extends State<MusafirMap> {
   }
 
   @override
+  void dispose() {
+    // Only dispose controller if map was fully created (fixes web bug)
+    if (_mapCreated && _controller != null) {
+      _controller!.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
@@ -135,7 +145,10 @@ class _MusafirMapState extends State<MusafirMap> {
                 target: LatLng(widget.centerLat, widget.centerLng),
                 zoom: 14,
               ),
-              onMapCreated: (controller) => _controller = controller,
+              onMapCreated: (controller) {
+                _controller = controller;
+                _mapCreated = true;
+              },
               onTap: _onMapTap,
               onCameraMove: _onCameraMove,
               markers: _markers,

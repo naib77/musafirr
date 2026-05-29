@@ -240,7 +240,7 @@ class SupabaseAuthService implements AuthService {
     debugPrint('[SupabaseAuthService] verifyOtp: $phoneNumber');
 
     // Verify OTP using existing OtpService
-    final result = _otpService.verifyOtp(phoneNumber, otp);
+    final result = await _otpService.verifyOtp(phoneNumber, otp);
 
     if (!result.success) {
       return OtpResult.failure(

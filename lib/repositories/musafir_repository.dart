@@ -50,10 +50,17 @@ abstract class MusafirRepository implements Listenable {
   void updateListing(Listing listing);
   void deleteListing(String listingId);
 
-  // Review methods
+  // Review methods (legacy - for simple listing reviews)
   List<Review> getReviewsForListing(String listingId);
   void addReview(Review review);
   double getAverageRating(String listingId);
+
+  // Bidirectional review methods
+  List<Review> getReviewsForBooking(String bookingId);
+  List<Review> getRevealedReviewsForListing(String listingId);
+  List<Review> getRevealedReviewsForGuest(String guestId);
+  void saveReview(Review review);
+  void updateReview(Review review);
 
   // Booking methods
   List<Booking> getBookingsForUser(String userId);
@@ -71,6 +78,12 @@ abstract class MusafirRepository implements Listenable {
     required String unitLabel,
   });
   void cancelBooking(String bookingId);
+
+  // Booking lifecycle methods
+  void updateBooking(Booking booking);
+  List<Booking> getPendingBookingsForHost(String hostId);
+  List<Booking> getBookingsForHost(String hostId);
+  List<Booking> getStaleBookings({Duration? maxAge});
 
   // Availability & conflict checking methods
   List<Booking> getBookingsForListing(String listingId);

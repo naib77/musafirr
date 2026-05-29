@@ -26,6 +26,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
   LatLng? _currentLocation;
   DirectionsResult? _directions;
   bool _isLoading = true;
+  bool _mapCreated = false;
   String? _error;
   String _travelMode = 'driving';
 
@@ -206,7 +207,10 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   @override
   void dispose() {
-    _mapController?.dispose();
+    // Only dispose controller if map was fully created (fixes web bug)
+    if (_mapCreated && _mapController != null) {
+      _mapController!.dispose();
+    }
     super.dispose();
   }
 
@@ -231,6 +235,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
             polylines: _polylines,
             onMapCreated: (controller) {
               _mapController = controller;
+              _mapCreated = true;
               if (_directions != null) {
                 controller.animateCamera(
                   CameraUpdate.newLatLngBounds(_directions!.bounds, 80),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'config/supabase_config.dart';
 import 'repositories/in_memory_musafir_repository.dart';
 import 'repositories/musafir_repository.dart';
 import 'repositories/supabase_musafir_repository.dart';
@@ -9,6 +10,7 @@ import 'screens/auth/phone_entry_screen.dart';
 import 'screens/auth/profile_completion_screen.dart';
 import 'screens/auth/signup_screen.dart';
 import 'screens/main_shell.dart';
+import 'services/notifications/fcm_token_service.dart';
 import 'services/notifications/notification_service_factory.dart';
 import 'state/auth_state.dart';
 import 'state/favorites_state.dart';
@@ -66,9 +68,18 @@ class _MusafirAppState extends State<MusafirApp> {
     if (authState.isLoggedIn && authState.currentUser != null) {
       // User logged in - initialize notifications
       notificationState.initialize(authState.currentUser!.id);
+
+      // Save FCM token to Supabase for push notifications
+      if (SupabaseConfig.isConfigured) {
+        FcmTokenService.instance.initializeForUser();
+      }
     } else {
-      // User logged out - clear notifications
+      // User logged out - clear notifications and deactivate FCM token
       notificationState.clear();
+
+      if (SupabaseConfig.isConfigured) {
+        FcmTokenService.instance.cleanupOnLogout();
+      }
     }
   }
 

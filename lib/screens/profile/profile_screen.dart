@@ -2,18 +2,32 @@ import 'package:flutter/material.dart';
 
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
+import '../../state/notification_state.dart';
+import '../../widgets/avatar_upload.dart';
 import '../host/become_host_screen.dart';
 import '../host/host_dashboard_screen.dart';
+import '../notifications/notification_settings_screen.dart';
+import '../verification/nid_verification_screen.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
     super.key,
     required this.authState,
     required this.repository,
+    this.notificationState,
   });
 
   final AuthStateNotifier authState;
   final MusafirRepository repository;
+  final NotificationStateNotifier? notificationState;
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  AuthStateNotifier get authState => widget.authState;
+  MusafirRepository get repository => widget.repository;
 
   @override
   Widget build(BuildContext context) {
@@ -43,19 +57,15 @@ class ProfileScreen extends StatelessWidget {
                     padding: const EdgeInsets.all(16),
                     child: Row(
                       children: [
-                        CircleAvatar(
+                        AvatarUpload(
+                          currentAvatarUrl: user.avatarUrl,
+                          userName: user.name,
+                          userId: user.id,
                           radius: 40,
-                          backgroundImage: user.avatarUrl != null
-                              ? NetworkImage(user.avatarUrl!)
-                              : null,
-                          child: user.avatarUrl == null
-                              ? Text(
-                                  user.name.isNotEmpty
-                                      ? user.name[0].toUpperCase()
-                                      : 'U',
-                                  style: theme.textTheme.headlineMedium,
-                                )
-                              : null,
+                          onAvatarChanged: (newUrl) {
+                            // Update the user's avatar URL
+                            authState.updateAvatar(newUrl);
+                          },
                         ),
                         const SizedBox(width: 16),
                         Expanded(
@@ -142,6 +152,12 @@ class ProfileScreen extends StatelessWidget {
                       onTap: () => _showComingSoon(context),
                     ),
                     _SettingsItem(
+                      icon: Icons.verified_user_outlined,
+                      title: 'Identity verification',
+                      subtitle: 'Verify your identity with NID',
+                      onTap: () => _navigateToVerification(context, user.id),
+                    ),
+                    _SettingsItem(
                       icon: Icons.security_outlined,
                       title: 'Login & security',
                       onTap: () => _showComingSoon(context),
@@ -154,7 +170,7 @@ class ProfileScreen extends StatelessWidget {
                     _SettingsItem(
                       icon: Icons.notifications_outlined,
                       title: 'Notifications',
-                      onTap: () => _showComingSoon(context),
+                      onTap: () => _navigateToNotificationSettings(context),
                     ),
                   ],
                 ),
@@ -279,6 +295,36 @@ class ProfileScreen extends StatelessWidget {
   void _showComingSoon(BuildContext context) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Coming soon!')),
+    );
+  }
+
+  void _navigateToNotificationSettings(BuildContext context) {
+    if (widget.notificationState == null) {
+      _showComingSoon(context);
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => NotificationSettingsScreen(
+          notificationState: widget.notificationState!,
+        ),
+      ),
+    );
+  }
+
+  void _navigateToVerification(BuildContext context, String userId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => NidVerificationScreen(
+          userId: userId,
+          onVerificationSubmitted: () {
+            // Optionally refresh user data
+          },
+        ),
+      ),
     );
   }
 

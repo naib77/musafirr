@@ -26,12 +26,20 @@ class OtpStateNotifier extends ChangeNotifier {
   Timer? _resendTimer;
   Timer? _expiryTimer;
   bool _isExistingUser = false;
+  bool _isDisposed = false;
 
   final OtpService _otpService = OtpService.instance;
   late final AuthService _authService;
 
   OtpStateNotifier() {
     _authService = AuthServiceFactory.instance;
+  }
+
+  /// Safe version of notifyListeners that checks if disposed
+  void _safeNotifyListeners() {
+    if (!_isDisposed) {
+      notifyListeners();
+    }
   }
 
   // Getters
@@ -54,7 +62,7 @@ class OtpStateNotifier extends ChangeNotifier {
 
     _isLoading = true;
     _error = null;
-    notifyListeners();
+    _safeNotifyListeners();
 
     final normalized = _otpService.normalizePhoneNumber(phoneNumber);
     _phoneNumber = normalized;
@@ -83,12 +91,12 @@ class OtpStateNotifier extends ChangeNotifier {
       _currentStep = OtpFlowStep.otpVerification;
       _startResendCountdown();
       _startExpiryCountdown();
-      notifyListeners();
+      _safeNotifyListeners();
       return true;
     }
 
     _error = errorMessage ?? 'Failed to send OTP';
-    notifyListeners();
+    _safeNotifyListeners();
     return false;
   }
 
@@ -96,13 +104,13 @@ class OtpStateNotifier extends ChangeNotifier {
   Future<bool> verifyOtp(String otp) async {
     if (_phoneNumber == null) {
       _error = 'Phone number not set';
-      notifyListeners();
+      _safeNotifyListeners();
       return false;
     }
 
     _isLoading = true;
     _error = null;
-    notifyListeners();
+    _safeNotifyListeners();
 
     bool success;
     String? errorMessage;
@@ -126,7 +134,7 @@ class OtpStateNotifier extends ChangeNotifier {
       // Simulate slight delay for UX
       await Future.delayed(const Duration(milliseconds: 300));
 
-      final result = _otpService.verifyOtp(_phoneNumber!, otp);
+      final result = await _otpService.verifyOtp(_phoneNumber!, otp);
       success = result.success;
       errorMessage = result.errorMessage;
       attemptsRemaining = result.attemptsRemaining;
@@ -148,7 +156,7 @@ class OtpStateNotifier extends ChangeNotifier {
       } else {
         _currentStep = OtpFlowStep.profileCompletion;
       }
-      notifyListeners();
+      _safeNotifyListeners();
       return true;
     }
 
@@ -156,7 +164,7 @@ class OtpStateNotifier extends ChangeNotifier {
     if (attemptsRemaining != null && attemptsRemaining > 0) {
       _error = '${errorMessage ?? 'Invalid OTP'}. $attemptsRemaining attempts remaining.';
     }
-    notifyListeners();
+    _safeNotifyListeners();
     return false;
   }
 
@@ -164,19 +172,19 @@ class OtpStateNotifier extends ChangeNotifier {
   Future<bool> resendOtp() async {
     if (_phoneNumber == null) {
       _error = 'Phone number not set';
-      notifyListeners();
+      _safeNotifyListeners();
       return false;
     }
 
     if (!canResend) {
       _error = 'Please wait before requesting a new code';
-      notifyListeners();
+      _safeNotifyListeners();
       return false;
     }
 
     _isLoading = true;
     _error = null;
-    notifyListeners();
+    _safeNotifyListeners();
 
     bool success;
     String? errorMessage;
@@ -196,19 +204,19 @@ class OtpStateNotifier extends ChangeNotifier {
     if (success) {
       _startResendCountdown();
       _startExpiryCountdown();
-      notifyListeners();
+      _safeNotifyListeners();
       return true;
     }
 
     _error = errorMessage ?? 'Failed to resend OTP';
-    notifyListeners();
+    _safeNotifyListeners();
     return false;
   }
 
   /// Complete profile and move to final step
   void completeProfile() {
     _currentStep = OtpFlowStep.complete;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   /// Go back to phone entry
@@ -217,7 +225,7 @@ class OtpStateNotifier extends ChangeNotifier {
     _currentStep = OtpFlowStep.phoneEntry;
     _error = null;
     _isExistingUser = false;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   /// Reset the entire flow
@@ -230,13 +238,13 @@ class OtpStateNotifier extends ChangeNotifier {
     _resendCountdown = 0;
     _expiryCountdown = 0;
     _isExistingUser = false;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   /// Clear error
   void clearError() {
     _error = null;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   void _startResendCountdown() {
@@ -248,7 +256,7 @@ class OtpStateNotifier extends ChangeNotifier {
         _resendCountdown = 0;
         timer.cancel();
       }
-      notifyListeners();
+      _safeNotifyListeners();
     });
   }
 
@@ -261,9 +269,9 @@ class OtpStateNotifier extends ChangeNotifier {
         _expiryCountdown = 0;
         timer.cancel();
         _error = 'OTP has expired. Please request a new one.';
-        notifyListeners();
+        _safeNotifyListeners();
       }
-      notifyListeners();
+      _safeNotifyListeners();
     });
   }
 
@@ -274,6 +282,7 @@ class OtpStateNotifier extends ChangeNotifier {
 
   @override
   void dispose() {
+    _isDisposed = true;
     _stopTimers();
     super.dispose();
   }

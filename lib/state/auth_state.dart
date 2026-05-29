@@ -111,6 +111,14 @@ class AuthStateNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Update user avatar
+  void updateAvatar(String? avatarUrl) {
+    if (_currentUser == null) return;
+
+    final updatedUser = _currentUser!.copyWith(avatarUrl: avatarUrl);
+    updateUser(updatedUser);
+  }
+
   void logout() {
     _service.logout();
     _currentUser = null;

@@ -6,9 +6,12 @@ import '../../models/search_filters.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
+import '../../state/notification_state.dart';
 import '../../state/search_state.dart';
 import '../../widgets/category_scroll.dart';
 import '../../widgets/listing_card_modern.dart';
+import '../../widgets/notification_bell.dart';
+import '../notifications/notification_center_screen.dart';
 import 'listing_detail_screen.dart';
 
 class ExploreScreen extends StatefulWidget {
@@ -18,12 +21,14 @@ class ExploreScreen extends StatefulWidget {
     required this.authState,
     required this.favoritesState,
     required this.searchState,
+    this.notificationState,
   });
 
   final MusafirRepository repository;
   final AuthStateNotifier authState;
   final FavoritesStateNotifier favoritesState;
   final SearchStateNotifier searchState;
+  final NotificationStateNotifier? notificationState;
 
   @override
   State<ExploreScreen> createState() => _ExploreScreenState();
@@ -79,6 +84,19 @@ class _ExploreScreenState extends State<ExploreScreen> {
     );
   }
 
+  void _openNotificationCenter() {
+    if (widget.notificationState == null) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => NotificationCenterScreen(
+          notificationState: widget.notificationState!,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -87,84 +105,98 @@ class _ExploreScreenState extends State<ExploreScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Search bar
+            // Search bar with notification bell
             Padding(
               padding: const EdgeInsets.all(16),
-              child: GestureDetector(
-                onTap: _openSearch,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surface,
-                    borderRadius: BorderRadius.circular(32),
-                    border: Border.all(
-                      color: theme.colorScheme.outlineVariant,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.search,
-                        color: theme.colorScheme.primary,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.searchState.filters.location ??
-                                  'Where to?',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              _getSearchSubtitle(),
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _openSearch,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface,
+                          borderRadius: BorderRadius.circular(32),
+                          border: Border.all(
+                            color: theme.colorScheme.outlineVariant,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 2),
                             ),
                           ],
                         ),
-                      ),
-                      if (widget.searchState.filters.hasActiveFilters)
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () {
-                            widget.searchState.clearFilters();
-                            _searchController.clear();
-                            setState(() {});
-                          },
-                        )
-                      else
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: theme.colorScheme.outlineVariant,
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.search,
+                              color: theme.colorScheme.primary,
                             ),
-                            borderRadius: BorderRadius.circular(24),
-                          ),
-                          child: Icon(
-                            Icons.tune,
-                            size: 20,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    widget.searchState.filters.location ??
+                                        'Where to?',
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  Text(
+                                    _getSearchSubtitle(),
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (widget.searchState.filters.hasActiveFilters)
+                              IconButton(
+                                icon: const Icon(Icons.close),
+                                onPressed: () {
+                                  widget.searchState.clearFilters();
+                                  _searchController.clear();
+                                  setState(() {});
+                                },
+                              )
+                            else
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: theme.colorScheme.outlineVariant,
+                                  ),
+                                  borderRadius: BorderRadius.circular(24),
+                                ),
+                                child: Icon(
+                                  Icons.tune,
+                                  size: 20,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                          ],
                         ),
-                    ],
+                      ),
+                    ),
                   ),
-                ),
+                  // Notification bell
+                  if (widget.notificationState != null) ...[
+                    const SizedBox(width: 12),
+                    AnimatedNotificationBell(
+                      notificationState: widget.notificationState!,
+                      onTap: _openNotificationCenter,
+                    ),
+                  ],
+                ],
               ),
             ),
 

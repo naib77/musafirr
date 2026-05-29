@@ -242,17 +242,19 @@ class InMemoryMusafirRepository extends ChangeNotifier
   @override
   void addReview(Review review) {
     _reviews.add(review);
-    // Update listing rating
-    final listing = getListingById(review.listingId);
-    if (listing != null) {
-      final reviews = getReviewsForListing(review.listingId);
-      final avgRating =
-          reviews.map((r) => r.rating).reduce((a, b) => a + b) / reviews.length;
-      final index = _listings.indexOf(listing);
-      _listings[index] = listing.copyWith(
-        rating: avgRating,
-        reviewCount: reviews.length,
-      );
+    // Update listing rating if listingId is present
+    if (review.listingId != null) {
+      final listing = getListingById(review.listingId!);
+      if (listing != null) {
+        final reviews = getReviewsForListing(review.listingId!);
+        final avgRating =
+            reviews.map((r) => r.rating).reduce((a, b) => a + b) / reviews.length;
+        final index = _listings.indexOf(listing);
+        _listings[index] = listing.copyWith(
+          rating: avgRating,
+          reviewCount: reviews.length,
+        );
+      }
     }
     notifyListeners();
   }
@@ -354,7 +356,7 @@ class InMemoryMusafirRepository extends ChangeNotifier
       checkOut: checkOut,
       totalPrice: totalPrice,
       unitLabel: unitLabel,
-      status: BookingStatus.confirmed,
+      status: BookingStatus.pending, // New bookings start as pending until host accepts
       guestCount: guestCount,
       createdAt: DateTime.now(),
       listingTitle: listing.title,
@@ -467,6 +469,102 @@ class InMemoryMusafirRepository extends ChangeNotifier
       checkOut: checkOut,
     );
     return conflicts.isEmpty;
+  }
+
+  // Booking lifecycle methods
+
+  @override
+  void updateBooking(Booking booking) {
+    final index = _bookings.indexWhere((b) => b.id == booking.id);
+    if (index != -1) {
+      _bookings[index] = booking;
+      notifyListeners();
+    }
+  }
+
+  @override
+  List<Booking> getPendingBookingsForHost(String hostId) {
+    final hostListingIds = _listings
+        .where((l) => l.hostId == hostId)
+        .map((l) => l.id)
+        .toSet();
+
+    return _bookings
+        .where((b) =>
+            hostListingIds.contains(b.listingId) &&
+            b.status == BookingStatus.pending)
+        .toList()
+      ..sort((a, b) => a.createdAt?.compareTo(b.createdAt ?? DateTime.now()) ?? 0);
+  }
+
+  @override
+  List<Booking> getBookingsForHost(String hostId) {
+    final hostListingIds = _listings
+        .where((l) => l.hostId == hostId)
+        .map((l) => l.id)
+        .toSet();
+
+    return _bookings
+        .where((b) => hostListingIds.contains(b.listingId))
+        .toList()
+      ..sort((a, b) => b.effectiveCheckIn.compareTo(a.effectiveCheckIn));
+  }
+
+  @override
+  List<Booking> getStaleBookings({Duration? maxAge}) {
+    final age = maxAge ?? const Duration(hours: 24);
+    final cutoff = DateTime.now().subtract(age);
+
+    return _bookings
+        .where((b) =>
+            b.status == BookingStatus.pending &&
+            b.createdAt != null &&
+            b.createdAt!.isBefore(cutoff))
+        .toList();
+  }
+
+  // Bidirectional review methods
+
+  @override
+  List<Review> getReviewsForBooking(String bookingId) {
+    return _reviews.where((r) => r.bookingId == bookingId).toList();
+  }
+
+  @override
+  List<Review> getRevealedReviewsForListing(String listingId) {
+    return _reviews
+        .where((r) =>
+            r.listingId == listingId &&
+            r.isRevealed &&
+            r.reviewType == ReviewType.guestToHost)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
+
+  @override
+  List<Review> getRevealedReviewsForGuest(String guestId) {
+    return _reviews
+        .where((r) =>
+            r.revieweeId == guestId &&
+            r.isRevealed &&
+            r.reviewType == ReviewType.hostToGuest)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
+
+  @override
+  void saveReview(Review review) {
+    _reviews.add(review);
+    notifyListeners();
+  }
+
+  @override
+  void updateReview(Review review) {
+    final index = _reviews.indexWhere((r) => r.id == review.id);
+    if (index != -1) {
+      _reviews[index] = review;
+      notifyListeners();
+    }
   }
 
   void _seed() {

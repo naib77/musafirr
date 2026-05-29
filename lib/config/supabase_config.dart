@@ -14,7 +14,7 @@ class SupabaseConfig {
   /// This is safe to use in client-side code
   static const String anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJvamttb25za3FsaHVha3hoemNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMjI1ODUsImV4cCI6MjA5NDc5ODU4NX0.CPPAG0gh7vj5QSRMAVbcEP9FsPMjouFVIxfVJE-La7o';
 
-  /// Check if Supabase is configured with real credentials
+  /// Check if Supabase is configured with real credentials flutter build apk --debug  flutter build apk --release
   static bool get isConfigured =>
       url.isNotEmpty &&
       url != 'YOUR_SUPABASE_URL' &&

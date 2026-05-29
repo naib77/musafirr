@@ -139,6 +139,7 @@ class _MainShellState extends State<MainShell> {
             authState: widget.authState,
             favoritesState: widget.favoritesState,
             searchState: widget.searchState,
+            notificationState: widget.notificationState,
           ),
           WishlistsScreen(
             repository: widget.repository,
@@ -152,6 +153,7 @@ class _MainShellState extends State<MainShell> {
           ProfileScreen(
             authState: widget.authState,
             repository: widget.repository,
+            notificationState: widget.notificationState,
           ),
         ],
       ),

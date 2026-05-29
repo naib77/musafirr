@@ -27,6 +27,14 @@ class Booking {
     this.currency = Currency.BDT,
     this.serviceFee,
     this.discount,
+    // Lifecycle fields
+    this.hostMessage,
+    this.rejectionReason,
+    this.confirmedAt,
+    this.actualCheckIn,
+    this.completedAt,
+    this.cancelledBy,
+    this.cancelledAt,
   });
 
   final String id;
@@ -53,6 +61,28 @@ class Booking {
   final Currency currency;
   final double? serviceFee;
   final double? discount;
+
+  // Lifecycle fields
+  /// Optional message from host when accepting the booking
+  final String? hostMessage;
+
+  /// Optional reason from host when rejecting the booking
+  final String? rejectionReason;
+
+  /// Timestamp when host confirmed the booking
+  final DateTime? confirmedAt;
+
+  /// Timestamp when host marked guest as arrived (check-in)
+  final DateTime? actualCheckIn;
+
+  /// Timestamp when host marked service as complete
+  final DateTime? completedAt;
+
+  /// User ID of who cancelled the booking (guest or host)
+  final String? cancelledBy;
+
+  /// Timestamp when booking was cancelled
+  final DateTime? cancelledAt;
 
   // Money-typed getters for type-safe currency handling
   Money get totalPriceMoney => Money(totalPrice, currency);
@@ -112,6 +142,13 @@ class Booking {
     Currency? currency,
     double? serviceFee,
     double? discount,
+    String? hostMessage,
+    String? rejectionReason,
+    DateTime? confirmedAt,
+    DateTime? actualCheckIn,
+    DateTime? completedAt,
+    String? cancelledBy,
+    DateTime? cancelledAt,
   }) {
     return Booking(
       id: id ?? this.id,
@@ -134,6 +171,13 @@ class Booking {
       currency: currency ?? this.currency,
       serviceFee: serviceFee ?? this.serviceFee,
       discount: discount ?? this.discount,
+      hostMessage: hostMessage ?? this.hostMessage,
+      rejectionReason: rejectionReason ?? this.rejectionReason,
+      confirmedAt: confirmedAt ?? this.confirmedAt,
+      actualCheckIn: actualCheckIn ?? this.actualCheckIn,
+      completedAt: completedAt ?? this.completedAt,
+      cancelledBy: cancelledBy ?? this.cancelledBy,
+      cancelledAt: cancelledAt ?? this.cancelledAt,
     );
   }
 }

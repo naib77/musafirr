@@ -4,6 +4,7 @@ import '../repositories/musafir_repository.dart';
 import '../widgets/info_card.dart';
 import '../widgets/metric_card.dart';
 import '../widgets/section_title.dart';
+import 'admin/verification_review_screen.dart';
 
 class AdminDashboard extends StatelessWidget {
   const AdminDashboard({super.key, required this.repository});
@@ -47,6 +48,33 @@ class AdminDashboard extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 24),
+
+        // Verifications section
+        const SectionTitle(
+          title: 'Identity Verification',
+          subtitle: 'Review pending owner verification requests.',
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            leading: const CircleAvatar(
+              child: Icon(Icons.verified_user_outlined),
+            ),
+            title: const Text('Pending Verifications'),
+            subtitle: const Text('Review and approve owner documents'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const VerificationReviewScreen(),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 24),
+
         const SectionTitle(
           title: 'Recent Bookings',
           subtitle:

@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../core/currency/currency.dart';
 import '../../data/facility_catalog.dart';
-import '../../data/placeholder_images.dart';
 import '../../models/listing.dart';
 import '../../models/listing_type.dart';
 import '../../repositories/musafir_repository.dart';
+import '../../services/image_upload_service.dart';
 import '../../state/auth_state.dart';
 import '../../widgets/app_text_field.dart';
+import '../../widgets/image_picker_grid.dart';
 import '../../widgets/location_picker.dart';
 
 class CreateListingScreen extends StatefulWidget {
@@ -27,7 +29,7 @@ class CreateListingScreen extends StatefulWidget {
 class _CreateListingScreenState extends State<CreateListingScreen> {
   final PageController _pageController = PageController();
   int _currentStep = 0;
-  final int _totalSteps = 5;
+  final int _totalSteps = 6;
 
   // Form data
   ListingType _propertyType = ListingType.room;
@@ -45,6 +47,11 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   final _hourlyPriceController = TextEditingController(text: '150');
   final _dailyPriceController = TextEditingController(text: '1500');
   final _monthlyPriceController = TextEditingController(text: '35000');
+
+  // Image data
+  List<SelectedImage> _selectedImages = [];
+  bool _isUploadingImages = false;
+  String? _uploadError;
 
   bool _isSubmitting = false;
 
@@ -97,6 +104,8 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         return hourly != null && hourly > 0 &&
             daily != null && daily > 0 &&
             monthly != null && monthly > 0;
+      case 5: // Photos
+        return _selectedImages.isNotEmpty && !_isUploadingImages;
       default:
         return false;
     }
@@ -105,7 +114,11 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   Future<void> _submitListing() async {
     if (!_canProceed()) return;
 
-    setState(() => _isSubmitting = true);
+    setState(() {
+      _isSubmitting = true;
+      _isUploadingImages = true;
+      _uploadError = null;
+    });
 
     try {
       final user = widget.authState.currentUser;
@@ -113,12 +126,62 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
       final dailyRate = double.parse(_dailyPriceController.text);
       final monthlyRate = double.parse(_monthlyPriceController.text);
 
-      // Get random images for the listing
-      final listingIndex = widget.repository.listings.length;
-      final images = PlaceholderImages.forListing(listingIndex);
+      // Generate listing ID first (needed for image upload path)
+      final listingId = 'listing_${DateTime.now().millisecondsSinceEpoch}';
+
+      // Upload images to Supabase Storage
+      final uploadService = ImageUploadService.instance;
+      final imageUrls = <String>[];
+
+      for (var i = 0; i < _selectedImages.length; i++) {
+        final image = _selectedImages[i];
+
+        // Update progress
+        setState(() {
+          _selectedImages[i] = image.copyWith(
+            isUploading: true,
+            uploadProgress: 0,
+          );
+        });
+
+        // Upload image
+        final xFile = XFile(image.localPath!);
+        final result = await uploadService.uploadListingImage(
+          image: xFile,
+          listingId: listingId,
+          onProgress: (progress) {
+            if (mounted) {
+              setState(() {
+                _selectedImages[i] = _selectedImages[i].copyWith(
+                  uploadProgress: progress,
+                );
+              });
+            }
+          },
+        );
+
+        if (result.success && result.publicUrl != null) {
+          imageUrls.add(result.publicUrl!);
+          setState(() {
+            _selectedImages[i] = image.copyWith(
+              isUploading: false,
+              uploadedUrl: result.publicUrl,
+              storagePath: result.storagePath,
+            );
+          });
+        } else {
+          setState(() {
+            _selectedImages[i] = image.copyWith(
+              isUploading: false,
+              error: result.errorMessage ?? 'Upload failed',
+            );
+          });
+          throw Exception('Failed to upload image ${i + 1}: ${result.errorMessage}');
+        }
+      }
 
       final listing = Listing(
-        id: 'listing_${DateTime.now().millisecondsSinceEpoch}',
+        id: listingId,
         hostId: user?.id,
         ownerName: user?.name ?? 'Host',
         hostAvatarUrl: user?.avatarUrl,
@@ -136,7 +199,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         hourlyRate: hourlyRate,
         dailyRate: dailyRate,
         monthlyRate: monthlyRate,
-        imageUrls: images,
+        imageUrls: imageUrls,
         maxGuests: _maxGuests,
         bedrooms: _bedrooms,
         beds: _beds,
@@ -150,7 +213,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         available: true,
       );
 
-      // Add to repository (we need to add a method for this)
+      // Add to repository
       widget.repository.addListing(listing);
 
       if (mounted) {
@@ -164,6 +227,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
       }
     } catch (e) {
       if (mounted) {
+        setState(() => _uploadError = e.toString());
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to create listing: $e'),
@@ -173,7 +237,10 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
       }
     } finally {
       if (mounted) {
-        setState(() => _isSubmitting = false);
+        setState(() {
+          _isSubmitting = false;
+          _isUploadingImages = false;
+        });
       }
     }
   }
@@ -259,6 +326,14 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                   dailyPriceController: _dailyPriceController,
                   monthlyPriceController: _monthlyPriceController,
                   onChanged: () => setState(() {}),
+                ),
+                _PhotosStep(
+                  images: _selectedImages,
+                  onImagesChanged: (images) {
+                    setState(() => _selectedImages = images);
+                  },
+                  isUploading: _isUploadingImages,
+                  error: _uploadError,
                 ),
               ],
             ),
@@ -933,6 +1008,127 @@ class _PriceField extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// Step 6: Photos
+class _PhotosStep extends StatelessWidget {
+  const _PhotosStep({
+    required this.images,
+    required this.onImagesChanged,
+    required this.isUploading,
+    this.error,
+  });
+
+  final List<SelectedImage> images;
+  final ValueChanged<List<SelectedImage>> onImagesChanged;
+  final bool isUploading;
+  final String? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Add some photos',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Great photos help guests imagine staying at your place. Add at least 1 photo to get started.',
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 32),
+
+          // Image picker grid
+          ImagePickerGrid(
+            images: images,
+            onImagesChanged: onImagesChanged,
+            maxImages: 10,
+            enabled: !isUploading,
+          ),
+
+          // Error message
+          if (error != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    color: theme.colorScheme.error,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      error!,
+                      style: TextStyle(
+                        color: theme.colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 24),
+
+          // Tips card
+          Card(
+            color: theme.colorScheme.surfaceContainerHighest,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.lightbulb_outline,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Photo tips',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '• Use natural lighting when possible\n'
+                    '• Show the whole room in wide shots\n'
+                    '• Highlight unique features\n'
+                    '• Keep spaces clean and uncluttered\n'
+                    '• First photo will be your cover image',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

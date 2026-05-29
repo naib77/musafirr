@@ -56,6 +56,7 @@ class _LocationPickerState extends State<LocationPicker> {
   bool _isLoadingAddress = false;
   bool _isLoadingLocation = false;
   bool _isSearching = false;
+  bool _mapCreated = false;
   List<_SearchResult> _searchResults = [];
 
   @override
@@ -69,6 +70,10 @@ class _LocationPickerState extends State<LocationPicker> {
   @override
   void dispose() {
     _searchController.dispose();
+    // Only dispose controller if map was fully created (fixes web bug)
+    if (_mapCreated && _controller != null) {
+      _controller!.dispose();
+    }
     super.dispose();
   }
 
@@ -185,7 +190,10 @@ class _LocationPickerState extends State<LocationPicker> {
               target: LatLng(widget.initialLatitude, widget.initialLongitude),
               zoom: 15,
             ),
-            onMapCreated: (controller) => _controller = controller,
+            onMapCreated: (controller) {
+              _controller = controller;
+              _mapCreated = true;
+            },
             onCameraMove: _onCameraMove,
             onCameraIdle: _onCameraIdle,
             myLocationEnabled: true,

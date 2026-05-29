@@ -1,7 +1,11 @@
+import 'dart:convert';
 import 'dart:math';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../config/otp_config.dart';
 import '../config/sms_config.dart';
 import 'sms/sms_gateway_factory.dart';
 import 'sms/sms_send_result.dart';
@@ -12,11 +16,13 @@ class OtpEntry {
     required this.otp,
     required this.phoneNumber,
     required this.expiresAt,
+    this.dbId,
   });
 
   final String otp;
   final String phoneNumber;
   final DateTime expiresAt;
+  final String? dbId; // Database record ID for updates
   int attempts = 0;
 
   bool get isExpired => DateTime.now().isAfter(expiresAt);
@@ -48,6 +54,12 @@ class OtpVerificationResult {
 }
 
 /// Singleton service for OTP generation, sending, and verification
+///
+/// Features:
+/// - In-memory OTP storage for fast verification
+/// - Optional persistence to Supabase for audit trail
+/// - Master OTP support for development/testing
+/// - Automatic cleanup of old database records
 class OtpService {
   OtpService._();
 
@@ -58,11 +70,11 @@ class OtpService {
     return _instance!;
   }
 
-  /// Configuration
-  static const int otpLength = 4;
-  static const int validityMinutes = 5;
-  static const int maxAttempts = 3;
-  static const int resendCooldownSeconds = 60;
+  /// Configuration from OtpConfig
+  static int get otpLength => OtpConfig.otpLength;
+  static int get validityMinutes => OtpConfig.validityMinutes;
+  static int get maxAttempts => OtpConfig.maxAttempts;
+  static int get resendCooldownSeconds => OtpConfig.resendCooldownSeconds;
 
   /// In-memory OTP storage (phone -> OtpEntry)
   final Map<String, OtpEntry> _otpStore = {};
@@ -72,6 +84,12 @@ class OtpService {
 
   final Random _random = Random.secure();
 
+  /// Counter for periodic cleanup (every 10 operations)
+  int _operationCount = 0;
+
+  /// Get Supabase client
+  SupabaseClient get _client => Supabase.instance.client;
+
   /// Generate a random OTP of specified length
   String _generateOtp() {
     final otp = StringBuffer();
@@ -79,6 +97,19 @@ class OtpService {
       otp.write(_random.nextInt(10));
     }
     return otp.toString();
+  }
+
+  /// Hash OTP using SHA-256 (for production) or return plaintext (for development)
+  String _processOtpForStorage(String otp) {
+    if (OtpConfig.hashOtpInDatabase) {
+      // Production: hash the OTP
+      final bytes = utf8.encode(otp);
+      final digest = sha256.convert(bytes);
+      return digest.toString();
+    } else {
+      // Development: store plaintext for easy debugging
+      return otp;
+    }
   }
 
   /// Normalize phone number to standard format
@@ -117,6 +148,71 @@ class OtpService {
     return remaining > 0 ? remaining : 0;
   }
 
+  /// Trigger periodic cleanup of old OTP records
+  Future<void> _maybeCleanupOldRecords() async {
+    _operationCount++;
+
+    // Run cleanup every 10 operations
+    if (_operationCount >= 10 && OtpConfig.persistToDatabase) {
+      _operationCount = 0;
+      try {
+        await _client.rpc('cleanup_old_otps');
+        debugPrint('[OTP Service] Cleanup triggered');
+      } catch (e) {
+        debugPrint('[OTP Service] Cleanup failed (non-critical): $e');
+      }
+    }
+  }
+
+  /// Persist OTP to database (hashed)
+  Future<String?> _persistOtpToDatabase({
+    required String phoneNumber,
+    required String otp,
+    required DateTime expiresAt,
+  }) async {
+    if (!OtpConfig.persistToDatabase) return null;
+
+    try {
+      final response = await _client.from('otp_attempts').insert({
+        'phone': phoneNumber,
+        'otp_hash': _processOtpForStorage(otp),
+        'expires_at': expiresAt.toUtc().toIso8601String(),
+      }).select('id').single();
+
+      return response['id'] as String?;
+    } catch (e) {
+      debugPrint('[OTP Service] Failed to persist OTP to database: $e');
+      return null;
+    }
+  }
+
+  /// Update OTP attempt count in database
+  Future<void> _updateDbAttempts(String? dbId, int attempts) async {
+    if (dbId == null || !OtpConfig.persistToDatabase) return;
+
+    try {
+      await _client.from('otp_attempts').update({
+        'attempts': attempts,
+      }).eq('id', dbId);
+    } catch (e) {
+      debugPrint('[OTP Service] Failed to update attempts in database: $e');
+    }
+  }
+
+  /// Mark OTP as verified in database
+  Future<void> _markDbVerified(String? dbId) async {
+    if (dbId == null || !OtpConfig.persistToDatabase) return;
+
+    try {
+      await _client.from('otp_attempts').update({
+        'verified_at': DateTime.now().toUtc().toIso8601String(),
+        'is_used': true,
+      }).eq('id', dbId);
+    } catch (e) {
+      debugPrint('[OTP Service] Failed to mark OTP as verified: $e');
+    }
+  }
+
   /// Send OTP to phone number
   Future<SmsSendResult> sendOtp(String phoneNumber) async {
     final normalized = normalizePhoneNumber(phoneNumber);
@@ -135,15 +231,26 @@ class OtpService {
 
     debugPrint('[OTP Service] No cooldown, proceeding to send OTP...');
 
+    // Trigger periodic cleanup
+    await _maybeCleanupOldRecords();
+
     // Generate OTP
     final otp = _generateOtp();
-    final expiresAt = DateTime.now().add(const Duration(minutes: validityMinutes));
+    final expiresAt = DateTime.now().add(Duration(minutes: validityMinutes));
 
-    // Store OTP
+    // Persist to database first (if enabled)
+    final dbId = await _persistOtpToDatabase(
+      phoneNumber: normalized,
+      otp: otp,
+      expiresAt: expiresAt,
+    );
+
+    // Store OTP in memory
     _otpStore[normalized] = OtpEntry(
       otp: otp,
       phoneNumber: normalized,
       expiresAt: expiresAt,
+      dbId: dbId,
     );
 
     // Update resend timestamp
@@ -155,6 +262,20 @@ class OtpService {
 
     debugPrint('[OTP Service] Sending OTP to $normalized via ${gateway.gatewayName}');
 
+    // Print OTP to console in development mode for easy testing
+    if (OtpConfig.printOtpToConsole) {
+      debugPrint('');
+      debugPrint('╔════════════════════════════════════════╗');
+      debugPrint('║  [DEV MODE] OTP for $normalized: $otp  ');
+      debugPrint('╚════════════════════════════════════════╝');
+      debugPrint('');
+    }
+
+    // Log master OTP info if configured
+    if (OtpConfig.isMasterOtpConfigured) {
+      debugPrint('[OTP Service] Master OTP is enabled. Use "${OtpConfig.masterOtp}" to bypass.');
+    }
+
     return gateway.sendSms(
       phoneNumber: normalized,
       message: message,
@@ -162,8 +283,20 @@ class OtpService {
   }
 
   /// Verify OTP
-  OtpVerificationResult verifyOtp(String phoneNumber, String otp) {
+  Future<OtpVerificationResult> verifyOtp(String phoneNumber, String otp) async {
     final normalized = normalizePhoneNumber(phoneNumber);
+
+    // Check master OTP first (if enabled)
+    if (OtpConfig.isMasterOtpMatch(otp)) {
+      debugPrint('[OTP Service] Master OTP used for $normalized');
+      // Clear any pending OTP for this number
+      final entry = _otpStore.remove(normalized);
+      if (entry?.dbId != null) {
+        await _markDbVerified(entry!.dbId);
+      }
+      return OtpVerificationResult.success();
+    }
+
     final entry = _otpStore[normalized];
 
     // Check if OTP exists
@@ -188,12 +321,14 @@ class OtpService {
     // Verify OTP
     if (entry.otp == otp) {
       _otpStore.remove(normalized);
+      await _markDbVerified(entry.dbId);
       debugPrint('[OTP Service] OTP verified successfully for $normalized');
       return OtpVerificationResult.success();
     }
 
     // Increment attempts
     entry.attempts++;
+    await _updateDbAttempts(entry.dbId, entry.attempts);
     final remaining = maxAttempts - entry.attempts;
 
     debugPrint('[OTP Service] Invalid OTP. Attempts remaining: $remaining');

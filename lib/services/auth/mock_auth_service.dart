@@ -183,7 +183,7 @@ class MockAuthService implements AuthService {
     // Simulate slight delay for UX
     await Future.delayed(const Duration(milliseconds: 300));
 
-    final result = _otpService.verifyOtp(phoneNumber, otp);
+    final result = await _otpService.verifyOtp(phoneNumber, otp);
 
     if (result.success) {
       // Check if user already exists

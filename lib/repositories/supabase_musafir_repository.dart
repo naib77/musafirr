@@ -8,6 +8,7 @@ import '../models/booking_conflict_exception.dart';
 import '../models/booking_duration.dart';
 import '../models/booking_status.dart';
 import '../models/facility.dart';
+import '../models/guest_review_ratings.dart';
 import '../models/listing.dart';
 import '../models/listing_type.dart';
 import '../models/owner_registration_draft.dart';
@@ -186,6 +187,22 @@ class SupabaseMusafirRepository extends ChangeNotifier
       listingTitle: json['listing_title'] as String?,
       listingImageUrl: json['listing_image_url'] as String?,
       listingCity: json['listing_city'] as String?,
+      // Lifecycle fields
+      hostMessage: json['host_message'] as String?,
+      rejectionReason: json['rejection_reason'] as String?,
+      confirmedAt: json['confirmed_at'] != null
+          ? DateTime.parse(json['confirmed_at'] as String)
+          : null,
+      actualCheckIn: json['actual_check_in'] != null
+          ? DateTime.parse(json['actual_check_in'] as String)
+          : null,
+      completedAt: json['completed_at'] != null
+          ? DateTime.parse(json['completed_at'] as String)
+          : null,
+      cancelledBy: json['cancelled_by'] as String?,
+      cancelledAt: json['cancelled_at'] != null
+          ? DateTime.parse(json['cancelled_at'] as String)
+          : null,
     );
   }
 
@@ -211,7 +228,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
       'total_price': totalPrice,
       'pricing_unit': pricingUnit,
       'guest_count': guestCount,
-      'booking_status': 'confirmed',
+      'booking_status': 'pending',
       'listing_title': listingTitle,
       'listing_image_url': listingImageUrl,
       'listing_city': listingCity,
@@ -222,6 +239,8 @@ class SupabaseMusafirRepository extends ChangeNotifier
     return switch (value?.toLowerCase()) {
       'pending' => BookingStatus.pending,
       'confirmed' => BookingStatus.confirmed,
+      'rejected' => BookingStatus.rejected,
+      'active' => BookingStatus.active,
       'completed' => BookingStatus.completed,
       'cancelled' => BookingStatus.cancelled,
       _ => BookingStatus.pending,
@@ -242,16 +261,72 @@ class SupabaseMusafirRepository extends ChangeNotifier
   }
 
   Review _reviewFromJson(Map<String, dynamic> json) {
+    // Parse category ratings if present (for guest-to-host reviews)
+    GuestReviewRatings? categoryRatings;
+    if (json['cleanliness_rating'] != null) {
+      categoryRatings = GuestReviewRatings(
+        overall: (json['overall_rating'] as num?)?.toDouble() ?? 0.0,
+        cleanliness: (json['cleanliness_rating'] as num?)?.toDouble() ?? 0.0,
+        accuracy: (json['accuracy_rating'] as num?)?.toDouble() ?? 0.0,
+        communication: (json['communication_rating'] as num?)?.toDouble() ?? 0.0,
+        location: (json['location_rating'] as num?)?.toDouble() ?? 0.0,
+        value: (json['value_rating'] as num?)?.toDouble() ?? 0.0,
+      );
+    }
+
     return Review(
       id: json['id'] as String,
-      listingId: json['listing_id'] as String,
-      userId: json['user_id'] as String,
-      userName: json['user_name'] as String? ?? 'Guest',
-      userAvatarUrl: json['user_avatar_url'] as String?,
-      rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
-      comment: json['comment'] as String? ?? '',
+      bookingId: json['booking_id'] as String? ?? '',
+      listingId: json['listing_id'] as String?,
+      reviewerId: json['reviewer_id'] as String? ?? json['user_id'] as String? ?? '',
+      reviewerName: json['reviewer_name'] as String? ?? json['user_name'] as String? ?? 'Guest',
+      reviewerAvatarUrl: json['reviewer_avatar_url'] as String? ?? json['user_avatar_url'] as String?,
+      revieweeId: json['reviewee_id'] as String? ?? '',
+      reviewType: _reviewTypeFromString(json['review_type'] as String?),
+      overallRating: (json['overall_rating'] as num?)?.toDouble() ?? (json['rating'] as num?)?.toDouble() ?? 0.0,
+      categoryRatings: categoryRatings,
+      comment: json['comment'] as String?,
+      isRevealed: json['is_revealed'] as bool? ?? true,
       createdAt: DateTime.parse(json['created_at'] as String),
+      revealedAt: json['revealed_at'] != null
+          ? DateTime.parse(json['revealed_at'] as String)
+          : null,
     );
+  }
+
+  ReviewType _reviewTypeFromString(String? value) {
+    return switch (value?.toLowerCase()) {
+      'guest_to_host' => ReviewType.guestToHost,
+      'host_to_guest' => ReviewType.hostToGuest,
+      _ => ReviewType.guestToHost,
+    };
+  }
+
+  Map<String, dynamic> _reviewToJson(Review review) {
+    final json = <String, dynamic>{
+      'booking_id': review.bookingId,
+      'listing_id': review.listingId,
+      'reviewer_id': review.reviewerId,
+      'reviewer_name': review.reviewerName,
+      'reviewer_avatar_url': review.reviewerAvatarUrl,
+      'reviewee_id': review.revieweeId,
+      'review_type': review.reviewType == ReviewType.guestToHost
+          ? 'guest_to_host'
+          : 'host_to_guest',
+      'overall_rating': review.overallRating,
+      'comment': review.comment,
+    };
+
+    // Add category ratings for guest-to-host reviews
+    if (review.reviewType == ReviewType.guestToHost && review.categoryRatings != null) {
+      json['cleanliness_rating'] = review.categoryRatings!.cleanliness;
+      json['accuracy_rating'] = review.categoryRatings!.accuracy;
+      json['communication_rating'] = review.categoryRatings!.communication;
+      json['location_rating'] = review.categoryRatings!.location;
+      json['value_rating'] = review.categoryRatings!.value;
+    }
+
+    return json;
   }
 
   // ============== Users ==============
@@ -586,17 +661,19 @@ class SupabaseMusafirRepository extends ChangeNotifier
   void addReview(Review review) async {
     _reviews.add(review);
 
-    // Update listing rating locally
-    final listing = getListingById(review.listingId);
-    if (listing != null) {
-      final reviews = getReviewsForListing(review.listingId);
-      final avgRating =
-          reviews.map((r) => r.rating).reduce((a, b) => a + b) / reviews.length;
-      final index = _listings.indexOf(listing);
-      _listings[index] = listing.copyWith(
-        rating: avgRating,
-        reviewCount: reviews.length,
-      );
+    // Update listing rating locally if listingId is present
+    if (review.listingId != null) {
+      final listing = getListingById(review.listingId!);
+      if (listing != null) {
+        final reviews = getReviewsForListing(review.listingId!);
+        final avgRating =
+            reviews.map((r) => r.rating).reduce((a, b) => a + b) / reviews.length;
+        final index = _listings.indexOf(listing);
+        _listings[index] = listing.copyWith(
+          rating: avgRating,
+          reviewCount: reviews.length,
+        );
+      }
     }
     notifyListeners();
 
@@ -620,6 +697,67 @@ class SupabaseMusafirRepository extends ChangeNotifier
     if (reviews.isEmpty) return 0;
     return reviews.map((r) => r.rating).reduce((a, b) => a + b) /
         reviews.length;
+  }
+
+  // ============== Bidirectional Review Methods ==============
+
+  @override
+  List<Review> getReviewsForBooking(String bookingId) {
+    return _reviews.where((r) => r.bookingId == bookingId).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
+
+  @override
+  List<Review> getRevealedReviewsForListing(String listingId) {
+    return _reviews
+        .where((r) =>
+            r.listingId == listingId &&
+            r.isRevealed &&
+            r.reviewType == ReviewType.guestToHost)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
+
+  @override
+  List<Review> getRevealedReviewsForGuest(String guestId) {
+    return _reviews
+        .where((r) =>
+            r.revieweeId == guestId &&
+            r.isRevealed &&
+            r.reviewType == ReviewType.hostToGuest)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
+
+  @override
+  void saveReview(Review review) async {
+    _reviews.add(review);
+    notifyListeners();
+
+    try {
+      await _client.from('reviews').insert(_reviewToJson(review));
+      await _refreshReviews();
+    } catch (e) {
+      debugPrint('Error saving review: $e');
+    }
+  }
+
+  @override
+  void updateReview(Review review) async {
+    final index = _reviews.indexWhere((r) => r.id == review.id);
+    if (index != -1) {
+      _reviews[index] = review;
+      notifyListeners();
+
+      try {
+        await _client
+            .from('reviews')
+            .update(_reviewToJson(review))
+            .eq('id', review.id);
+      } catch (e) {
+        debugPrint('Error updating review: $e');
+      }
+    }
   }
 
   // ============== Booking Methods ==============
@@ -713,7 +851,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
       checkOut: checkOut,
       totalPrice: totalPrice,
       unitLabel: unitLabel,
-      status: BookingStatus.confirmed,
+      status: BookingStatus.pending, // New bookings start as pending until host accepts
       guestCount: guestCount,
       createdAt: DateTime.now(),
       listingTitle: listing.title,
@@ -770,6 +908,93 @@ class SupabaseMusafirRepository extends ChangeNotifier
         debugPrint('Error cancelling booking: $e');
       }
     }
+  }
+
+  // ============== Booking Lifecycle Methods ==============
+
+  @override
+  void updateBooking(Booking booking) async {
+    final index = _bookings.indexWhere((b) => b.id == booking.id);
+    if (index != -1) {
+      _bookings[index] = booking;
+      notifyListeners();
+
+      try {
+        final updateData = <String, dynamic>{
+          'booking_status': booking.status.name,
+        };
+
+        // Add lifecycle fields if present
+        if (booking.hostMessage != null) {
+          updateData['host_message'] = booking.hostMessage;
+        }
+        if (booking.rejectionReason != null) {
+          updateData['rejection_reason'] = booking.rejectionReason;
+        }
+        if (booking.confirmedAt != null) {
+          updateData['confirmed_at'] = booking.confirmedAt!.toIso8601String();
+        }
+        if (booking.actualCheckIn != null) {
+          updateData['actual_check_in'] = booking.actualCheckIn!.toIso8601String();
+        }
+        if (booking.completedAt != null) {
+          updateData['completed_at'] = booking.completedAt!.toIso8601String();
+        }
+        if (booking.cancelledBy != null) {
+          updateData['cancelled_by'] = booking.cancelledBy;
+        }
+        if (booking.cancelledAt != null) {
+          updateData['cancelled_at'] = booking.cancelledAt!.toIso8601String();
+        }
+
+        await _client.from('bookings').update(updateData).eq('id', booking.id);
+      } catch (e) {
+        debugPrint('Error updating booking: $e');
+      }
+    }
+  }
+
+  @override
+  List<Booking> getPendingBookingsForHost(String hostId) {
+    // Get listings owned by this host
+    final hostListingIds = _listings
+        .where((l) => l.hostId == hostId)
+        .map((l) => l.id)
+        .toSet();
+
+    return _bookings
+        .where((b) =>
+            hostListingIds.contains(b.listingId) &&
+            b.status == BookingStatus.pending)
+        .toList()
+      ..sort((a, b) => a.createdAt?.compareTo(b.createdAt ?? DateTime.now()) ?? 0);
+  }
+
+  @override
+  List<Booking> getBookingsForHost(String hostId) {
+    // Get listings owned by this host
+    final hostListingIds = _listings
+        .where((l) => l.hostId == hostId)
+        .map((l) => l.id)
+        .toSet();
+
+    return _bookings
+        .where((b) => hostListingIds.contains(b.listingId))
+        .toList()
+      ..sort((a, b) => b.effectiveCheckIn.compareTo(a.effectiveCheckIn));
+  }
+
+  @override
+  List<Booking> getStaleBookings({Duration? maxAge}) {
+    final threshold = maxAge ?? const Duration(hours: 24);
+    final cutoff = DateTime.now().subtract(threshold);
+
+    return _bookings
+        .where((b) =>
+            b.status == BookingStatus.pending &&
+            b.createdAt != null &&
+            b.createdAt!.isBefore(cutoff))
+        .toList();
   }
 
   // ============== Availability Methods ==============

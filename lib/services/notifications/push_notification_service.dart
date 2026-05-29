@@ -243,19 +243,33 @@ class PushNotificationServiceFactory {
   PushNotificationServiceFactory._();
 
   static PushNotificationService? _instance;
+  static bool _useFirebase = true; // Set to true to use Firebase
 
   /// Get the push notification service instance
-  ///
-  /// In production, this would return FirebasePushNotificationService.
-  /// For now, it returns the stub implementation.
   static PushNotificationService get instance {
-    _instance ??= StubPushNotificationService.instance;
+    if (_instance != null) return _instance!;
+
+    // Import is done dynamically to avoid issues on web
+    if (_useFirebase && !kIsWeb) {
+      // Will be set by initializeFirebase() in main.dart
+      // Falls back to stub if not initialized
+      _instance ??= StubPushNotificationService.instance;
+    } else {
+      _instance = StubPushNotificationService.instance;
+    }
+
     return _instance!;
   }
 
   /// Set a custom instance (for testing or switching implementations)
   static void setInstance(PushNotificationService service) {
     _instance = service;
+  }
+
+  /// Use stub implementation (for web or testing)
+  static void useStub() {
+    _useFirebase = false;
+    _instance = StubPushNotificationService.instance;
   }
 }
 

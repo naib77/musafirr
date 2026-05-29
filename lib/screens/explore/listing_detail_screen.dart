@@ -377,6 +377,7 @@ class _LocationSection extends StatefulWidget {
 
 class _LocationSectionState extends State<_LocationSection> {
   GoogleMapController? _mapController;
+  bool _mapCreated = false;
 
   LatLng get _location => LatLng(widget.listing.latitude, widget.listing.longitude);
 
@@ -423,7 +424,10 @@ class _LocationSectionState extends State<_LocationSection> {
 
   @override
   void dispose() {
-    _mapController?.dispose();
+    // Only dispose controller if map was fully created (fixes web bug)
+    if (_mapCreated && _mapController != null) {
+      _mapController!.dispose();
+    }
     super.dispose();
   }
 
@@ -479,6 +483,7 @@ class _LocationSectionState extends State<_LocationSection> {
             markers: _markers,
             onMapCreated: (controller) {
               _mapController = controller;
+              _mapCreated = true;
             },
             zoomControlsEnabled: false,
             mapToolbarEnabled: false,
@@ -720,7 +725,7 @@ class _ReviewCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            review.comment,
+            review.comment ?? '',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
               height: 1.4,
@@ -852,10 +857,20 @@ class _BookingSheetState extends State<_BookingSheet> {
     };
   }
 
+  /// Display label for UI (user-friendly)
   String get _rateLabel {
     return switch (_durationType) {
       DurationType.hourly => 'hour',
       DurationType.daily => 'night',
+      DurationType.monthly => 'month',
+    };
+  }
+
+  /// Database pricing_unit value (must match enum: hour, day, month)
+  String get _pricingUnit {
+    return switch (_durationType) {
+      DurationType.hourly => 'hour',
+      DurationType.daily => 'day',
       DurationType.monthly => 'month',
     };
   }
@@ -1001,7 +1016,7 @@ class _BookingSheetState extends State<_BookingSheet> {
         checkOut: _checkOut,
         guestCount: _guestCount,
         totalPrice: _totalPrice,
-        unitLabel: _rateLabel,
+        unitLabel: _pricingUnit,
       );
 
       if (mounted) {

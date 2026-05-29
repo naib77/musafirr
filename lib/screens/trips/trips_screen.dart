@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 import '../../data/mock_data.dart';
 import '../../models/booking.dart';
 import '../../models/booking_status.dart';
+import '../../models/guest_review_ratings.dart';
+import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
 import '../../widgets/price_display.dart';
+import '../review/guest_review_screen.dart';
 
 class TripsScreen extends StatefulWidget {
   const TripsScreen({
@@ -213,6 +216,7 @@ class _TripsScreenState extends State<TripsScreen>
       builder: (context) => _BookingDetailsSheet(
         booking: booking,
         repository: widget.repository,
+        authState: widget.authState,
       ),
     );
   }
@@ -329,6 +333,8 @@ class _BookingCard extends StatelessWidget {
     return switch (status) {
       BookingStatus.pending => Colors.orange,
       BookingStatus.confirmed => Colors.green,
+      BookingStatus.rejected => Colors.red.shade700,
+      BookingStatus.active => Colors.teal,
       BookingStatus.completed => Colors.blue,
       BookingStatus.cancelled => Colors.red,
     };
@@ -357,10 +363,12 @@ class _BookingDetailsSheet extends StatelessWidget {
   const _BookingDetailsSheet({
     required this.booking,
     required this.repository,
+    required this.authState,
   });
 
   final Booking booking;
   final MusafirRepository repository;
+  final AuthStateNotifier authState;
 
   @override
   Widget build(BuildContext context) {
@@ -440,15 +448,92 @@ class _BookingDetailsSheet extends StatelessWidget {
             ),
             const SizedBox(height: 32),
 
-            // Actions
-            if (booking.status.isActive) ...[
+            // Status-specific info
+            if (booking.status == BookingStatus.active) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.teal.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle, color: Colors.teal),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'You are checked in. Enjoy your stay!',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: Colors.teal.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            if (booking.status == BookingStatus.rejected) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.cancel, color: Colors.red.shade700),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        booking.rejectionReason ?? 'Host declined this booking.',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: Colors.red.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            if (booking.hostMessage != null &&
+                booking.status == BookingStatus.confirmed) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Message from host:',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      booking.hostMessage!,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // Actions - only allow cancel for pending/confirmed (not active)
+            if (booking.status == BookingStatus.pending ||
+                booking.status == BookingStatus.confirmed) ...[
               OutlinedButton(
                 onPressed: () {
-                  repository.cancelBooking(booking.id);
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Booking cancelled')),
-                  );
+                  _showCancelDialog(context, booking);
                 },
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.red,
@@ -458,9 +543,115 @@ class _BookingDetailsSheet extends StatelessWidget {
                 child: const Text('Cancel Booking'),
               ),
             ],
+
+            // Completed booking - prompt for review
+            if (booking.status == BookingStatus.completed) ...[
+              FilledButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _navigateToReview(context);
+                },
+                icon: const Icon(Icons.rate_review),
+                label: const Text('Leave a Review'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                ),
+              ),
+            ],
             SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
           ],
         ),
+      ),
+    );
+  }
+
+  void _navigateToReview(BuildContext context) {
+    final user = authState.currentUser;
+    if (user == null) return;
+
+    // Check if user already submitted a review for this booking
+    final existingReviews = repository.getReviewsForBooking(booking.id);
+    final alreadyReviewed = existingReviews.any(
+      (r) => r.reviewerId == user.id && r.reviewType == ReviewType.guestToHost,
+    );
+
+    if (alreadyReviewed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You have already submitted a review for this booking')),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => GuestReviewScreen(
+          booking: booking,
+          onSubmit: (GuestReviewRatings ratings, String comment) {
+            // Get host info from listing
+            final listing = repository.listings.firstWhere(
+              (l) => l.id == booking.listingId,
+              orElse: () => repository.listings.first,
+            );
+
+            final review = Review.guestReview(
+              id: DateTime.now().millisecondsSinceEpoch.toString(),
+              bookingId: booking.id,
+              listingId: booking.listingId,
+              reviewerId: user.id,
+              reviewerName: user.name ?? 'Guest',
+              reviewerAvatarUrl: user.avatarUrl,
+              hostId: listing.hostId ?? '',
+              ratings: ratings,
+              comment: comment,
+            );
+
+            repository.saveReview(review);
+
+            Navigator.pop(context);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Thank you for your review! It will be visible once the host also submits their review.'),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  void _showCancelDialog(BuildContext context, Booking booking) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cancel Booking'),
+        content: const Text(
+          'Are you sure you want to cancel this booking? The host will be notified.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Keep Booking'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final updated = booking.copyWith(
+                status: BookingStatus.cancelled,
+                cancelledAt: DateTime.now(),
+              );
+              repository.updateBooking(updated);
+              Navigator.pop(dialogContext);
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Booking cancelled')),
+              );
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text('Cancel Booking'),
+          ),
+        ],
       ),
     );
   }
