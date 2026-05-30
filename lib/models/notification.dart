@@ -1,3 +1,19 @@
+/// Helper to convert snake_case to camelCase
+String _snakeToCamel(String input) {
+  final parts = input.split('_');
+  if (parts.length == 1) return input;
+  return parts.first +
+      parts.skip(1).map((p) => p.isEmpty ? '' : p[0].toUpperCase() + p.substring(1)).join();
+}
+
+/// Helper to convert camelCase to snake_case
+String _camelToSnake(String input) {
+  return input.replaceAllMapped(
+    RegExp(r'[A-Z]'),
+    (match) => '_${match.group(0)!.toLowerCase()}',
+  );
+}
+
 /// Types of notifications in the system
 enum NotificationType {
   /// Booking-related notifications
@@ -314,7 +330,7 @@ class AppNotification {
     return {
       'id': id,
       'user_id': userId,
-      'type': type.name,
+      'type': _camelToSnake(type.name),
       'title': title,
       'body': body,
       'created_at': createdAt.toIso8601String(),
@@ -331,11 +347,15 @@ class AppNotification {
 
   /// Create from JSON
   factory AppNotification.fromJson(Map<String, dynamic> json) {
+    // Handle snake_case type from database (e.g., 'booking_request' -> 'bookingRequest')
+    final typeStr = json['type'] as String;
+    final normalizedType = _snakeToCamel(typeStr);
+
     return AppNotification(
       id: json['id'] as String,
       userId: json['user_id'] as String,
       type: NotificationType.values.firstWhere(
-        (t) => t.name == json['type'],
+        (t) => t.name == normalizedType || t.name == typeStr,
         orElse: () => NotificationType.systemAlert,
       ),
       title: json['title'] as String,

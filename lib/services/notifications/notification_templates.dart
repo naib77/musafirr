@@ -21,6 +21,10 @@ class NotificationTemplates {
     required DateTime checkIn,
     required DateTime checkOut,
     required Money totalAmount,
+    String? guestAvatarUrl,
+    double? guestRating,
+    int? guestReviewCount,
+    int guestCount = 1,
   }) {
     return AppNotification(
       id: notificationId,
@@ -38,6 +42,10 @@ class NotificationTemplates {
         'check_in': checkIn.toIso8601String(),
         'check_out': checkOut.toIso8601String(),
         'total_amount': totalAmount.amount,
+        'guest_avatar_url': guestAvatarUrl,
+        'guest_rating': guestRating,
+        'guest_review_count': guestReviewCount,
+        'guest_count': guestCount,
       },
       actionUrl: '/host/reservations/$bookingId',
       groupKey: 'booking_$bookingId',
@@ -483,6 +491,9 @@ class NotificationTemplates {
     required Listing listing,
     required NotificationType type,
     required String recipientId,
+    String? guestAvatarUrl,
+    double? guestRating,
+    int? guestReviewCount,
   }) {
     switch (type) {
       case NotificationType.bookingRequest:
@@ -495,6 +506,10 @@ class NotificationTemplates {
           checkIn: booking.effectiveCheckIn,
           checkOut: booking.effectiveCheckOut,
           totalAmount: booking.totalPriceMoney,
+          guestAvatarUrl: guestAvatarUrl,
+          guestRating: guestRating,
+          guestReviewCount: guestReviewCount,
+          guestCount: booking.guestCount,
         );
       case NotificationType.bookingConfirmed:
         return bookingConfirmed(

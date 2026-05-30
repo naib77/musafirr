@@ -947,9 +947,11 @@ class SupabaseMusafirRepository extends ChangeNotifier
           updateData['cancelled_at'] = booking.cancelledAt!.toIso8601String();
         }
 
+        debugPrint('[DEBUG-repo] Updating booking ${booking.id} with data: $updateData');
         await _client.from('bookings').update(updateData).eq('id', booking.id);
+        debugPrint('[DEBUG-repo] Booking update completed successfully');
       } catch (e) {
-        debugPrint('Error updating booking: $e');
+        debugPrint('[DEBUG-repo] Error updating booking: $e');
       }
     }
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../repositories/musafir_repository.dart';
+import '../services/booking/booking_lifecycle_service.dart';
 import '../state/auth_state.dart';
 import '../state/favorites_state.dart';
 import '../state/messaging_state.dart';
@@ -23,6 +24,7 @@ class MainShell extends StatefulWidget {
     required this.searchState,
     this.notificationState,
     this.messagingState,
+    this.bookingLifecycleService,
   });
 
   final MusafirRepository repository;
@@ -31,6 +33,7 @@ class MainShell extends StatefulWidget {
   final SearchStateNotifier searchState;
   final NotificationStateNotifier? notificationState;
   final MessagingStateNotifier? messagingState;
+  final BookingLifecycleService? bookingLifecycleService;
 
   @override
   State<MainShell> createState() => _MainShellState();
@@ -104,12 +107,16 @@ class _MainShellState extends State<MainShell> {
 
   void _openNotificationCenter() {
     if (widget.notificationState == null) return;
+    if (widget.bookingLifecycleService == null) return;
 
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => NotificationCenterScreen(
           notificationState: widget.notificationState!,
+          repository: widget.repository,
+          bookingLifecycleService: widget.bookingLifecycleService!,
+          authState: widget.authState,
         ),
       ),
     );
@@ -140,6 +147,7 @@ class _MainShellState extends State<MainShell> {
             favoritesState: widget.favoritesState,
             searchState: widget.searchState,
             notificationState: widget.notificationState,
+            bookingLifecycleService: widget.bookingLifecycleService,
           ),
           WishlistsScreen(
             repository: widget.repository,

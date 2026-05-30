@@ -7,12 +7,14 @@ import '../models/owner_registration_draft.dart';
 import '../models/review.dart';
 import '../models/search_filters.dart';
 import '../models/user.dart';
+import '../services/booking/booking_lifecycle_service.dart';
 
 /// Abstract repository interface for Musafir data operations.
 ///
 /// Extends [Listenable] to support reactive UI updates via [ListenableBuilder].
+/// Implements [BookingStore] for compatibility with [BookingLifecycleService].
 /// Implementations should call [notifyListeners] after data mutations.
-abstract class MusafirRepository implements Listenable {
+abstract class MusafirRepository implements Listenable, BookingStore {
   // Existing getters
   List<Listing> get listings;
   List<Booking> get bookings;

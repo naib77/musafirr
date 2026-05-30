@@ -53,7 +53,7 @@ class NotificationItem extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Icon
-                  _NotificationIcon(notification: notification),
+                  NotificationIcon(notification: notification),
                   const SizedBox(width: 12),
                   // Content
                   Expanded(
@@ -100,7 +100,7 @@ class NotificationItem extends StatelessWidget {
                         if (notification.priority == NotificationPriority.high ||
                             notification.priority == NotificationPriority.urgent) ...[
                           const SizedBox(height: 6),
-                          _PriorityBadge(priority: notification.priority),
+                          NotificationPriorityBadge(priority: notification.priority),
                         ],
                       ],
                     ),
@@ -134,8 +134,8 @@ class NotificationItem extends StatelessWidget {
 }
 
 /// Icon for notification based on type
-class _NotificationIcon extends StatelessWidget {
-  const _NotificationIcon({required this.notification});
+class NotificationIcon extends StatelessWidget {
+  const NotificationIcon({required this.notification});
 
   final AppNotification notification;
 
@@ -252,8 +252,8 @@ class _NotificationIcon extends StatelessWidget {
 }
 
 /// Badge for high priority notifications
-class _PriorityBadge extends StatelessWidget {
-  const _PriorityBadge({required this.priority});
+class NotificationPriorityBadge extends StatelessWidget {
+  const NotificationPriorityBadge({required this.priority});
 
   final NotificationPriority priority;
 
@@ -309,7 +309,7 @@ class NotificationItemCompact extends StatelessWidget {
 
     return ListTile(
       onTap: onTap,
-      leading: _NotificationIcon(notification: notification),
+      leading: NotificationIcon(notification: notification),
       title: Text(
         notification.title,
         maxLines: 1,

@@ -4,6 +4,7 @@ import '../../models/listing.dart';
 import '../../models/listing_type.dart';
 import '../../models/search_filters.dart';
 import '../../repositories/musafir_repository.dart';
+import '../../services/booking/booking_lifecycle_service.dart';
 import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
 import '../../state/notification_state.dart';
@@ -22,6 +23,7 @@ class ExploreScreen extends StatefulWidget {
     required this.favoritesState,
     required this.searchState,
     this.notificationState,
+    this.bookingLifecycleService,
   });
 
   final MusafirRepository repository;
@@ -29,6 +31,7 @@ class ExploreScreen extends StatefulWidget {
   final FavoritesStateNotifier favoritesState;
   final SearchStateNotifier searchState;
   final NotificationStateNotifier? notificationState;
+  final BookingLifecycleService? bookingLifecycleService;
 
   @override
   State<ExploreScreen> createState() => _ExploreScreenState();
@@ -86,12 +89,16 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   void _openNotificationCenter() {
     if (widget.notificationState == null) return;
+    if (widget.bookingLifecycleService == null) return;
 
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => NotificationCenterScreen(
           notificationState: widget.notificationState!,
+          repository: widget.repository,
+          bookingLifecycleService: widget.bookingLifecycleService!,
+          authState: widget.authState,
         ),
       ),
     );

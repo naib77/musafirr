@@ -497,7 +497,7 @@ class SupabaseNotificationService implements NotificationService {
   Map<String, dynamic> _notificationToJson(AppNotification notification) {
     return {
       'user_id': notification.userId,
-      'type': notification.type.name,
+      'type': _camelToSnake(notification.type.name),
       'title': notification.title,
       'body': notification.body,
       'status': notification.status.name,
@@ -510,12 +510,30 @@ class SupabaseNotificationService implements NotificationService {
     };
   }
 
+  /// Convert camelCase to snake_case
+  String _camelToSnake(String input) {
+    return input.replaceAllMapped(
+      RegExp(r'[A-Z]'),
+      (match) => '_${match.group(0)!.toLowerCase()}',
+    );
+  }
+
   NotificationType _notificationTypeFromString(String? value) {
     if (value == null) return NotificationType.systemAlert;
+    // Handle snake_case from database (e.g., 'booking_request' -> 'bookingRequest')
+    final normalizedValue = _snakeToCamel(value);
     return NotificationType.values.firstWhere(
-      (t) => t.name == value,
+      (t) => t.name == normalizedValue || t.name == value,
       orElse: () => NotificationType.systemAlert,
     );
+  }
+
+  /// Convert snake_case to camelCase
+  String _snakeToCamel(String input) {
+    final parts = input.split('_');
+    if (parts.length == 1) return input;
+    return parts.first +
+        parts.skip(1).map((p) => p.isEmpty ? '' : p[0].toUpperCase() + p.substring(1)).join();
   }
 
   NotificationStatus _notificationStatusFromString(String? value) {

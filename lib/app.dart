@@ -10,6 +10,8 @@ import 'screens/auth/phone_entry_screen.dart';
 import 'screens/auth/profile_completion_screen.dart';
 import 'screens/auth/signup_screen.dart';
 import 'screens/main_shell.dart';
+import 'services/booking/booking_lifecycle_service.dart';
+import 'services/booking/booking_rules.dart';
 import 'services/notifications/fcm_token_service.dart';
 import 'services/notifications/notification_service_factory.dart';
 import 'state/auth_state.dart';
@@ -34,6 +36,7 @@ class _MusafirAppState extends State<MusafirApp> {
   final FavoritesStateNotifier favoritesState = FavoritesStateNotifier();
   final SearchStateNotifier searchState = SearchStateNotifier();
   late final NotificationStateNotifier notificationState;
+  late final BookingLifecycleService bookingLifecycleService;
 
   @override
   void initState() {
@@ -48,6 +51,12 @@ class _MusafirAppState extends State<MusafirApp> {
       repository = inMemory;
       _inMemoryRepo = inMemory;
     }
+
+    // Initialize booking lifecycle service
+    bookingLifecycleService = BookingLifecycleService(
+      store: repository,
+      rules: BookingRules(),
+    );
 
     // Initialize notification state with appropriate service
     notificationState = NotificationStateNotifier(
@@ -126,6 +135,7 @@ class _MusafirAppState extends State<MusafirApp> {
               favoritesState: favoritesState,
               searchState: searchState,
               notificationState: notificationState,
+              bookingLifecycleService: bookingLifecycleService,
             );
           }
           return AuthNavigator(authState: authState);
