@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/image_upload_service.dart';
+import 'modern_banner.dart';
 
 /// Widget for displaying and uploading user avatar
 class AvatarUpload extends StatefulWidget {
@@ -77,24 +78,14 @@ class _AvatarUploadState extends State<AvatarUpload> {
 
       if (result.success && result.publicUrl != null) {
         widget.onAvatarChanged(result.publicUrl);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Avatar updated successfully'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        ModernBanner.showSuccess(context, 'Avatar updated successfully');
       } else {
         // Clear local preview on error
         setState(() {
           _localImagePath = null;
           _localImageBytes = null;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.errorMessage ?? 'Failed to upload avatar'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ModernBanner.showError(context, result.errorMessage ?? 'Failed to upload avatar');
       }
     }
   }

@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../models/referral.dart';
 import '../../state/referral_state.dart';
 import '../../widgets/discount/referral_card.dart';
+import '../../widgets/modern_banner.dart';
 
 /// Screen for managing referrals
 class ReferralScreen extends StatefulWidget {
@@ -40,13 +41,7 @@ class _ReferralScreenState extends State<ReferralScreen>
 
   void _copyCode(String code) {
     Clipboard.setData(ClipboardData(text: code));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Referral code copied!'),
-        duration: Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    ModernBanner.showSuccess(context, 'Referral code copied!');
   }
 
   @override

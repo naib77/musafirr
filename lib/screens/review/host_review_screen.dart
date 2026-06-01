@@ -20,6 +20,7 @@ class HostReviewScreen extends StatefulWidget {
 
 class _HostReviewScreenState extends State<HostReviewScreen> {
   final _commentController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
 
   double _rating = 5.0;
   bool _isSubmitting = false;
@@ -31,6 +32,8 @@ class _HostReviewScreenState extends State<HostReviewScreen> {
   }
 
   void _submit() {
+    if (!_formKey.currentState!.validate()) return;
+
     setState(() => _isSubmitting = true);
 
     final comment = _commentController.text.trim();
@@ -45,9 +48,11 @@ class _HostReviewScreenState extends State<HostReviewScreen> {
       appBar: AppBar(
         title: const Text('Review Guest'),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
           // Guest info header
           Card(
             child: Padding(
@@ -126,13 +131,21 @@ class _HostReviewScreenState extends State<HostReviewScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          TextField(
+          TextFormField(
             controller: _commentController,
             maxLines: 4,
             decoration: const InputDecoration(
               hintText: 'Share your experience with other hosts...',
               border: OutlineInputBorder(),
             ),
+            validator: (value) {
+              if (value != null &&
+                  value.trim().isNotEmpty &&
+                  value.trim().length < 10) {
+                return 'Review must be at least 10 characters';
+              }
+              return null;
+            },
           ),
           const SizedBox(height: 8),
           Text(
@@ -158,7 +171,8 @@ class _HostReviewScreenState extends State<HostReviewScreen> {
                 : const Text('Submit Review'),
           ),
           SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
-        ],
+          ],
+        ),
       ),
     );
   }

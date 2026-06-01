@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/image_upload_service.dart';
+import 'modern_banner.dart';
 
 /// A selected image that may or may not be uploaded yet
 class SelectedImage {
@@ -138,11 +139,7 @@ class _ImagePickerGridState extends State<ImagePickerGrid> {
   }
 
   void _showMaxImagesError() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Maximum ${widget.maxImages} images allowed'),
-      ),
-    );
+    ModernBanner.showWarning(context, 'Maximum ${widget.maxImages} images allowed');
   }
 
   void _removeImage(int index) {

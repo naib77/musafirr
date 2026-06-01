@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../state/otp_state.dart';
+import '../../widgets/modern_banner.dart';
 import '../../widgets/phone_input_field.dart';
 
 /// Screen for entering phone number for OTP-based registration
@@ -37,12 +38,7 @@ class _PhoneEntryScreenState extends State<PhoneEntryScreen> {
     final success = await widget.otpState.sendOtp(_phoneController.text);
 
     if (!success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(widget.otpState.error ?? 'Failed to send OTP'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      ModernBanner.showError(context, widget.otpState.error ?? 'Failed to send OTP');
     }
   }
 

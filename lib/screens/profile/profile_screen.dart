@@ -4,6 +4,7 @@ import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
 import '../../state/notification_state.dart';
 import '../../widgets/avatar_upload.dart';
+import '../../widgets/modern_banner.dart';
 import '../host/become_host_screen.dart';
 import '../host/host_dashboard_screen.dart';
 import '../notifications/notification_settings_screen.dart';
@@ -293,9 +294,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _showComingSoon(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Coming soon!')),
-    );
+    ModernBanner.showInfo(context, 'Coming soon!');
   }
 
   void _navigateToNotificationSettings(BuildContext context) {
@@ -336,13 +335,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           authState: authState,
           onBecomeHost: () {
             Navigator.pop(context);
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content:
-                    Text('Welcome to hosting! You can now create listings.'),
-                backgroundColor: Colors.green,
-              ),
-            );
+            ModernBanner.showSuccess(context, 'Welcome to hosting! You can now create listings.');
           },
         ),
       ),
@@ -356,7 +349,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         builder: (context) => HostDashboardScreen(
           repository: repository,
           authState: authState,
-          onExitHostMode: () => Navigator.pop(context),
         ),
       ),
     );

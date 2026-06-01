@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../state/otp_state.dart';
+import '../../widgets/modern_banner.dart';
 import '../../widgets/otp_input_field.dart';
 
 /// Screen for OTP verification
@@ -33,12 +34,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         _otpFieldKey++;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(widget.otpState.error ?? 'Verification failed'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      ModernBanner.showError(context, widget.otpState.error ?? 'Verification failed');
     }
   }
 
@@ -53,12 +49,11 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         _otpFieldKey++;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(success ? 'OTP sent successfully' : widget.otpState.error ?? 'Failed to resend'),
-          backgroundColor: success ? Colors.green : Colors.red,
-        ),
-      );
+      if (success) {
+        ModernBanner.showSuccess(context, 'OTP sent successfully');
+      } else {
+        ModernBanner.showError(context, widget.otpState.error ?? 'Failed to resend');
+      }
     }
   }
 

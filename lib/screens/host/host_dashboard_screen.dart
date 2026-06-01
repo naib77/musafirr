@@ -15,31 +15,17 @@ class HostDashboardScreen extends StatelessWidget {
     super.key,
     required this.repository,
     required this.authState,
-    required this.onExitHostMode,
   });
 
   final MusafirRepository repository;
   final AuthStateNotifier authState;
-  final VoidCallback onExitHostMode;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final user = authState.currentUser;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Host Dashboard'),
-        centerTitle: false,
-        actions: [
-          TextButton.icon(
-            onPressed: onExitHostMode,
-            icon: const Icon(Icons.swap_horiz),
-            label: const Text('Switch to Guest'),
-          ),
-        ],
-      ),
-      body: ListenableBuilder(
+    return ListenableBuilder(
         listenable: Listenable.merge([repository, authState]),
         builder: (context, _) {
           final hostListings = user != null
@@ -258,13 +244,7 @@ class HostDashboardScreen extends StatelessWidget {
             ),
           );
         },
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _navigateToCreateListing(context),
-        icon: const Icon(Icons.add),
-        label: const Text('New Listing'),
-      ),
-    );
+      );
   }
 
   void _navigateToCreateListing(BuildContext context) {

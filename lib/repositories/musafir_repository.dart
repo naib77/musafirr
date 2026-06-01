@@ -115,4 +115,26 @@ abstract class MusafirRepository implements Listenable, BookingStore {
     required DateTime checkIn,
     required DateTime checkOut,
   });
+
+  /// Get completed bookings that the user hasn't reviewed yet
+  List<Booking> getUnreviewedCompletedBookings(String userId);
+
+  /// Refresh all data from the data source
+  Future<void> refresh();
+
+  // ============== Pagination ==============
+
+  /// Whether there are more listings to load
+  bool get hasMoreListings;
+
+  /// Whether listings are currently being loaded
+  bool get isLoadingListings;
+
+  /// Fetch the next page of listings (10 items)
+  /// Returns the newly fetched listings
+  Future<List<Listing>> fetchNextListingsPage();
+
+  /// Reset pagination and fetch fresh first page
+  /// Call this when filters change or on pull-to-refresh
+  Future<void> resetListingsPagination();
 }

@@ -4,7 +4,7 @@ import '../../models/booking.dart';
 import '../../models/guest_review_ratings.dart';
 
 /// Screen for guests to submit a review for a listing/host.
-/// Includes 6 category ratings and required text comment.
+/// Includes 6 category ratings and optional text comment.
 class GuestReviewScreen extends StatefulWidget {
   const GuestReviewScreen({
     super.key,
@@ -180,9 +180,9 @@ class _GuestReviewScreenState extends State<GuestReviewScreen> {
             ),
             const SizedBox(height: 24),
 
-            // Comment
+            // Comment (optional)
             Text(
-              'Write a Review',
+              'Write a Review (Optional)',
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
@@ -196,10 +196,9 @@ class _GuestReviewScreenState extends State<GuestReviewScreen> {
                 border: OutlineInputBorder(),
               ),
               validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Please write a review';
-                }
-                if (value.trim().length < 10) {
+                if (value != null &&
+                    value.trim().isNotEmpty &&
+                    value.trim().length < 10) {
                   return 'Review must be at least 10 characters';
                 }
                 return null;

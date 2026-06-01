@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'config/supabase_config.dart';
-import 'repositories/in_memory_musafir_repository.dart';
-import 'repositories/musafir_repository.dart';
 import 'repositories/supabase_musafir_repository.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/otp_verification_screen.dart';
@@ -21,17 +19,14 @@ import 'state/otp_state.dart';
 import 'state/search_state.dart';
 
 class MusafirApp extends StatefulWidget {
-  const MusafirApp({super.key, this.useSupabase = false});
-
-  final bool useSupabase;
+  const MusafirApp({super.key});
 
   @override
   State<MusafirApp> createState() => _MusafirAppState();
 }
 
 class _MusafirAppState extends State<MusafirApp> {
-  late final MusafirRepository repository;
-  late final InMemoryMusafirRepository? _inMemoryRepo;
+  late final SupabaseMusafirRepository repository;
   final AuthStateNotifier authState = AuthStateNotifier();
   final FavoritesStateNotifier favoritesState = FavoritesStateNotifier();
   final SearchStateNotifier searchState = SearchStateNotifier();
@@ -42,15 +37,8 @@ class _MusafirAppState extends State<MusafirApp> {
   void initState() {
     super.initState();
 
-    // Initialize repository based on configuration
-    if (widget.useSupabase) {
-      repository = SupabaseMusafirRepository();
-      _inMemoryRepo = null;
-    } else {
-      final inMemory = InMemoryMusafirRepository();
-      repository = inMemory;
-      _inMemoryRepo = inMemory;
-    }
+    // Initialize Supabase repository
+    repository = SupabaseMusafirRepository();
 
     // Initialize booking lifecycle service
     bookingLifecycleService = BookingLifecycleService(
@@ -66,8 +54,8 @@ class _MusafirAppState extends State<MusafirApp> {
     // Initialize search state with listings
     _initializeSearchState();
 
-    // Listen for repository changes (only for in-memory repo)
-    _inMemoryRepo?.addListener(_onRepositoryChange);
+    // Listen for repository changes to update search
+    repository.addListener(_onRepositoryChange);
 
     // Listen for auth changes to initialize/clear notifications
     authState.addListener(_onAuthStateChanged);
@@ -75,20 +63,17 @@ class _MusafirAppState extends State<MusafirApp> {
 
   void _onAuthStateChanged() {
     if (authState.isLoggedIn && authState.currentUser != null) {
-      // User logged in - initialize notifications
+      // User logged in - initialize notifications and favorites
       notificationState.initialize(authState.currentUser!.id);
+      favoritesState.initializeForUser(authState.currentUser!.id);
 
       // Save FCM token to Supabase for push notifications
-      if (SupabaseConfig.isConfigured) {
-        FcmTokenService.instance.initializeForUser();
-      }
+      FcmTokenService.instance.initializeForUser();
     } else {
-      // User logged out - clear notifications and deactivate FCM token
+      // User logged out - clear notifications, favorites, and deactivate FCM token
       notificationState.clear();
-
-      if (SupabaseConfig.isConfigured) {
-        FcmTokenService.instance.cleanupOnLogout();
-      }
+      favoritesState.clearAll();
+      FcmTokenService.instance.cleanupOnLogout();
     }
   }
 
@@ -103,8 +88,7 @@ class _MusafirAppState extends State<MusafirApp> {
   @override
   void dispose() {
     authState.removeListener(_onAuthStateChanged);
-    _inMemoryRepo?.removeListener(_onRepositoryChange);
-    _inMemoryRepo?.dispose();
+    repository.removeListener(_onRepositoryChange);
     authState.dispose();
     favoritesState.dispose();
     searchState.dispose();

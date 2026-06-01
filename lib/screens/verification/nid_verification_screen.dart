@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../services/image_upload_service.dart';
+import '../../widgets/modern_banner.dart';
 
 /// Verification status enum matching database
 enum VerificationStatus {
@@ -173,21 +174,11 @@ class _NidVerificationScreenState extends State<NidVerificationScreen> {
       if (mounted) {
         widget.onVerificationSubmitted?.call();
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Documents submitted for verification'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        ModernBanner.showSuccess(context, 'Documents submitted for verification');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to submit: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ModernBanner.showError(context, 'Failed to submit: $e');
       }
     } finally {
       if (mounted) {

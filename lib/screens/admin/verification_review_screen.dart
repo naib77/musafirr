@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../widgets/modern_banner.dart';
+
 /// Screen for admin to review pending verification documents
 class VerificationReviewScreen extends StatefulWidget {
   const VerificationReviewScreen({super.key});
@@ -78,22 +80,12 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
       }).eq('id', userId);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Verification approved'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        ModernBanner.showSuccess(context, 'Verification approved');
         _loadPendingVerifications();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ModernBanner.showError(context, 'Error: $e');
       }
     }
   }
@@ -113,22 +105,12 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
       }).eq('user_id', userId);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Verification rejected'),
-            backgroundColor: Colors.orange,
-          ),
-        );
+        ModernBanner.showWarning(context, 'Verification rejected');
         _loadPendingVerifications();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ModernBanner.showError(context, 'Error: $e');
       }
     }
   }

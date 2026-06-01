@@ -7,6 +7,7 @@ import '../../widgets/messaging/channel_selector.dart';
 import '../../widgets/messaging/message_bubble.dart';
 import '../../widgets/messaging/message_input.dart';
 import '../../widgets/messaging/typing_indicator.dart';
+import '../../widgets/modern_banner.dart';
 
 /// Chat screen for messaging with another user
 class ChatScreen extends StatefulWidget {
@@ -106,22 +107,12 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _copyMessage(Message message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Message copied to clipboard'),
-        duration: Duration(seconds: 1),
-      ),
-    );
+    ModernBanner.showSuccess(context, 'Message copied to clipboard');
   }
 
   void _onChannelSelected(MessagingChannel channel) {
     setState(() => _selectedChannel = channel);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Switched to ${channel.displayName}'),
-        duration: const Duration(seconds: 1),
-      ),
-    );
+    ModernBanner.showInfo(context, 'Switched to ${channel.displayName}');
   }
 
   void _showChannelSettings() {
@@ -141,15 +132,11 @@ class _ChatScreenState extends State<ChatScreen> {
         },
         onConnectWhatsApp: () {
           Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('WhatsApp connection coming soon')),
-          );
+          ModernBanner.showInfo(context, 'WhatsApp connection coming soon');
         },
         onConnectMessenger: () {
           Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Messenger connection coming soon')),
-          );
+          ModernBanner.showInfo(context, 'Messenger connection coming soon');
         },
       ),
     );
@@ -225,39 +212,29 @@ class _ChatScreenState extends State<ChatScreen> {
           IconButton(
             icon: const Icon(Icons.phone),
             onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Voice calls coming soon')),
-              );
+              ModernBanner.showInfo(context, 'Voice calls coming soon');
             },
           ),
           IconButton(
             icon: const Icon(Icons.videocam),
             onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Video calls coming soon')),
-              );
+              ModernBanner.showInfo(context, 'Video calls coming soon');
             },
           ),
           PopupMenuButton<String>(
             onSelected: (value) {
               switch (value) {
                 case 'search':
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Search coming soon')),
-                  );
+                  ModernBanner.showInfo(context, 'Search coming soon');
                   break;
                 case 'media':
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Media gallery coming soon')),
-                  );
+                  ModernBanner.showInfo(context, 'Media gallery coming soon');
                   break;
                 case 'channels':
                   _showChannelSettings();
                   break;
                 case 'mute':
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Notifications muted')),
-                  );
+                  ModernBanner.showSuccess(context, 'Notifications muted');
                   break;
               }
             },
@@ -345,20 +322,13 @@ class _ChatScreenState extends State<ChatScreen> {
               return MessageInput(
                 onSendMessage: _sendMessage,
                 onSendImage: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Image sharing coming soon')),
-                  );
+                  ModernBanner.showInfo(context, 'Image sharing coming soon');
                 },
                 onSendLocation: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('Location sharing coming soon')),
-                  );
+                  ModernBanner.showInfo(context, 'Location sharing coming soon');
                 },
                 onSendFile: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('File sharing coming soon')),
-                  );
+                  ModernBanner.showInfo(context, 'File sharing coming soon');
                 },
                 onTextChanged: widget.messagingState.onTextChanged,
                 replyingTo: _replyingTo,

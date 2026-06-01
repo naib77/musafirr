@@ -39,6 +39,74 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
     super.dispose();
   }
 
+  /// Show a modern success banner at the top
+  void _showSuccessBanner(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearMaterialBanners();
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle_outline, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.green.shade700,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        leadingPadding: EdgeInsets.zero,
+        actions: [
+          TextButton(
+            onPressed: () => messenger.hideCurrentMaterialBanner(),
+            child: const Text('OK', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    Future.delayed(const Duration(seconds: 3), () {
+      messenger.hideCurrentMaterialBanner();
+    });
+  }
+
+  /// Show a modern info/warning banner at the top
+  void _showInfoBanner(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearMaterialBanners();
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        content: Row(
+          children: [
+            const Icon(Icons.info_outline, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.orange.shade700,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        leadingPadding: EdgeInsets.zero,
+        actions: [
+          TextButton(
+            onPressed: () => messenger.hideCurrentMaterialBanner(),
+            child: const Text('OK', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    Future.delayed(const Duration(seconds: 4), () {
+      messenger.hideCurrentMaterialBanner();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -264,6 +332,10 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
               ),
               const Divider(height: 32),
 
+              // Booking type badge
+              _BookingTypeBadge(unitLabel: booking.unitLabel),
+              const SizedBox(height: 16),
+
               // Booking details
               _DetailRow(
                 icon: Icons.home,
@@ -272,21 +344,21 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
               ),
               const SizedBox(height: 12),
               _DetailRow(
-                icon: Icons.calendar_today,
+                icon: Icons.login,
                 label: 'Check-in',
-                value: _formatFullDate(booking.effectiveCheckIn),
+                value: _formatDateTimeForBooking(booking.effectiveCheckIn, booking.unitLabel),
               ),
               const SizedBox(height: 12),
               _DetailRow(
-                icon: Icons.calendar_today,
+                icon: Icons.logout,
                 label: 'Check-out',
-                value: _formatFullDate(booking.effectiveCheckOut),
+                value: _formatDateTimeForBooking(booking.effectiveCheckOut, booking.unitLabel),
               ),
               const SizedBox(height: 12),
               _DetailRow(
-                icon: Icons.nights_stay,
-                label: 'Nights',
-                value: '${booking.numberOfNights}',
+                icon: _getDurationIcon(booking.unitLabel),
+                label: _getDurationLabel(booking.unitLabel),
+                value: _getDurationValue(booking),
               ),
               const SizedBox(height: 12),
               _DetailRow(
@@ -388,9 +460,7 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
                   child: OutlinedButton(
                     onPressed: () {
                       Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Messaging coming soon!')),
-                      );
+                      _showInfoBanner('Messaging coming soon!');
                     },
                     child: const Text('Message Guest'),
                   ),
@@ -469,9 +539,7 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
               widget.repository.updateBooking(updated);
               Navigator.pop(dialogContext);
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Booking accepted!')),
-              );
+              _showSuccessBanner('Booking accepted!');
             },
             child: const Text('Accept'),
           ),
@@ -520,9 +588,7 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
               widget.repository.updateBooking(updated);
               Navigator.pop(dialogContext);
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Booking declined')),
-              );
+              _showSuccessBanner('Booking declined');
             },
             style: FilledButton.styleFrom(
               backgroundColor: Colors.red,
@@ -554,9 +620,7 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
               widget.repository.updateBooking(updated);
               Navigator.pop(dialogContext);
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Guest checked in!')),
-              );
+              _showSuccessBanner('Guest checked in!');
             },
             child: const Text('Confirm'),
           ),
@@ -587,11 +651,7 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
               widget.repository.updateBooking(updated);
               Navigator.pop(dialogContext);
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Service completed! Don\'t forget to leave a review.'),
-                ),
-              );
+              _showSuccessBanner('Service completed! Don\'t forget to leave a review.');
             },
             child: const Text('Complete'),
           ),
@@ -624,9 +684,7 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
               widget.repository.updateBooking(updated);
               Navigator.pop(dialogContext);
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Booking cancelled')),
-              );
+              _showSuccessBanner('Booking cancelled');
             },
             style: FilledButton.styleFrom(
               backgroundColor: Colors.red,
@@ -649,9 +707,7 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
     );
 
     if (alreadyReviewed) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You have already submitted a review for this guest')),
-      );
+      _showInfoBanner('You have already submitted a review for this guest');
       return;
     }
 
@@ -675,11 +731,7 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
             widget.repository.saveReview(review);
 
             Navigator.pop(context);
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Thank you for your review! It will be visible once the guest also submits their review.'),
-              ),
-            );
+            _showSuccessBanner('Thank you for your review!');
           },
         ),
       ),
@@ -714,6 +766,67 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
       'Dec'
     ];
     return '${weekdays[date.weekday - 1]}, ${months[date.month - 1]} ${date.day}';
+  }
+
+  String _formatDateTimeForBooking(DateTime date, String unitLabel) {
+    final weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+
+    final dateStr = '${weekdays[date.weekday - 1]}, ${months[date.month - 1]} ${date.day}';
+
+    // For hourly bookings, always show time
+    // For daily bookings, show time if it's not midnight
+    // For monthly bookings, just show date
+    if (unitLabel == 'hour') {
+      return '$dateStr at ${_formatTime(date)}';
+    } else if (unitLabel == 'night') {
+      // Show time if not default check-in/out times
+      if (date.hour != 0 || date.minute != 0) {
+        return '$dateStr at ${_formatTime(date)}';
+      }
+      return dateStr;
+    }
+    return dateStr;
+  }
+
+  String _formatTime(DateTime date) {
+    final hour = date.hour;
+    final minute = date.minute;
+    final period = hour >= 12 ? 'PM' : 'AM';
+    final displayHour = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
+    if (minute == 0) {
+      return '$displayHour $period';
+    }
+    return '$displayHour:${minute.toString().padLeft(2, '0')} $period';
+  }
+
+  IconData _getDurationIcon(String unitLabel) {
+    return switch (unitLabel) {
+      'hour' => Icons.schedule,
+      'month' => Icons.calendar_month,
+      _ => Icons.nights_stay,
+    };
+  }
+
+  String _getDurationLabel(String unitLabel) {
+    return switch (unitLabel) {
+      'hour' => 'Duration',
+      'month' => 'Months',
+      _ => 'Nights',
+    };
+  }
+
+  String _getDurationValue(Booking booking) {
+    final duration = booking.effectiveCheckOut.difference(booking.effectiveCheckIn);
+
+    return switch (booking.unitLabel) {
+      'hour' => '${duration.inHours} hour${duration.inHours != 1 ? 's' : ''}',
+      'month' => '${(duration.inDays / 30).round()} month${(duration.inDays / 30).round() != 1 ? 's' : ''}',
+      _ => '${duration.inDays} night${duration.inDays != 1 ? 's' : ''}',
+    };
   }
 }
 
@@ -754,15 +867,22 @@ class _ReservationCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      booking.tenantName,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            booking.tenantName,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        _BookingTypeChip(unitLabel: booking.unitLabel),
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${_formatDate(booking.effectiveCheckIn)} - ${_formatDate(booking.effectiveCheckOut)}',
+                      _formatDateRange(),
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -779,6 +899,8 @@ class _ReservationCard extends StatelessWidget {
                   ],
                 ),
               ),
+
+              const SizedBox(width: 12),
 
               // Price and status
               Column(
@@ -819,6 +941,35 @@ class _ReservationCard extends StatelessWidget {
     );
   }
 
+  String _formatDateRange() {
+    final checkIn = booking.effectiveCheckIn;
+    final checkOut = booking.effectiveCheckOut;
+
+    if (booking.unitLabel == 'hour') {
+      // For hourly: "May 31, 2:00 PM - 5:00 PM"
+      if (checkIn.year == checkOut.year &&
+          checkIn.month == checkOut.month &&
+          checkIn.day == checkOut.day) {
+        return '${_formatDate(checkIn)}, ${_formatTime(checkIn)} - ${_formatTime(checkOut)}';
+      }
+      return '${_formatDate(checkIn)} ${_formatTime(checkIn)} - ${_formatDate(checkOut)} ${_formatTime(checkOut)}';
+    }
+
+    // For daily/monthly: "May 31 - Jun 2"
+    return '${_formatDate(checkIn)} - ${_formatDate(checkOut)}';
+  }
+
+  String _formatTime(DateTime date) {
+    final hour = date.hour;
+    final minute = date.minute;
+    final period = hour >= 12 ? 'PM' : 'AM';
+    final displayHour = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
+    if (minute == 0) {
+      return '$displayHour $period';
+    }
+    return '$displayHour:${minute.toString().padLeft(2, '0')} $period';
+  }
+
   Color _getStatusColor(BookingStatus status) {
     return switch (status) {
       BookingStatus.pending => Colors.orange,
@@ -846,6 +997,39 @@ class _ReservationCard extends StatelessWidget {
       'Dec'
     ];
     return '${months[date.month - 1]} ${date.day}';
+  }
+}
+
+class _BookingTypeChip extends StatelessWidget {
+  const _BookingTypeChip({required this.unitLabel});
+
+  final String unitLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    final (label, color) = switch (unitLabel) {
+      'hour' => ('Hourly', Colors.purple),
+      'month' => ('Monthly', Colors.indigo),
+      _ => ('Daily', Colors.teal),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.bold,
+          fontSize: 10,
+        ),
+      ),
+    );
   }
 }
 
@@ -887,6 +1071,46 @@ class _DetailRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _BookingTypeBadge extends StatelessWidget {
+  const _BookingTypeBadge({required this.unitLabel});
+
+  final String unitLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    final (label, icon, color) = switch (unitLabel) {
+      'hour' => ('Hourly Booking', Icons.schedule, Colors.purple),
+      'month' => ('Monthly Booking', Icons.calendar_month, Colors.indigo),
+      _ => ('Daily Booking', Icons.nights_stay, Colors.teal),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: color,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

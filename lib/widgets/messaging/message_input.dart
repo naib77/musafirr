@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/message.dart';
+import '../modern_banner.dart';
 
 /// Callback types for message input
 typedef OnSendMessage = void Function(String text);
@@ -244,9 +245,7 @@ class _MessageInputState extends State<MessageInput>
 
   void _onVoiceMessage() {
     // TODO: Implement voice message recording
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Voice messages coming soon')),
-    );
+    ModernBanner.showInfo(context, 'Voice messages coming soon');
   }
 }
 
@@ -435,9 +434,7 @@ class EmojiPickerButton extends StatelessWidget {
       icon: const Icon(Icons.emoji_emotions_outlined),
       onPressed: () {
         // TODO: Show emoji picker
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Emoji picker coming soon')),
-        );
+        ModernBanner.showInfo(context, 'Emoji picker coming soon');
       },
     );
   }

@@ -40,11 +40,40 @@ class ExploreScreen extends StatefulWidget {
 class _ExploreScreenState extends State<ExploreScreen> {
   ListingType? _selectedType;
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent * 0.8) {
+      // Near bottom (80% scrolled), load more
+      _loadMoreListings();
+    }
+  }
+
+  Future<void> _loadMoreListings() async {
+    if (widget.repository.isLoadingListings ||
+        !widget.repository.hasMoreListings) {
+      return;
+    }
+    await widget.repository.fetchNextListingsPage();
+  }
+
+  Future<void> _onRefresh() async {
+    await widget.repository.resetListingsPagination();
   }
 
   List<Listing> get _filteredListings {
@@ -54,6 +83,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
     if (_selectedType != null) {
       listings = listings.where((l) => l.type == _selectedType).toList();
+    }
+    // Exclude own listings when logged in
+    final currentUserId = widget.authState.currentUser?.id;
+    if (currentUserId != null) {
+      listings = listings.where((l) => l.hostId != currentUserId).toList();
     }
     return listings;
   }
@@ -83,6 +117,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
           Navigator.pop(context);
           setState(() {});
         },
+        repository: widget.repository,
       ),
     );
   }
@@ -217,7 +252,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
             const Divider(height: 1),
 
-            // Listings grid
+            // Listings grid with pull-to-refresh
             Expanded(
               child: ListenableBuilder(
                 listenable: Listenable.merge([
@@ -227,27 +262,46 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 ]),
                 builder: (context, _) {
                   final listings = _filteredListings;
+                  final isLoading = widget.repository.isLoadingListings;
 
-                  if (listings.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.search_off,
-                            size: 64,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No listings found',
-                            style: theme.textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Try adjusting your filters',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+                  // Show loading indicator when loading and no listings yet
+                  if (listings.isEmpty && isLoading) {
+                    return const Center(
+                      child: CircularProgressIndicator(),
+                    );
+                  }
+
+                  // Show empty state only when not loading and truly no listings
+                  if (listings.isEmpty && !isLoading) {
+                    return RefreshIndicator(
+                      onRefresh: () => widget.repository.refresh(),
+                      child: CustomScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        slivers: [
+                          SliverFillRemaining(
+                            child: Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.search_off,
+                                    size: 64,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'No listings found',
+                                    style: theme.textTheme.titleMedium,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Try adjusting your filters',
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ],
@@ -255,28 +309,69 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     );
                   }
 
-                  return GridView.builder(
-                    padding: const EdgeInsets.all(16),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      mainAxisSpacing: 24,
-                      crossAxisSpacing: 16,
-                      childAspectRatio: 0.65,
+                  return RefreshIndicator(
+                    onRefresh: _onRefresh,
+                    child: CustomScrollView(
+                      controller: _scrollController,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      slivers: [
+                        SliverPadding(
+                          padding: const EdgeInsets.all(16),
+                          sliver: SliverGrid(
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              mainAxisSpacing: 24,
+                              crossAxisSpacing: 16,
+                              childAspectRatio: 0.65,
+                            ),
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final listing = listings[index];
+                                return ListingCardModern(
+                                  listing: listing,
+                                  isFavorite: widget.favoritesState
+                                      .isFavorite(listing.id),
+                                  onTap: () => _openListingDetail(listing),
+                                  onFavoriteTap: () {
+                                    widget.favoritesState
+                                        .toggleFavorite(listing.id);
+                                  },
+                                );
+                              },
+                              childCount: listings.length,
+                            ),
+                          ),
+                        ),
+                        // Loading indicator or end message
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Center(
+                              child: widget.repository.isLoadingListings
+                                  ? const SizedBox(
+                                      height: 32,
+                                      width: 32,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : !widget.repository.hasMoreListings &&
+                                          listings.isNotEmpty
+                                      ? Text(
+                                          'No more listings',
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                            color: theme
+                                                .colorScheme.onSurfaceVariant,
+                                          ),
+                                        )
+                                      : const SizedBox.shrink(),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    itemCount: listings.length,
-                    itemBuilder: (context, index) {
-                      final listing = listings[index];
-                      return ListingCardModern(
-                        listing: listing,
-                        isFavorite:
-                            widget.favoritesState.isFavorite(listing.id),
-                        onTap: () => _openListingDetail(listing),
-                        onFavoriteTap: () {
-                          widget.favoritesState.toggleFavorite(listing.id);
-                        },
-                      );
-                    },
                   );
                 },
               ),
@@ -320,9 +415,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
       }
     }
 
-    parts
-        .add('${filters.guestCount} guest${filters.guestCount > 1 ? 's' : ''}');
-
     return parts.join(' · ');
   }
 
@@ -356,11 +448,13 @@ class _SearchSheet extends StatefulWidget {
     required this.searchController,
     required this.searchState,
     required this.onSearch,
+    required this.repository,
   });
 
   final TextEditingController searchController;
   final SearchStateNotifier searchState;
   final VoidCallback onSearch;
+  final MusafirRepository repository;
 
   @override
   State<_SearchSheet> createState() => _SearchSheetState();
@@ -374,6 +468,10 @@ class _SearchSheetState extends State<_SearchSheet> {
   DateTime? _singleDate;
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
+
+  // Location suggestions
+  List<_CitySuggestion> _suggestions = [];
+  bool _showSuggestions = false;
 
   @override
   void initState() {
@@ -394,6 +492,60 @@ class _SearchSheetState extends State<_SearchSheet> {
     _singleDate = filters.singleDate;
     _startTime = filters.startTime;
     _endTime = filters.endTime;
+
+    // Listen for location input changes
+    widget.searchController.addListener(_onLocationChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.searchController.removeListener(_onLocationChanged);
+    super.dispose();
+  }
+
+  void _onLocationChanged() {
+    final query = widget.searchController.text.toLowerCase();
+    if (query.isEmpty) {
+      setState(() {
+        _suggestions = [];
+        _showSuggestions = false;
+      });
+      return;
+    }
+
+    // Extract unique cities with counts from listings
+    final cityMap = <String, int>{};
+    for (final listing in widget.repository.listings) {
+      final city = listing.city;
+      if (city != null && city.isNotEmpty) {
+        cityMap[city] = (cityMap[city] ?? 0) + 1;
+      }
+    }
+
+    // Filter cities matching the query
+    final filtered = cityMap.entries
+        .where((e) => e.key.toLowerCase().contains(query))
+        .map((e) => _CitySuggestion(city: e.key, count: e.value))
+        .toList();
+
+    // Sort by count (most listings first) and limit to 5
+    filtered.sort((a, b) => b.count.compareTo(a.count));
+    final limited = filtered.take(5).toList();
+
+    setState(() {
+      _suggestions = limited;
+      _showSuggestions = limited.isNotEmpty;
+    });
+  }
+
+  void _selectSuggestion(_CitySuggestion suggestion) {
+    widget.searchController.text = suggestion.city;
+    widget.searchController.selection = TextSelection.fromPosition(
+      TextPosition(offset: suggestion.city.length),
+    );
+    setState(() {
+      _showSuggestions = false;
+    });
   }
 
   Future<void> _selectDateRange() async {
@@ -540,17 +692,70 @@ class _SearchSheetState extends State<_SearchSheet> {
             ),
             const SizedBox(height: 20),
 
-            // Location
-            TextField(
-              controller: widget.searchController,
-              decoration: InputDecoration(
-                labelText: 'Where',
-                hintText: 'Search destinations',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+            // Location with suggestions
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: widget.searchController,
+                  decoration: InputDecoration(
+                    labelText: 'Where',
+                    hintText: 'Search destinations',
+                    prefixIcon: const Icon(Icons.search),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
                 ),
-              ),
+                // Suggestions dropdown
+                if (_showSuggestions && _suggestions.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(top: 4),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface,
+                      border: Border.all(color: theme.colorScheme.outline),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: _suggestions.map((suggestion) {
+                        return InkWell(
+                          onTap: () => _selectSuggestion(suggestion),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.location_on_outlined,
+                                  color: theme.colorScheme.primary,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    '${suggestion.city} (${suggestion.count} listing${suggestion.count > 1 ? 's' : ''})',
+                                    style: theme.textTheme.bodyMedium,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 20),
 
@@ -853,4 +1058,12 @@ class _SearchSheetState extends State<_SearchSheet> {
     final period = time.period == DayPeriod.am ? 'AM' : 'PM';
     return '$hour:$minute $period';
   }
+}
+
+/// Model for city suggestion with listing count
+class _CitySuggestion {
+  final String city;
+  final int count;
+
+  const _CitySuggestion({required this.city, required this.count});
 }

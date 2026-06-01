@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../models/referral.dart';
+import '../modern_banner.dart';
 
 /// Referral card widget displaying user's referral info
 class ReferralCard extends StatelessWidget {
@@ -193,12 +194,7 @@ class ReferralCard extends StatelessWidget {
                             ClipboardData(text: referral.referralCode),
                           );
                           onCopyCode?.call();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Code copied to clipboard'),
-                              duration: Duration(seconds: 2),
-                            ),
-                          );
+                          ModernBanner.showSuccess(context, 'Code copied to clipboard');
                         },
                         tooltip: 'Copy code',
                       ),

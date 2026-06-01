@@ -11,6 +11,7 @@ import '../../state/auth_state.dart';
 import '../../widgets/app_text_field.dart';
 import '../../widgets/image_picker_grid.dart';
 import '../../widgets/location_picker.dart';
+import '../../widgets/modern_banner.dart';
 
 class CreateListingScreen extends StatefulWidget {
   const CreateListingScreen({
@@ -218,22 +219,12 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
 
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Listing created successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        ModernBanner.showSuccess(context, 'Listing created successfully!');
       }
     } catch (e) {
       if (mounted) {
         setState(() => _uploadError = e.toString());
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to create listing: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ModernBanner.showError(context, 'Failed to create listing: $e');
       }
     } finally {
       if (mounted) {

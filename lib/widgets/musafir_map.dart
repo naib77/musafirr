@@ -4,6 +4,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/listing.dart';
 import '../models/listing_type.dart';
 import '../services/location_service.dart';
+import 'modern_banner.dart';
 
 class MusafirMap extends StatefulWidget {
   const MusafirMap({
@@ -91,12 +92,7 @@ class _MusafirMapState extends State<MusafirMap> {
       );
       widget.onTap?.call(position.latitude, position.longitude);
     } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text('Could not get your location. Please check permissions.'),
-        ),
-      );
+      ModernBanner.showError(context, 'Could not get your location. Please check permissions.');
     }
   }
 

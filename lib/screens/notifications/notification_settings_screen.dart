@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/notification_preferences.dart';
 import '../../state/notification_state.dart';
+import '../../widgets/modern_banner.dart';
 
 /// Screen for managing notification preferences
 class NotificationSettingsScreen extends StatefulWidget {
@@ -41,9 +42,7 @@ class _NotificationSettingsScreenState
   Future<void> _saveChanges() async {
     await widget.notificationState.updatePreferences(_preferences);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Settings saved')),
-      );
+      ModernBanner.showSuccess(context, 'Settings saved');
       setState(() => _hasChanges = false);
     }
   }
@@ -339,9 +338,7 @@ class _NotificationSettingsScreenState
             onPressed: () {
               Navigator.pop(context);
               widget.notificationState.deleteAll();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('All notifications deleted')),
-              );
+              ModernBanner.showSuccess(context, 'All notifications deleted');
             },
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Delete'),

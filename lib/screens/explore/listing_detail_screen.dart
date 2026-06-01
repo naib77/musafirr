@@ -36,6 +36,11 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   final PageController _imageController = PageController();
   int _currentImageIndex = 0;
 
+  bool get _isOwnListing {
+    final currentUserId = widget.authState.currentUser?.id;
+    return currentUserId != null && widget.listing.hostId == currentUserId;
+  }
+
   @override
   void dispose() {
     _imageController.dispose();
@@ -235,56 +240,57 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                     // Reviews
                     if (reviews.isNotEmpty) ...[
                       _ReviewsSection(reviews: reviews),
-                      const SizedBox(height: 100),
+                      SizedBox(height: _isOwnListing ? 24 : 100),
                     ] else
-                      const SizedBox(height: 100),
+                      SizedBox(height: _isOwnListing ? 24 : 100),
                   ]),
                 ),
               ),
             ],
           ),
 
-          // Bottom booking bar
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Container(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                12,
-                16,
-                12 + MediaQuery.of(context).padding.bottom,
-              ),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
-                border: Border(
-                  top: BorderSide(color: theme.colorScheme.outlineVariant),
+          // Bottom booking bar (hidden for own listings)
+          if (!_isOwnListing)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  12,
+                  16,
+                  12 + MediaQuery.of(context).padding.bottom,
                 ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: PriceDisplay(
-                      amount: listing.displayPriceMoney,
-                      perUnit: 'night',
-                      style: PriceDisplayStyle.normal,
-                    ),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  border: Border(
+                    top: BorderSide(color: theme.colorScheme.outlineVariant),
                   ),
-                  FilledButton(
-                    onPressed: _openBookingSheet,
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 12,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: PriceDisplay(
+                        amount: listing.displayPriceMoney,
+                        perUnit: 'night',
+                        style: PriceDisplayStyle.normal,
                       ),
                     ),
-                    child: const Text('Reserve'),
-                  ),
-                ],
+                    FilledButton(
+                      onPressed: _openBookingSheet,
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                      ),
+                      child: const Text('Reserve'),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -412,12 +418,35 @@ class _LocationSectionState extends State<_LocationSection> {
       await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not open maps: $e'),
-            backgroundColor: Colors.red,
+        final messenger = ScaffoldMessenger.of(context);
+        final theme = Theme.of(context);
+        messenger.clearMaterialBanners();
+        messenger.showMaterialBanner(
+          MaterialBanner(
+            content: const Row(
+              children: [
+                Icon(Icons.error_outline, color: Colors.white),
+                SizedBox(width: 12),
+                Text(
+                  'Could not open maps',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+            backgroundColor: theme.colorScheme.error,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            leadingPadding: EdgeInsets.zero,
+            actions: [
+              TextButton(
+                onPressed: () => messenger.hideCurrentMaterialBanner(),
+                child: const Text('OK', style: TextStyle(color: Colors.white)),
+              ),
+            ],
           ),
         );
+        Future.delayed(const Duration(seconds: 4), () {
+          messenger.hideCurrentMaterialBanner();
+        });
       }
     }
   }
@@ -805,6 +834,109 @@ class _BookingSheetState extends State<_BookingSheet> {
     // Check for conflicts when selection changes
   }
 
+  /// Show a modern error banner at the top
+  void _showErrorBanner(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    final theme = Theme.of(context);
+    messenger.clearMaterialBanners();
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: theme.colorScheme.error,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        leadingPadding: EdgeInsets.zero,
+        actions: [
+          TextButton(
+            onPressed: () => messenger.hideCurrentMaterialBanner(),
+            child: const Text('Dismiss', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    Future.delayed(const Duration(seconds: 4), () {
+      messenger.hideCurrentMaterialBanner();
+    });
+  }
+
+  /// Show a modern success banner at the top
+  void _showSuccessBanner(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearMaterialBanners();
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle_outline, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.green.shade700,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        leadingPadding: EdgeInsets.zero,
+        actions: [
+          TextButton(
+            onPressed: () => messenger.hideCurrentMaterialBanner(),
+            child: const Text('OK', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    Future.delayed(const Duration(seconds: 3), () {
+      messenger.hideCurrentMaterialBanner();
+    });
+  }
+
+  /// Show a modern warning/info banner at the top
+  void _showWarningBanner(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearMaterialBanners();
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        content: Row(
+          children: [
+            const Icon(Icons.info_outline, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.orange.shade700,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        leadingPadding: EdgeInsets.zero,
+        actions: [
+          TextButton(
+            onPressed: () => messenger.hideCurrentMaterialBanner(),
+            child: const Text('OK', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    Future.delayed(const Duration(seconds: 4), () {
+      messenger.hideCurrentMaterialBanner();
+    });
+  }
+
   void _checkAvailability() {
     if (!_isSelectionComplete) {
       setState(() {
@@ -965,43 +1097,41 @@ class _BookingSheetState extends State<_BookingSheet> {
   }
 
   Future<void> _selectMonthlyStartDate() async {
-    final picked = await showDatePicker(
+    final now = DateTime.now();
+    final initialDate = _monthlyStartDate ?? DateTime(now.year, now.month, 1);
+
+    final picked = await showDialog<DateTime>(
       context: context,
-      initialDate: _monthlyStartDate ?? DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      builder: (context) => _MonthPickerDialog(
+        initialDate: initialDate,
+        firstDate: DateTime(now.year, now.month, 1),
+        lastDate: DateTime(now.year + 1, now.month, 1),
+      ),
     );
+
     if (picked != null) {
-      setState(() => _monthlyStartDate = picked);
+      // Set to 1st of the selected month
+      setState(() => _monthlyStartDate = DateTime(picked.year, picked.month, 1));
       _checkAvailability();
     }
   }
 
   Future<void> _confirmBooking() async {
     if (!_isSelectionComplete) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please complete your selection')),
-      );
+      _showWarningBanner('Please complete your selection');
       return;
     }
 
     // Double-check availability before booking
     _checkAvailability();
     if (_hasConflict) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('This time slot is no longer available'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showErrorBanner('This time slot is no longer available');
       return;
     }
 
     final user = widget.authState.currentUser;
     if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please log in to book')),
-      );
+      _showWarningBanner('Please log in to book');
       return;
     }
 
@@ -1021,12 +1151,7 @@ class _BookingSheetState extends State<_BookingSheet> {
 
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Booking confirmed!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        _showSuccessBanner('Booking request sent! Awaiting host confirmation.');
       }
     } on BookingConflictException catch (e) {
       if (mounted) {
@@ -1040,22 +1165,11 @@ class _BookingSheetState extends State<_BookingSheet> {
           message = 'This time slot was just booked by someone else. Please select different dates.';
         }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
-          ),
-        );
+        _showErrorBanner(message);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Booking failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        _showErrorBanner('Booking failed. Please try again.');
       }
     } finally {
       if (mounted) {
@@ -1067,378 +1181,410 @@ class _BookingSheetState extends State<_BookingSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final maxSheetHeight = MediaQuery.of(context).size.height * 0.9;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxSheetHeight),
+      child: Container(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Handle
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(2),
+            // Handle (tappable to close)
+            GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.outlineVariant,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 24),
-
-            // Title
-            Text(
-              'Reserve',
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Duration type selector
-            SegmentedButton<DurationType>(
-              segments: const [
-                ButtonSegment(
-                  value: DurationType.hourly,
-                  label: Text('Hourly'),
-                  icon: Icon(Icons.schedule),
-                ),
-                ButtonSegment(
-                  value: DurationType.daily,
-                  label: Text('Daily'),
-                  icon: Icon(Icons.today),
-                ),
-                ButtonSegment(
-                  value: DurationType.monthly,
-                  label: Text('Monthly'),
-                  icon: Icon(Icons.calendar_month),
-                ),
-              ],
-              selected: {_durationType},
-              onSelectionChanged: (selected) {
-                setState(() => _durationType = selected.first);
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // Rate display
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Center(
-                child: PriceDisplay(
-                  amount: _rateMoney,
-                  perUnit: _rateLabel,
-                  style: PriceDisplayStyle.large,
-                  color: theme.colorScheme.onPrimaryContainer,
-                  alignment: CrossAxisAlignment.center,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // Existing bookings preview
-            _buildExistingBookingsPreview(theme),
-            const SizedBox(height: 16),
-
-            // Duration-specific selection UI
-            ..._buildDurationSelector(theme),
-            const SizedBox(height: 16),
-
-            // Guest count
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                border: Border.all(color: theme.colorScheme.outline),
-                borderRadius: BorderRadius.circular(12),
-              ),
+            // Close button row
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Row(
                 children: [
-                  const Icon(Icons.people),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Guests',
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                    tooltip: 'Close',
+                  ),
+                  const Spacer(),
+                ],
+              ),
+            ),
+            // Scrollable content
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Title
+                    Text(
+                      'Reserve',
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Duration type selector
+                    SegmentedButton<DurationType>(
+                      segments: const [
+                        ButtonSegment(
+                          value: DurationType.hourly,
+                          label: Text('Hourly'),
+                          icon: Icon(Icons.schedule),
                         ),
-                        Text(
-                          '$_guestCount guest${_guestCount > 1 ? 's' : ''}',
-                          style: theme.textTheme.bodyLarge,
+                        ButtonSegment(
+                          value: DurationType.daily,
+                          label: Text('Daily'),
+                          icon: Icon(Icons.today),
+                        ),
+                        ButtonSegment(
+                          value: DurationType.monthly,
+                          label: Text('Monthly'),
+                          icon: Icon(Icons.calendar_month),
                         ),
                       ],
+                      selected: {_durationType},
+                      onSelectionChanged: (selected) {
+                        setState(() => _durationType = selected.first);
+                      },
                     ),
-                  ),
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove_circle_outline),
-                        onPressed: _guestCount > 1
-                            ? () => setState(() => _guestCount--)
-                            : null,
-                      ),
-                      Text(
-                        '$_guestCount',
-                        style: theme.textTheme.titleMedium,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.add_circle_outline),
-                        onPressed: _guestCount < widget.listing.maxGuests
-                            ? () => setState(() => _guestCount++)
-                            : null,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-            // User conflict warning (you already have a booking)
-            if (_hasUserConflict) ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.orange.shade200),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.person_off,
-                      color: Colors.orange.shade700,
+                    // Rate display
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(
+                        child: PriceDisplay(
+                          amount: _rateMoney,
+                          perUnit: _rateLabel,
+                          style: PriceDisplayStyle.large,
+                          color: theme.colorScheme.onPrimaryContainer,
+                          alignment: CrossAxisAlignment.center,
+                        ),
+                      ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    const SizedBox(height: 12),
+
+                    // Existing bookings preview
+                    _buildExistingBookingsPreview(theme),
+                    const SizedBox(height: 16),
+
+                    // Duration-specific selection UI
+                    ..._buildDurationSelector(theme),
+                    const SizedBox(height: 16),
+
+                    // Guest count
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: theme.colorScheme.outline),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
                         children: [
-                          Text(
-                            'You have another booking',
-                            style: theme.textTheme.titleSmall?.copyWith(
+                          const Icon(Icons.people),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Guests',
+                                  style: theme.textTheme.labelMedium?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                Text(
+                                  '$_guestCount guest${_guestCount > 1 ? 's' : ''}',
+                                  style: theme.textTheme.bodyLarge,
+                                ),
+                              ],
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.remove_circle_outline),
+                                onPressed: _guestCount > 1
+                                    ? () => setState(() => _guestCount--)
+                                    : null,
+                              ),
+                              Text(
+                                '$_guestCount',
+                                style: theme.textTheme.titleMedium,
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.add_circle_outline),
+                                onPressed: _guestCount < widget.listing.maxGuests
+                                    ? () => setState(() => _guestCount++)
+                                    : null,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // User conflict warning (you already have a booking)
+                    if (_hasUserConflict) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.orange.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.person_off,
                               color: Colors.orange.shade700,
-                              fontWeight: FontWeight.bold,
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'You cannot book multiple places at the same time',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: Colors.orange.shade600,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'You have another booking',
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      color: Colors.orange.shade700,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'You cannot book multiple places at the same time',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: Colors.orange.shade600,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              // Show user's conflicting bookings
-              ..._userConflictingBookings.map((booking) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.shade50,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.event_busy,
-                        size: 16,
-                        color: Colors.orange.shade600,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '${booking.listingTitle ?? 'Your booking'}: ${_formatDateTime(booking.effectiveCheckIn)} - ${_formatDateTime(booking.effectiveCheckOut)}',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: Colors.orange.shade700,
-                          ),
+                          ],
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      // Show user's conflicting bookings
+                      ..._userConflictingBookings.map((booking) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade50,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.event_busy,
+                                    size: 16,
+                                    color: Colors.orange.shade600,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      '${booking.listingTitle ?? 'Your booking'}: ${_formatDateTime(booking.effectiveCheckIn)} - ${_formatDateTime(booking.effectiveCheckOut)}',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: Colors.orange.shade700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )),
+                      const SizedBox(height: 8),
                     ],
-                  ),
-                ),
-              )),
-              const SizedBox(height: 8),
-            ],
 
-            // Listing conflict warning (this place is already booked)
-            if (_hasListingConflict) ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.warning_amber_rounded,
-                      color: Colors.red.shade700,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    // Listing conflict warning (this place is already booked)
+                    if (_hasListingConflict) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.red.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.warning_amber_rounded,
+                              color: Colors.red.shade700,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Time slot not available',
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      color: Colors.red.shade700,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${_conflictingBookings.length} existing booking${_conflictingBookings.length > 1 ? 's' : ''} conflict with your selection',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: Colors.red.shade600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Show conflicting bookings
+                      ..._conflictingBookings.map((booking) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.event_busy,
+                                    size: 16,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      '${_formatDateTime(booking.effectiveCheckIn)} - ${_formatDateTime(booking.effectiveCheckOut)}',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )),
+                      const SizedBox(height: 8),
+                    ],
+
+                    // Availability indicator
+                    if (_isSelectionComplete &&
+                        !_hasConflict &&
+                        !_isCheckingAvailability) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.green.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.check_circle,
+                              color: Colors.green.shade700,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'This time slot is available',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: Colors.green.shade700,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Price breakdown
+                    if (_isSelectionComplete && !_hasConflict) ...[
+                      PriceSummaryRow(
+                        basePrice: _rateMoney,
+                        units: _duration,
+                        unitType: _rateLabel,
+                        total: _totalPriceMoney,
+                      ),
+                      const Divider(height: 24),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            'Time slot not available',
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              color: Colors.red.shade700,
+                            'Total',
+                            style: theme.textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          const SizedBox(height: 4),
                           Text(
-                            '${_conflictingBookings.length} existing booking${_conflictingBookings.length > 1 ? 's' : ''} conflict with your selection',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: Colors.red.shade600,
+                            _totalPriceMoney.format(),
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ],
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              // Show conflicting bookings
-              ..._conflictingBookings.map((booking) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.event_busy,
-                        size: 16,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '${_formatDateTime(booking.effectiveCheckIn)} - ${_formatDateTime(booking.effectiveCheckOut)}',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
+                      const SizedBox(height: 24),
                     ],
-                  ),
-                ),
-              )),
-              const SizedBox(height: 8),
-            ],
 
-            // Availability indicator
-            if (_isSelectionComplete && !_hasConflict && !_isCheckingAvailability) ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.green.shade200),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.check_circle,
-                      color: Colors.green.shade700,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      'This time slot is available',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: Colors.green.shade700,
-                        fontWeight: FontWeight.w500,
+                    // Confirm button
+                    FilledButton(
+                      onPressed: (_isBooking || _hasConflict || !_isSelectionComplete)
+                          ? null
+                          : _confirmBooking,
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        backgroundColor: _hasConflict ? Colors.grey : null,
                       ),
+                      child: _isBooking
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Text(_hasConflict
+                              ? 'Time Slot Unavailable'
+                              : _isSelectionComplete
+                                  ? 'Confirm Booking'
+                                  : 'Complete Selection to Continue'),
                     ),
+                    const SizedBox(height: 16),
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
-            ],
-
-            // Price breakdown
-            if (_isSelectionComplete && !_hasConflict) ...[
-              PriceSummaryRow(
-                basePrice: _rateMoney,
-                units: _duration,
-                unitType: _rateLabel,
-                total: _totalPriceMoney,
-              ),
-              const Divider(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Total',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    _totalPriceMoney.format(),
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-            ],
-
-            // Confirm button
-            FilledButton(
-              onPressed: (_isBooking || _hasConflict || !_isSelectionComplete)
-                  ? null
-                  : _confirmBooking,
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: _hasConflict ? Colors.grey : null,
-              ),
-              child: _isBooking
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Text(_hasConflict
-                      ? 'Time Slot Unavailable'
-                      : _isSelectionComplete
-                          ? 'Confirm Booking'
-                          : 'Complete Selection to Continue'),
             ),
-            const SizedBox(height: 16),
           ],
         ),
       ),
@@ -1542,7 +1688,7 @@ class _BookingSheetState extends State<_BookingSheet> {
           // Hours selector
           Expanded(
             child: Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
               decoration: BoxDecoration(
                 border: Border.all(color: theme.colorScheme.outline),
                 borderRadius: BorderRadius.circular(12),
@@ -1558,38 +1704,49 @@ class _BookingSheetState extends State<_BookingSheet> {
                   ),
                   const SizedBox(height: 4),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove_circle_outline),
-                        onPressed: _hours > 1
+                      GestureDetector(
+                        onTap: _hours > 1
                             ? () {
                                 setState(() => _hours--);
                                 _checkAvailability();
                               }
                             : null,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Text(
-                          '$_hours hr${_hours > 1 ? 's' : ''}',
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          child: Icon(
+                            Icons.remove_circle_outline,
+                            size: 28,
+                            color: _hours > 1
+                                ? theme.colorScheme.onSurface
+                                : theme.colorScheme.onSurface.withValues(alpha: 0.38),
                           ),
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.add_circle_outline),
-                        onPressed: _hours < 12
+                      Text(
+                        '$_hours hr${_hours > 1 ? 's' : ''}',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: _hours < 12
                             ? () {
                                 setState(() => _hours++);
                                 _checkAvailability();
                               }
                             : null,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          child: Icon(
+                            Icons.add_circle_outline,
+                            size: 28,
+                            color: _hours < 12
+                                ? theme.colorScheme.onSurface
+                                : theme.colorScheme.onSurface.withValues(alpha: 0.38),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -1677,7 +1834,7 @@ class _BookingSheetState extends State<_BookingSheet> {
 
   List<Widget> _buildMonthlySelector(ThemeData theme) {
     return [
-      // Start date
+      // Start month
       GestureDetector(
         onTap: _selectMonthlyStartDate,
         child: Container(
@@ -1688,22 +1845,22 @@ class _BookingSheetState extends State<_BookingSheet> {
           ),
           child: Row(
             children: [
-              const Icon(Icons.calendar_today),
+              const Icon(Icons.calendar_month),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Start Date',
+                      'Start Month',
                       style: theme.textTheme.labelMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                     Text(
                       _monthlyStartDate != null
-                          ? _formatDate(_monthlyStartDate!)
-                          : 'Select start date',
+                          ? _formatMonthYear(_monthlyStartDate!)
+                          : 'Select start month',
                       style: theme.textTheme.bodyLarge,
                     ),
                   ],
@@ -1777,7 +1934,7 @@ class _BookingSheetState extends State<_BookingSheet> {
         ),
       ),
 
-      // End date preview
+      // Booking period preview
       if (_monthlyStartDate != null) ...[
         const SizedBox(height: 12),
         Container(
@@ -1790,13 +1947,13 @@ class _BookingSheetState extends State<_BookingSheet> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                Icons.info_outline,
+                Icons.date_range,
                 size: 18,
                 color: theme.colorScheme.onSurfaceVariant,
               ),
               const SizedBox(width: 8),
               Text(
-                'Ends on ${_formatDate(DateTime(_monthlyStartDate!.year, _monthlyStartDate!.month + _months, _monthlyStartDate!.day))}',
+                '${_formatMonthYear(_monthlyStartDate!)} - ${_formatMonthYear(DateTime(_monthlyStartDate!.year, _monthlyStartDate!.month + _months - 1, 1))}',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -1856,9 +2013,9 @@ class _BookingSheetState extends State<_BookingSheet> {
             children: [
               Container(
                 width: 4,
-                height: 40,
+                height: 48,
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.primary,
+                  color: _getBookingTypeColor(booking.unitLabel),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -1867,11 +2024,31 @@ class _BookingSheetState extends State<_BookingSheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '${_formatDate(booking.effectiveCheckIn)} - ${_formatDate(booking.effectiveCheckOut)}',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${_formatDate(booking.effectiveCheckIn)} - ${_formatDate(booking.effectiveCheckOut)}',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _getBookingTypeColor(booking.unitLabel).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            _getBookingTypeLabel(booking.unitLabel),
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: _getBookingTypeColor(booking.unitLabel),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -1905,6 +2082,24 @@ class _BookingSheetState extends State<_BookingSheet> {
     }
   }
 
+  String _getBookingTypeLabel(String unitLabel) {
+    return switch (unitLabel.toLowerCase()) {
+      'hour' => 'Hourly',
+      'day' => 'Daily',
+      'month' => 'Monthly',
+      _ => unitLabel,
+    };
+  }
+
+  Color _getBookingTypeColor(String unitLabel) {
+    return switch (unitLabel.toLowerCase()) {
+      'hour' => Colors.orange,
+      'day' => Colors.blue,
+      'month' => Colors.purple,
+      _ => Colors.grey,
+    };
+  }
+
   String _formatTimeFromDateTime(DateTime dateTime) {
     final hour = dateTime.hour % 12 == 0 ? 12 : dateTime.hour % 12;
     final minute = dateTime.minute.toString().padLeft(2, '0');
@@ -1918,6 +2113,15 @@ class _BookingSheetState extends State<_BookingSheet> {
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
     ];
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
+  String _formatMonthYear(DateTime date) {
+    final months = [
+      'January', 'February', 'March', 'April',
+      'May', 'June', 'July', 'August',
+      'September', 'October', 'November', 'December'
+    ];
+    return '${months[date.month - 1]} ${date.year}';
   }
 
   String _formatTime(TimeOfDay time) {
@@ -1936,5 +2140,170 @@ class _BookingSheetState extends State<_BookingSheet> {
     final minute = dateTime.minute.toString().padLeft(2, '0');
     final period = dateTime.hour < 12 ? 'AM' : 'PM';
     return '${months[dateTime.month - 1]} ${dateTime.day}, $hour:$minute $period';
+  }
+}
+
+/// Month picker dialog for monthly bookings
+class _MonthPickerDialog extends StatefulWidget {
+  const _MonthPickerDialog({
+    required this.initialDate,
+    required this.firstDate,
+    required this.lastDate,
+  });
+
+  final DateTime initialDate;
+  final DateTime firstDate;
+  final DateTime lastDate;
+
+  @override
+  State<_MonthPickerDialog> createState() => _MonthPickerDialogState();
+}
+
+class _MonthPickerDialogState extends State<_MonthPickerDialog> {
+  late int _selectedYear;
+  late int _selectedMonth;
+
+  static const _monthNames = [
+    'January', 'February', 'March', 'April',
+    'May', 'June', 'July', 'August',
+    'September', 'October', 'November', 'December'
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedYear = widget.initialDate.year;
+    _selectedMonth = widget.initialDate.month;
+  }
+
+  bool _isMonthSelectable(int year, int month) {
+    final date = DateTime(year, month, 1);
+    return !date.isBefore(DateTime(widget.firstDate.year, widget.firstDate.month, 1)) &&
+        !date.isAfter(DateTime(widget.lastDate.year, widget.lastDate.month, 1));
+  }
+
+  List<int> get _availableYears {
+    final years = <int>[];
+    for (int year = widget.firstDate.year; year <= widget.lastDate.year; year++) {
+      years.add(year);
+    }
+    return years;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Dialog(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Select Start Month',
+              style: theme.textTheme.titleLarge,
+            ),
+            const SizedBox(height: 24),
+
+            // Year selector
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.chevron_left),
+                  onPressed: _availableYears.first < _selectedYear
+                      ? () => setState(() => _selectedYear--)
+                      : null,
+                ),
+                Text(
+                  '$_selectedYear',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right),
+                  onPressed: _availableYears.last > _selectedYear
+                      ? () => setState(() => _selectedYear++)
+                      : null,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Month grid
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                childAspectRatio: 1.8,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+              ),
+              itemCount: 12,
+              itemBuilder: (context, index) {
+                final month = index + 1;
+                final isSelectable = _isMonthSelectable(_selectedYear, month);
+                final isSelected = _selectedYear == widget.initialDate.year &&
+                    month == _selectedMonth;
+
+                return Material(
+                  color: isSelected
+                      ? theme.colorScheme.primary
+                      : isSelectable
+                          ? theme.colorScheme.surfaceContainerHighest
+                          : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(8),
+                  child: InkWell(
+                    onTap: isSelectable
+                        ? () => setState(() => _selectedMonth = month)
+                        : null,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Center(
+                      child: Text(
+                        _monthNames[index].substring(0, 3),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: isSelected
+                              ? theme.colorScheme.onPrimary
+                              : isSelectable
+                                  ? theme.colorScheme.onSurface
+                                  : theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                          fontWeight: isSelected ? FontWeight.bold : null,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+
+            // Actions
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.pop(
+                      context,
+                      DateTime(_selectedYear, _selectedMonth, 1),
+                    );
+                  },
+                  child: const Text('Select'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

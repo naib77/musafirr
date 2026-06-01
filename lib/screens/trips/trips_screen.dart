@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
-import '../../data/mock_data.dart';
 import '../../models/booking.dart';
 import '../../models/booking_status.dart';
 import '../../models/guest_review_ratings.dart';
 import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
+import '../../widgets/modern_banner.dart';
 import '../../widgets/price_display.dart';
 import '../review/guest_review_screen.dart';
 
@@ -64,10 +64,8 @@ class _TripsScreenState extends State<TripsScreen>
             return _buildLoginPrompt(context, theme);
           }
 
-          // Get bookings from repository and mock data
-          final repoBookings = widget.repository.getBookingsForUser(user.id);
-          final mockBookings = MockData.getSampleBookings(user.id);
-          final allBookings = [...repoBookings, ...mockBookings];
+          // Get bookings from repository (real data only)
+          final allBookings = widget.repository.getBookingsForUser(user.id);
 
           final now = DateTime.now();
           final upcomingBookings = allBookings
@@ -147,14 +145,58 @@ class _TripsScreenState extends State<TripsScreen>
       return _buildEmptyState(context, theme, isUpcoming: isUpcoming);
     }
 
-    return ListView.separated(
+    // For past bookings, find ones that need review
+    final user = widget.authState.currentUser;
+    final needsReviewBookings = <Booking>[];
+
+    if (!isUpcoming && user != null) {
+      for (final booking in bookings) {
+        if (booking.status == BookingStatus.completed) {
+          final existingReviews = widget.repository.getReviewsForBooking(booking.id);
+          final hasReviewed = existingReviews.any(
+            (r) => r.reviewerId == user.id && r.reviewType == ReviewType.guestToHost,
+          );
+          if (!hasReviewed) {
+            needsReviewBookings.add(booking);
+          }
+        }
+      }
+    }
+
+    return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: bookings.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 16),
+      itemCount: bookings.length + (needsReviewBookings.isNotEmpty ? 1 : 0),
       itemBuilder: (context, index) {
-        return _BookingCard(
-          booking: bookings[index],
-          onTap: () => _showBookingDetails(context, bookings[index]),
+        // Show review prompt banner at the top for past bookings
+        if (!isUpcoming && needsReviewBookings.isNotEmpty && index == 0) {
+          return Column(
+            children: [
+              _ReviewPromptBanner(
+                bookingsCount: needsReviewBookings.length,
+                firstBooking: needsReviewBookings.first,
+                onTap: () => _showBookingDetails(context, needsReviewBookings.first),
+              ),
+              const SizedBox(height: 16),
+              _BookingCard(
+                booking: bookings[0],
+                onTap: () => _showBookingDetails(context, bookings[0]),
+                showReviewBadge: needsReviewBookings.contains(bookings[0]),
+              ),
+            ],
+          );
+        }
+
+        final bookingIndex = !isUpcoming && needsReviewBookings.isNotEmpty ? index - 1 : index;
+        if (bookingIndex < 0) return const SizedBox.shrink();
+
+        final booking = bookings[bookingIndex];
+        return Padding(
+          padding: EdgeInsets.only(top: bookingIndex > 0 ? 16 : 0),
+          child: _BookingCard(
+            booking: booking,
+            onTap: () => _showBookingDetails(context, booking),
+            showReviewBadge: needsReviewBookings.contains(booking),
+          ),
         );
       },
     );
@@ -222,14 +264,111 @@ class _TripsScreenState extends State<TripsScreen>
   }
 }
 
+class _ReviewPromptBanner extends StatelessWidget {
+  const _ReviewPromptBanner({
+    required this.bookingsCount,
+    required this.firstBooking,
+    required this.onTap,
+  });
+
+  final int bookingsCount;
+  final Booking firstBooking;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            theme.colorScheme.primary,
+            theme.colorScheme.primary.withOpacity(0.8),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: theme.colorScheme.primary.withOpacity(0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.rate_review,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        bookingsCount == 1
+                            ? 'Share your experience!'
+                            : '$bookingsCount stays to review',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        bookingsCount == 1
+                            ? 'Leave a review for ${firstBooking.listingTitle ?? "your stay"}'
+                            : 'Your reviews help other travelers',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.white.withOpacity(0.9),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  Icons.arrow_forward_ios,
+                  color: Colors.white,
+                  size: 18,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _BookingCard extends StatelessWidget {
   const _BookingCard({
     required this.booking,
     required this.onTap,
+    this.showReviewBadge = false,
   });
 
   final Booking booking;
   final VoidCallback onTap;
+  final bool showReviewBadge;
 
   @override
   Widget build(BuildContext context) {
@@ -258,19 +397,54 @@ class _BookingCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Status chip
-                  Chip(
-                    label: Text(
-                      booking.status.title,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: _getStatusColor(booking.status),
+                  // Status chip row
+                  Row(
+                    children: [
+                      Chip(
+                        label: Text(
+                          booking.status.title,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: _getStatusColor(booking.status),
+                          ),
+                        ),
+                        backgroundColor:
+                            _getStatusColor(booking.status).withValues(alpha: 0.1),
+                        side: BorderSide.none,
+                        padding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
                       ),
-                    ),
-                    backgroundColor:
-                        _getStatusColor(booking.status).withValues(alpha: 0.1),
-                    side: BorderSide.none,
-                    padding: EdgeInsets.zero,
-                    visualDensity: VisualDensity.compact,
+                      if (showReviewBadge) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primary,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.star,
+                                size: 12,
+                                color: theme.colorScheme.onPrimary,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Leave review',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: theme.colorScheme.onPrimary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 8),
                   // Title
@@ -576,9 +750,7 @@ class _BookingDetailsSheet extends StatelessWidget {
     );
 
     if (alreadyReviewed) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You have already submitted a review for this booking')),
-      );
+      ModernBanner.showInfo(context, 'You have already submitted a review for this booking');
       return;
     }
 
@@ -609,11 +781,7 @@ class _BookingDetailsSheet extends StatelessWidget {
             repository.saveReview(review);
 
             Navigator.pop(context);
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Thank you for your review! It will be visible once the host also submits their review.'),
-              ),
-            );
+            ModernBanner.showSuccess(context, 'Thank you for your review! It will be visible once the host also submits their review.');
           },
         ),
       ),
@@ -642,9 +810,7 @@ class _BookingDetailsSheet extends StatelessWidget {
               repository.updateBooking(updated);
               Navigator.pop(dialogContext);
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Booking cancelled')),
-              );
+              ModernBanner.showSuccess(context, 'Booking cancelled');
             },
             style: FilledButton.styleFrom(
               backgroundColor: Colors.red,

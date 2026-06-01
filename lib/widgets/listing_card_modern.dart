@@ -95,12 +95,12 @@ class ListingCardModern extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          // Title and rating
+          // Property name and rating
           Row(
             children: [
               Expanded(
                 child: Text(
-                  listing.city ?? listing.address.split(',').first,
+                  listing.title,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -108,22 +108,29 @@ class ListingCardModern extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (listing.rating != null) ...[
-                const Icon(Icons.star, size: 14),
+              if (listing.rating != null && listing.rating! > 0) ...[
+                const Icon(Icons.star, size: 14, color: Colors.amber),
                 const SizedBox(width: 2),
                 Text(
-                  listing.rating!.toStringAsFixed(2),
+                  '${listing.rating!.toStringAsFixed(1)} (${listing.reviewCount})',
                   style: theme.textTheme.bodySmall?.copyWith(
                     fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ] else ...[
+                Text(
+                  'No reviews',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
             ],
           ),
           const SizedBox(height: 2),
-          // Title
+          // Location
           Text(
-            listing.title,
+            listing.city ?? listing.address.split(',').first,
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),

@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../models/listing.dart';
 import '../../services/directions_service.dart';
 import '../../services/location_service.dart';
+import '../../widgets/modern_banner.dart';
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({
@@ -191,9 +192,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
       await launchUrl(url, mode: LaunchMode.externalApplication);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not open Google Maps: $e')),
-        );
+        ModernBanner.showError(context, 'Could not open Google Maps: $e');
       }
     }
   }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/booking_status.dart';
 import '../../models/notification.dart';
 import '../../repositories/musafir_repository.dart';
+import '../../repositories/supabase_musafir_repository.dart';
 import '../../services/booking/booking_lifecycle_service.dart';
 import '../../state/auth_state.dart';
 import '../../state/notification_state.dart';
@@ -121,12 +122,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
                 tooltip: 'Mark all as read',
                 onPressed: () {
                   widget.notificationState.markAllAsRead();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('All notifications marked as read'),
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
+                  _showSuccessBanner('All notifications marked as read');
                 },
               );
             },
@@ -371,13 +367,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
       return;
     }
 
-    // For unhandled routes, show a snackbar
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Navigate to: $actionUrl'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    // For unhandled routes, do nothing (deep linking not implemented yet)
+    debugPrint('Unhandled action URL: $actionUrl');
   }
 
   bool _isSameDay(DateTime a, DateTime b) {
@@ -418,7 +409,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
         .firstOrNull;
 
     if (notification == null) {
-      debugPrint('[DEBUG-expand] Notification $notificationId not found, ignoring expand');
       return;
     }
 
@@ -460,28 +450,27 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
 
     if (bookingId == null) return;
 
-    // Stale check
-    final booking = widget.repository.getBookingById(bookingId);
+    // Try local cache first, then fetch from Supabase if not found
+    var booking = widget.repository.getBookingById(bookingId);
+    if (booking == null && widget.repository is SupabaseMusafirRepository) {
+      final supabaseRepo = widget.repository as SupabaseMusafirRepository;
+      booking = await supabaseRepo.fetchBookingById(bookingId);
+    }
+
     if (booking == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Booking not found')),
-        );
+        _showErrorBanner('Booking not found. It may have been cancelled.');
       }
       return;
     }
 
     if (booking.status != BookingStatus.pending) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'This booking is no longer pending. Status: ${booking.status.title}',
-            ),
-          ),
+        _showErrorBanner(
+          'This booking is no longer pending. Status: ${booking.status.title}',
         );
         setState(() {
-          _bookingStatusCache[notification.id] = booking.status;
+          _bookingStatusCache[notification.id] = booking!.status;
         });
       }
       return;
@@ -494,36 +483,19 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
     // Process
     setState(() => _processingNotificationId = notification.id);
     try {
-      debugPrint('[DEBUG-accept] Accepting booking $bookingId with message: ${result.message}');
-      final updatedBooking = widget.bookingLifecycleService.acceptBooking(
+      widget.bookingLifecycleService.acceptBooking(
         bookingId,
         message: result.message,
       );
-      debugPrint('[DEBUG-accept] Booking accepted, new status: ${updatedBooking.status}');
       _showSuccessBadge(notification.id, 'Accepted');
-      debugPrint('[DEBUG-accept] Success badge shown for notification ${notification.id}');
       await widget.notificationState.markAsRead(notification.id);
-      debugPrint('[DEBUG-accept] Notification marked as read');
     } on InvalidBookingStateException catch (e) {
-      debugPrint('[DEBUG-accept] InvalidBookingStateException: ${e.message}');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            action: SnackBarAction(
-              label: 'Retry',
-              onPressed: () => _handleAcceptBooking(notification),
-            ),
-          ),
-        );
+        _showErrorBanner(e.message);
       }
-    } catch (e, stackTrace) {
-      debugPrint('[DEBUG-accept] Unexpected error: $e');
-      debugPrint('[DEBUG-accept] Stack trace: $stackTrace');
+    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        _showErrorBanner('Failed to accept booking. Please try again.');
       }
     } finally {
       if (mounted) {
@@ -538,28 +510,27 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
 
     if (bookingId == null) return;
 
-    // Stale check
-    final booking = widget.repository.getBookingById(bookingId);
+    // Try local cache first, then fetch from Supabase if not found
+    var booking = widget.repository.getBookingById(bookingId);
+    if (booking == null && widget.repository is SupabaseMusafirRepository) {
+      final supabaseRepo = widget.repository as SupabaseMusafirRepository;
+      booking = await supabaseRepo.fetchBookingById(bookingId);
+    }
+
     if (booking == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Booking not found')),
-        );
+        _showErrorBanner('Booking not found. It may have been cancelled.');
       }
       return;
     }
 
     if (booking.status != BookingStatus.pending) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'This booking is no longer pending. Status: ${booking.status.title}',
-            ),
-          ),
+        _showErrorBanner(
+          'This booking is no longer pending. Status: ${booking.status.title}',
         );
         setState(() {
-          _bookingStatusCache[notification.id] = booking.status;
+          _bookingStatusCache[notification.id] = booking!.status;
         });
       }
       return;
@@ -581,15 +552,11 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
       await widget.notificationState.markAsRead(notification.id);
     } on InvalidBookingStateException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            action: SnackBarAction(
-              label: 'Retry',
-              onPressed: () => _handleDeclineBooking(notification),
-            ),
-          ),
-        );
+        _showErrorBanner(e.message);
+      }
+    } catch (e) {
+      if (mounted) {
+        _showErrorBanner('Failed to decline booking. Please try again.');
       }
     } finally {
       if (mounted) {
@@ -617,16 +584,86 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
   }
 
   void _showSuccessBadge(String notificationId, String label) {
-    debugPrint('[DEBUG-badge] Setting success badge "$label" for notification $notificationId');
-    debugPrint('[DEBUG-badge] Current successBadges before: $_successBadges');
     setState(() => _successBadges[notificationId] = label);
-    debugPrint('[DEBUG-badge] Current successBadges after: $_successBadges');
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) {
-        debugPrint('[DEBUG-badge] Removing badge and deleting notification $notificationId');
         setState(() => _successBadges.remove(notificationId));
         widget.notificationState.delete(notificationId);
       }
+    });
+  }
+
+  /// Show a modern error banner at the top
+  void _showErrorBanner(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearMaterialBanners();
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Theme.of(context).colorScheme.error,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        leadingPadding: EdgeInsets.zero,
+        actions: [
+          TextButton(
+            onPressed: () => messenger.hideCurrentMaterialBanner(),
+            child: const Text('Dismiss', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    Future.delayed(const Duration(seconds: 4), () {
+      messenger.hideCurrentMaterialBanner();
+    });
+  }
+
+  /// Show a modern success banner at the top
+  void _showSuccessBanner(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearMaterialBanners();
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle_outline, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.green.shade700,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        leadingPadding: EdgeInsets.zero,
+        actions: [
+          TextButton(
+            onPressed: () => messenger.hideCurrentMaterialBanner(),
+            child: const Text('OK', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    Future.delayed(const Duration(seconds: 3), () {
+      messenger.hideCurrentMaterialBanner();
     });
   }
 }

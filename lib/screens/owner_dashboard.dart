@@ -7,6 +7,7 @@ import '../repositories/musafir_repository.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/listing_summary_card.dart';
 import '../widgets/location_picker.dart';
+import '../widgets/modern_banner.dart';
 import '../widgets/section_title.dart';
 
 class OwnerDashboard extends StatefulWidget {
@@ -258,9 +259,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
     );
 
     titleController.clear();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Listing registered successfully.')),
-    );
+    ModernBanner.showSuccess(context, 'Listing registered successfully.');
   }
 
   String? _validateNumber(String? value) {

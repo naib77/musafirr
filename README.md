@@ -146,6 +146,23 @@ Local endpoints:
 - API: `http://localhost:54321`
 - Studio: `http://localhost:54323`
 
+#### Supabase CLI (npx)
+
+Login and link your project using npx:
+
+```bash
+# Login to Supabase (opens browser for authentication)
+npx supabase login
+
+# Link to your project
+npx supabase link --project-ref bojkmonskqlhuakxhzcb
+
+# Useful commands after linking
+npx supabase db pull      # Pull remote schema
+npx supabase db push      # Push local migrations
+npx supabase status       # Check project status
+```
+
 #### Option 3: Self-Hosted
 
 See [Supabase Self-Hosting Guide](https://supabase.com/docs/guides/self-hosting).

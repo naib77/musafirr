@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/listing.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
+import '../../widgets/modern_banner.dart';
 import '../../widgets/price_display.dart';
 import 'create_listing_screen.dart';
 
@@ -116,9 +117,7 @@ class HostListingsScreen extends StatelessWidget {
 
   void _editListing(BuildContext context, Listing listing) {
     // For now, show a coming soon message
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Edit listing coming soon!')),
-    );
+    ModernBanner.showInfo(context, 'Edit listing coming soon!');
   }
 
   void _confirmDelete(BuildContext context, Listing listing) {
@@ -136,9 +135,7 @@ class HostListingsScreen extends StatelessWidget {
             onPressed: () {
               repository.deleteListing(listing.id);
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Listing deleted')),
-              );
+              ModernBanner.showSuccess(context, 'Listing deleted');
             },
             style: FilledButton.styleFrom(
               backgroundColor: Colors.red,

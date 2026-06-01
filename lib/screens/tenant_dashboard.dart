@@ -7,6 +7,7 @@ import '../services/location_service.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/info_card.dart';
 import '../widgets/listing_card.dart';
+import '../widgets/modern_banner.dart';
 import '../widgets/musafir_map.dart';
 import '../widgets/place_search_field.dart';
 import '../widgets/section_title.dart';
@@ -65,12 +66,7 @@ class _TenantDashboardState extends State<TenantDashboard> {
         });
         _search();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content:
-                Text('Could not get your location. Please check permissions.'),
-          ),
-        );
+        ModernBanner.showError(context, 'Could not get your location. Please check permissions.');
       }
     }
   }
@@ -241,13 +237,7 @@ class _TenantDashboardState extends State<TenantDashboard> {
                       );
                       Navigator.pop(context);
                       _search();
-                      ScaffoldMessenger.of(this.context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Booked until ${booking.endAt}. Total ${booking.totalPrice.toStringAsFixed(0)} BDT.',
-                          ),
-                        ),
-                      );
+                      ModernBanner.showSuccess(this.context, 'Booked until ${booking.endAt}. Total ${booking.totalPrice.toStringAsFixed(0)} BDT.');
                     },
                     child: const Text('Confirm Booking'),
                   ),

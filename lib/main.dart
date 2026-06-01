@@ -44,5 +44,5 @@ void main() async {
     SupabaseAuthService.instance.initialize();
   }
 
-  runApp(MusafirApp(useSupabase: SupabaseConfig.isConfigured));
+  runApp(const MusafirApp());
 }

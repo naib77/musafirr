@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../services/location_service.dart';
+import 'modern_banner.dart';
 
 class LocationPickerResult {
   const LocationPickerResult({
@@ -106,12 +107,7 @@ class _LocationPickerState extends State<LocationPicker> {
         CameraUpdate.newLatLngZoom(latLng, 16),
       );
     } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text('Could not get your location. Please check permissions.'),
-        ),
-      );
+      ModernBanner.showError(context, 'Could not get your location. Please check permissions.');
     }
   }
 

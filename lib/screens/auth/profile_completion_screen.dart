@@ -4,6 +4,7 @@ import '../../services/nid/bypass_nid_verification.dart';
 import '../../state/auth_state.dart';
 import '../../state/otp_state.dart';
 import '../../widgets/app_text_field.dart';
+import '../../widgets/modern_banner.dart';
 import '../../widgets/nid_input_field.dart';
 
 /// Screen for completing profile after phone verification
@@ -64,12 +65,7 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     if (_selectedDob == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select your date of birth'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      ModernBanner.showError(context, 'Please select your date of birth');
       return;
     }
 
@@ -85,12 +81,7 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
     if (!nidResult.success) {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(nidResult.errorMessage ?? 'NID verification failed'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ModernBanner.showError(context, nidResult.errorMessage ?? 'NID verification failed');
       }
       return;
     }
@@ -111,12 +102,7 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
       if (success) {
         widget.otpState.completeProfile();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(widget.authState.error ?? 'Registration failed'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ModernBanner.showError(context, widget.authState.error ?? 'Registration failed');
       }
     }
   }

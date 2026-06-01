@@ -4,6 +4,7 @@ import '../../models/listing.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/favorites_state.dart';
 import '../../widgets/listing_card_modern.dart';
+import '../../widgets/modern_banner.dart';
 
 class WishlistsScreen extends StatelessWidget {
   const WishlistsScreen({
@@ -104,9 +105,7 @@ class WishlistsScreen extends StatelessWidget {
   void _openListingDetail(BuildContext context, Listing listing) {
     // TODO: Navigate to listing detail
     // This would need access to authState, which we don't have here
-    // For now, show a snackbar
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Opening ${listing.title}')),
-    );
+    // For now, show a info banner
+    ModernBanner.showInfo(context, 'Opening ${listing.title}');
   }
 }

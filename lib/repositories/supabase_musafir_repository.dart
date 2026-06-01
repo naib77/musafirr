@@ -38,6 +38,18 @@ class SupabaseMusafirRepository extends ChangeNotifier
 
   bool _initialized = false;
 
+  // Pagination state
+  static const int _pageSize = 10;
+  DateTime? _listingsCursor;
+  bool _hasMoreListings = true;
+  bool _isLoadingListings = false;
+
+  @override
+  bool get hasMoreListings => _hasMoreListings;
+
+  @override
+  bool get isLoadingListings => _isLoadingListings;
+
   Future<void> _initialize() async {
     await _refreshAll();
     _initialized = true;
@@ -54,17 +66,104 @@ class SupabaseMusafirRepository extends ChangeNotifier
 
   // ============== Listings ==============
 
+  /// Fetch first page of listings (called on init)
   Future<void> _refreshListings() async {
+    await resetListingsPagination();
+  }
+
+  @override
+  Future<void> resetListingsPagination() async {
+    _listings = [];
+    _listingsCursor = null;
+    _hasMoreListings = true;
+    _isLoadingListings = false;
+    notifyListeners();
+    await fetchNextListingsPage();
+  }
+
+  @override
+  Future<List<Listing>> fetchNextListingsPage() async {
+    if (_isLoadingListings || !_hasMoreListings) {
+      return [];
+    }
+
+    _isLoadingListings = true;
+    notifyListeners();
+
     try {
-      final response = await _client
+      // Build query with cursor pagination
+      // Note: filters must come before order/limit
+      var query = _client
           .from('listings')
           .select('*, listing_facilities(facility_id, facilities(name))')
           .eq('is_active', true);
 
-      _listings = (response as List).map((e) => _listingFromJson(e as Map<String, dynamic>)).toList();
+      // Apply cursor if we have one (fetch items older than cursor)
+      if (_listingsCursor != null) {
+        query = query.lt('created_at', _listingsCursor!.toIso8601String());
+      }
+
+      final listingsResponse = await query
+          .order('created_at', ascending: false)
+          .limit(_pageSize);
+
+      final newListings = <Listing>[];
+
+      if ((listingsResponse as List).isEmpty) {
+        _hasMoreListings = false;
+      } else {
+        // Fetch rating data for these listings
+        final listingIds = listingsResponse.map((e) => e['id'] as String).toList();
+        final ratingsResponse = await _client
+            .from('listing_ratings')
+            .select('listing_id, review_count, average_rating')
+            .inFilter('listing_id', listingIds);
+
+        // Create ratings map
+        final ratingsMap = <String, Map<String, dynamic>>{};
+        for (final row in ratingsResponse as List) {
+          final listingId = row['listing_id'] as String;
+          ratingsMap[listingId] = row as Map<String, dynamic>;
+        }
+
+        // Parse listings and merge with ratings
+        for (final e in listingsResponse) {
+          final json = e as Map<String, dynamic>;
+          final listingId = json['id'] as String;
+          final ratingData = ratingsMap[listingId];
+
+          if (ratingData != null) {
+            json['rating'] = ratingData['average_rating'];
+            json['review_count'] = ratingData['review_count'];
+          }
+
+          newListings.add(_listingFromJson(json));
+        }
+
+        // Update cursor to the oldest item's created_at
+        final lastItem = listingsResponse.last as Map<String, dynamic>;
+        final createdAtStr = lastItem['created_at'] as String?;
+        if (createdAtStr != null) {
+          _listingsCursor = DateTime.parse(createdAtStr);
+        }
+
+        // Add to accumulated list
+        _listings.addAll(newListings);
+
+        // Check if we got fewer items than page size (means no more)
+        if (listingsResponse.length < _pageSize) {
+          _hasMoreListings = false;
+        }
+      }
+
+      _isLoadingListings = false;
       notifyListeners();
+      return newListings;
     } catch (e) {
-      debugPrint('Error fetching listings: $e');
+      debugPrint('Error fetching listings page: $e');
+      _isLoadingListings = false;
+      notifyListeners();
+      return [];
     }
   }
 
@@ -303,6 +402,8 @@ class SupabaseMusafirRepository extends ChangeNotifier
   }
 
   Map<String, dynamic> _reviewToJson(Review review) {
+    // Send null for empty comments (consistent with database expectations)
+    final comment = review.comment?.trim();
     final json = <String, dynamic>{
       'booking_id': review.bookingId,
       'listing_id': review.listingId,
@@ -314,7 +415,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
           ? 'guest_to_host'
           : 'host_to_guest',
       'overall_rating': review.overallRating,
-      'comment': review.comment,
+      'comment': (comment != null && comment.isNotEmpty) ? comment : null,
     };
 
     // Add category ratings for guest-to-host reviews
@@ -735,7 +836,19 @@ class SupabaseMusafirRepository extends ChangeNotifier
     notifyListeners();
 
     try {
-      await _client.from('reviews').insert(_reviewToJson(review));
+      final reviewJson = _reviewToJson(review);
+      debugPrint('[DEBUG-review] Saving review: $reviewJson');
+      debugPrint('[DEBUG-review] Current user: ${_client.auth.currentUser?.id}');
+
+      // Check booking status in database
+      final bookingCheck = await _client
+          .from('bookings')
+          .select('id, booking_status, tenant_id')
+          .eq('id', review.bookingId)
+          .maybeSingle();
+      debugPrint('[DEBUG-review] Booking in DB: $bookingCheck');
+
+      await _client.from('reviews').insert(reviewJson);
       await _refreshReviews();
     } catch (e) {
       debugPrint('Error saving review: $e');
@@ -794,6 +907,33 @@ class SupabaseMusafirRepository extends ChangeNotifier
   @override
   Booking? getBookingById(String id) {
     return _bookings.where((b) => b.id == id).firstOrNull;
+  }
+
+  /// Fetch booking directly from Supabase (async version for when local cache misses)
+  Future<Booking?> fetchBookingById(String id) async {
+    // First check local cache
+    final local = _bookings.where((b) => b.id == id).firstOrNull;
+    if (local != null) return local;
+
+    // Fetch from Supabase
+    try {
+      final response = await _client
+          .from('bookings')
+          .select()
+          .eq('id', id)
+          .maybeSingle();
+
+      if (response != null) {
+        final booking = _bookingFromJson(response);
+        // Add to local cache
+        _bookings.add(booking);
+        notifyListeners();
+        return booking;
+      }
+    } catch (e) {
+      debugPrint('Error fetching booking $id: $e');
+    }
+    return null;
   }
 
   @override
@@ -915,6 +1055,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
   @override
   void updateBooking(Booking booking) async {
     final index = _bookings.indexWhere((b) => b.id == booking.id);
+    debugPrint('[DEBUG-booking] updateBooking called for ${booking.id}, status: ${booking.status.name}');
     if (index != -1) {
       _bookings[index] = booking;
       notifyListeners();
@@ -923,6 +1064,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
         final updateData = <String, dynamic>{
           'booking_status': booking.status.name,
         };
+        debugPrint('[DEBUG-booking] Updating Supabase with: $updateData');
 
         // Add lifecycle fields if present
         if (booking.hostMessage != null) {
@@ -947,11 +1089,9 @@ class SupabaseMusafirRepository extends ChangeNotifier
           updateData['cancelled_at'] = booking.cancelledAt!.toIso8601String();
         }
 
-        debugPrint('[DEBUG-repo] Updating booking ${booking.id} with data: $updateData');
         await _client.from('bookings').update(updateData).eq('id', booking.id);
-        debugPrint('[DEBUG-repo] Booking update completed successfully');
       } catch (e) {
-        debugPrint('[DEBUG-repo] Error updating booking: $e');
+        debugPrint('Error updating booking: $e');
       }
     }
   }
@@ -1089,7 +1229,29 @@ class SupabaseMusafirRepository extends ChangeNotifier
     return conflicts.isEmpty;
   }
 
+  @override
+  List<Booking> getUnreviewedCompletedBookings(String userId) {
+    // Get all completed bookings for this user
+    final completedBookings = _bookings.where((b) =>
+      b.userId == userId &&
+      b.status == BookingStatus.completed
+    ).toList();
+
+    // Filter out bookings that already have a guest review
+    return completedBookings.where((booking) {
+      final existingReview = _reviews.any((r) =>
+        r.bookingId == booking.id &&
+        r.reviewerId == userId &&
+        r.reviewType == ReviewType.guestToHost
+      );
+      return !existingReview;
+    }).toList()
+      ..sort((a, b) => (a.completedAt ?? a.effectiveCheckOut)
+          .compareTo(b.completedAt ?? b.effectiveCheckOut));
+  }
+
   /// Manually refresh all data from Supabase
+  @override
   Future<void> refresh() async {
     await _refreshAll();
   }

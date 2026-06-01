@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../state/auth_state.dart';
 import '../../widgets/app_text_field.dart';
+import '../../widgets/modern_banner.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({
@@ -46,12 +47,7 @@ class _SignupScreenState extends State<SignupScreen> {
     );
 
     if (!success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(widget.authState.error ?? 'Signup failed'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      ModernBanner.showError(context, widget.authState.error ?? 'Signup failed');
     }
   }
 
