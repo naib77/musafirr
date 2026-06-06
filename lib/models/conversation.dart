@@ -1,3 +1,4 @@
+import 'conversation_participant.dart';
 import 'user.dart';
 
 /// Status of a conversation
@@ -14,7 +15,7 @@ enum ConversationStatus {
   }
 }
 
-/// Represents a conversation between two users
+/// Represents a conversation between two or more users
 class Conversation {
   const Conversation({
     required this.id,
@@ -31,6 +32,7 @@ class Conversation {
     required this.updatedAt,
     this.otherParticipant,
     this.unreadCount = 0,
+    this.participants,
   });
 
   final String id;
@@ -51,6 +53,10 @@ class Conversation {
 
   /// Number of unread messages for the current user
   final int unreadCount;
+
+  /// Participants collection (for N-way support)
+  /// This is optional during migration; use participantOneId/participantTwoId for 1:1
+  final ConversationParticipants? participants;
 
   /// Check if the conversation has any messages
   bool get hasMessages => lastMessageId != null;
@@ -94,6 +100,29 @@ class Conversation {
         : participantOneId;
   }
 
+  /// Get the role of a participant in this conversation.
+  ///
+  /// [userId] The user to get the role for.
+  /// [hostId] The host's user ID (from the listing).
+  ///
+  /// Returns the participant's role based on whether they are the host or guest.
+  ParticipantRole getParticipantRole(String userId, String hostId) {
+    if (userId == hostId) {
+      return ParticipantRole.host;
+    }
+    return ParticipantRole.guest;
+  }
+
+  /// Check if a user is the host in this conversation.
+  bool isUserHost(String userId, String hostId) {
+    return userId == hostId;
+  }
+
+  /// Check if a user is the guest in this conversation.
+  bool isUserGuest(String userId, String hostId) {
+    return userId != hostId;
+  }
+
   factory Conversation.fromJson(Map<String, dynamic> json) {
     return Conversation(
       id: json['id'] as String,
@@ -109,7 +138,9 @@ class Conversation {
           : null,
       lastMessageSenderId: json['last_message_sender_id'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'] as String)
+          : DateTime.parse(json['created_at'] as String),
       otherParticipant: json['other_participant'] != null
           ? User.fromJson(json['other_participant'] as Map<String, dynamic>)
           : null,
@@ -150,6 +181,7 @@ class Conversation {
     DateTime? updatedAt,
     User? otherParticipant,
     int? unreadCount,
+    ConversationParticipants? participants,
   }) {
     return Conversation(
       id: id ?? this.id,
@@ -166,6 +198,7 @@ class Conversation {
       updatedAt: updatedAt ?? this.updatedAt,
       otherParticipant: otherParticipant ?? this.otherParticipant,
       unreadCount: unreadCount ?? this.unreadCount,
+      participants: participants ?? this.participants,
     );
   }
 

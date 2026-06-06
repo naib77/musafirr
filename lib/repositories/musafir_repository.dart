@@ -137,4 +137,29 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   /// Reset pagination and fetch fresh first page
   /// Call this when filters change or on pull-to-refresh
   Future<void> resetListingsPagination();
+
+  // ============== Booking Pagination ==============
+
+  /// Whether there are more bookings to load for the current user
+  bool get hasMoreBookings;
+
+  /// Whether bookings are currently being loaded
+  bool get isLoadingBookings;
+
+  /// Fetch the next page of bookings for a user (10 items)
+  /// Returns the newly fetched bookings
+  Future<List<Booking>> fetchNextBookingsPage(String userId);
+
+  /// Reset booking pagination and fetch fresh first page
+  /// Call this on pull-to-refresh or when switching users
+  Future<void> resetBookingsPagination(String userId);
+
+  // ============== Booking Counts ==============
+
+  /// Get total booking counts for a user (upcoming, current, past)
+  /// Returns a map with keys: 'upcoming', 'current', 'past'
+  Future<Map<String, int>> getBookingCounts(String userId);
+
+  /// Cached booking counts (updated by getBookingCounts)
+  Map<String, int>? get cachedBookingCounts;
 }

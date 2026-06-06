@@ -8,12 +8,18 @@ import 'screens/auth/phone_entry_screen.dart';
 import 'screens/auth/profile_completion_screen.dart';
 import 'screens/auth/signup_screen.dart';
 import 'screens/main_shell.dart';
+import 'screens/splash/splash_screen.dart';
 import 'services/booking/booking_lifecycle_service.dart';
+import 'services/booking/booking_messaging_coordinator.dart';
 import 'services/booking/booking_rules.dart';
+import 'repositories/supabase_conversation_repository.dart';
+import 'services/messaging/booking_conversation_service.dart';
+import 'services/messaging/supabase_messaging_service.dart';
 import 'services/notifications/fcm_token_service.dart';
 import 'services/notifications/notification_service_factory.dart';
 import 'state/auth_state.dart';
 import 'state/favorites_state.dart';
+import 'state/messaging_state.dart';
 import 'state/notification_state.dart';
 import 'state/otp_state.dart';
 import 'state/search_state.dart';
@@ -31,7 +37,10 @@ class _MusafirAppState extends State<MusafirApp> {
   final FavoritesStateNotifier favoritesState = FavoritesStateNotifier();
   final SearchStateNotifier searchState = SearchStateNotifier();
   late final NotificationStateNotifier notificationState;
+  late final MessagingStateNotifier messagingState;
   late final BookingLifecycleService bookingLifecycleService;
+  late final BookingConversationService bookingConversationService;
+  late final BookingMessagingCoordinator bookingMessagingCoordinator;
 
   @override
   void initState() {
@@ -46,9 +55,27 @@ class _MusafirAppState extends State<MusafirApp> {
       rules: BookingRules(),
     );
 
+    // Initialize booking conversation service
+    bookingConversationService = BookingConversationService(
+      conversationRepository: SupabaseConversationRepository.instance,
+      messagingService: SupabaseMessagingService.instance,
+    );
+
+    // Initialize booking-messaging coordinator
+    bookingMessagingCoordinator = BookingMessagingCoordinator(
+      lifecycleService: bookingLifecycleService,
+      conversationService: bookingConversationService,
+    );
+
     // Initialize notification state with appropriate service
     notificationState = NotificationStateNotifier(
       service: NotificationServiceFactory.instance,
+    );
+
+    // Initialize messaging state with repository and service
+    messagingState = MessagingStateNotifier(
+      conversationRepository: SupabaseConversationRepository.instance,
+      messagingService: SupabaseMessagingService.instance,
     );
 
     // Initialize search state with listings
@@ -63,14 +90,15 @@ class _MusafirAppState extends State<MusafirApp> {
 
   void _onAuthStateChanged() {
     if (authState.isLoggedIn && authState.currentUser != null) {
-      // User logged in - initialize notifications and favorites
+      // User logged in - initialize notifications, favorites, and messaging
       notificationState.initialize(authState.currentUser!.id);
       favoritesState.initializeForUser(authState.currentUser!.id);
+      messagingState.initialize(authState.currentUser!.id);
 
       // Save FCM token to Supabase for push notifications
       FcmTokenService.instance.initializeForUser();
     } else {
-      // User logged out - clear notifications, favorites, and deactivate FCM token
+      // User logged out - clear notifications, favorites, messaging, and deactivate FCM token
       notificationState.clear();
       favoritesState.clearAll();
       FcmTokenService.instance.cleanupOnLogout();
@@ -82,7 +110,10 @@ class _MusafirAppState extends State<MusafirApp> {
   }
 
   void _onRepositoryChange() {
-    searchState.setListings(repository.listings);
+    // Defer to avoid calling notifyListeners during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      searchState.setListings(repository.listings);
+    });
   }
 
   @override
@@ -93,6 +124,7 @@ class _MusafirAppState extends State<MusafirApp> {
     favoritesState.dispose();
     searchState.dispose();
     notificationState.dispose();
+    messagingState.dispose();
     super.dispose();
   }
 
@@ -112,17 +144,29 @@ class _MusafirAppState extends State<MusafirApp> {
       home: ListenableBuilder(
         listenable: authState,
         builder: (context, _) {
-          if (authState.isLoggedIn) {
-            return MainShell(
-              repository: repository,
-              authState: authState,
-              favoritesState: favoritesState,
-              searchState: searchState,
-              notificationState: notificationState,
-              bookingLifecycleService: bookingLifecycleService,
-            );
+          // Three-state auth flow: initializing → authenticated | unauthenticated
+          switch (authState.status) {
+            case AuthStatus.initializing:
+              // Show splash screen while determining auth state
+              return const SplashScreen();
+
+            case AuthStatus.authenticated:
+              // User is logged in - show main app
+              return MainShell(
+                repository: repository,
+                authState: authState,
+                favoritesState: favoritesState,
+                searchState: searchState,
+                notificationState: notificationState,
+                messagingState: messagingState,
+                bookingLifecycleService: bookingLifecycleService,
+                bookingMessagingCoordinator: bookingMessagingCoordinator,
+              );
+
+            case AuthStatus.unauthenticated:
+              // No user - show login flow
+              return AuthNavigator(authState: authState);
           }
-          return AuthNavigator(authState: authState);
         },
       ),
     );

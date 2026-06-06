@@ -20,44 +20,39 @@ class WishlistsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Wishlists'),
-        centerTitle: false,
-      ),
-      body: ListenableBuilder(
-        listenable: Listenable.merge([repository, favoritesState]),
-        builder: (context, _) {
-          final favoriteIds = favoritesState.favoriteIds;
-          final favoriteListings = repository.listings
-              .where((l) => favoriteIds.contains(l.id))
-              .toList();
+    // No Scaffold here - main_shell.dart provides the AppBar
+    return ListenableBuilder(
+      listenable: Listenable.merge([repository, favoritesState]),
+      builder: (context, _) {
+        final favoriteIds = favoritesState.favoriteIds;
+        final favoriteListings = repository.listings
+            .where((l) => favoriteIds.contains(l.id))
+            .toList();
 
-          if (favoriteListings.isEmpty) {
-            return _buildEmptyState(context, theme);
-          }
+        if (favoriteListings.isEmpty) {
+          return _buildEmptyState(context, theme);
+        }
 
-          return GridView.builder(
-            padding: const EdgeInsets.all(16),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 24,
-              crossAxisSpacing: 16,
-              childAspectRatio: 0.65,
-            ),
-            itemCount: favoriteListings.length,
-            itemBuilder: (context, index) {
-              final listing = favoriteListings[index];
-              return ListingCardModern(
-                listing: listing,
-                isFavorite: true,
-                onTap: () => _openListingDetail(context, listing),
-                onFavoriteTap: () => favoritesState.toggleFavorite(listing.id),
-              );
-            },
-          );
-        },
-      ),
+        return GridView.builder(
+          padding: const EdgeInsets.all(16),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 24,
+            crossAxisSpacing: 16,
+            childAspectRatio: 0.65,
+          ),
+          itemCount: favoriteListings.length,
+          itemBuilder: (context, index) {
+            final listing = favoriteListings[index];
+            return ListingCardModern(
+              listing: listing,
+              isFavorite: true,
+              onTap: () => _openListingDetail(context, listing),
+              onFavoriteTap: () => favoritesState.toggleFavorite(listing.id),
+            );
+          },
+        );
+      },
     );
   }
 

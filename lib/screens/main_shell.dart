@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/booking_status.dart';
 import '../repositories/musafir_repository.dart';
+import '../services/booking/booking_messaging_coordinator.dart';
 import '../repositories/supabase_musafir_repository.dart';
 import '../services/booking/booking_lifecycle_service.dart';
 import '../state/app_mode_state.dart';
@@ -34,6 +35,7 @@ class MainShell extends StatefulWidget {
     this.notificationState,
     this.messagingState,
     this.bookingLifecycleService,
+    this.bookingMessagingCoordinator,
     this.appModeState,
   });
 
@@ -44,6 +46,7 @@ class MainShell extends StatefulWidget {
   final NotificationStateNotifier? notificationState;
   final MessagingStateNotifier? messagingState;
   final BookingLifecycleService? bookingLifecycleService;
+  final BookingMessagingCoordinator? bookingMessagingCoordinator;
   final AppModeStateNotifier? appModeState;
 
   @override
@@ -54,6 +57,9 @@ class _MainShellState extends State<MainShell> {
   int _guestTabIndex = 0;
   int _hostTabIndex = 0;
   late AppModeStateNotifier _appModeState;
+
+  // GlobalKey to access TripsScreen state for tap-to-refresh
+  final GlobalKey<dynamic> _tripsScreenKey = GlobalKey();
 
   @override
   void initState() {
@@ -94,6 +100,7 @@ class _MainShellState extends State<MainShell> {
           repository: widget.repository,
           bookingLifecycleService: widget.bookingLifecycleService!,
           authState: widget.authState,
+          messagingState: widget.messagingState,
         ),
       ),
     );
@@ -111,7 +118,12 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([_appModeState, widget.authState, widget.repository]),
+      listenable: Listenable.merge([
+        _appModeState,
+        widget.authState,
+        widget.repository,
+        if (widget.messagingState != null) widget.messagingState!,
+      ]),
       builder: (context, _) {
         final scaffold = Scaffold(
           body: Column(
@@ -163,6 +175,10 @@ class _MainShellState extends State<MainShell> {
     return NavigationBar(
       selectedIndex: _guestTabIndex,
       onDestinationSelected: (index) {
+        // If tapping the same tab (Trips = 2), trigger refresh
+        if (index == _guestTabIndex && index == 2) {
+          _tripsScreenKey.currentState?.refreshFromTabTap();
+        }
         setState(() => _guestTabIndex = index);
       },
       destinations: const [
@@ -205,31 +221,44 @@ class _MainShellState extends State<MainShell> {
           searchState: widget.searchState,
           notificationState: widget.notificationState,
           bookingLifecycleService: widget.bookingLifecycleService,
+          messagingState: widget.messagingState,
+          onOpenInbox: _openInbox,
         ),
-        // Wishlists
-        Scaffold(
-          appBar: _buildAppBar('Wishlists', unreadMessageCount),
-          body: WishlistsScreen(
-            repository: widget.repository,
-            favoritesState: widget.favoritesState,
-          ),
+        // Wishlists - slim header instead of full AppBar
+        Column(
+          children: [
+            _buildSlimHeader('Wishlists', unreadMessageCount),
+            Expanded(
+              child: WishlistsScreen(
+                repository: widget.repository,
+                favoritesState: widget.favoritesState,
+              ),
+            ),
+          ],
         ),
-        // Trips
-        Scaffold(
-          appBar: _buildAppBar('Trips', unreadMessageCount),
-          body: TripsScreen(
-            repository: widget.repository,
-            authState: widget.authState,
-          ),
+        // Trips - has its own AppBar with TabBar
+        TripsScreen(
+          key: _tripsScreenKey,
+          repository: widget.repository,
+          authState: widget.authState,
+          messagingState: widget.messagingState,
+          notificationState: widget.notificationState,
+          onOpenInbox: _openInbox,
+          onOpenNotifications: _openNotificationCenter,
+          onNavigateToExplore: () => setState(() => _guestTabIndex = 0),
         ),
-        // Profile
-        Scaffold(
-          appBar: _buildAppBar('Profile', unreadMessageCount),
-          body: ProfileScreen(
-            authState: widget.authState,
-            repository: widget.repository,
-            notificationState: widget.notificationState,
-          ),
+        // Profile - slim header instead of full AppBar
+        Column(
+          children: [
+            _buildSlimHeader('Profile', unreadMessageCount),
+            Expanded(
+              child: ProfileScreen(
+                authState: widget.authState,
+                repository: widget.repository,
+                notificationState: widget.notificationState,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -283,13 +312,18 @@ class _MainShellState extends State<MainShell> {
       key: const ValueKey('host'),
       index: _hostTabIndex,
       children: [
-        // Dashboard
-        Scaffold(
-          appBar: _buildAppBar('Dashboard', unreadMessageCount),
-          body: HostDashboardScreen(
-            repository: widget.repository,
-            authState: widget.authState,
-          ),
+        // Dashboard - slim header instead of full AppBar
+        Column(
+          children: [
+            _buildSlimHeader('Dashboard', unreadMessageCount),
+            Expanded(
+              child: HostDashboardScreen(
+                repository: widget.repository,
+                authState: widget.authState,
+                messagingState: widget.messagingState,
+              ),
+            ),
+          ],
         ),
         // Reservations (existing HostingScreen content)
         widget.bookingLifecycleService != null
@@ -297,24 +331,37 @@ class _MainShellState extends State<MainShell> {
                 repository: widget.repository,
                 authState: widget.authState,
                 bookingLifecycleService: widget.bookingLifecycleService!,
+                bookingMessagingCoordinator: widget.bookingMessagingCoordinator,
+                messagingState: widget.messagingState,
+                notificationState: widget.notificationState,
+                onOpenInbox: _openInbox,
+                onOpenNotifications: _openNotificationCenter,
               )
             : const Center(child: Text('Reservations unavailable')),
-        // Earnings
-        Scaffold(
-          appBar: _buildAppBar('Earnings', unreadMessageCount),
-          body: EarningsScreen(
-            repository: widget.repository,
-            authState: widget.authState,
-          ),
+        // Earnings - slim header instead of full AppBar
+        Column(
+          children: [
+            _buildSlimHeader('Earnings', unreadMessageCount),
+            Expanded(
+              child: EarningsScreen(
+                repository: widget.repository,
+                authState: widget.authState,
+              ),
+            ),
+          ],
         ),
-        // Profile (shared)
-        Scaffold(
-          appBar: _buildAppBar('Profile', unreadMessageCount),
-          body: ProfileScreen(
-            authState: widget.authState,
-            repository: widget.repository,
-            notificationState: widget.notificationState,
-          ),
+        // Profile (shared) - slim header instead of full AppBar
+        Column(
+          children: [
+            _buildSlimHeader('Profile', unreadMessageCount),
+            Expanded(
+              child: ProfileScreen(
+                authState: widget.authState,
+                repository: widget.repository,
+                notificationState: widget.notificationState,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -349,6 +396,48 @@ class _MainShellState extends State<MainShell> {
             onTap: _openNotificationCenter,
           ),
       ],
+    );
+  }
+
+  /// Slim header row - sits right below Guest/Host switcher with minimal gap
+  Widget _buildSlimHeader(String title, int unreadMessageCount) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: theme.colorScheme.surface,
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const Spacer(),
+          // Messages icon with badge
+          if (widget.messagingState != null)
+            IconButton(
+              icon: Badge(
+                isLabelVisible: unreadMessageCount > 0,
+                label: Text(
+                  unreadMessageCount > 99 ? '99+' : '$unreadMessageCount',
+                ),
+                child: const Icon(Icons.chat_bubble_outline),
+              ),
+              onPressed: _openInbox,
+              tooltip: 'Messages',
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+            ),
+          // Notification bell
+          if (widget.notificationState != null)
+            AnimatedNotificationBell(
+              notificationState: widget.notificationState!,
+              onTap: _openNotificationCenter,
+            ),
+        ],
+      ),
     );
   }
 }

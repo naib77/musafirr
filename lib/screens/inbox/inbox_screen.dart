@@ -98,82 +98,92 @@ class _InboxScreenState extends State<InboxScreen>
   Widget build(BuildContext context) {
     // If no messaging state provided, show placeholder
     if (widget.messagingState == null) {
-      return const _InboxPlaceholder();
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Messages'),
+        ),
+        body: const _InboxPlaceholder(),
+      );
     }
 
-    return ListenableBuilder(
-      listenable: widget.messagingState!,
-      builder: (context, _) {
-        final activeConversations = widget.messagingState!.activeConversations;
-        final archivedConversations = widget.messagingState!.archivedConversations;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Messages'),
+      ),
+      body: ListenableBuilder(
+        listenable: widget.messagingState!,
+        builder: (context, _) {
+          final activeConversations = widget.messagingState!.activeConversations;
+          final archivedConversations = widget.messagingState!.archivedConversations;
 
-        return Column(
-          children: [
-            // Tab bar
-            TabBar(
-              controller: _tabController,
-              tabs: [
-                Tab(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text('Messages'),
-                      if (widget.messagingState!.totalUnreadCount > 0) ...[
-                        const SizedBox(width: 8),
-                        _UnreadBadge(
-                          count: widget.messagingState!.totalUnreadCount,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                Tab(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text('Archived'),
-                      if (archivedConversations.isNotEmpty) ...[
-                        const SizedBox(width: 8),
-                        Text(
-                          '(${archivedConversations.length})',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-
-            // Tab content
-            Expanded(
-              child: TabBarView(
+          return Column(
+            children: [
+              // Tab bar
+              TabBar(
                 controller: _tabController,
-                children: [
-                  // Active messages
-                  _buildConversationList(
-                    conversations: activeConversations,
-                    isLoading: widget.messagingState!.isLoadingConversations,
-                    emptyTitle: 'No messages yet',
-                    emptySubtitle:
-                        'When you book a trip or receive a reservation, messages from your host or guest will appear here.',
+                tabs: [
+                  Tab(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('Messages'),
+                        if (widget.messagingState!.totalUnreadCount > 0) ...[
+                          const SizedBox(width: 8),
+                          _UnreadBadge(
+                            count: widget.messagingState!.totalUnreadCount,
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
-
-                  // Archived
-                  _buildConversationList(
-                    conversations: archivedConversations,
-                    isLoading: false,
-                    emptyTitle: 'No archived messages',
-                    emptySubtitle:
-                        'Conversations you archive will appear here.',
-                    emptyIcon: Icons.archive_outlined,
+                  Tab(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('Archived'),
+                        if (archivedConversations.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            '(${archivedConversations.length})',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ),
-          ],
-        );
-      },
+
+              // Tab content
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    // Active messages
+                    _buildConversationList(
+                      conversations: activeConversations,
+                      isLoading: widget.messagingState!.isLoadingConversations,
+                      emptyTitle: 'No messages yet',
+                      emptySubtitle:
+                          'When you book a trip or receive a reservation, messages from your host or guest will appear here.',
+                    ),
+
+                    // Archived
+                    _buildConversationList(
+                      conversations: archivedConversations,
+                      isLoading: false,
+                      emptyTitle: 'No archived messages',
+                      emptySubtitle:
+                          'Conversations you archive will appear here.',
+                      emptyIcon: Icons.archive_outlined,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 

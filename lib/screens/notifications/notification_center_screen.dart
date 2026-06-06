@@ -6,6 +6,7 @@ import '../../repositories/musafir_repository.dart';
 import '../../repositories/supabase_musafir_repository.dart';
 import '../../services/booking/booking_lifecycle_service.dart';
 import '../../state/auth_state.dart';
+import '../../state/messaging_state.dart';
 import '../../state/notification_state.dart';
 import '../../widgets/booking_details_sheet.dart';
 import '../../widgets/dialogs/booking_action_dialogs.dart';
@@ -22,24 +23,32 @@ class NotificationCenterScreen extends StatefulWidget {
     required this.repository,
     required this.bookingLifecycleService,
     required this.authState,
+    this.messagingState,
   });
 
   final NotificationStateNotifier notificationState;
   final MusafirRepository repository;
   final BookingLifecycleService bookingLifecycleService;
   final AuthStateNotifier authState;
+  final MessagingStateNotifier? messagingState;
 
   @override
   State<NotificationCenterScreen> createState() =>
       _NotificationCenterScreenState();
 }
 
-class _NotificationCenterScreenState extends State<NotificationCenterScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
+  int _selectedTabIndex = 0;
   final ScrollController _scrollController = ScrollController();
 
   static const _tabs = ['All', 'Bookings', 'Payments', 'Messages', 'Other'];
+  static const _tabIcons = [
+    Icons.all_inbox_rounded,
+    Icons.calendar_month_rounded,
+    Icons.payments_rounded,
+    Icons.chat_bubble_rounded,
+    Icons.more_horiz_rounded,
+  ];
   static const _tabCategories = [
     null, // All
     'booking',
@@ -58,15 +67,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _tabs.length, vsync: this);
-
     // Set up scroll listener for infinite scroll
     _scrollController.addListener(_onScroll);
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -105,6 +111,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
@@ -118,7 +125,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
                 return const SizedBox.shrink();
               }
               return IconButton(
-                icon: const Icon(Icons.done_all),
+                icon: const Icon(Icons.done_all_rounded),
                 tooltip: 'Mark all as read',
                 onPressed: () {
                   widget.notificationState.markAllAsRead();
@@ -129,7 +136,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
           ),
           // Settings
           IconButton(
-            icon: const Icon(Icons.settings),
+            icon: const Icon(Icons.settings_rounded),
             tooltip: 'Notification settings',
             onPressed: () {
               Navigator.push(
@@ -143,11 +150,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
             },
           ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          tabs: _tabs.map((t) => Tab(text: t)).toList(),
-        ),
       ),
       body: ListenableBuilder(
         listenable: widget.notificationState,
@@ -162,14 +164,98 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
             return _buildErrorState(theme);
           }
 
-          return TabBarView(
-            controller: _tabController,
-            children: List.generate(_tabs.length, (index) {
-              return _buildNotificationList(
-                _getFilteredNotifications(index),
-                theme,
-              );
-            }),
+          return Column(
+            children: [
+              // Modern chip tabs
+              _buildChipTabs(theme, isDark),
+              // Content
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: _buildNotificationList(
+                    _getFilteredNotifications(_selectedTabIndex),
+                    theme,
+                    key: ValueKey(_selectedTabIndex),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildChipTabs(ThemeData theme, bool isDark) {
+    return Container(
+      height: 56,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: _tabs.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final isSelected = index == _selectedTabIndex;
+          final tabLabel = _tabs[index];
+          final tabIcon = _tabIcons[index];
+
+          return GestureDetector(
+            onTap: () => setState(() => _selectedTabIndex = index),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                gradient: isSelected
+                    ? LinearGradient(
+                        colors: [
+                          theme.colorScheme.primary,
+                          theme.colorScheme.primary.withValues(alpha: 0.8),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      )
+                    : null,
+                color: isSelected
+                    ? null
+                    : isDark
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : Colors.black.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: isSelected
+                    ? [
+                        BoxShadow(
+                          color: theme.colorScheme.primary.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    tabIcon,
+                    size: 18,
+                    color: isSelected
+                        ? Colors.white
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    tabLabel,
+                    style: TextStyle(
+                      color: isSelected
+                          ? Colors.white
+                          : theme.colorScheme.onSurfaceVariant,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           );
         },
       ),
@@ -178,10 +264,11 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
 
   Widget _buildNotificationList(
     List<AppNotification> notifications,
-    ThemeData theme,
-  ) {
+    ThemeData theme, {
+    Key? key,
+  }) {
     if (notifications.isEmpty) {
-      return const NotificationEmptyState();
+      return NotificationEmptyState(key: key);
     }
 
     // Group notifications by date
@@ -202,6 +289,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
     }
 
     return RefreshIndicator(
+      key: key,
       onRefresh: widget.notificationState.refresh,
       child: CustomScrollView(
         controller: _scrollController,
@@ -361,6 +449,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
           builder: (context) => HostReservationsScreen(
             repository: widget.repository,
             authState: widget.authState,
+            messagingState: widget.messagingState,
           ),
         ),
       );

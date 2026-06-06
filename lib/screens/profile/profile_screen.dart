@@ -34,23 +34,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Profile'),
-        centerTitle: false,
-      ),
-      body: ListenableBuilder(
-        listenable: authState,
-        builder: (context, _) {
-          final user = authState.currentUser;
+    // No Scaffold here - main_shell.dart provides the AppBar
+    return ListenableBuilder(
+      listenable: authState,
+      builder: (context, _) {
+        final user = authState.currentUser;
 
-          if (user == null) {
-            return _buildLoginPrompt(context, theme);
-          }
+        if (user == null) {
+          return _buildLoginPrompt(context, theme);
+        }
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
               children: [
                 // User info card
                 Card(
@@ -251,12 +247,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
-                const SizedBox(height: 32),
-              ],
-            ),
-          );
-        },
-      ),
+              const SizedBox(height: 32),
+            ],
+          ),
+        );
+      },
     );
   }
 

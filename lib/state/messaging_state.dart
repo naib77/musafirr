@@ -4,167 +4,148 @@ import 'package:flutter/foundation.dart';
 
 import '../models/conversation.dart';
 import '../models/message.dart';
+import '../repositories/conversation_repository.dart';
 import '../services/messaging/messaging_service.dart';
+import 'active_chat_state.dart';
+import 'conversation_list_state.dart';
 
-/// State management for messaging functionality
+/// Facade for messaging state management.
+///
+/// This class coordinates [ConversationListState] and [ActiveChatState],
+/// providing a unified interface for UI components.
+///
+/// ## Architecture
+///
+/// The messaging state is split into focused modules:
+/// - [ConversationListState]: Owns the conversation list, filtering, pagination
+/// - [ActiveChatState]: Owns the current conversation's messages, typing, sending
+///
+/// This facade:
+/// - Initializes both modules together
+/// - Forwards calls to the appropriate module
+/// - Notifies listeners when either module changes
+///
+/// ## Usage
+///
+/// ```dart
+/// final state = MessagingStateNotifier(
+///   conversationRepository: repository,
+///   messagingService: service,
+/// );
+///
+/// await state.initialize(userId);
+///
+/// // List operations
+/// final conversations = state.activeConversations;
+///
+/// // Chat operations
+/// await state.openConversation(conversationId);
+/// await state.sendTextMessage('Hello!');
+/// state.closeConversation();
+/// ```
 class MessagingStateNotifier extends ChangeNotifier {
   MessagingStateNotifier({
+    required ConversationRepository conversationRepository,
     required MessagingService messagingService,
-  }) : _messagingService = messagingService;
+  })  : _conversationList = ConversationListState(
+          repository: conversationRepository,
+        ),
+        _activeChat = ActiveChatState(
+          messagingService: messagingService,
+        ),
+        _messagingService = messagingService {
+    // Forward notifications from child states
+    _conversationList.addListener(_onChildChanged);
+    _activeChat.addListener(_onChildChanged);
+  }
 
+  final ConversationListState _conversationList;
+  final ActiveChatState _activeChat;
   final MessagingService _messagingService;
 
-  // Current user
   String? _currentUserId;
-  String? get currentUserId => _currentUserId;
 
-  // Conversations
-  List<Conversation> _conversations = [];
-  List<Conversation> get conversations => List.unmodifiable(_conversations);
-
-  // Active conversation (when in chat view)
-  Conversation? _activeConversation;
-  Conversation? get activeConversation => _activeConversation;
-
-  // Messages for active conversation
-  List<Message> _messages = [];
-  List<Message> get messages => List.unmodifiable(_messages);
-
-  // Typing indicators
-  List<TypingIndicator> _typingIndicators = [];
-  List<TypingIndicator> get typingIndicators => List.unmodifiable(_typingIndicators);
-
-  // Total unread count
-  int _totalUnreadCount = 0;
-  int get totalUnreadCount => _totalUnreadCount;
-
-  // Loading states
-  bool _isLoadingConversations = false;
-  bool get isLoadingConversations => _isLoadingConversations;
-
-  bool _isLoadingMessages = false;
-  bool get isLoadingMessages => _isLoadingMessages;
-
-  bool _isSendingMessage = false;
-  bool get isSendingMessage => _isSendingMessage;
-
-  // Error handling
-  String? _error;
-  String? get error => _error;
-
-  // Subscriptions
+  // Real-time subscriptions
   StreamSubscription<Conversation>? _conversationsSubscription;
-  StreamSubscription<Message>? _messagesSubscription;
-  StreamSubscription<List<TypingIndicator>>? _typingSubscription;
   StreamSubscription<int>? _unreadCountSubscription;
 
-  // Typing debounce
-  Timer? _typingTimer;
-  bool _isTyping = false;
+  // ============================================
+  // Initialization
+  // ============================================
 
-  /// Initialize the messaging state for a user
+  /// Initialize messaging for a user.
   Future<void> initialize(String userId) async {
     if (_currentUserId == userId) return;
 
     _currentUserId = userId;
     await _messagingService.initialize();
 
-    // Load conversations
-    await loadConversations();
+    // Initialize child states
+    await _conversationList.initialize(userId);
 
     // Subscribe to real-time updates
     _subscribeToConversations();
     _subscribeToUnreadCount();
   }
 
-  /// Load conversations for the current user
+  /// Clear all state (e.g., on logout).
+  void clear() {
+    _conversationsSubscription?.cancel();
+    _unreadCountSubscription?.cancel();
+    _conversationList.clear();
+    _activeChat.closeConversation();
+    _currentUserId = null;
+  }
+
+  // ============================================
+  // Conversation List (delegated)
+  // ============================================
+
+  /// Current user ID.
+  String? get currentUserId => _currentUserId;
+
+  /// All conversations.
+  List<Conversation> get conversations => _conversationList.conversations;
+
+  /// Active conversations (non-archived).
+  List<Conversation> get activeConversations =>
+      _conversationList.activeConversations;
+
+  /// Archived conversations.
+  List<Conversation> get archivedConversations =>
+      _conversationList.archivedConversations;
+
+  /// Conversations with unread messages.
+  List<Conversation> get unreadConversations =>
+      _conversationList.unreadConversations;
+
+  /// Whether conversations are loading.
+  bool get isLoadingConversations => _conversationList.isLoading;
+
+  /// Total unread message count.
+  int get totalUnreadCount => _conversationList.totalUnreadCount;
+
+  /// Load conversations.
   Future<void> loadConversations({ConversationFilter? filter}) async {
-    if (_currentUserId == null) return;
-
-    _isLoadingConversations = true;
-    _error = null;
-    notifyListeners();
-
-    final result = await _messagingService.getConversations(
-      _currentUserId!,
-      filter: filter,
-    );
-
-    if (result.isSuccess) {
-      _conversations = result.data ?? [];
-    } else {
-      _error = result.error;
-    }
-
-    _isLoadingConversations = false;
-    notifyListeners();
+    await _conversationList.loadConversations();
   }
 
-  /// Refresh conversations
+  /// Refresh conversations.
   Future<void> refreshConversations() async {
-    await loadConversations();
+    await _conversationList.refresh();
   }
 
-  /// Open a conversation and load its messages
-  Future<void> openConversation(String conversationId) async {
-    if (_currentUserId == null) return;
-
-    // Cancel existing subscriptions
-    await _messagesSubscription?.cancel();
-    await _typingSubscription?.cancel();
-
-    _isLoadingMessages = true;
-    _messages = [];
-    _typingIndicators = [];
-    notifyListeners();
-
-    // Get conversation details
-    final convResult = await _messagingService.getConversation(
-      conversationId,
-      _currentUserId!,
-    );
-
-    if (convResult.isSuccess) {
-      _activeConversation = convResult.data;
-    }
-
-    // Load messages
-    final msgResult = await _messagingService.getMessages(conversationId);
-
-    if (msgResult.isSuccess) {
-      _messages = msgResult.data ?? [];
-    } else {
-      _error = msgResult.error;
-    }
-
-    _isLoadingMessages = false;
-    notifyListeners();
-
-    // Subscribe to new messages
-    _subscribeToMessages(conversationId);
-    _subscribeToTypingIndicators(conversationId);
-
-    // Mark as read
-    if (_messages.isNotEmpty) {
-      await markAllAsRead();
-    }
+  /// Get conversations by status.
+  List<Conversation> getConversationsByStatus(ConversationStatus status) {
+    return conversations.where((c) => c.status == status).toList();
   }
 
-  /// Close the active conversation
-  void closeConversation() {
-    _messagesSubscription?.cancel();
-    _typingSubscription?.cancel();
-    _typingTimer?.cancel();
-
-    _activeConversation = null;
-    _messages = [];
-    _typingIndicators = [];
-    _isTyping = false;
-
-    notifyListeners();
+  /// Archive a conversation.
+  Future<bool> archiveConversation(String conversationId) {
+    return _conversationList.archiveConversation(conversationId);
   }
 
-  /// Get or create a conversation with another user
+  /// Start a new conversation.
   Future<Conversation?> startConversation({
     required String otherUserId,
     String? bookingId,
@@ -180,246 +161,131 @@ class MessagingStateNotifier extends ChangeNotifier {
     );
 
     if (result.isSuccess && result.data != null) {
-      // Add to conversations if not already present
-      final existingIndex = _conversations.indexWhere((c) => c.id == result.data!.id);
-      if (existingIndex < 0) {
-        _conversations.insert(0, result.data!);
-        notifyListeners();
-      }
+      _conversationList.addConversation(result.data!);
       return result.data;
     }
 
-    _error = result.error;
-    notifyListeners();
     return null;
   }
 
-  /// Send a text message
-  Future<bool> sendTextMessage(String text) async {
-    if (_currentUserId == null || _activeConversation == null) return false;
-    if (text.trim().isEmpty) return false;
+  // ============================================
+  // Active Chat (delegated)
+  // ============================================
 
-    _isSendingMessage = true;
-    notifyListeners();
+  /// The active conversation.
+  Conversation? get activeConversation => _activeChat.conversation;
 
-    final request = SendMessageRequest.text(
-      conversationId: _activeConversation!.id,
-      text: text.trim(),
-    );
+  /// Messages in the active conversation.
+  List<Message> get messages => _activeChat.messages;
 
-    final result = await _messagingService.sendMessage(request, _currentUserId!);
+  /// Typing indicators in the active conversation.
+  List<TypingIndicator> get typingIndicators => _activeChat.typingIndicators;
 
-    _isSendingMessage = false;
+  /// Whether messages are loading.
+  bool get isLoadingMessages => _activeChat.isLoadingMessages;
 
-    if (result.isSuccess && result.data != null) {
-      // Add message to list (will also come via stream, but add immediately for responsiveness)
-      _messages.add(result.data!);
-      notifyListeners();
+  /// Whether a message is being sent.
+  bool get isSendingMessage => _activeChat.isSendingMessage;
 
-      // Stop typing indicator
-      await setTyping(false);
-      return true;
-    }
-
-    _error = result.error;
-    notifyListeners();
-    return false;
+  /// Open a conversation.
+  Future<void> openConversation(String conversationId) async {
+    if (_currentUserId == null) return;
+    await _activeChat.openConversation(conversationId, _currentUserId!);
   }
 
-  /// Send an image message
+  /// Close the active conversation.
+  void closeConversation() {
+    _activeChat.closeConversation();
+  }
+
+  /// Send a text message.
+  Future<bool> sendTextMessage(String text) async {
+    final success = await _activeChat.sendTextMessage(text);
+    if (success && _activeChat.conversation != null) {
+      // Update the conversation in the list with new last message
+      final updatedConv = _activeChat.conversation!.copyWith(
+        lastMessageText: text,
+        lastMessageAt: DateTime.now(),
+        lastMessageSenderId: _currentUserId,
+      );
+      _conversationList.updateConversation(updatedConv);
+    }
+    return success;
+  }
+
+  /// Send an image message.
   Future<bool> sendImageMessage({
     required String imageUrl,
     String caption = '',
     int? width,
     int? height,
-  }) async {
-    if (_currentUserId == null || _activeConversation == null) return false;
-
-    _isSendingMessage = true;
-    notifyListeners();
-
-    final request = SendMessageRequest.image(
-      conversationId: _activeConversation!.id,
+  }) {
+    return _activeChat.sendImageMessage(
+      imageUrl: imageUrl,
       caption: caption,
-      metadata: ImageMetadata(
-        url: imageUrl,
-        width: width,
-        height: height,
-      ),
+      width: width,
+      height: height,
     );
-
-    final result = await _messagingService.sendMessage(request, _currentUserId!);
-
-    _isSendingMessage = false;
-
-    if (result.isSuccess && result.data != null) {
-      _messages.add(result.data!);
-      notifyListeners();
-      return true;
-    }
-
-    _error = result.error;
-    notifyListeners();
-    return false;
   }
 
-  /// Send a location message
+  /// Send a location message.
   Future<bool> sendLocationMessage({
     required double latitude,
     required double longitude,
     String? address,
     String? placeName,
-  }) async {
-    if (_currentUserId == null || _activeConversation == null) return false;
-
-    _isSendingMessage = true;
-    notifyListeners();
-
-    final request = SendMessageRequest.location(
-      conversationId: _activeConversation!.id,
-      metadata: LocationMetadata(
-        latitude: latitude,
-        longitude: longitude,
-        address: address,
-        placeName: placeName,
-      ),
+  }) {
+    return _activeChat.sendLocationMessage(
+      latitude: latitude,
+      longitude: longitude,
+      address: address,
+      placeName: placeName,
     );
-
-    final result = await _messagingService.sendMessage(request, _currentUserId!);
-
-    _isSendingMessage = false;
-
-    if (result.isSuccess && result.data != null) {
-      _messages.add(result.data!);
-      notifyListeners();
-      return true;
-    }
-
-    _error = result.error;
-    notifyListeners();
-    return false;
   }
 
-  /// Delete a message
-  Future<bool> deleteMessage(String messageId) async {
-    final result = await _messagingService.deleteMessage(messageId);
-
-    if (result.isSuccess) {
-      // Update local message
-      final index = _messages.indexWhere((m) => m.id == messageId);
-      if (index >= 0) {
-        _messages[index] = _messages[index].copyWith(deletedAt: DateTime.now());
-        notifyListeners();
-      }
-      return true;
-    }
-
-    _error = result.error;
-    notifyListeners();
-    return false;
+  /// Delete a message.
+  Future<bool> deleteMessage(String messageId) {
+    return _activeChat.deleteMessage(messageId);
   }
 
-  /// Mark all messages in the active conversation as read
+  /// Mark all messages in the active conversation as read.
   Future<void> markAllAsRead() async {
-    if (_currentUserId == null || _activeConversation == null) return;
-
-    await _messagingService.markAllAsRead(
-      _activeConversation!.id,
-      _currentUserId!,
-    );
-
-    // Update local conversation
-    final index = _conversations.indexWhere((c) => c.id == _activeConversation!.id);
-    if (index >= 0) {
-      _conversations[index] = _conversations[index].copyWith(unreadCount: 0);
-      notifyListeners();
+    await _activeChat.markAllAsRead();
+    if (_activeChat.conversation != null) {
+      _conversationList.markAsRead(_activeChat.conversation!.id);
     }
   }
 
-  /// Set typing indicator
-  Future<void> setTyping(bool isTyping) async {
-    if (_currentUserId == null || _activeConversation == null) return;
-    if (_isTyping == isTyping) return;
-
-    _isTyping = isTyping;
-
-    await _messagingService.setTyping(
-      _activeConversation!.id,
-      _currentUserId!,
-      isTyping,
-    );
-
-    // Auto-stop typing after 5 seconds
-    _typingTimer?.cancel();
-    if (isTyping) {
-      _typingTimer = Timer(const Duration(seconds: 5), () {
-        setTyping(false);
-      });
-    }
+  /// Set typing indicator.
+  Future<void> setTyping(bool isTyping) {
+    return _activeChat.setTyping(isTyping);
   }
 
-  /// Handle text input changes (for typing indicator)
+  /// Handle text input changes.
   void onTextChanged(String text) {
-    if (text.isNotEmpty && !_isTyping) {
-      setTyping(true);
-    }
-
-    // Reset typing timer
-    _typingTimer?.cancel();
-    if (text.isNotEmpty) {
-      _typingTimer = Timer(const Duration(seconds: 3), () {
-        setTyping(false);
-      });
-    } else {
-      setTyping(false);
-    }
+    _activeChat.onTextChanged(text);
   }
 
-  /// Archive a conversation
-  Future<bool> archiveConversation(String conversationId) async {
-    final result = await _messagingService.archiveConversation(conversationId);
+  // ============================================
+  // Error Handling
+  // ============================================
 
-    if (result.isSuccess) {
-      // Update local conversation
-      final index = _conversations.indexWhere((c) => c.id == conversationId);
-      if (index >= 0) {
-        _conversations[index] = _conversations[index].copyWith(
-          status: ConversationStatus.archived,
-        );
-        notifyListeners();
-      }
-      return true;
-    }
+  /// Current error (from either child state).
+  String? get error => _conversationList.error ?? _activeChat.error;
 
-    _error = result.error;
-    notifyListeners();
-    return false;
-  }
-
-  /// Get conversations filtered by status
-  List<Conversation> getConversationsByStatus(ConversationStatus status) {
-    return _conversations.where((c) => c.status == status).toList();
-  }
-
-  /// Get active (non-archived) conversations
-  List<Conversation> get activeConversations {
-    return _conversations.where((c) => c.status == ConversationStatus.active).toList();
-  }
-
-  /// Get archived conversations
-  List<Conversation> get archivedConversations {
-    return _conversations.where((c) => c.status == ConversationStatus.archived).toList();
-  }
-
-  /// Clear any errors
+  /// Clear any errors.
   void clearError() {
-    _error = null;
-    notifyListeners();
+    _conversationList.clearError();
+    _activeChat.clearError();
   }
 
   // ============================================
-  // Private Subscription Methods
+  // Private Methods
   // ============================================
+
+  void _onChildChanged() {
+    notifyListeners();
+  }
 
   void _subscribeToConversations() {
     if (_currentUserId == null) return;
@@ -428,55 +294,7 @@ class MessagingStateNotifier extends ChangeNotifier {
     _conversationsSubscription = _messagingService
         .subscribeToConversations(_currentUserId!)
         .listen((conversation) {
-      // Update or add conversation
-      final index = _conversations.indexWhere((c) => c.id == conversation.id);
-      if (index >= 0) {
-        _conversations[index] = conversation;
-      } else {
-        _conversations.insert(0, conversation);
-      }
-
-      // Re-sort by last message time
-      _conversations.sort((a, b) {
-        final aTime = a.lastMessageAt ?? a.createdAt;
-        final bTime = b.lastMessageAt ?? b.createdAt;
-        return bTime.compareTo(aTime);
-      });
-
-      notifyListeners();
-    });
-  }
-
-  void _subscribeToMessages(String conversationId) {
-    _messagesSubscription?.cancel();
-    _messagesSubscription = _messagingService
-        .subscribeToMessages(conversationId)
-        .listen((message) {
-      // Check if message already exists (might have been added optimistically)
-      final exists = _messages.any((m) => m.id == message.id);
-      if (!exists) {
-        _messages.add(message);
-        _messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-        notifyListeners();
-
-        // Mark as read if this is from someone else
-        if (_currentUserId != null && message.senderId != _currentUserId) {
-          markAllAsRead();
-        }
-      }
-    });
-  }
-
-  void _subscribeToTypingIndicators(String conversationId) {
-    _typingSubscription?.cancel();
-    _typingSubscription = _messagingService
-        .subscribeToTypingIndicators(conversationId)
-        .listen((indicators) {
-      // Filter out our own typing indicator
-      _typingIndicators = indicators
-          .where((t) => t.userId != _currentUserId && t.isValid)
-          .toList();
-      notifyListeners();
+      _conversationList.updateConversation(conversation);
     });
   }
 
@@ -487,18 +305,22 @@ class MessagingStateNotifier extends ChangeNotifier {
     _unreadCountSubscription = _messagingService
         .subscribeToTotalUnreadCount(_currentUserId!)
         .listen((count) {
-      _totalUnreadCount = count;
-      notifyListeners();
+      // The list state tracks its own count, but we can use this
+      // to trigger a refresh if counts diverge
+      if (count != _conversationList.totalUnreadCount) {
+        _conversationList.refresh();
+      }
     });
   }
 
   @override
   void dispose() {
     _conversationsSubscription?.cancel();
-    _messagesSubscription?.cancel();
-    _typingSubscription?.cancel();
     _unreadCountSubscription?.cancel();
-    _typingTimer?.cancel();
+    _conversationList.removeListener(_onChildChanged);
+    _activeChat.removeListener(_onChildChanged);
+    _conversationList.dispose();
+    _activeChat.dispose();
     super.dispose();
   }
 }

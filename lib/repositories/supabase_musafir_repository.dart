@@ -38,17 +38,35 @@ class SupabaseMusafirRepository extends ChangeNotifier
 
   bool _initialized = false;
 
-  // Pagination state
+  // Pagination state - Listings
   static const int _pageSize = 10;
   DateTime? _listingsCursor;
   bool _hasMoreListings = true;
   bool _isLoadingListings = false;
+
+  // Pagination state - Bookings
+  DateTime? _bookingsCursor;
+  bool _hasMoreBookings = true;
+  bool _isLoadingBookings = false;
+  String? _currentBookingsUserId;
+
+  // Booking counts cache
+  Map<String, int>? _cachedBookingCounts;
 
   @override
   bool get hasMoreListings => _hasMoreListings;
 
   @override
   bool get isLoadingListings => _isLoadingListings;
+
+  @override
+  bool get hasMoreBookings => _hasMoreBookings;
+
+  @override
+  bool get isLoadingBookings => _isLoadingBookings;
+
+  @override
+  Map<String, int>? get cachedBookingCounts => _cachedBookingCounts;
 
   Future<void> _initialize() async {
     await _refreshAll();
@@ -1053,46 +1071,69 @@ class SupabaseMusafirRepository extends ChangeNotifier
   // ============== Booking Lifecycle Methods ==============
 
   @override
-  void updateBooking(Booking booking) async {
+  void updateBooking(Booking booking) {
     final index = _bookings.indexWhere((b) => b.id == booking.id);
     debugPrint('[DEBUG-booking] updateBooking called for ${booking.id}, status: ${booking.status.name}');
     if (index != -1) {
       _bookings[index] = booking;
       notifyListeners();
 
-      try {
-        final updateData = <String, dynamic>{
-          'booking_status': booking.status.name,
-        };
-        debugPrint('[DEBUG-booking] Updating Supabase with: $updateData');
+      // Persist to Supabase (fire-and-forget but with proper error logging)
+      _persistBookingUpdate(booking);
+    }
+  }
 
-        // Add lifecycle fields if present
-        if (booking.hostMessage != null) {
-          updateData['host_message'] = booking.hostMessage;
-        }
-        if (booking.rejectionReason != null) {
-          updateData['rejection_reason'] = booking.rejectionReason;
-        }
-        if (booking.confirmedAt != null) {
-          updateData['confirmed_at'] = booking.confirmedAt!.toIso8601String();
-        }
-        if (booking.actualCheckIn != null) {
-          updateData['actual_check_in'] = booking.actualCheckIn!.toIso8601String();
-        }
-        if (booking.completedAt != null) {
-          updateData['completed_at'] = booking.completedAt!.toIso8601String();
-        }
-        if (booking.cancelledBy != null) {
-          updateData['cancelled_by'] = booking.cancelledBy;
-        }
-        if (booking.cancelledAt != null) {
-          updateData['cancelled_at'] = booking.cancelledAt!.toIso8601String();
-        }
+  /// Persist booking update to Supabase.
+  /// This is async but we don't block the UI on it.
+  Future<void> _persistBookingUpdate(Booking booking) async {
+    try {
+      final currentUserId = _client.auth.currentUser?.id;
+      final updateData = <String, dynamic>{
+        'booking_status': booking.status.name,
+      };
+      debugPrint('[DEBUG-booking] Updating Supabase with: $updateData');
+      debugPrint('[DEBUG-booking] Current user: $currentUserId, booking tenant: ${booking.userId}');
 
-        await _client.from('bookings').update(updateData).eq('id', booking.id);
-      } catch (e) {
-        debugPrint('Error updating booking: $e');
+      // Add lifecycle fields if present
+      if (booking.hostMessage != null) {
+        updateData['host_message'] = booking.hostMessage;
       }
+      if (booking.rejectionReason != null) {
+        updateData['rejection_reason'] = booking.rejectionReason;
+      }
+      if (booking.confirmedAt != null) {
+        updateData['confirmed_at'] = booking.confirmedAt!.toIso8601String();
+      }
+      if (booking.actualCheckIn != null) {
+        updateData['actual_check_in'] = booking.actualCheckIn!.toIso8601String();
+      }
+      if (booking.completedAt != null) {
+        updateData['completed_at'] = booking.completedAt!.toIso8601String();
+      }
+      if (booking.cancelledBy != null) {
+        updateData['cancelled_by'] = booking.cancelledBy;
+      }
+      if (booking.cancelledAt != null) {
+        updateData['cancelled_at'] = booking.cancelledAt!.toIso8601String();
+      }
+
+      debugPrint('[DEBUG-booking] Full update data: $updateData');
+
+      final response = await _client.from('bookings').update(updateData).eq('id', booking.id).select();
+
+      // Check if update actually affected any rows
+      if (response is List && response.isEmpty) {
+        debugPrint('[DEBUG-booking] WARNING: No rows updated for ${booking.id}! RLS may be blocking the update.');
+        debugPrint('[DEBUG-booking] Check that current user ($currentUserId) is the host of listing ${booking.listingId}');
+      } else {
+        debugPrint('[DEBUG-booking] Supabase update SUCCESS for ${booking.id}, response: $response');
+      }
+    } catch (e, stackTrace) {
+      // Log the full error - this will help diagnose RLS or other issues
+      debugPrint('[DEBUG-booking] ERROR updating booking ${booking.id}: $e');
+      debugPrint('[DEBUG-booking] Stack trace: $stackTrace');
+
+      // TODO: Consider adding error recovery (retry, revert local state, show user notification)
     }
   }
 
@@ -1254,5 +1295,146 @@ class SupabaseMusafirRepository extends ChangeNotifier
   @override
   Future<void> refresh() async {
     await _refreshAll();
+  }
+
+  // ============== Booking Pagination Methods ==============
+
+  @override
+  Future<void> resetBookingsPagination(String userId) async {
+    _bookings = [];
+    _bookingsCursor = null;
+    _hasMoreBookings = true;
+    _isLoadingBookings = false;
+    _currentBookingsUserId = userId;
+    notifyListeners();
+    await fetchNextBookingsPage(userId);
+  }
+
+  @override
+  Future<List<Booking>> fetchNextBookingsPage(String userId) async {
+    if (_isLoadingBookings || !_hasMoreBookings) {
+      return [];
+    }
+
+    // If user changed, reset pagination
+    if (_currentBookingsUserId != userId) {
+      _bookingsCursor = null;
+      _hasMoreBookings = true;
+      _currentBookingsUserId = userId;
+    }
+
+    _isLoadingBookings = true;
+    notifyListeners();
+
+    try {
+      // Build query with cursor pagination
+      var query = _client
+          .from('bookings')
+          .select()
+          .eq('tenant_id', userId);
+
+      // Apply cursor if we have one (fetch items older than cursor)
+      if (_bookingsCursor != null) {
+        query = query.lt('created_at', _bookingsCursor!.toIso8601String());
+      }
+
+      final bookingsResponse = await query
+          .order('created_at', ascending: false)
+          .limit(_pageSize);
+
+      final newBookings = <Booking>[];
+
+      if ((bookingsResponse as List).isEmpty) {
+        _hasMoreBookings = false;
+      } else {
+        // Parse bookings
+        for (final e in bookingsResponse) {
+          newBookings.add(_bookingFromJson(e as Map<String, dynamic>));
+        }
+
+        // Update cursor to the oldest item's created_at
+        final lastItem = bookingsResponse.last as Map<String, dynamic>;
+        final createdAtStr = lastItem['created_at'] as String?;
+        if (createdAtStr != null) {
+          _bookingsCursor = DateTime.parse(createdAtStr);
+        }
+
+        // Add to accumulated list (avoid duplicates)
+        final existingIds = _bookings.map((b) => b.id).toSet();
+        for (final booking in newBookings) {
+          if (!existingIds.contains(booking.id)) {
+            _bookings.add(booking);
+          }
+        }
+
+        // Check if we got fewer items than page size (means no more)
+        if (bookingsResponse.length < _pageSize) {
+          _hasMoreBookings = false;
+        }
+      }
+
+      _isLoadingBookings = false;
+      notifyListeners();
+      return newBookings;
+    } catch (e) {
+      debugPrint('Error fetching bookings page: $e');
+      _isLoadingBookings = false;
+      notifyListeners();
+      return [];
+    }
+  }
+
+  // ============== Booking Counts ==============
+
+  @override
+  Future<Map<String, int>> getBookingCounts(String userId) async {
+    try {
+      final now = DateTime.now();
+      final nowIso = now.toIso8601String();
+
+      // Fetch all bookings for this user (just id, status, dates for counting)
+      final response = await _client
+          .from('bookings')
+          .select('id, booking_status, starts_at, ends_at')
+          .eq('tenant_id', userId);
+
+      int upcoming = 0;
+      int current = 0;
+      int past = 0;
+
+      for (final row in response as List) {
+        final status = _bookingStatusFromString(row['booking_status'] as String?);
+        final checkIn = DateTime.parse(row['starts_at'] as String);
+        final checkOut = DateTime.parse(row['ends_at'] as String);
+
+        // Check if booking is ongoing (active and within stay period)
+        final isOngoing = status == BookingStatus.active ||
+            (status == BookingStatus.confirmed &&
+                !checkIn.isAfter(now) &&
+                checkOut.isAfter(now));
+
+        if (isOngoing) {
+          current++;
+        } else if (status.isPast || checkOut.isBefore(now)) {
+          // Past: completed, cancelled, rejected, or checkout is in the past
+          past++;
+        } else if (status.isActive && checkIn.isAfter(now)) {
+          // Upcoming: active status (pending/confirmed) and check-in is in the future
+          upcoming++;
+        }
+      }
+
+      _cachedBookingCounts = {
+        'upcoming': upcoming,
+        'current': current,
+        'past': past,
+      };
+
+      notifyListeners();
+      return _cachedBookingCounts!;
+    } catch (e) {
+      debugPrint('Error fetching booking counts: $e');
+      return {'upcoming': 0, 'current': 0, 'past': 0};
+    }
   }
 }

@@ -5,9 +5,12 @@ import '../../models/booking_status.dart';
 import '../../models/listing.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../services/booking/booking_lifecycle_service.dart';
+import '../../services/booking/booking_messaging_coordinator.dart';
 import '../../state/auth_state.dart';
+import '../../state/messaging_state.dart';
 import '../../widgets/dialogs/booking_action_dialogs.dart';
 import '../host/host_reservations_screen.dart';
+import '../messaging/chat_screen.dart';
 
 /// Modern hosting dashboard for hosts to manage their reservations.
 ///
@@ -22,12 +25,22 @@ class HostingScreen extends StatelessWidget {
     required this.repository,
     required this.authState,
     required this.bookingLifecycleService,
+    this.bookingMessagingCoordinator,
+    this.messagingState,
+    this.notificationState,
+    this.onOpenInbox,
+    this.onOpenNotifications,
     this.showAppBar = true,
   });
 
   final MusafirRepository repository;
   final AuthStateNotifier authState;
   final BookingLifecycleService bookingLifecycleService;
+  final BookingMessagingCoordinator? bookingMessagingCoordinator;
+  final MessagingStateNotifier? messagingState;
+  final dynamic notificationState;
+  final VoidCallback? onOpenInbox;
+  final VoidCallback? onOpenNotifications;
   final bool showAppBar;
 
   @override
@@ -55,10 +68,17 @@ class HostingScreen extends StatelessWidget {
             .toList();
 
         return _HostingDashboard(
+          // Stable key to preserve state across ListenableBuilder rebuilds
+          key: const ValueKey('hosting_dashboard'),
           hostListings: hostListings,
           hostBookings: hostBookings,
           repository: repository,
           bookingLifecycleService: bookingLifecycleService,
+          bookingMessagingCoordinator: bookingMessagingCoordinator,
+          messagingState: messagingState,
+          notificationState: notificationState,
+          onOpenInbox: onOpenInbox,
+          onOpenNotifications: onOpenNotifications,
           authState: authState,
           showAppBar: showAppBar,
         );
@@ -123,10 +143,16 @@ class _NotHostView extends StatelessWidget {
 
 class _HostingDashboard extends StatefulWidget {
   const _HostingDashboard({
+    super.key,
     required this.hostListings,
     required this.hostBookings,
     required this.repository,
     required this.bookingLifecycleService,
+    this.bookingMessagingCoordinator,
+    this.messagingState,
+    this.notificationState,
+    this.onOpenInbox,
+    this.onOpenNotifications,
     required this.authState,
     required this.showAppBar,
   });
@@ -135,6 +161,11 @@ class _HostingDashboard extends StatefulWidget {
   final List<Booking> hostBookings;
   final MusafirRepository repository;
   final BookingLifecycleService bookingLifecycleService;
+  final BookingMessagingCoordinator? bookingMessagingCoordinator;
+  final MessagingStateNotifier? messagingState;
+  final dynamic notificationState;
+  final VoidCallback? onOpenInbox;
+  final VoidCallback? onOpenNotifications;
   final AuthStateNotifier authState;
   final bool showAppBar;
 
@@ -145,8 +176,24 @@ class _HostingDashboard extends StatefulWidget {
 class _HostingDashboardState extends State<_HostingDashboard> {
   String? _processingBookingId;
 
+  /// Navigate to chat with a guest
+  void _openChat({required String conversationId, required String guestName}) {
+    if (widget.messagingState == null) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          conversationId: conversationId,
+          messagingState: widget.messagingState!,
+          otherParticipantName: guestName,
+        ),
+      ),
+    );
+  }
+
   /// Show a modern success banner at the top
-  void _showSuccessBanner(String message) {
+  void _showSuccessBanner(String message, {String? actionLabel, VoidCallback? onAction}) {
     final messenger = ScaffoldMessenger.of(context);
     messenger.clearMaterialBanners();
     messenger.showMaterialBanner(
@@ -167,6 +214,14 @@ class _HostingDashboardState extends State<_HostingDashboard> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         leadingPadding: EdgeInsets.zero,
         actions: [
+          if (actionLabel != null && onAction != null)
+            TextButton(
+              onPressed: () {
+                messenger.hideCurrentMaterialBanner();
+                onAction();
+              },
+              child: Text(actionLabel, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
           TextButton(
             onPressed: () => messenger.hideCurrentMaterialBanner(),
             child: const Text('OK', style: TextStyle(color: Colors.white)),
@@ -174,7 +229,41 @@ class _HostingDashboardState extends State<_HostingDashboard> {
         ],
       ),
     );
-    Future.delayed(const Duration(seconds: 3), () {
+    Future.delayed(const Duration(seconds: 5), () {
+      messenger.hideCurrentMaterialBanner();
+    });
+  }
+
+  /// Show a modern info banner at the top
+  void _showInfoBanner(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearMaterialBanners();
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        content: Row(
+          children: [
+            const Icon(Icons.info_outline, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.orange.shade700,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        leadingPadding: EdgeInsets.zero,
+        actions: [
+          TextButton(
+            onPressed: () => messenger.hideCurrentMaterialBanner(),
+            child: const Text('OK', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    Future.delayed(const Duration(seconds: 4), () {
       messenger.hideCurrentMaterialBanner();
     });
   }
@@ -251,26 +340,32 @@ class _HostingDashboardState extends State<_HostingDashboard> {
           checkOut.day == today.day;
     }).toList();
 
+    final unreadCount = widget.messagingState?.totalUnreadCount ?? 0;
+
     return Scaffold(
       appBar: widget.showAppBar
           ? AppBar(
               title: const Text('Reservations'),
               centerTitle: false,
               actions: [
-                IconButton(
-                  icon: const Icon(Icons.calendar_month_outlined),
-                  onPressed: () {
-                    // TODO: Navigate to calendar view
-                  },
-                  tooltip: 'Calendar',
-                ),
-                IconButton(
-                  icon: const Icon(Icons.settings_outlined),
-                  onPressed: () {
-                    // TODO: Navigate to hosting settings
-                  },
-                  tooltip: 'Settings',
-                ),
+                // Messages icon
+                if (widget.messagingState != null && widget.onOpenInbox != null)
+                  IconButton(
+                    icon: Badge(
+                      isLabelVisible: unreadCount > 0,
+                      label: Text(unreadCount > 99 ? '99+' : '$unreadCount'),
+                      child: const Icon(Icons.chat_bubble_outline),
+                    ),
+                    onPressed: widget.onOpenInbox,
+                    tooltip: 'Messages',
+                  ),
+                // Notification bell
+                if (widget.notificationState != null && widget.onOpenNotifications != null)
+                  IconButton(
+                    icon: const Icon(Icons.notifications_outlined),
+                    onPressed: widget.onOpenNotifications,
+                    tooltip: 'Notifications',
+                  ),
               ],
             )
           : null,
@@ -384,35 +479,94 @@ class _HostingDashboardState extends State<_HostingDashboard> {
         builder: (context) => HostReservationsScreen(
           repository: widget.repository,
           authState: widget.authState,
+          messagingState: widget.messagingState,
         ),
       ),
     );
   }
 
   Future<void> _handleAccept(Booking booking) async {
+    debugPrint('[DEBUG-accept] _handleAccept called for ${booking.id}, _processingBookingId=$_processingBookingId');
+
+    // Prevent double-accept: check if already processing this booking
+    if (_processingBookingId == booking.id) {
+      debugPrint('[DEBUG-accept] Already processing ${booking.id}, ignoring');
+      return;
+    }
+
+    // Double-check booking is still pending (may have changed)
+    if (booking.status != BookingStatus.pending) {
+      debugPrint('[DEBUG-accept] Booking ${booking.id} is no longer pending, status: ${booking.status}');
+      return;
+    }
+
     final result = await showAcceptBookingDialog(
       context,
       guestName: booking.tenantName,
     );
     if (result == null || !result.confirmed) return;
 
+    // Check again after dialog (booking may have been accepted/rejected by now)
+    final currentBooking = widget.repository.getBookingById(booking.id);
+    if (currentBooking == null || currentBooking.status != BookingStatus.pending) {
+      debugPrint('[DEBUG-accept] Booking ${booking.id} changed during dialog');
+      if (mounted) {
+        _showInfoBanner('This booking has already been processed');
+      }
+      return;
+    }
+
     setState(() => _processingBookingId = booking.id);
     try {
-      widget.bookingLifecycleService.acceptBooking(
-        booking.id,
-        message: result.message,
+      // Get the host ID from the listing or current user
+      final listing = widget.hostListings.firstWhere(
+        (l) => l.id == booking.listingId,
+        orElse: () => widget.hostListings.first,
       );
-      if (mounted) {
-        _showSuccessBanner('Booking accepted!');
+      final hostId = listing.hostId ?? widget.authState.currentUser?.id ?? '';
+
+      // Use coordinator if available (creates conversation automatically)
+      if (widget.bookingMessagingCoordinator != null) {
+        final coordResult = await widget.bookingMessagingCoordinator!.acceptBookingWithConversation(
+          bookingId: booking.id,
+          hostId: hostId,
+          message: result.message,
+        );
+        if (mounted) {
+          if (coordResult.hasConversation && widget.messagingState != null) {
+            _showSuccessBanner(
+              'Booking accepted!',
+              actionLabel: 'Message Guest',
+              onAction: () => _openChat(
+                conversationId: coordResult.conversation!.id,
+                guestName: booking.tenantName,
+              ),
+            );
+          } else {
+            _showSuccessBanner('Booking accepted!');
+          }
+        }
+      } else {
+        // Fallback to lifecycle service only
+        widget.bookingLifecycleService.acceptBooking(
+          booking.id,
+          message: result.message,
+        );
+        if (mounted) {
+          _showSuccessBanner('Booking accepted!');
+        }
       }
     } catch (e) {
       if (mounted) {
         _showErrorBanner('Failed to accept booking. Please try again.');
       }
     } finally {
-      if (mounted) {
-        setState(() => _processingBookingId = null);
-      }
+      // Use addPostFrameCallback to avoid setState during build
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() => _processingBookingId = null);
+        }
+      });
     }
   }
 
@@ -437,9 +591,12 @@ class _HostingDashboardState extends State<_HostingDashboard> {
         _showErrorBanner('Failed to decline booking. Please try again.');
       }
     } finally {
-      if (mounted) {
-        setState(() => _processingBookingId = null);
-      }
+      // Use addPostFrameCallback to avoid setState during build
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() => _processingBookingId = null);
+        }
+      });
     }
   }
 
@@ -770,6 +927,11 @@ class _PendingRequestCard extends StatelessWidget {
                     ),
                   ],
                 ),
+                // Expiration countdown banner
+                if (booking.createdAt != null) ...[
+                  const SizedBox(height: 12),
+                  _ExpirationCountdown(createdAt: booking.createdAt!),
+                ],
                 const SizedBox(height: 12),
                 // Booking details
                 Row(
@@ -839,6 +1001,82 @@ class _PendingRequestCard extends StatelessWidget {
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
     ];
     return '${months[date.month - 1]} ${date.day}';
+  }
+}
+
+/// Shows countdown until booking request expires (24 hours from creation)
+class _ExpirationCountdown extends StatelessWidget {
+  const _ExpirationCountdown({required this.createdAt});
+
+  final DateTime createdAt;
+
+  static const _expirationDuration = Duration(hours: 24);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final expiresAt = createdAt.add(_expirationDuration);
+    final now = DateTime.now();
+    final remaining = expiresAt.difference(now);
+
+    if (remaining.isNegative) {
+      return Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.red.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, size: 16, color: Colors.red),
+            const SizedBox(width: 6),
+            Text(
+              'Expired',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: Colors.red,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    String timeText;
+    Color color;
+    if (remaining.inHours >= 1) {
+      timeText = '${remaining.inHours}h ${remaining.inMinutes % 60}m left to respond';
+      color = remaining.inHours < 6 ? Colors.orange : Colors.blue;
+    } else if (remaining.inMinutes >= 1) {
+      timeText = '${remaining.inMinutes}m left to respond';
+      color = Colors.red;
+    } else {
+      timeText = 'Less than a minute left';
+      color = Colors.red;
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.hourglass_top_rounded, size: 16, color: color),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              timeText,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

@@ -6,7 +6,9 @@ import '../../models/listing.dart';
 import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
+import '../../state/messaging_state.dart';
 import '../../widgets/price_display.dart';
+import '../messaging/chat_screen.dart';
 import '../review/host_review_screen.dart';
 
 class HostReservationsScreen extends StatefulWidget {
@@ -14,10 +16,12 @@ class HostReservationsScreen extends StatefulWidget {
     super.key,
     required this.repository,
     required this.authState,
+    this.messagingState,
   });
 
   final MusafirRepository repository;
   final AuthStateNotifier authState;
+  final MessagingStateNotifier? messagingState;
 
   @override
   State<HostReservationsScreen> createState() => _HostReservationsScreenState();
@@ -119,8 +123,8 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
           controller: _tabController,
           tabs: const [
             Tab(text: 'Upcoming'),
-            Tab(text: 'Current'),
-            Tab(text: 'Past'),
+            Tab(text: 'Active Stays'),
+            Tab(text: 'Completed'),
           ],
         ),
       ),
@@ -457,29 +461,46 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: OutlinedButton(
+                  child: OutlinedButton.icon(
                     onPressed: () {
                       Navigator.pop(context);
-                      _showInfoBanner('Messaging coming soon!');
+                      _openChatForBooking(booking);
                     },
-                    child: const Text('Message Guest'),
+                    icon: const Icon(Icons.chat_bubble_outline),
+                    label: const Text('Message Guest'),
                   ),
                 ),
               ],
             ),
           ],
         ),
-      // Active: Service Complete
-      BookingStatus.active => SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: () => _completeService(context, booking),
-            icon: const Icon(Icons.check_circle),
-            label: const Text('Service Complete'),
-            style: FilledButton.styleFrom(
-              backgroundColor: theme.colorScheme.primary,
+      // Active: Service Complete + Message Guest
+      BookingStatus.active => Column(
+          children: [
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => _completeService(context, booking),
+                icon: const Icon(Icons.check_circle),
+                label: const Text('Service Complete'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: theme.colorScheme.primary,
+                ),
+              ),
             ),
-          ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _openChatForBooking(booking);
+                },
+                icon: const Icon(Icons.chat_bubble_outline),
+                label: const Text('Message Guest'),
+              ),
+            ),
+          ],
         ),
       // Completed: Leave Review
       BookingStatus.completed => SizedBox(
@@ -736,6 +757,64 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
         ),
       ),
     );
+  }
+
+  Future<void> _openChatForBooking(Booking booking) async {
+    if (widget.messagingState == null) {
+      _showInfoBanner('Messaging is not available');
+      return;
+    }
+
+    // Find the conversation for this booking
+    final conversations = widget.messagingState!.conversations;
+    var conversation = conversations.where((c) => c.bookingId == booking.id).firstOrNull;
+
+    // If no conversation exists, create one
+    if (conversation == null) {
+      final guestId = booking.userId;
+      if (guestId == null) {
+        _showInfoBanner('Cannot message: guest information not available');
+        return;
+      }
+
+      // Show loading indicator
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Starting conversation...'),
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+
+      // Create the conversation
+      conversation = await widget.messagingState!.startConversation(
+        otherUserId: guestId,
+        bookingId: booking.id,
+        listingId: booking.listingId,
+      );
+
+      if (conversation == null) {
+        if (mounted) {
+          _showInfoBanner('Failed to start conversation. Please try again.');
+        }
+        return;
+      }
+    }
+
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChatScreen(
+            conversationId: conversation!.id,
+            messagingState: widget.messagingState!,
+            otherParticipantName: booking.tenantName,
+            otherParticipantAvatarUrl: null,
+          ),
+        ),
+      );
+    }
   }
 
   Color _getStatusColor(BookingStatus status) {

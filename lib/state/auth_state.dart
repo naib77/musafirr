@@ -6,6 +6,17 @@ import '../models/user.dart';
 import '../services/auth/auth_service.dart';
 import '../services/auth/auth_service_factory.dart';
 
+/// Authentication status for the app startup flow.
+///
+/// - [initializing]: Auth state is being determined (show splash screen)
+/// - [authenticated]: User is logged in (show main app)
+/// - [unauthenticated]: No user logged in (show login screen)
+enum AuthStatus {
+  initializing,
+  authenticated,
+  unauthenticated,
+}
+
 /// Authentication state notifier for the application.
 ///
 /// Delegates to [AuthService] (either Mock or Supabase implementation).
@@ -15,6 +26,9 @@ class AuthStateNotifier extends ChangeNotifier {
     _service = AuthServiceFactory.instance;
     _subscription = _service.authStateChanges.listen(_onAuthChange);
     _currentUser = _service.currentUser;
+
+    // Start initialization - will complete when auth state is determined
+    _initializeAuthState();
   }
 
   late final AuthService _service;
@@ -23,6 +37,8 @@ class AuthStateNotifier extends ChangeNotifier {
   User? _currentUser;
   bool _isLoading = false;
   String? _error;
+  AuthStatus _status = AuthStatus.initializing;
+  bool _hasReceivedFirstAuthEvent = false;
 
   User? get currentUser => _currentUser;
   bool get isLoggedIn => _currentUser != null;
@@ -30,8 +46,41 @@ class AuthStateNotifier extends ChangeNotifier {
   String? get error => _error;
   bool get isHost => _currentUser?.isHost ?? false;
 
+  /// Current authentication status (initializing, authenticated, unauthenticated)
+  AuthStatus get status => _status;
+
+  /// Initialize auth state - waits for first auth event or timeout
+  Future<void> _initializeAuthState() async {
+    // Give the auth service time to check existing session and load profile
+    // This covers the async gap between session check and profile load
+    await Future.delayed(const Duration(milliseconds: 1500));
+
+    // If we still haven't received an auth event, determine status from current state
+    if (!_hasReceivedFirstAuthEvent) {
+      _hasReceivedFirstAuthEvent = true;
+      _status = _currentUser != null
+          ? AuthStatus.authenticated
+          : AuthStatus.unauthenticated;
+      notifyListeners();
+    }
+  }
+
   void _onAuthChange(User? user) {
     _currentUser = user;
+
+    // Update status on auth change
+    if (!_hasReceivedFirstAuthEvent || _status == AuthStatus.initializing) {
+      _hasReceivedFirstAuthEvent = true;
+      _status = user != null
+          ? AuthStatus.authenticated
+          : AuthStatus.unauthenticated;
+    } else {
+      // Subsequent auth changes (login/logout during app use)
+      _status = user != null
+          ? AuthStatus.authenticated
+          : AuthStatus.unauthenticated;
+    }
+
     notifyListeners();
   }
 
@@ -123,6 +172,7 @@ class AuthStateNotifier extends ChangeNotifier {
     _service.logout();
     _currentUser = null;
     _error = null;
+    _status = AuthStatus.unauthenticated;
     notifyListeners();
   }
 

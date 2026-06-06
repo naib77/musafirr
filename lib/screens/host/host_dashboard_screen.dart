@@ -6,6 +6,7 @@ import '../../models/listing.dart';
 import '../../models/booking.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
+import '../../state/messaging_state.dart';
 import 'create_listing_screen.dart';
 import 'host_listings_screen.dart';
 import 'host_reservations_screen.dart';
@@ -15,10 +16,12 @@ class HostDashboardScreen extends StatelessWidget {
     super.key,
     required this.repository,
     required this.authState,
+    this.messagingState,
   });
 
   final MusafirRepository repository;
   final AuthStateNotifier authState;
+  final MessagingStateNotifier? messagingState;
 
   @override
   Widget build(BuildContext context) {
@@ -278,6 +281,7 @@ class HostDashboardScreen extends StatelessWidget {
         builder: (context) => HostReservationsScreen(
           repository: repository,
           authState: authState,
+          messagingState: messagingState,
         ),
       ),
     );

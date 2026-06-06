@@ -24,6 +24,8 @@ class ExploreScreen extends StatefulWidget {
     required this.searchState,
     this.notificationState,
     this.bookingLifecycleService,
+    this.messagingState,
+    this.onOpenInbox,
   });
 
   final MusafirRepository repository;
@@ -32,6 +34,8 @@ class ExploreScreen extends StatefulWidget {
   final SearchStateNotifier searchState;
   final NotificationStateNotifier? notificationState;
   final BookingLifecycleService? bookingLifecycleService;
+  final dynamic messagingState;
+  final VoidCallback? onOpenInbox;
 
   @override
   State<ExploreScreen> createState() => _ExploreScreenState();
@@ -230,9 +234,26 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       ),
                     ),
                   ),
+                  // Messages icon
+                  if (widget.messagingState != null && widget.onOpenInbox != null) ...[
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: Badge(
+                        isLabelVisible: (widget.messagingState?.totalUnreadCount ?? 0) > 0,
+                        label: Text(
+                          (widget.messagingState?.totalUnreadCount ?? 0) > 99
+                              ? '99+'
+                              : '${widget.messagingState?.totalUnreadCount ?? 0}',
+                        ),
+                        child: const Icon(Icons.chat_bubble_outline),
+                      ),
+                      onPressed: widget.onOpenInbox,
+                      tooltip: 'Messages',
+                    ),
+                  ],
                   // Notification bell
                   if (widget.notificationState != null) ...[
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 4),
                     AnimatedNotificationBell(
                       notificationState: widget.notificationState!,
                       onTap: _openNotificationCenter,
@@ -321,9 +342,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                             gridDelegate:
                                 const SliverGridDelegateWithFixedCrossAxisCount(
                               crossAxisCount: 2,
-                              mainAxisSpacing: 24,
-                              crossAxisSpacing: 16,
-                              childAspectRatio: 0.65,
+                              mainAxisSpacing: 16,
+                              crossAxisSpacing: 12,
+                              childAspectRatio: 0.58,
                             ),
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
