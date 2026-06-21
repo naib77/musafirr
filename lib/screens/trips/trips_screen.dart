@@ -89,8 +89,14 @@ class _TripsScreenState extends State<TripsScreen> {
     _currentScrollController = ScrollController()..addListener(_onCurrentScroll);
     _pastScrollController = ScrollController()..addListener(_onPastScroll);
 
-    // Initial load if user is logged in
-    _initialLoad();
+    // Initial load if user is logged in.
+    // Deferred to after the first frame: _initialLoad() calls repository
+    // methods that notifyListeners() synchronously, which would trigger
+    // markNeedsBuild on other repository listeners during the mount/build
+    // phase (setState() called during build).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _initialLoad();
+    });
   }
 
   @override

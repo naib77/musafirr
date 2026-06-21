@@ -190,6 +190,10 @@ class SupabaseConversationRepository implements ConversationRepository {
     required String participantTwoId,
     String? bookingId,
     String? listingId,
+    String? listingTitle,
+    DateTime? bookingStart,
+    DateTime? bookingEnd,
+    String? listingType,
   }) async {
     try {
       // Use database function for thread-safe upsert
@@ -204,6 +208,20 @@ class SupabaseConversationRepository implements ConversationRepository {
       );
 
       final conversationId = response as String;
+
+      // Update with booking context fields if provided
+      if (listingTitle != null || bookingStart != null || bookingEnd != null || listingType != null) {
+        final updateData = <String, dynamic>{};
+        if (listingTitle != null) updateData['listing_title'] = listingTitle;
+        if (bookingStart != null) updateData['booking_start'] = bookingStart.toIso8601String();
+        if (bookingEnd != null) updateData['booking_end'] = bookingEnd.toIso8601String();
+        if (listingType != null) updateData['listing_type'] = listingType;
+
+        await _client
+            .from('conversations')
+            .update(updateData)
+            .eq('id', conversationId);
+      }
 
       // Fetch the full conversation
       return findById(
@@ -317,6 +335,54 @@ class SupabaseConversationRepository implements ConversationRepository {
       final rows = response as List;
       final hasMore = rows.length > limit;
       final items = hasMore ? rows.take(limit).toList() : rows;
+
+      // If booking context fields are missing, populate them from booking data
+      for (final row in items) {
+        final json = row as Map<String, dynamic>;
+        final bookingId = json['booking_id'] as String?;
+        final hasContext = json['listing_type'] != null && json['booking_start'] != null;
+
+        if (bookingId != null && !hasContext) {
+          try {
+            final bookingData = await _client
+                .from('bookings')
+                .select('starts_at, ends_at, listing_title, listings!inner(listing_type, title)')
+                .eq('id', bookingId)
+                .maybeSingle();
+
+            if (bookingData != null) {
+              final listingData = bookingData['listings'] as Map<String, dynamic>?;
+              final listingType = listingData?['listing_type'] as String?;
+              final listingTitle = bookingData['listing_title'] as String? ??
+                  listingData?['title'] as String?;
+
+              // Update the conversation in the database
+              final updateData = <String, dynamic>{};
+              if (listingType != null) updateData['listing_type'] = listingType;
+              if (bookingData['starts_at'] != null) updateData['booking_start'] = bookingData['starts_at'];
+              if (bookingData['ends_at'] != null) updateData['booking_end'] = bookingData['ends_at'];
+              if (listingTitle != null) updateData['listing_title'] = listingTitle;
+
+              if (updateData.isNotEmpty) {
+                await _client
+                    .from('conversations')
+                    .update(updateData)
+                    .eq('id', json['id'] as String);
+
+                // Update local json for immediate display
+                json['listing_type'] = listingType;
+                json['booking_start'] = bookingData['starts_at'];
+                json['booking_end'] = bookingData['ends_at'];
+                json['listing_title'] = listingTitle;
+
+                debugPrint('[ConversationRepo] Backfilled booking context for conv ${json['id']}');
+              }
+            }
+          } catch (e) {
+            debugPrint('[ConversationRepo] Error backfilling booking context: $e');
+          }
+        }
+      }
 
       final conversations = <Conversation>[];
       for (final row in items) {

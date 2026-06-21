@@ -23,6 +23,7 @@ class Booking {
     this.listingTitle,
     this.listingImageUrl,
     this.listingCity,
+    this.listingType,
     // Currency and pricing
     this.currency = Currency.BDT,
     this.serviceFee,
@@ -56,6 +57,7 @@ class Booking {
   final String? listingTitle;
   final String? listingImageUrl;
   final String? listingCity;
+  final String? listingType;
 
   // Currency and pricing
   final Currency currency;
@@ -139,6 +141,7 @@ class Booking {
     String? listingTitle,
     String? listingImageUrl,
     String? listingCity,
+    String? listingType,
     Currency? currency,
     double? serviceFee,
     double? discount,
@@ -168,6 +171,7 @@ class Booking {
       listingTitle: listingTitle ?? this.listingTitle,
       listingImageUrl: listingImageUrl ?? this.listingImageUrl,
       listingCity: listingCity ?? this.listingCity,
+      listingType: listingType ?? this.listingType,
       currency: currency ?? this.currency,
       serviceFee: serviceFee ?? this.serviceFee,
       discount: discount ?? this.discount,

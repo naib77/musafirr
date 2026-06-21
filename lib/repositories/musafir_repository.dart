@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/booking.dart';
@@ -8,6 +10,19 @@ import '../models/review.dart';
 import '../models/search_filters.dart';
 import '../models/user.dart';
 import '../services/booking/booking_lifecycle_service.dart';
+
+/// Error information for failed booking updates
+class BookingUpdateError {
+  BookingUpdateError({
+    required this.bookingId,
+    required this.message,
+    this.originalBooking,
+  });
+
+  final String bookingId;
+  final String message;
+  final Booking? originalBooking;
+}
 
 /// Abstract repository interface for Musafir data operations.
 ///
@@ -86,6 +101,10 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   List<Booking> getPendingBookingsForHost(String hostId);
   List<Booking> getBookingsForHost(String hostId);
   List<Booking> getStaleBookings({Duration? maxAge});
+
+  /// Stream of booking update errors. Subscribe to this to show error
+  /// notifications to the user when optimistic updates fail to persist.
+  Stream<BookingUpdateError> get bookingUpdateErrors;
 
   // Availability & conflict checking methods
   List<Booking> getBookingsForListing(String listingId);

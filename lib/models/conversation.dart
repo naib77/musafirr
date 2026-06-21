@@ -33,6 +33,10 @@ class Conversation {
     this.otherParticipant,
     this.unreadCount = 0,
     this.participants,
+    this.listingTitle,
+    this.bookingStart,
+    this.bookingEnd,
+    this.listingType,
   });
 
   final String id;
@@ -58,11 +62,44 @@ class Conversation {
   /// This is optional during migration; use participantOneId/participantTwoId for 1:1
   final ConversationParticipants? participants;
 
+  /// Booking context fields (denormalized for display)
+  final String? listingTitle;
+  final DateTime? bookingStart;
+  final DateTime? bookingEnd;
+  final String? listingType;
+
   /// Check if the conversation has any messages
   bool get hasMessages => lastMessageId != null;
 
   /// Check if there are unread messages
   bool get hasUnread => unreadCount > 0;
+
+  /// Check if conversation is archived (read-only)
+  bool get isArchived => status == ConversationStatus.archived;
+
+  /// Check if messaging is allowed (not archived)
+  bool get canSendMessages => status == ConversationStatus.active;
+
+  /// Get formatted booking date range for display
+  String get bookingDateRange {
+    if (bookingStart == null || bookingEnd == null) return '';
+    final startStr = '${bookingStart!.day}/${bookingStart!.month}';
+    final endStr = '${bookingEnd!.day}/${bookingEnd!.month}';
+    return '$startStr - $endStr';
+  }
+
+  /// Get display subtitle showing listing type and date range
+  String get bookingContextSubtitle {
+    final parts = <String>[];
+    if (listingType != null) {
+      // Capitalize first letter
+      parts.add(listingType![0].toUpperCase() + listingType!.substring(1));
+    }
+    if (bookingDateRange.isNotEmpty) {
+      parts.add(bookingDateRange);
+    }
+    return parts.join(' • ');
+  }
 
   /// Get the display name for the conversation
   String get displayName {
@@ -145,6 +182,14 @@ class Conversation {
           ? User.fromJson(json['other_participant'] as Map<String, dynamic>)
           : null,
       unreadCount: json['unread_count'] as int? ?? 0,
+      listingTitle: json['listing_title'] as String?,
+      bookingStart: json['booking_start'] != null
+          ? DateTime.parse(json['booking_start'] as String)
+          : null,
+      bookingEnd: json['booking_end'] != null
+          ? DateTime.parse(json['booking_end'] as String)
+          : null,
+      listingType: json['listing_type'] as String?,
     );
   }
 
@@ -163,6 +208,10 @@ class Conversation {
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
       'unread_count': unreadCount,
+      'listing_title': listingTitle,
+      'booking_start': bookingStart?.toIso8601String(),
+      'booking_end': bookingEnd?.toIso8601String(),
+      'listing_type': listingType,
     };
   }
 
@@ -182,6 +231,10 @@ class Conversation {
     User? otherParticipant,
     int? unreadCount,
     ConversationParticipants? participants,
+    String? listingTitle,
+    DateTime? bookingStart,
+    DateTime? bookingEnd,
+    String? listingType,
   }) {
     return Conversation(
       id: id ?? this.id,
@@ -199,6 +252,10 @@ class Conversation {
       otherParticipant: otherParticipant ?? this.otherParticipant,
       unreadCount: unreadCount ?? this.unreadCount,
       participants: participants ?? this.participants,
+      listingTitle: listingTitle ?? this.listingTitle,
+      bookingStart: bookingStart ?? this.bookingStart,
+      bookingEnd: bookingEnd ?? this.bookingEnd,
+      listingType: listingType ?? this.listingType,
     );
   }
 

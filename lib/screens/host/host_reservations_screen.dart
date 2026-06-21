@@ -1,15 +1,32 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../models/booking.dart';
 import '../../models/booking_status.dart';
 import '../../models/listing.dart';
 import '../../models/review.dart';
-import '../../repositories/musafir_repository.dart';
+import '../../repositories/musafir_repository.dart' show MusafirRepository, BookingUpdateError;
 import '../../state/auth_state.dart';
 import '../../state/messaging_state.dart';
 import '../../widgets/price_display.dart';
 import '../messaging/chat_screen.dart';
 import '../review/host_review_screen.dart';
+
+/// Tab indices for HostReservationsScreen
+class HostReservationTab {
+  static const int upcoming = 0;
+  static const int active = 1;
+  static const int completed = 2;
+
+  /// Compute the appropriate tab index for a booking based on its dates and status.
+  /// Uses Booking model's computed properties for consistent filtering.
+  static int forBooking(Booking booking) {
+    if (booking.isPast) return completed;
+    if (booking.isOngoing) return active;
+    return upcoming; // isUpcoming or default
+  }
+}
 
 class HostReservationsScreen extends StatefulWidget {
   const HostReservationsScreen({
@@ -17,11 +34,19 @@ class HostReservationsScreen extends StatefulWidget {
     required this.repository,
     required this.authState,
     this.messagingState,
+    this.initialTabIndex = 0,
+    this.highlightBookingId,
   });
 
   final MusafirRepository repository;
   final AuthStateNotifier authState;
   final MessagingStateNotifier? messagingState;
+
+  /// Initial tab to show (0=Upcoming, 1=Active, 2=Completed)
+  final int initialTabIndex;
+
+  /// Optional booking ID to highlight/scroll to
+  final String? highlightBookingId;
 
   @override
   State<HostReservationsScreen> createState() => _HostReservationsScreenState();
@@ -30,15 +55,76 @@ class HostReservationsScreen extends StatefulWidget {
 class _HostReservationsScreenState extends State<HostReservationsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  StreamSubscription? _errorSubscription;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(
+      length: 3,
+      vsync: this,
+      initialIndex: widget.initialTabIndex.clamp(0, 2),
+    );
+
+    // Subscribe to booking update errors
+    _errorSubscription = widget.repository.bookingUpdateErrors.listen(_onBookingUpdateError);
+
+    // Show highlight effect if a booking ID was provided
+    if (widget.highlightBookingId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showHighlightBanner();
+      });
+    }
+  }
+
+  void _showHighlightBanner() {
+    final booking = widget.repository.getBookingById(widget.highlightBookingId!);
+    if (booking != null) {
+      _showSuccessBanner('Viewing ${booking.tenantName}\'s booking');
+    }
+  }
+
+  void _onBookingUpdateError(BookingUpdateError error) {
+    if (!mounted) return;
+    _showErrorBanner(error.message);
+  }
+
+  void _showErrorBanner(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearMaterialBanners();
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.red.shade700,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        leadingPadding: EdgeInsets.zero,
+        actions: [
+          TextButton(
+            onPressed: () => messenger.hideCurrentMaterialBanner(),
+            child: const Text('OK', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    Future.delayed(const Duration(seconds: 5), () {
+      messenger.hideCurrentMaterialBanner();
+    });
   }
 
   @override
   void dispose() {
+    _errorSubscription?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -145,24 +231,19 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
                   .where((b) => hostListings.any((l) => l.id == b.listingId))
                   .toList();
 
-          final now = DateTime.now();
-
+          // Use model's computed properties for consistent filtering
           final upcomingBookings = hostBookings
-              .where(
-                  (b) => b.status.isActive && b.effectiveCheckIn.isAfter(now))
+              .where((b) => b.isUpcoming)
               .toList()
             ..sort((a, b) => a.effectiveCheckIn.compareTo(b.effectiveCheckIn));
 
           final currentBookings = hostBookings
-              .where((b) =>
-                  b.status.isActive &&
-                  b.effectiveCheckIn.isBefore(now) &&
-                  b.effectiveCheckOut.isAfter(now))
-              .toList();
+              .where((b) => b.isOngoing)
+              .toList()
+            ..sort((a, b) => a.effectiveCheckIn.compareTo(b.effectiveCheckIn));
 
           final pastBookings = hostBookings
-              .where(
-                  (b) => b.status.isPast || b.effectiveCheckOut.isBefore(now))
+              .where((b) => b.isPast)
               .toList()
             ..sort((a, b) => b.effectiveCheckIn.compareTo(a.effectiveCheckIn));
 

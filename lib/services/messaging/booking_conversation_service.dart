@@ -69,6 +69,10 @@ class BookingConversationService {
       participantTwoId: hostId,
       bookingId: booking.id,
       listingId: booking.listingId,
+      listingTitle: booking.listingTitle,
+      bookingStart: booking.effectiveCheckIn,
+      bookingEnd: booking.effectiveCheckOut,
+      listingType: booking.listingType ?? booking.listing?.type.name,
     );
 
     if (result.isSuccess && result.data != null) {

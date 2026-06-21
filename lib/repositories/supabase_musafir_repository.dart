@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' hide User;
+import 'package:supabase_flutter/supabase_flutter.dart' hide User, RealtimeChannel;
+import 'package:supabase_flutter/supabase_flutter.dart' show RealtimeChannel;
 
 import '../data/facility_catalog.dart';
 import '../models/booking.dart';
@@ -35,6 +38,15 @@ class SupabaseMusafirRepository extends ChangeNotifier
   List<Booking> _bookings = [];
   List<Review> _reviews = [];
   final Map<String, User> _users = {};
+
+  // Error notification stream for booking updates
+  final _bookingUpdateErrorController = StreamController<BookingUpdateError>.broadcast();
+
+  @override
+  Stream<BookingUpdateError> get bookingUpdateErrors => _bookingUpdateErrorController.stream;
+
+  // Realtime subscription for bookings
+  RealtimeChannel? _bookingsChannel;
 
   bool _initialized = false;
 
@@ -71,7 +83,93 @@ class SupabaseMusafirRepository extends ChangeNotifier
   Future<void> _initialize() async {
     await _refreshAll();
     _initialized = true;
+    _setupBookingsRealtimeSubscription();
     notifyListeners();
+  }
+
+  /// Set up realtime subscription for booking changes.
+  /// This ensures the UI updates when bookings are created/updated from other devices.
+  void _setupBookingsRealtimeSubscription() {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) {
+      debugPrint('[Bookings Realtime] No user logged in, skipping subscription');
+      return;
+    }
+
+    // Clean up existing subscription
+    _bookingsChannel?.unsubscribe();
+
+    _bookingsChannel = _client.channel('bookings:$userId');
+
+    _bookingsChannel!
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'bookings',
+          callback: (payload) {
+            _handleBookingRealtimeChange(payload.newRecord, isInsert: true);
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'bookings',
+          callback: (payload) {
+            _handleBookingRealtimeChange(payload.newRecord, isInsert: false);
+          },
+        )
+        .subscribe();
+
+    debugPrint('[Bookings Realtime] Subscription active for user: $userId');
+  }
+
+  /// Handle realtime booking changes
+  void _handleBookingRealtimeChange(Map<String, dynamic> record, {required bool isInsert}) {
+    try {
+      final booking = _bookingFromJson(record);
+      final userId = _client.auth.currentUser?.id;
+
+      // Only process if this booking is relevant to the current user
+      // (they're the tenant or the host of the listing)
+      final isRelevant = booking.userId == userId ||
+          _listings.any((l) => l.id == booking.listingId && l.hostId == userId);
+
+      if (!isRelevant) {
+        debugPrint('[Bookings Realtime] Ignoring irrelevant booking: ${booking.id}');
+        return;
+      }
+
+      if (isInsert) {
+        // Add new booking if not already in cache
+        if (!_bookings.any((b) => b.id == booking.id)) {
+          _bookings.add(booking);
+          debugPrint('[Bookings Realtime] Added new booking: ${booking.id}');
+          notifyListeners();
+        }
+      } else {
+        // Update existing booking
+        final index = _bookings.indexWhere((b) => b.id == booking.id);
+        if (index != -1) {
+          _bookings[index] = booking;
+          debugPrint('[Bookings Realtime] Updated booking: ${booking.id}, status: ${booking.status.name}');
+          notifyListeners();
+        } else {
+          // Booking not in cache, add it
+          _bookings.add(booking);
+          debugPrint('[Bookings Realtime] Added missing booking: ${booking.id}');
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      debugPrint('[Bookings Realtime] Error handling change: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _bookingsChannel?.unsubscribe();
+    _bookingUpdateErrorController.close();
+    super.dispose();
   }
 
   Future<void> _refreshAll() async {
@@ -271,7 +369,11 @@ class SupabaseMusafirRepository extends ChangeNotifier
 
   Future<void> _refreshBookings() async {
     try {
-      final response = await _client.from('bookings').select();
+      // Join with listings to get listing_type
+      final response = await _client.from('bookings').select('''
+        *,
+        listings!inner(listing_type)
+      ''');
 
       _bookings = (response as List).map((e) => _bookingFromJson(e as Map<String, dynamic>)).toList();
       notifyListeners();
@@ -281,6 +383,15 @@ class SupabaseMusafirRepository extends ChangeNotifier
   }
 
   Booking _bookingFromJson(Map<String, dynamic> json) {
+    // Extract listing_type from joined data or direct field
+    String? listingType = json['listing_type'] as String?;
+    if (listingType == null && json['listings'] != null) {
+      final listings = json['listings'];
+      if (listings is Map<String, dynamic>) {
+        listingType = listings['listing_type'] as String?;
+      }
+    }
+
     return Booking(
       id: json['id'] as String,
       listingId: json['listing_id'] as String,
@@ -304,6 +415,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
       listingTitle: json['listing_title'] as String?,
       listingImageUrl: json['listing_image_url'] as String?,
       listingCity: json['listing_city'] as String?,
+      listingType: listingType,
       // Lifecycle fields
       hostMessage: json['host_message'] as String?,
       rejectionReason: json['rejection_reason'] as String?,
@@ -1075,17 +1187,22 @@ class SupabaseMusafirRepository extends ChangeNotifier
     final index = _bookings.indexWhere((b) => b.id == booking.id);
     debugPrint('[DEBUG-booking] updateBooking called for ${booking.id}, status: ${booking.status.name}');
     if (index != -1) {
+      // Store original booking for potential rollback
+      final originalBooking = _bookings[index];
+
+      // Optimistic update - update local cache immediately
       _bookings[index] = booking;
       notifyListeners();
 
-      // Persist to Supabase (fire-and-forget but with proper error logging)
-      _persistBookingUpdate(booking);
+      // Persist to Supabase asynchronously
+      _persistBookingUpdate(booking, originalBooking);
     }
   }
 
   /// Persist booking update to Supabase.
-  /// This is async but we don't block the UI on it.
-  Future<void> _persistBookingUpdate(Booking booking) async {
+  /// If persistence fails, emits an error to [bookingUpdateErrors] stream
+  /// and optionally rolls back the local state.
+  Future<void> _persistBookingUpdate(Booking booking, Booking originalBooking) async {
     try {
       final currentUserId = _client.auth.currentUser?.id;
       final updateData = <String, dynamic>{
@@ -1123,17 +1240,46 @@ class SupabaseMusafirRepository extends ChangeNotifier
 
       // Check if update actually affected any rows
       if (response is List && response.isEmpty) {
+        final errorMsg = 'Update failed - you may not have permission to modify this booking';
         debugPrint('[DEBUG-booking] WARNING: No rows updated for ${booking.id}! RLS may be blocking the update.');
         debugPrint('[DEBUG-booking] Check that current user ($currentUserId) is the host of listing ${booking.listingId}');
+
+        // Emit error so UI can notify user
+        _bookingUpdateErrorController.add(BookingUpdateError(
+          bookingId: booking.id,
+          message: errorMsg,
+          originalBooking: originalBooking,
+        ));
+
+        // Rollback local state
+        _rollbackBookingUpdate(booking.id, originalBooking);
       } else {
         debugPrint('[DEBUG-booking] Supabase update SUCCESS for ${booking.id}, response: $response');
       }
     } catch (e, stackTrace) {
-      // Log the full error - this will help diagnose RLS or other issues
+      // Log the full error
       debugPrint('[DEBUG-booking] ERROR updating booking ${booking.id}: $e');
       debugPrint('[DEBUG-booking] Stack trace: $stackTrace');
 
-      // TODO: Consider adding error recovery (retry, revert local state, show user notification)
+      // Emit error so UI can notify user
+      _bookingUpdateErrorController.add(BookingUpdateError(
+        bookingId: booking.id,
+        message: 'Failed to save booking update. Please try again.',
+        originalBooking: originalBooking,
+      ));
+
+      // Rollback local state
+      _rollbackBookingUpdate(booking.id, originalBooking);
+    }
+  }
+
+  /// Rollback a failed booking update to the original state
+  void _rollbackBookingUpdate(String bookingId, Booking originalBooking) {
+    final index = _bookings.indexWhere((b) => b.id == bookingId);
+    if (index != -1) {
+      debugPrint('[DEBUG-booking] Rolling back booking ${bookingId} to original state');
+      _bookings[index] = originalBooking;
+      notifyListeners();
     }
   }
 

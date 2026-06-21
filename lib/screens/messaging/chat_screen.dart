@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../models/conversation.dart';
 import '../../models/message.dart';
 import '../../services/messaging/message_router.dart';
 import '../../state/messaging_state.dart';
@@ -17,12 +18,18 @@ class ChatScreen extends StatefulWidget {
     required this.messagingState,
     required this.otherParticipantName,
     this.otherParticipantAvatarUrl,
+    this.bookingContextSubtitle,
+    this.isArchived = false,
   });
 
   final String conversationId;
   final MessagingStateNotifier messagingState;
   final String otherParticipantName;
   final String? otherParticipantAvatarUrl;
+  /// Booking context subtitle (e.g., "Room • Jan 1-5")
+  final String? bookingContextSubtitle;
+  /// Whether the conversation is archived (read-only)
+  final bool isArchived;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -166,15 +173,17 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             const SizedBox(width: 12),
 
-            // Name and status
+            // Name, booking context, and status
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     widget.otherParticipantName,
                     style: theme.textTheme.titleMedium,
                   ),
+                  // Booking context or typing indicator
                   ListenableBuilder(
                     listenable: widget.messagingState,
                     builder: (context, _) {
@@ -191,6 +200,46 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                         );
                       }
+
+                      // Show booking context when not typing
+                      if (widget.bookingContextSubtitle != null &&
+                          widget.bookingContextSubtitle!.isNotEmpty) {
+                        return Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                widget.bookingContextSubtitle!,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (widget.isArchived) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  'Ended',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        );
+                      }
+
                       return const SizedBox.shrink();
                     },
                   ),
@@ -285,6 +334,32 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: Column(
         children: [
+          // Read-only banner for archived conversations
+          if (widget.isArchived)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              color: theme.colorScheme.surfaceContainerHighest,
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.lock_outline,
+                    size: 18,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'This conversation is read-only. The booking has ended.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           // Messages list
           Expanded(
             child: ListenableBuilder(
@@ -306,8 +381,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   messages: messages,
                   currentUserId: widget.messagingState.currentUserId ?? '',
                   scrollController: _scrollController,
-                  onReply: _replyToMessage,
-                  onDelete: _deleteMessage,
+                  onReply: widget.isArchived ? null : _replyToMessage,
+                  onDelete: widget.isArchived ? null : _deleteMessage,
                   onCopy: _copyMessage,
                   typingIndicator: _buildTypingIndicator(),
                 );
@@ -315,28 +390,29 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
 
-          // Input area
-          ListenableBuilder(
-            listenable: widget.messagingState,
-            builder: (context, _) {
-              return MessageInput(
-                onSendMessage: _sendMessage,
-                onSendImage: () {
-                  ModernBanner.showInfo(context, 'Image sharing coming soon');
-                },
-                onSendLocation: () {
-                  ModernBanner.showInfo(context, 'Location sharing coming soon');
-                },
-                onSendFile: () {
-                  ModernBanner.showInfo(context, 'File sharing coming soon');
-                },
-                onTextChanged: widget.messagingState.onTextChanged,
-                replyingTo: _replyingTo,
-                onCancelReply: _cancelReply,
-                isSending: widget.messagingState.isSendingMessage,
-              );
-            },
-          ),
+          // Input area (hidden when archived)
+          if (!widget.isArchived)
+            ListenableBuilder(
+              listenable: widget.messagingState,
+              builder: (context, _) {
+                return MessageInput(
+                  onSendMessage: _sendMessage,
+                  onSendImage: () {
+                    ModernBanner.showInfo(context, 'Image sharing coming soon');
+                  },
+                  onSendLocation: () {
+                    ModernBanner.showInfo(context, 'Location sharing coming soon');
+                  },
+                  onSendFile: () {
+                    ModernBanner.showInfo(context, 'File sharing coming soon');
+                  },
+                  onTextChanged: widget.messagingState.onTextChanged,
+                  replyingTo: _replyingTo,
+                  onCancelReply: _cancelReply,
+                  isSending: widget.messagingState.isSendingMessage,
+                );
+              },
+            ),
         ],
       ),
     );
@@ -359,8 +435,8 @@ class _MessagesList extends StatelessWidget {
     required this.messages,
     required this.currentUserId,
     required this.scrollController,
-    required this.onReply,
-    required this.onDelete,
+    this.onReply,
+    this.onDelete,
     required this.onCopy,
     this.typingIndicator,
   });
@@ -368,8 +444,8 @@ class _MessagesList extends StatelessWidget {
   final List<Message> messages;
   final String currentUserId;
   final ScrollController scrollController;
-  final ValueChanged<Message> onReply;
-  final ValueChanged<Message> onDelete;
+  final ValueChanged<Message>? onReply;
+  final ValueChanged<Message>? onDelete;
   final ValueChanged<Message> onCopy;
   final Widget? typingIndicator;
 
@@ -402,8 +478,8 @@ class _MessagesList extends StatelessWidget {
               isMe: isMe,
               showAvatar: showAvatar,
               avatarUrl: message.sender?.photoUrl,
-              onReply: () => onReply(message),
-              onDelete: isMe ? () => onDelete(message) : null,
+              onReply: onReply != null ? () => onReply!(message) : null,
+              onDelete: isMe && onDelete != null ? () => onDelete!(message) : null,
               onCopy: message.contentType == MessageContentType.text
                   ? () => onCopy(message)
                   : null,

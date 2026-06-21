@@ -443,6 +443,19 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   void _navigateToAction(String actionUrl, AppNotification notification) {
     // Parse the action URL and navigate accordingly
     if (actionUrl.startsWith('/host/reservations')) {
+      // Try to determine the appropriate tab based on the booking
+      int initialTab = HostReservationTab.upcoming;
+      String? highlightBookingId;
+
+      final bookingId = notification.data?['booking_id'] as String?;
+      if (bookingId != null) {
+        final booking = widget.repository.getBookingById(bookingId);
+        if (booking != null) {
+          initialTab = HostReservationTab.forBooking(booking);
+          highlightBookingId = bookingId;
+        }
+      }
+
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -450,6 +463,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             repository: widget.repository,
             authState: widget.authState,
             messagingState: widget.messagingState,
+            initialTabIndex: initialTab,
+            highlightBookingId: highlightBookingId,
           ),
         ),
       );
@@ -578,6 +593,33 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       );
       _showSuccessBadge(notification.id, 'Accepted');
       await widget.notificationState.markAsRead(notification.id);
+
+      // Navigate to the appropriate tab in host reservations
+      if (mounted) {
+        // Re-fetch the updated booking to get the correct tab
+        final updatedBooking = widget.repository.getBookingById(bookingId);
+        final initialTab = updatedBooking != null
+            ? HostReservationTab.forBooking(updatedBooking)
+            : HostReservationTab.upcoming;
+
+        // Delay navigation slightly to show the success badge
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => HostReservationsScreen(
+                  repository: widget.repository,
+                  authState: widget.authState,
+                  messagingState: widget.messagingState,
+                  initialTabIndex: initialTab,
+                  highlightBookingId: bookingId,
+                ),
+              ),
+            );
+          }
+        });
+      }
     } on InvalidBookingStateException catch (e) {
       if (mounted) {
         _showErrorBanner(e.message);

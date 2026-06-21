@@ -184,11 +184,17 @@ abstract class ConversationRepository {
   /// Create a new conversation between two users.
   ///
   /// If a conversation already exists, returns the existing one.
+  /// [listingTitle], [bookingStart], [bookingEnd], [listingType] are
+  /// denormalized booking context for display.
   Future<ConversationResult<Conversation>> create({
     required String participantOneId,
     required String participantTwoId,
     String? bookingId,
     String? listingId,
+    String? listingTitle,
+    DateTime? bookingStart,
+    DateTime? bookingEnd,
+    String? listingType,
   });
 
   /// Archive a conversation.

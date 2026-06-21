@@ -191,11 +191,52 @@ class SupabaseMessagingService implements MessagingService {
 
       final conversationId = response as String;
 
+      // If we have a bookingId, populate the booking context fields
+      if (bookingId != null) {
+        await _populateBookingContext(conversationId, bookingId);
+      }
+
       // Fetch the full conversation
       return getConversation(conversationId, currentUserId);
     } catch (e) {
       debugPrint('[SupabaseMessagingService] Error creating conversation: $e');
       return MessagingResult.failure('Failed to create conversation: $e');
+    }
+  }
+
+  /// Populate booking context fields on a conversation from the booking data
+  Future<void> _populateBookingContext(String conversationId, String bookingId) async {
+    try {
+      // Fetch booking with listing info
+      final bookingResponse = await _client
+          .from('bookings')
+          .select('starts_at, ends_at, listing_title, listings!inner(listing_type, title)')
+          .eq('id', bookingId)
+          .maybeSingle();
+
+      if (bookingResponse != null) {
+        final listingData = bookingResponse['listings'] as Map<String, dynamic>?;
+        final listingType = listingData?['listing_type'] as String?;
+        final listingTitle = bookingResponse['listing_title'] as String? ??
+                            listingData?['title'] as String?;
+
+        final updateData = <String, dynamic>{};
+        if (listingType != null) updateData['listing_type'] = listingType;
+        if (bookingResponse['starts_at'] != null) updateData['booking_start'] = bookingResponse['starts_at'];
+        if (bookingResponse['ends_at'] != null) updateData['booking_end'] = bookingResponse['ends_at'];
+        if (listingTitle != null) updateData['listing_title'] = listingTitle;
+
+        if (updateData.isNotEmpty) {
+          await _client
+              .from('conversations')
+              .update(updateData)
+              .eq('id', conversationId);
+          debugPrint('[SupabaseMessagingService] Populated booking context for conversation $conversationId');
+        }
+      }
+    } catch (e) {
+      debugPrint('[SupabaseMessagingService] Error populating booking context: $e');
+      // Don't fail the whole operation if this fails
     }
   }
 

@@ -44,6 +44,8 @@ class _InboxScreenState extends State<InboxScreen>
           messagingState: widget.messagingState!,
           otherParticipantName: conversation.displayName,
           otherParticipantAvatarUrl: conversation.avatarUrl,
+          bookingContextSubtitle: conversation.bookingContextSubtitle,
+          isArchived: conversation.isArchived,
         ),
       ),
     );
@@ -118,7 +120,7 @@ class _InboxScreenState extends State<InboxScreen>
 
           return Column(
             children: [
-              // Tab bar
+              // Tab bar - Active bookings vs Past bookings
               TabBar(
                 controller: _tabController,
                 tabs: [
@@ -126,7 +128,7 @@ class _InboxScreenState extends State<InboxScreen>
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Text('Messages'),
+                        const Text('Active'),
                         if (widget.messagingState!.totalUnreadCount > 0) ...[
                           const SizedBox(width: 8),
                           _UnreadBadge(
@@ -140,7 +142,7 @@ class _InboxScreenState extends State<InboxScreen>
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Text('Archived'),
+                        const Text('Past'),
                         if (archivedConversations.isNotEmpty) ...[
                           const SizedBox(width: 8),
                           Text(
@@ -159,23 +161,23 @@ class _InboxScreenState extends State<InboxScreen>
                 child: TabBarView(
                   controller: _tabController,
                   children: [
-                    // Active messages
+                    // Active bookings - conversations with confirmed/active bookings
                     _buildConversationList(
                       conversations: activeConversations,
                       isLoading: widget.messagingState!.isLoadingConversations,
-                      emptyTitle: 'No messages yet',
+                      emptyTitle: 'No active conversations',
                       emptySubtitle:
-                          'When you book a trip or receive a reservation, messages from your host or guest will appear here.',
+                          'When a booking is accepted, you can message your host or guest here.',
                     ),
 
-                    // Archived
+                    // Past bookings - completed/cancelled bookings (read-only)
                     _buildConversationList(
                       conversations: archivedConversations,
                       isLoading: false,
-                      emptyTitle: 'No archived messages',
+                      emptyTitle: 'No past conversations',
                       emptySubtitle:
-                          'Conversations you archive will appear here.',
-                      emptyIcon: Icons.archive_outlined,
+                          'Conversations from completed bookings will appear here.',
+                      emptyIcon: Icons.history,
                     ),
                   ],
                 ),

@@ -2,6 +2,20 @@ import 'package:flutter/material.dart';
 
 import '../../models/conversation.dart';
 
+/// Get icon for listing type
+IconData _getListingTypeIcon(String? listingType) {
+  switch (listingType?.toLowerCase()) {
+    case 'room':
+      return Icons.bed_outlined;
+    case 'seat':
+      return Icons.event_seat_outlined;
+    case 'full_house':
+      return Icons.home_outlined;
+    default:
+      return Icons.place_outlined;
+  }
+}
+
 /// A tile widget for displaying a conversation in a list
 class ConversationTile extends StatelessWidget {
   const ConversationTile({
@@ -75,6 +89,51 @@ class ConversationTile extends StatelessWidget {
                           ),
                         ],
                       ),
+
+                      // Booking context subtitle (listing type • date range)
+                      if (conversation.bookingContextSubtitle.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Icon(
+                              _getListingTypeIcon(conversation.listingType),
+                              size: 12,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                conversation.bookingContextSubtitle,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            // Archived badge
+                            if (conversation.isArchived) ...[
+                              const SizedBox(width: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  'Ended',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 4),
 
                       // Last message preview
@@ -88,7 +147,7 @@ class ConversationTile extends StatelessWidget {
                                     ? theme.colorScheme.onSurface
                                     : theme.colorScheme.onSurfaceVariant,
                               ),
-                              maxLines: 2,
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
