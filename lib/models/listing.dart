@@ -2,6 +2,7 @@ import '../core/currency/currency.dart';
 import '../core/currency/money.dart';
 import 'facility.dart';
 import 'listing_type.dart';
+import 'rental_plan.dart';
 
 class Listing {
   Listing({
@@ -12,9 +13,9 @@ class Listing {
     required this.type,
     required this.latitude,
     required this.longitude,
-    required this.hourlyRate,
-    required this.dailyRate,
-    required this.monthlyRate,
+    this.hourlyRate,
+    this.dailyRate,
+    this.monthlyRate,
     required this.facilities,
     required this.available,
     // New fields for marketplace
@@ -23,7 +24,6 @@ class Listing {
     this.description,
     this.city,
     this.country,
-    this.pricePerNight,
     this.imageUrls = const [],
     this.maxGuests = 2,
     this.bedrooms = 1,
@@ -43,9 +43,13 @@ class Listing {
   final ListingType type;
   final double latitude;
   final double longitude;
-  final double hourlyRate;
-  final double dailyRate;
-  final double monthlyRate;
+
+  /// Per-plan rates. `null` means the host does not offer that booking plan.
+  /// At least one of these is non-null for a bookable listing.
+  final double? hourlyRate;
+  final double? dailyRate;
+  final double? monthlyRate;
+
   final List<Facility> facilities;
   bool available;
 
@@ -55,7 +59,6 @@ class Listing {
   final String? description;
   final String? city;
   final String? country;
-  final double? pricePerNight;
   final List<String> imageUrls;
   final int maxGuests;
   final int bedrooms;
@@ -68,18 +71,59 @@ class Listing {
   // Currency for all prices
   final Currency currency;
 
-  // Money-typed getters for type-safe currency handling
-  Money get hourlyRateMoney => Money(hourlyRate, currency);
-  Money get dailyRateMoney => Money(dailyRate, currency);
-  Money get monthlyRateMoney => Money(monthlyRate, currency);
-  Money? get pricePerNightMoney =>
-      pricePerNight != null ? Money(pricePerNight!, currency) : null;
+  // Money-typed getters for type-safe currency handling.
+  // Null when the corresponding plan is not offered.
+  Money? get hourlyRateMoney =>
+      hourlyRate != null ? Money(hourlyRate!, currency) : null;
+  Money? get dailyRateMoney =>
+      dailyRate != null ? Money(dailyRate!, currency) : null;
+  Money? get monthlyRateMoney =>
+      monthlyRate != null ? Money(monthlyRate!, currency) : null;
 
-  // Computed property for display price (double - backward compatible)
-  double get displayPrice => pricePerNight ?? dailyRate;
+  /// Rate for a given plan, or null if that plan is not offered.
+  double? rateFor(DurationType plan) => switch (plan) {
+        DurationType.hourly => hourlyRate,
+        DurationType.daily => dailyRate,
+        DurationType.monthly => monthlyRate,
+      };
 
-  // Money-typed display price
-  Money get displayPriceMoney => Money(displayPrice, currency);
+  /// Money-typed rate for a plan, or null if that plan is not offered.
+  Money? moneyFor(DurationType plan) {
+    final rate = rateFor(plan);
+    return rate != null ? Money(rate, currency) : null;
+  }
+
+  /// Plans this listing offers, in ascending unit order (hourly → daily → monthly).
+  List<DurationType> get offeredPlans => [
+        if (hourlyRate != null) DurationType.hourly,
+        if (dailyRate != null) DurationType.daily,
+        if (monthlyRate != null) DurationType.monthly,
+      ];
+
+  /// The cheapest offered plan by rate. Null only when no plan is offered.
+  ///
+  /// Rates are constrained hourly < daily < monthly, so this is normally the
+  /// shortest offered unit, but we compute by actual rate to stay correct.
+  DurationType? get cheapestPlan {
+    final plans = offeredPlans;
+    if (plans.isEmpty) return null;
+    return plans.reduce((a, b) => rateFor(a)! <= rateFor(b)! ? a : b);
+  }
+
+  /// Money-typed cheapest offered rate, or null if no plan is offered.
+  Money? get cheapestRateMoney {
+    final plan = cheapestPlan;
+    return plan != null ? moneyFor(plan) : null;
+  }
+
+  // Computed display price = cheapest offered rate (double - backward compatible).
+  double get displayPrice {
+    final plan = cheapestPlan;
+    return plan != null ? rateFor(plan)! : 0;
+  }
+
+  // Money-typed display price (cheapest offered rate).
+  Money get displayPriceMoney => cheapestRateMoney ?? Money.zero(currency);
 
   // Get amenity names from facilities
   List<String> get amenityNames => facilities.map((f) => f.name).toList();
@@ -105,7 +149,6 @@ class Listing {
     String? description,
     String? city,
     String? country,
-    double? pricePerNight,
     List<String>? imageUrls,
     int? maxGuests,
     int? bedrooms,
@@ -134,7 +177,6 @@ class Listing {
       description: description ?? this.description,
       city: city ?? this.city,
       country: country ?? this.country,
-      pricePerNight: pricePerNight ?? this.pricePerNight,
       imageUrls: imageUrls ?? this.imageUrls,
       maxGuests: maxGuests ?? this.maxGuests,
       bedrooms: bedrooms ?? this.bedrooms,
@@ -144,6 +186,46 @@ class Listing {
       reviewCount: reviewCount ?? this.reviewCount,
       isSuperhost: isSuperhost ?? this.isSuperhost,
       currency: currency ?? this.currency,
+    );
+  }
+
+  /// Returns a copy with the three plan rates replaced wholesale.
+  ///
+  /// Pass `null` for a plan the host does not offer. Use this (not [copyWith])
+  /// when saving the pricing section, because [copyWith] cannot clear a rate
+  /// back to null.
+  Listing withPlanRates({
+    required double? hourlyRate,
+    required double? dailyRate,
+    required double? monthlyRate,
+  }) {
+    return Listing(
+      id: id,
+      ownerName: ownerName,
+      title: title,
+      address: address,
+      type: type,
+      latitude: latitude,
+      longitude: longitude,
+      hourlyRate: hourlyRate,
+      dailyRate: dailyRate,
+      monthlyRate: monthlyRate,
+      facilities: facilities,
+      available: available,
+      hostId: hostId,
+      hostAvatarUrl: hostAvatarUrl,
+      description: description,
+      city: city,
+      country: country,
+      imageUrls: imageUrls,
+      maxGuests: maxGuests,
+      bedrooms: bedrooms,
+      beds: beds,
+      bathrooms: bathrooms,
+      rating: rating,
+      reviewCount: reviewCount,
+      isSuperhost: isSuperhost,
+      currency: currency,
     );
   }
 }

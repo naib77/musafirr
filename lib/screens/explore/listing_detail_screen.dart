@@ -6,6 +6,7 @@ import '../../core/currency/money.dart';
 import '../../models/booking.dart';
 import '../../models/booking_conflict_exception.dart';
 import '../../models/listing.dart';
+import '../../models/rental_plan.dart';
 import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
@@ -273,7 +274,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                     Expanded(
                       child: PriceDisplay(
                         amount: listing.displayPriceMoney,
-                        perUnit: 'night',
+                        perUnit: listing.cheapestPlan?.displayUnit ?? 'night',
                         style: PriceDisplayStyle.normal,
                       ),
                     ),
@@ -784,8 +785,6 @@ class _ReviewCard extends StatelessWidget {
   }
 }
 
-enum DurationType { hourly, daily, monthly }
-
 class _BookingSheet extends StatefulWidget {
   const _BookingSheet({
     required this.listing,
@@ -831,7 +830,9 @@ class _BookingSheetState extends State<_BookingSheet> {
   @override
   void initState() {
     super.initState();
-    // Check for conflicts when selection changes
+    // Default to the cheapest offered plan so the price matches the
+    // "from ৳X" teaser the guest tapped on the explore card.
+    _durationType = widget.listing.cheapestPlan ?? DurationType.daily;
   }
 
   /// Show a modern error banner at the top
@@ -973,39 +974,23 @@ class _BookingSheetState extends State<_BookingSheet> {
     });
   }
 
-  double get _rate {
-    return switch (_durationType) {
-      DurationType.hourly => widget.listing.hourlyRate,
-      DurationType.daily => widget.listing.dailyRate,
-      DurationType.monthly => widget.listing.monthlyRate,
-    };
-  }
+  IconData _planIcon(DurationType plan) => switch (plan) {
+        DurationType.hourly => Icons.schedule,
+        DurationType.daily => Icons.today,
+        DurationType.monthly => Icons.calendar_month,
+      };
 
-  Money get _rateMoney {
-    return switch (_durationType) {
-      DurationType.hourly => widget.listing.hourlyRateMoney,
-      DurationType.daily => widget.listing.dailyRateMoney,
-      DurationType.monthly => widget.listing.monthlyRateMoney,
-    };
-  }
+  double get _rate => widget.listing.rateFor(_durationType) ?? 0;
+
+  Money get _rateMoney =>
+      widget.listing.moneyFor(_durationType) ??
+      Money.zero(widget.listing.currency);
 
   /// Display label for UI (user-friendly)
-  String get _rateLabel {
-    return switch (_durationType) {
-      DurationType.hourly => 'hour',
-      DurationType.daily => 'night',
-      DurationType.monthly => 'month',
-    };
-  }
+  String get _rateLabel => _durationType.displayUnit;
 
   /// Database pricing_unit value (must match enum: hour, day, month)
-  String get _pricingUnit {
-    return switch (_durationType) {
-      DurationType.hourly => 'hour',
-      DurationType.daily => 'day',
-      DurationType.monthly => 'month',
-    };
-  }
+  String get _pricingUnit => _durationType.pricingUnit;
 
   int get _duration {
     return switch (_durationType) {
@@ -1244,31 +1229,25 @@ class _BookingSheetState extends State<_BookingSheet> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Duration type selector
-                    SegmentedButton<DurationType>(
-                      segments: const [
-                        ButtonSegment(
-                          value: DurationType.hourly,
-                          label: Text('Hourly'),
-                          icon: Icon(Icons.schedule),
-                        ),
-                        ButtonSegment(
-                          value: DurationType.daily,
-                          label: Text('Daily'),
-                          icon: Icon(Icons.today),
-                        ),
-                        ButtonSegment(
-                          value: DurationType.monthly,
-                          label: Text('Monthly'),
-                          icon: Icon(Icons.calendar_month),
-                        ),
-                      ],
-                      selected: {_durationType},
-                      onSelectionChanged: (selected) {
-                        setState(() => _durationType = selected.first);
-                      },
-                    ),
-                    const SizedBox(height: 16),
+                    // Duration type selector — only the plans this listing
+                    // offers. Hidden when a single plan is offered (no choice).
+                    if (widget.listing.offeredPlans.length > 1) ...[
+                      SegmentedButton<DurationType>(
+                        segments: [
+                          for (final plan in widget.listing.offeredPlans)
+                            ButtonSegment(
+                              value: plan,
+                              label: Text(plan.label),
+                              icon: Icon(_planIcon(plan)),
+                            ),
+                        ],
+                        selected: {_durationType},
+                        onSelectionChanged: (selected) {
+                          setState(() => _durationType = selected.first);
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                    ],
 
                     // Rate display
                     Container(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/listing.dart';
 import '../models/listing_type.dart';
+import '../models/rental_plan.dart';
 
 class ListingSummaryCard extends StatelessWidget {
   const ListingSummaryCard({super.key, required this.listing});
@@ -17,7 +18,7 @@ class ListingSummaryCard extends StatelessWidget {
         leading: CircleAvatar(child: Text(listing.type.title[0])),
         title: Text(listing.title),
         subtitle: Text(
-          '${listing.address}\n${listing.hourlyRate.toStringAsFixed(0)} BDT / hour',
+          '${listing.address}\n${listing.displayPrice.toStringAsFixed(0)} BDT / ${listing.cheapestPlan?.displayUnit ?? ''}',
         ),
         isThreeLine: true,
         trailing: Chip(

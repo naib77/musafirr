@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/listing.dart';
 import '../models/listing_type.dart';
+import '../models/rental_plan.dart';
 
 class ListingCard extends StatelessWidget {
   const ListingCard({
@@ -50,9 +51,7 @@ class ListingCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'Rates: ${listing.hourlyRate.toStringAsFixed(0)} / hour, '
-              '${listing.dailyRate.toStringAsFixed(0)} / day, '
-              '${listing.monthlyRate.toStringAsFixed(0)} / month',
+              'Rates: ${listing.offeredPlans.map((p) => '${listing.rateFor(p)!.toStringAsFixed(0)} / ${p.displayUnit}').join(', ')}',
             ),
             const SizedBox(height: 12),
             FilledButton(

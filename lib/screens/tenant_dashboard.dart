@@ -186,11 +186,13 @@ class _TenantDashboardState extends State<TenantDashboard> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            final estimatedCost = switch (selectedDuration.unitLabel) {
-              'hour' => listing.hourlyRate * selectedDuration.multiplier,
-              'day' => listing.dailyRate * selectedDuration.multiplier,
-              _ => listing.monthlyRate * selectedDuration.multiplier,
-            };
+            final estimatedCost = (switch (selectedDuration.unitLabel) {
+                  'hour' => listing.hourlyRate,
+                  'day' => listing.dailyRate,
+                  _ => listing.monthlyRate,
+                } ??
+                0) *
+                selectedDuration.multiplier;
             return Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
               child: Column(

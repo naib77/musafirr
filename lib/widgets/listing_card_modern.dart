@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/listing.dart';
-import 'price_display.dart';
+import '../models/rental_plan.dart';
 
 class ListingCardModern extends StatefulWidget {
   const ListingCardModern({
@@ -146,11 +146,7 @@ class _ListingCardModernState extends State<ListingCardModern>
                           ),
                         ],
                       ),
-                      child: PriceDisplay(
-                        amount: listing.displayPriceMoney,
-                        perUnit: 'night',
-                        style: PriceDisplayStyle.compact,
-                      ),
+                      child: _buildPriceTeaser(theme),
                     ),
                   ),
 
@@ -288,7 +284,7 @@ class _ListingCardModernState extends State<ListingCardModern>
                               fontWeight: FontWeight.w600,
                               height: 1.2,
                             ),
-                            maxLines: 2,
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -352,6 +348,10 @@ class _ListingCardModernState extends State<ListingCardModern>
 
                     const Spacer(),
 
+                    // Other offered plan rates, de-emphasized (cheapest is the
+                    // "from" teaser badge on the image above).
+                    _buildSecondaryRates(theme),
+
                     // Quick stats row
                     if (listing.maxGuests > 0 || listing.bedrooms > 0)
                       Row(
@@ -378,6 +378,76 @@ class _ListingCardModernState extends State<ListingCardModern>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Bold "from ৳X/unit" teaser for the cheapest offered plan.
+  /// "from" only appears when more than one plan is offered.
+  Widget _buildPriceTeaser(ThemeData theme) {
+    final listing = widget.listing;
+    final cheapest = listing.cheapestPlan;
+    if (cheapest == null) {
+      return const SizedBox.shrink();
+    }
+    final money = listing.moneyFor(cheapest)!;
+    final hasMore = listing.offeredPlans.length > 1;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        if (hasMore)
+          Text(
+            'from ',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        Text(
+          money.format(useCompact: true),
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+        Text(
+          '/${cheapest.shortUnit}',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// One compact, de-emphasized line listing the non-cheapest offered plans,
+  /// e.g. "৳1.5k/day · ৳35k/mo". Hidden when only one plan is offered.
+  Widget _buildSecondaryRates(ThemeData theme) {
+    final listing = widget.listing;
+    final cheapest = listing.cheapestPlan;
+    final others =
+        listing.offeredPlans.where((p) => p != cheapest).toList();
+    if (others.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final text = others
+        .map((p) =>
+            '${listing.moneyFor(p)!.format(useCompact: true)}/${p.shortUnit}')
+        .join('  ·  ');
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(
+        text,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }

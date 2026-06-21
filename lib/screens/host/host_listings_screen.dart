@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../../models/listing.dart';
+import '../../models/rental_plan.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
 import '../../widgets/modern_banner.dart';
-import '../../widgets/price_display.dart';
 import 'create_listing_screen.dart';
+import 'edit_listing_screen.dart';
 
 class HostListingsScreen extends StatelessWidget {
   const HostListingsScreen({
@@ -116,8 +117,15 @@ class HostListingsScreen extends StatelessWidget {
   }
 
   void _editListing(BuildContext context, Listing listing) {
-    // For now, show a coming soon message
-    ModernBanner.showInfo(context, 'Edit listing coming soon!');
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditListingScreen(
+          repository: repository,
+          listing: listing,
+        ),
+      ),
+    );
   }
 
   void _confirmDelete(BuildContext context, Listing listing) {
@@ -250,7 +258,7 @@ class _ListingCard extends StatelessWidget {
                     _StatChip(
                       icon: Icons.attach_money,
                       label:
-                          '${listing.displayPriceMoney.format(showDecimal: false)}/night',
+                          '${listing.displayPriceMoney.format(showDecimal: false)}/${listing.cheapestPlan?.shortUnit ?? 'day'}',
                       theme: theme,
                     ),
                     const SizedBox(width: 8),

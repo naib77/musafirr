@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../core/currency/currency.dart';
 import '../../data/facility_catalog.dart';
 import '../../models/listing.dart';
 import '../../models/listing_type.dart';
@@ -12,6 +11,7 @@ import '../../widgets/app_text_field.dart';
 import '../../widgets/image_picker_grid.dart';
 import '../../widgets/location_picker.dart';
 import '../../widgets/modern_banner.dart';
+import 'listing_pricing_fields.dart';
 
 class CreateListingScreen extends StatefulWidget {
   const CreateListingScreen({
@@ -48,6 +48,12 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   final _hourlyPriceController = TextEditingController(text: '150');
   final _dailyPriceController = TextEditingController(text: '1500');
   final _monthlyPriceController = TextEditingController(text: '35000');
+
+  // Which booking plans this listing offers. New listings start with all on;
+  // a host turns off the plans they don't offer (at least one must stay on).
+  bool _hourlyEnabled = true;
+  bool _dailyEnabled = true;
+  bool _monthlyEnabled = true;
 
   // Image data
   List<SelectedImage> _selectedImages = [];
@@ -99,17 +105,28 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
       case 3: // Details
         return _maxGuests > 0 && _bedrooms > 0 && _beds > 0 && _bathrooms > 0;
       case 4: // Pricing
-        final hourly = double.tryParse(_hourlyPriceController.text);
-        final daily = double.tryParse(_dailyPriceController.text);
-        final monthly = double.tryParse(_monthlyPriceController.text);
-        return hourly != null && hourly > 0 &&
-            daily != null && daily > 0 &&
-            monthly != null && monthly > 0;
+        return _pricingError() == null;
       case 5: // Photos
         return _selectedImages.isNotEmpty && !_isUploadingImages;
       default:
         return false;
     }
+  }
+
+  /// Validates the pricing step. Returns a user-facing message, or null if valid.
+  ///
+  /// Rules: at least one plan enabled, each enabled plan has a positive rate,
+  /// and rates strictly increase by duration (hourly < daily < monthly) among
+  /// the enabled plans.
+  String? _pricingError() {
+    return validatePlanRates(
+      hourlyEnabled: _hourlyEnabled,
+      dailyEnabled: _dailyEnabled,
+      monthlyEnabled: _monthlyEnabled,
+      hourlyText: _hourlyPriceController.text,
+      dailyText: _dailyPriceController.text,
+      monthlyText: _monthlyPriceController.text,
+    );
   }
 
   Future<void> _submitListing() async {
@@ -123,9 +140,12 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
 
     try {
       final user = widget.authState.currentUser;
-      final hourlyRate = double.parse(_hourlyPriceController.text);
-      final dailyRate = double.parse(_dailyPriceController.text);
-      final monthlyRate = double.parse(_monthlyPriceController.text);
+      final hourlyRate =
+          _hourlyEnabled ? double.parse(_hourlyPriceController.text) : null;
+      final dailyRate =
+          _dailyEnabled ? double.parse(_dailyPriceController.text) : null;
+      final monthlyRate =
+          _monthlyEnabled ? double.parse(_monthlyPriceController.text) : null;
 
       // Generate listing ID first (needed for image upload path)
       final listingId = 'listing_${DateTime.now().millisecondsSinceEpoch}';
@@ -196,7 +216,6 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         type: _propertyType,
         latitude: _latitude,
         longitude: _longitude,
-        pricePerNight: dailyRate,
         hourlyRate: hourlyRate,
         dailyRate: dailyRate,
         monthlyRate: monthlyRate,
@@ -316,7 +335,14 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                   hourlyPriceController: _hourlyPriceController,
                   dailyPriceController: _dailyPriceController,
                   monthlyPriceController: _monthlyPriceController,
+                  hourlyEnabled: _hourlyEnabled,
+                  dailyEnabled: _dailyEnabled,
+                  monthlyEnabled: _monthlyEnabled,
+                  onHourlyToggled: (v) => setState(() => _hourlyEnabled = v),
+                  onDailyToggled: (v) => setState(() => _dailyEnabled = v),
+                  onMonthlyToggled: (v) => setState(() => _monthlyEnabled = v),
                   onChanged: () => setState(() {}),
+                  errorText: _pricingError(),
                 ),
                 _PhotosStep(
                   images: _selectedImages,
@@ -837,13 +863,27 @@ class _PricingStep extends StatelessWidget {
     required this.hourlyPriceController,
     required this.dailyPriceController,
     required this.monthlyPriceController,
+    required this.hourlyEnabled,
+    required this.dailyEnabled,
+    required this.monthlyEnabled,
+    required this.onHourlyToggled,
+    required this.onDailyToggled,
+    required this.onMonthlyToggled,
     required this.onChanged,
+    required this.errorText,
   });
 
   final TextEditingController hourlyPriceController;
   final TextEditingController dailyPriceController;
   final TextEditingController monthlyPriceController;
+  final bool hourlyEnabled;
+  final bool dailyEnabled;
+  final bool monthlyEnabled;
+  final ValueChanged<bool> onHourlyToggled;
+  final ValueChanged<bool> onDailyToggled;
+  final ValueChanged<bool> onMonthlyToggled;
   final VoidCallback onChanged;
+  final String? errorText;
 
   @override
   Widget build(BuildContext context) {
@@ -862,7 +902,8 @@ class _PricingStep extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Set rates for different booking durations. You can change these anytime.',
+            'Choose which booking plans you offer and set a rate for each. '
+            'Turn off any you don\'t offer — at least one must stay on.',
             style: theme.textTheme.bodyLarge?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -870,36 +911,62 @@ class _PricingStep extends StatelessWidget {
           const SizedBox(height: 32),
 
           // Hourly rate
-          _PriceField(
+          PlanPriceRow(
             controller: hourlyPriceController,
             label: 'Hourly rate',
             icon: Icons.schedule,
             hint: '150',
             helperText: 'For short stays (1-12 hours)',
+            enabled: hourlyEnabled,
+            onToggled: onHourlyToggled,
             onChanged: onChanged,
           ),
           const SizedBox(height: 20),
 
           // Daily rate
-          _PriceField(
+          PlanPriceRow(
             controller: dailyPriceController,
             label: 'Daily rate (per night)',
             icon: Icons.today,
             hint: '1500',
             helperText: 'For overnight stays',
+            enabled: dailyEnabled,
+            onToggled: onDailyToggled,
             onChanged: onChanged,
           ),
           const SizedBox(height: 20),
 
           // Monthly rate
-          _PriceField(
+          PlanPriceRow(
             controller: monthlyPriceController,
             label: 'Monthly rate',
             icon: Icons.calendar_month,
             hint: '35000',
             helperText: 'For long-term stays (1+ months)',
+            enabled: monthlyEnabled,
+            onToggled: onMonthlyToggled,
             onChanged: onChanged,
           ),
+
+          if (errorText != null) ...[
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Icon(Icons.error_outline,
+                    size: 18, color: theme.colorScheme.error),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    errorText!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.error,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 24),
 
           Card(
@@ -939,66 +1006,6 @@ class _PricingStep extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _PriceField extends StatelessWidget {
-  const _PriceField({
-    required this.controller,
-    required this.label,
-    required this.icon,
-    required this.hint,
-    required this.helperText,
-    required this.onChanged,
-  });
-
-  final TextEditingController controller;
-  final String label;
-  final IconData icon;
-  final String hint;
-  final String helperText;
-  final VoidCallback onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 20, color: theme.colorScheme.primary),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        AppTextField(
-          controller: controller,
-          label: '',
-          hint: hint,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          prefix: Padding(
-            padding: const EdgeInsets.only(left: 12),
-            child: Text(Currency.BDT.symbol),
-          ),
-          onChanged: (_) => onChanged(),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          helperText,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
     );
   }
 }

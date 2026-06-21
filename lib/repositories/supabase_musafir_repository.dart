@@ -299,9 +299,9 @@ class SupabaseMusafirRepository extends ChangeNotifier
       type: _listingTypeFromString(json['listing_type'] as String?),
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
-      hourlyRate: (json['hourly_rate'] as num?)?.toDouble() ?? 0.0,
-      dailyRate: (json['daily_rate'] as num?)?.toDouble() ?? 0.0,
-      monthlyRate: (json['monthly_rate'] as num?)?.toDouble() ?? 0.0,
+      hourlyRate: (json['hourly_rate'] as num?)?.toDouble(),
+      dailyRate: (json['daily_rate'] as num?)?.toDouble(),
+      monthlyRate: (json['monthly_rate'] as num?)?.toDouble(),
       facilities: facilities,
       available: json['is_active'] as bool? ?? true,
       hostId: json['owner_id'] as String?,
@@ -309,7 +309,6 @@ class SupabaseMusafirRepository extends ChangeNotifier
       description: json['description'] as String?,
       city: json['city'] as String?,
       country: json['country'] as String?,
-      pricePerNight: (json['daily_rate'] as num?)?.toDouble(),
       imageUrls: (json['image_urls'] as List?)?.cast<String>() ?? [],
       maxGuests: json['max_guests'] as int? ?? 2,
       bedrooms: json['bedrooms'] as int? ?? 1,
@@ -663,7 +662,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
       'hour' => listing.hourlyRate,
       'day' => listing.dailyRate,
       _ => listing.monthlyRate,
-    };
+    } ?? 0;
 
     final booking = Booking(
       id: 'temp_${DateTime.now().millisecondsSinceEpoch}',

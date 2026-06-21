@@ -3,6 +3,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../models/listing.dart';
 import '../models/listing_type.dart';
+import '../models/rental_plan.dart';
 import '../services/location_service.dart';
 import 'modern_banner.dart';
 
@@ -51,7 +52,7 @@ class _MusafirMapState extends State<MusafirMap> {
           infoWindow: InfoWindow(
             title: listing.title,
             snippet:
-                '${listing.type.title} - ${listing.dailyRate.toInt()} BDT/day',
+                '${listing.type.title} - ${listing.displayPrice.toInt()} BDT/${listing.cheapestPlan?.shortUnit ?? ''}',
             onTap: () => widget.onListingTap?.call(listing),
           ),
           icon: BitmapDescriptor.defaultMarkerWithHue(
