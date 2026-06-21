@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'config/supabase_config.dart';
+import 'core/theme/app_theme.dart';
 import 'repositories/supabase_musafir_repository.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/otp_verification_screen.dart';
@@ -110,10 +111,8 @@ class _MusafirAppState extends State<MusafirApp> {
   }
 
   void _onRepositoryChange() {
-    // Defer to avoid calling notifyListeners during build
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      searchState.setListings(repository.listings);
-    });
+    // SafeNotifier on searchState handles any build-phase notification.
+    searchState.setListings(repository.listings);
   }
 
   @override
@@ -133,14 +132,7 @@ class _MusafirAppState extends State<MusafirApp> {
     return MaterialApp(
       title: 'Musafir',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0B7285),
-          brightness: Brightness.light,
-        ),
-        scaffoldBackgroundColor: const Color(0xFFF6F8F7),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.light,
       home: ListenableBuilder(
         listenable: authState,
         builder: (context, _) {

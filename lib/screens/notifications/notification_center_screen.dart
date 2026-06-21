@@ -587,7 +587,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     // Process
     setState(() => _processingNotificationId = notification.id);
     try {
-      widget.bookingLifecycleService.acceptBooking(
+      await widget.bookingLifecycleService.acceptBooking(
         bookingId,
         message: result.message,
       );

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import '../core/state/safe_notifier.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User, RealtimeChannel;
 import 'package:supabase_flutter/supabase_flutter.dart' show RealtimeChannel;
@@ -25,7 +26,7 @@ import 'musafir_repository.dart';
 ///
 /// This repository fetches and caches data from Supabase PostgreSQL database.
 /// It extends [ChangeNotifier] to support reactive UI updates.
-class SupabaseMusafirRepository extends ChangeNotifier
+class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
     implements MusafirRepository {
   SupabaseMusafirRepository() {
     _initialize();
@@ -1182,20 +1183,21 @@ class SupabaseMusafirRepository extends ChangeNotifier
   // ============== Booking Lifecycle Methods ==============
 
   @override
-  void updateBooking(Booking booking) {
+  Future<void> updateBooking(Booking booking) async {
     final index = _bookings.indexWhere((b) => b.id == booking.id);
-    debugPrint('[DEBUG-booking] updateBooking called for ${booking.id}, status: ${booking.status.name}');
-    if (index != -1) {
-      // Store original booking for potential rollback
-      final originalBooking = _bookings[index];
+    if (index == -1) return;
 
-      // Optimistic update - update local cache immediately
-      _bookings[index] = booking;
-      notifyListeners();
+    // Store original booking for potential rollback
+    final originalBooking = _bookings[index];
 
-      // Persist to Supabase asynchronously
-      _persistBookingUpdate(booking, originalBooking);
-    }
+    // Optimistic update - update local cache immediately (synchronous, so the
+    // UI reflects the change before the awaited persist below completes).
+    _bookings[index] = booking;
+    notifyListeners();
+
+    // Persist to Supabase. Awaited so callers can sequence dependent writes
+    // (e.g. booking messages) after the status is committed.
+    await _persistBookingUpdate(booking, originalBooking);
   }
 
   /// Persist booking update to Supabase.

@@ -440,7 +440,8 @@ class TierProgress {
 
     // Use the minimum since all requirements must be met
     return [bookingPercent, nightsPercent, spentPercent]
-        .reduce((a, b) => a < b ? a : b);
+        .reduce((a, b) => a < b ? a : b)
+        .toDouble();
   }
 
   /// Bookings progress percentage

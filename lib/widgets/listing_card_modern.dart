@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../core/theme/app_colors.dart';
 import '../models/listing.dart';
+import '../models/listing_type.dart';
 import '../models/rental_plan.dart';
 
 class ListingCardModern extends StatefulWidget {
@@ -196,6 +198,9 @@ class _ListingCardModernState extends State<ListingCardModern>
                     left: 10,
                     child: Row(
                       children: [
+                        // Colorful listing-type chip
+                        _CategoryChip(type: listing.type),
+                        const SizedBox(width: 6),
                         // Superhost badge
                         if (listing.isSuperhost)
                           Container(
@@ -508,6 +513,58 @@ class _ListingCardModernState extends State<ListingCardModern>
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Small colorful pill identifying the listing type, shown on the card image.
+class _CategoryChip extends StatelessWidget {
+  const _CategoryChip({required this.type});
+
+  final ListingType type;
+
+  Color get _color => switch (type) {
+        ListingType.seat => AppColors.seat,
+        ListingType.room => AppColors.room,
+        ListingType.fullHouse => AppColors.fullHouse,
+      };
+
+  IconData get _icon => switch (type) {
+        ListingType.seat => Icons.event_seat_rounded,
+        ListingType.room => Icons.meeting_room_rounded,
+        ListingType.fullHouse => Icons.home_rounded,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: _color,
+        borderRadius: BorderRadius.circular(6),
+        boxShadow: [
+          BoxShadow(
+            color: _color.withValues(alpha: 0.4),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(_icon, size: 12, color: Colors.white),
+          const SizedBox(width: 4),
+          Text(
+            type.title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 10,
+            ),
+          ),
+        ],
       ),
     );
   }

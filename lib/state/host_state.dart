@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
+import '../core/state/safe_notifier.dart';
 
-class HostStateNotifier extends ChangeNotifier {
+class HostStateNotifier extends ChangeNotifier with SafeNotifier {
   bool _isHostMode = false;
   bool _isLoading = false;
   String? _error;

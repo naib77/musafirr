@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import '../core/state/safe_notifier.dart';
 
 import '../models/conversation.dart';
 import '../models/message.dart';
@@ -43,7 +44,7 @@ import 'conversation_list_state.dart';
 /// await state.sendTextMessage('Hello!');
 /// state.closeConversation();
 /// ```
-class MessagingStateNotifier extends ChangeNotifier {
+class MessagingStateNotifier extends ChangeNotifier with SafeNotifier {
   MessagingStateNotifier({
     required ConversationRepository conversationRepository,
     required MessagingService messagingService,

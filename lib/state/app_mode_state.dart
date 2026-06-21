@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../core/state/safe_notifier.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Represents the current app mode - Guest or Host
@@ -8,7 +9,7 @@ enum AppMode {
 }
 
 /// Manages the app mode state (Guest/Host) with persistence
-class AppModeStateNotifier extends ChangeNotifier {
+class AppModeStateNotifier extends ChangeNotifier with SafeNotifier {
   AppModeStateNotifier() {
     _loadSavedMode();
   }

@@ -1,13 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import '../core/state/safe_notifier.dart';
 
 import '../models/notification.dart';
 import '../models/notification_preferences.dart';
 import '../services/notifications/notification_service.dart';
 
 /// State notifier for managing notifications
-class NotificationStateNotifier extends ChangeNotifier {
+class NotificationStateNotifier extends ChangeNotifier with SafeNotifier {
   NotificationStateNotifier({
     required NotificationService service,
   }) : _service = service;

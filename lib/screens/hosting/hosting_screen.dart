@@ -548,7 +548,7 @@ class _HostingDashboardState extends State<_HostingDashboard> {
         }
       } else {
         // Fallback to lifecycle service only
-        widget.bookingLifecycleService.acceptBooking(
+        await widget.bookingLifecycleService.acceptBooking(
           booking.id,
           message: result.message,
         );

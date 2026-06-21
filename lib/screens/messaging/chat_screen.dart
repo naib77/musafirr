@@ -46,11 +46,12 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    // Open the conversation and load messages
-    widget.messagingState.openConversation(widget.conversationId);
-
     // Listen for new messages to scroll to bottom
     widget.messagingState.addListener(_onMessagesChanged);
+
+    // Safe to call directly from initState: MessagingStateNotifier uses
+    // SafeNotifier, which defers any build-phase notification to post-frame.
+    widget.messagingState.openConversation(widget.conversationId);
   }
 
   @override

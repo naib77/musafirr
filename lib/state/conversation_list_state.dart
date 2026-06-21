@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import '../core/state/safe_notifier.dart';
 
 import '../models/conversation.dart';
 import '../repositories/conversation_repository.dart';
@@ -29,7 +30,7 @@ import '../repositories/conversation_repository.dart';
 /// // Refresh
 /// await state.refresh();
 /// ```
-class ConversationListState extends ChangeNotifier {
+class ConversationListState extends ChangeNotifier with SafeNotifier {
   ConversationListState({
     required ConversationRepository repository,
   }) : _repository = repository;

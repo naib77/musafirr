@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import '../core/state/safe_notifier.dart';
 
 import '../models/conversation.dart';
 import '../models/message.dart';
@@ -29,7 +30,7 @@ import '../services/messaging/messaging_service.dart';
 /// // Close when done
 /// state.closeConversation();
 /// ```
-class ActiveChatState extends ChangeNotifier {
+class ActiveChatState extends ChangeNotifier with SafeNotifier {
   ActiveChatState({
     required MessagingService messagingService,
   }) : _messagingService = messagingService;

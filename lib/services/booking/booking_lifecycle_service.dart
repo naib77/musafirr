@@ -25,7 +25,9 @@ class InvalidBookingStateException implements Exception {
 /// Allows the service to be tested with different storage implementations.
 abstract class BookingStore {
   Booking? getBookingById(String id);
-  void updateBooking(Booking booking);
+
+  /// Persists a booking update; await to sequence dependent writes.
+  Future<void> updateBooking(Booking booking);
 }
 
 /// Service that manages booking lifecycle transitions.
@@ -49,7 +51,7 @@ class BookingLifecycleService {
   ///
   /// Throws [BookingNotFoundException] if booking doesn't exist.
   /// Throws [InvalidBookingStateException] if booking is not pending.
-  Booking acceptBooking(String bookingId, {String? message}) {
+  Future<Booking> acceptBooking(String bookingId, {String? message}) async {
     final booking = _getBookingOrThrow(bookingId);
 
     if (!rules.canAccept(booking)) {
@@ -65,7 +67,10 @@ class BookingLifecycleService {
       hostMessage: message,
     );
 
-    store.updateBooking(updated);
+    // Await the persist so the 'confirmed' status is committed before any
+    // dependent write (the welcome messages are gated by RLS on booking status
+    // — sending them before the commit lands fails with 42501).
+    await store.updateBooking(updated);
     return updated;
   }
 

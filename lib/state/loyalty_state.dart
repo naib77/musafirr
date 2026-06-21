@@ -1,10 +1,11 @@
 import 'package:flutter/foundation.dart';
+import '../core/state/safe_notifier.dart';
 
 import '../models/loyalty_tier.dart';
 import '../services/discount/loyalty_service.dart';
 
 /// State for loyalty program management
-class LoyaltyStateNotifier extends ChangeNotifier {
+class LoyaltyStateNotifier extends ChangeNotifier with SafeNotifier {
   LoyaltyStateNotifier({
     LoyaltyService? loyaltyService,
   }) : _loyaltyService = loyaltyService ?? InMemoryLoyaltyService();

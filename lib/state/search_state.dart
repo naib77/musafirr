@@ -1,11 +1,12 @@
 import 'package:flutter/foundation.dart';
+import '../core/state/safe_notifier.dart';
 import 'package:flutter/material.dart';
 
 import '../models/listing.dart';
 import '../models/listing_type.dart';
 import '../models/search_filters.dart';
 
-class SearchStateNotifier extends ChangeNotifier {
+class SearchStateNotifier extends ChangeNotifier with SafeNotifier {
   SearchFilters _filters = const SearchFilters();
   List<Listing> _results = [];
   List<Listing> _allListings = [];

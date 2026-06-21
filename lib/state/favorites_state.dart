@@ -1,7 +1,8 @@
 import 'package:flutter/foundation.dart';
+import '../core/state/safe_notifier.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-class FavoritesStateNotifier extends ChangeNotifier {
+class FavoritesStateNotifier extends ChangeNotifier with SafeNotifier {
   final Set<String> _favoriteIds = {};
   String? _userId;
   bool _isLoading = false;

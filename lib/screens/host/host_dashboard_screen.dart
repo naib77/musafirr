@@ -43,9 +43,14 @@ class HostDashboardScreen extends StatelessWidget {
                   .where((b) => hostListings.any((l) => l.id == b.listingId))
                   .toList();
 
+          // Use the Booking model's status-aware computed property so this
+          // matches the Reservations "Upcoming" tab exactly — a future-dated
+          // but declined/cancelled booking is NOT upcoming. Most recent first.
           final upcomingBookings = hostBookings
-              .where((b) => b.effectiveCheckIn.isAfter(DateTime.now()))
-              .toList();
+              .where((b) => b.isUpcoming)
+              .toList()
+            ..sort((a, b) => (b.createdAt ?? b.effectiveCheckIn)
+                .compareTo(a.createdAt ?? a.effectiveCheckIn));
 
           final totalEarnings = hostBookings.fold<Money>(
             Money.zero(Currency.BDT),
@@ -190,7 +195,9 @@ class HostDashboardScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   ...upcomingBookings.take(3).map((booking) => Card(
+                        clipBehavior: Clip.antiAlias,
                         child: ListTile(
+                          onTap: () => _navigateToBooking(context, booking),
                           leading: CircleAvatar(
                             child: Text(
                               booking.tenantName.isNotEmpty
@@ -202,12 +209,23 @@ class HostDashboardScreen extends StatelessWidget {
                           subtitle: Text(
                             '${_formatDate(booking.effectiveCheckIn)} - ${_formatDate(booking.effectiveCheckOut)}',
                           ),
-                          trailing: Text(
-                            booking.totalPriceMoney.format(showDecimal: false),
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: theme.colorScheme.primary,
-                            ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                booking.totalPriceMoney
+                                    .format(showDecimal: false),
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.chevron_right,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ],
                           ),
                         ),
                       )),
@@ -282,6 +300,23 @@ class HostDashboardScreen extends StatelessWidget {
           repository: repository,
           authState: authState,
           messagingState: messagingState,
+        ),
+      ),
+    );
+  }
+
+  /// Open the reservations screen on the tab matching this booking, with the
+  /// booking highlighted.
+  void _navigateToBooking(BuildContext context, Booking booking) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => HostReservationsScreen(
+          repository: repository,
+          authState: authState,
+          messagingState: messagingState,
+          initialTabIndex: HostReservationTab.forBooking(booking),
+          highlightBookingId: booking.id,
         ),
       ),
     );

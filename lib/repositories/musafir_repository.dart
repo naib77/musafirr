@@ -97,7 +97,11 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   void cancelBooking(String bookingId);
 
   // Booking lifecycle methods
-  void updateBooking(Booking booking);
+  /// Persists a booking update. Returns a future that completes when the
+  /// remote write finishes — await it before performing actions that depend on
+  /// the new status being committed (e.g. sending booking messages gated by
+  /// RLS on booking status). Safe to call fire-and-forget for optimistic UI.
+  Future<void> updateBooking(Booking booking);
   List<Booking> getPendingBookingsForHost(String hostId);
   List<Booking> getBookingsForHost(String hostId);
   List<Booking> getStaleBookings({Duration? maxAge});

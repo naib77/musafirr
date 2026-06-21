@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import '../core/state/safe_notifier.dart';
 
 import '../models/user.dart';
 import '../services/auth/auth_service.dart';
@@ -21,7 +22,7 @@ enum AuthStatus {
 ///
 /// Delegates to [AuthService] (either Mock or Supabase implementation).
 /// Maintains the same public interface for all 17+ consumer files.
-class AuthStateNotifier extends ChangeNotifier {
+class AuthStateNotifier extends ChangeNotifier with SafeNotifier {
   AuthStateNotifier() {
     _service = AuthServiceFactory.instance;
     _subscription = _service.authStateChanges.listen(_onAuthChange);

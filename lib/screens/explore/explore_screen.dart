@@ -9,6 +9,7 @@ import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
 import '../../state/notification_state.dart';
 import '../../state/search_state.dart';
+import '../../widgets/animations/fade_slide_in.dart';
 import '../../widgets/category_scroll.dart';
 import '../../widgets/listing_card_modern.dart';
 import '../../widgets/notification_bell.dart';
@@ -349,15 +350,20 @@ class _ExploreScreenState extends State<ExploreScreen> {
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
                                 final listing = listings[index];
-                                return ListingCardModern(
-                                  listing: listing,
-                                  isFavorite: widget.favoritesState
-                                      .isFavorite(listing.id),
-                                  onTap: () => _openListingDetail(listing),
-                                  onFavoriteTap: () {
-                                    widget.favoritesState
-                                        .toggleFavorite(listing.id);
-                                  },
+                                // Staggered entrance; modulo keeps the delay
+                                // small for items revealed far down on scroll.
+                                return FadeSlideIn(
+                                  delay: Duration(milliseconds: 45 * (index % 6)),
+                                  child: ListingCardModern(
+                                    listing: listing,
+                                    isFavorite: widget.favoritesState
+                                        .isFavorite(listing.id),
+                                    onTap: () => _openListingDetail(listing),
+                                    onFavoriteTap: () {
+                                      widget.favoritesState
+                                          .toggleFavorite(listing.id);
+                                    },
+                                  ),
                                 );
                               },
                               childCount: listings.length,

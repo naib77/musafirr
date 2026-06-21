@@ -267,10 +267,10 @@ class SavingsBanner extends StatelessWidget {
                   const SizedBox(height: 12),
                   ...appliedDiscounts!.map((applied) => _buildDiscountRow(
                         context,
-                        applied.discount.name,
+                        applied.discount?.name ?? 'Discount',
                         applied.discountAmount,
-                        _getCategoryIcon(applied.discount.category),
-                        _getCategoryColor(applied.discount.category),
+                        _getCategoryIcon(applied.discount?.category),
+                        _getCategoryColor(applied.discount?.category),
                       )),
                   const Divider(height: 24),
                   if (originalAmount != null && finalAmount != null) ...[
@@ -395,7 +395,7 @@ class SavingsBanner extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    applied.discount.name,
+                    applied.discount?.name ?? 'Discount',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: Colors.white,
                       fontWeight: FontWeight.w500,
@@ -485,8 +485,10 @@ class SavingsBanner extends StatelessWidget {
     );
   }
 
-  IconData _getCategoryIcon(DiscountCategory category) {
+  IconData _getCategoryIcon(DiscountCategory? category) {
     switch (category) {
+      case null:
+        return Icons.local_offer;
       case DiscountCategory.platform:
         return Icons.local_offer;
       case DiscountCategory.host:
@@ -504,8 +506,10 @@ class SavingsBanner extends StatelessWidget {
     }
   }
 
-  Color _getCategoryColor(DiscountCategory category) {
+  Color _getCategoryColor(DiscountCategory? category) {
     switch (category) {
+      case null:
+        return Colors.grey;
       case DiscountCategory.platform:
         return Colors.red;
       case DiscountCategory.host:

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import '../core/state/safe_notifier.dart';
 
 import '../config/supabase_config.dart';
 import '../services/auth/auth_service.dart';
@@ -16,7 +17,7 @@ enum OtpFlowStep {
 }
 
 /// State notifier for OTP-based phone authentication flow
-class OtpStateNotifier extends ChangeNotifier {
+class OtpStateNotifier extends ChangeNotifier with SafeNotifier {
   OtpFlowStep _currentStep = OtpFlowStep.phoneEntry;
   String? _phoneNumber;
   bool _isLoading = false;

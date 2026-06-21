@@ -112,16 +112,28 @@ class Booking {
   int get numberOfNights =>
       effectiveCheckOut.difference(effectiveCheckIn).inDays;
 
-  bool get isUpcoming =>
-      status.isActive && effectiveCheckIn.isAfter(DateTime.now());
+  // Single source of truth for booking categorization. The time-injectable
+  // forms are canonical (testable); the no-arg getters delegate to "now".
+  // All callers (host dashboard, host reservations tabs, guest trips) must use
+  // these — do not re-derive "upcoming/ongoing/past" from dates alone, or a
+  // declined future booking gets miscategorized.
 
-  bool get isPast =>
-      status.isPast || effectiveCheckOut.isBefore(DateTime.now());
+  bool isUpcomingAt(DateTime now) =>
+      status.isActive && effectiveCheckIn.isAfter(now);
 
-  bool get isOngoing =>
+  bool isPastAt(DateTime now) =>
+      status.isPast || effectiveCheckOut.isBefore(now);
+
+  bool isOngoingAt(DateTime now) =>
       status.isActive &&
-      effectiveCheckIn.isBefore(DateTime.now()) &&
-      effectiveCheckOut.isAfter(DateTime.now());
+      effectiveCheckIn.isBefore(now) &&
+      effectiveCheckOut.isAfter(now);
+
+  bool get isUpcoming => isUpcomingAt(DateTime.now());
+
+  bool get isPast => isPastAt(DateTime.now());
+
+  bool get isOngoing => isOngoingAt(DateTime.now());
 
   Booking copyWith({
     String? id,

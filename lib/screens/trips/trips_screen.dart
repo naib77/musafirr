@@ -26,19 +26,19 @@ class BookingCategorizer {
 
   /// Bookings that are confirmed/pending and haven't started yet
   List<Booking> get upcoming => allBookings
-      .where((b) => b.status.isActive && b.effectiveCheckIn.isAfter(now))
+      .where((b) => b.isUpcomingAt(now))
       .toList()
     ..sort((a, b) => a.effectiveCheckIn.compareTo(b.effectiveCheckIn));
 
   /// Bookings that are currently ongoing (checked in and within stay period)
   List<Booking> get current => allBookings
-      .where((b) => b.isOngoing)
+      .where((b) => b.isOngoingAt(now))
       .toList()
     ..sort((a, b) => a.effectiveCheckOut.compareTo(b.effectiveCheckOut));
 
   /// Bookings that are completed, cancelled, rejected, or past checkout
   List<Booking> get past => allBookings
-      .where((b) => b.status.isPast || b.effectiveCheckOut.isBefore(now))
+      .where((b) => b.isPastAt(now))
       .toList()
     ..sort((a, b) => b.effectiveCheckIn.compareTo(a.effectiveCheckIn));
 }
@@ -89,14 +89,9 @@ class _TripsScreenState extends State<TripsScreen> {
     _currentScrollController = ScrollController()..addListener(_onCurrentScroll);
     _pastScrollController = ScrollController()..addListener(_onPastScroll);
 
-    // Initial load if user is logged in.
-    // Deferred to after the first frame: _initialLoad() calls repository
-    // methods that notifyListeners() synchronously, which would trigger
-    // markNeedsBuild on other repository listeners during the mount/build
-    // phase (setState() called during build).
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _initialLoad();
-    });
+    // Safe to call directly from initState: the repository uses SafeNotifier,
+    // which defers any build-phase notification to post-frame.
+    _initialLoad();
   }
 
   @override

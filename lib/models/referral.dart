@@ -217,6 +217,9 @@ class ReferralCompletion {
   final String? refereeName;
   final String? refereeAvatarUrl;
 
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
   /// Days since signup
   int get daysSinceSignup => DateTime.now().difference(signedUpAt).inDays;
 

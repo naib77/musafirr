@@ -45,8 +45,10 @@ class BookingMessagingCoordinator {
     required String hostId,
     String? message,
   }) async {
-    // First, accept the booking
-    final booking = _lifecycleService.acceptBooking(
+    // First, accept the booking — awaited so the 'confirmed' status is
+    // committed before we send the welcome messages (RLS gates message inserts
+    // on the booking being confirmed/active).
+    final booking = await _lifecycleService.acceptBooking(
       bookingId,
       message: message,
     );
@@ -97,24 +99,28 @@ class BookingMessagingCoordinator {
     bool archiveConversation = false,
     DateTime? now,
   }) async {
-    final booking = _lifecycleService.completeService(bookingId, now: now);
-
-    // Find the conversation for this booking
-    final conversation = await _conversationService.findForBooking(
-      bookingId: bookingId,
-      userId: hostId,
-    );
-
-    if (conversation != null) {
-      await _conversationService.onBookingCompleted(
-        booking: booking,
-        conversationId: conversation.id,
-        hostId: hostId,
-        archiveConversation: archiveConversation,
+    // Send the closing message BEFORE the booking goes terminal: the messages
+    // RLS only permits inserts while the booking is confirmed/active, so a
+    // message sent after the transition to 'completed' is rejected (42501).
+    final current = _lifecycleService.store.getBookingById(bookingId);
+    if (current != null) {
+      final conversation = await _conversationService.findForBooking(
+        bookingId: bookingId,
+        userId: hostId,
       );
+      if (conversation != null) {
+        await _conversationService.onBookingCompleted(
+          booking: current,
+          conversationId: conversation.id,
+          hostId: hostId,
+          archiveConversation: archiveConversation,
+        );
+      }
     }
 
-    return booking;
+    // Then perform the transition (the conversation auto-archives via the
+    // booking-end trigger once the status lands).
+    return _lifecycleService.completeService(bookingId, now: now);
   }
 
   /// Cancel a booking and notify the other party.
@@ -125,29 +131,31 @@ class BookingMessagingCoordinator {
     required String hostId,
     DateTime? now,
   }) async {
-    final booking = _lifecycleService.cancelBooking(
+    // Send the cancellation message BEFORE the booking goes terminal (the
+    // messages RLS rejects inserts once the booking is no longer confirmed/
+    // active — see completeServiceWithNotification).
+    final current = _lifecycleService.store.getBookingById(bookingId);
+    if (current != null) {
+      final conversation = await _conversationService.findForBooking(
+        bookingId: bookingId,
+        userId: isHost ? hostId : (current.userId ?? ''),
+      );
+      if (conversation != null) {
+        await _conversationService.onBookingCancelled(
+          booking: current,
+          conversationId: conversation.id,
+          cancelledByUserId: cancelledBy,
+          cancelledByHost: isHost,
+        );
+      }
+    }
+
+    return _lifecycleService.cancelBooking(
       bookingId,
       cancelledBy: cancelledBy,
       isHost: isHost,
       now: now,
     );
-
-    // Find the conversation for this booking
-    final conversation = await _conversationService.findForBooking(
-      bookingId: bookingId,
-      userId: isHost ? hostId : (booking.userId ?? ''),
-    );
-
-    if (conversation != null) {
-      await _conversationService.onBookingCancelled(
-        booking: booking,
-        conversationId: conversation.id,
-        cancelledByUserId: cancelledBy,
-        cancelledByHost: isHost,
-      );
-    }
-
-    return booking;
   }
 
   /// Start a conversation for an existing booking.

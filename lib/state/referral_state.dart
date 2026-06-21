@@ -1,10 +1,11 @@
 import 'package:flutter/foundation.dart';
+import '../core/state/safe_notifier.dart';
 
 import '../models/referral.dart';
 import '../services/discount/referral_service.dart';
 
 /// State for referral management
-class ReferralStateNotifier extends ChangeNotifier {
+class ReferralStateNotifier extends ChangeNotifier with SafeNotifier {
   ReferralStateNotifier({
     ReferralService? referralService,
   }) : _referralService = referralService ?? InMemoryReferralService();

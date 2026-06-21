@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../core/state/safe_notifier.dart';
 
 import '../models/applied_discount.dart';
 import '../models/discount.dart';
@@ -7,7 +8,7 @@ import '../services/discount/discount_service.dart';
 import '../services/discount/promo_code_service.dart';
 
 /// State notifier for discount-related UI
-class DiscountStateNotifier extends ChangeNotifier {
+class DiscountStateNotifier extends ChangeNotifier with SafeNotifier {
   DiscountStateNotifier({
     required DiscountService discountService,
     required PromoCodeService promoCodeService,
@@ -339,7 +340,7 @@ class DiscountStateNotifier extends ChangeNotifier {
 }
 
 /// Simplified state for just promo code input
-class PromoCodeInputState extends ChangeNotifier {
+class PromoCodeInputState extends ChangeNotifier with SafeNotifier {
   PromoCodeInputState({
     required PromoCodeService promoCodeService,
   }) : _manager = PromoCodeInputManager(promoCodeService: promoCodeService);

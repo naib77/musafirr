@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:musafir/models/booking.dart';
 import 'package:musafir/models/booking_status.dart';
@@ -16,11 +18,31 @@ class TestBookingStore implements BookingStore {
   Booking? getBookingById(String id) => _bookings[id];
 
   @override
-  void updateBooking(Booking booking) {
+  Future<void> updateBooking(Booking booking) async {
     _bookings[booking.id] = booking;
   }
 
   Booking? get(String id) => _bookings[id];
+}
+
+/// A store whose persist completes only when [gate] does — lets a test assert
+/// that a lifecycle mutator awaits the persist before returning.
+class GatedBookingStore implements BookingStore {
+  GatedBookingStore(this.gate);
+
+  final Future<void> gate;
+  final Map<String, Booking> _bookings = {};
+
+  void add(Booking booking) => _bookings[booking.id] = booking;
+
+  @override
+  Booking? getBookingById(String id) => _bookings[id];
+
+  @override
+  Future<void> updateBooking(Booking booking) async {
+    await gate;
+    _bookings[booking.id] = booking;
+  }
 }
 
 void main() {
@@ -59,21 +81,21 @@ void main() {
   }
 
   group('BookingLifecycleService.acceptBooking', () {
-    test('transitions pending booking to confirmed', () {
+    test('transitions pending booking to confirmed', () async {
       final booking = createBooking(status: BookingStatus.pending);
       store.add(booking);
 
-      final result = service.acceptBooking(booking.id);
+      final result = await service.acceptBooking(booking.id);
 
       expect(result.status, equals(BookingStatus.confirmed));
       expect(store.get(booking.id)?.status, equals(BookingStatus.confirmed));
     });
 
-    test('stores optional acceptance message', () {
+    test('stores optional acceptance message', () async {
       final booking = createBooking(status: BookingStatus.pending);
       store.add(booking);
 
-      final result = service.acceptBooking(
+      final result = await service.acceptBooking(
         booking.id,
         message: 'Welcome! Here is the door code: 1234',
       );
@@ -82,8 +104,8 @@ void main() {
     });
 
     test('throws when booking not found', () {
-      expect(
-        () => service.acceptBooking('nonexistent'),
+      expectLater(
+        service.acceptBooking('nonexistent'),
         throwsA(isA<BookingNotFoundException>()),
       );
     });
@@ -92,10 +114,33 @@ void main() {
       final booking = createBooking(status: BookingStatus.confirmed);
       store.add(booking);
 
-      expect(
-        () => service.acceptBooking(booking.id),
+      expectLater(
+        service.acceptBooking(booking.id),
         throwsA(isA<InvalidBookingStateException>()),
       );
+    });
+
+    // Regression: accept must await the status persist before returning, so the
+    // welcome messages (gated by RLS on the booking being confirmed/active) are
+    // never sent while the DB still shows 'pending' (PostgrestException 42501).
+    test('awaits the store persist before returning', () async {
+      final gate = Completer<void>();
+      final gatedStore = GatedBookingStore(gate.future);
+      gatedStore.add(createBooking(status: BookingStatus.pending));
+      final gatedService =
+          BookingLifecycleService(store: gatedStore, rules: rules);
+
+      var returned = false;
+      final future =
+          gatedService.acceptBooking('booking_1').then((_) => returned = true);
+
+      await Future<void>.delayed(Duration.zero);
+      expect(returned, isFalse,
+          reason: 'acceptBooking returned before the persist completed');
+
+      gate.complete();
+      await future;
+      expect(returned, isTrue);
     });
   });
 
