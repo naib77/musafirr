@@ -17,8 +17,7 @@ import '../widgets/review_prompt_handler.dart';
 import 'explore/explore_screen.dart';
 import 'hosting/earnings_screen.dart';
 import 'host/host_dashboard_screen.dart';
-import 'hosting/host_listings_screen.dart';
-import 'hosting/hosting_screen.dart';
+import 'host/host_reservations_screen.dart';
 import 'inbox/inbox_screen.dart';
 import 'notifications/notification_center_screen.dart';
 import 'profile/profile_screen.dart';
@@ -325,19 +324,13 @@ class _MainShellState extends State<MainShell> {
             ),
           ],
         ),
-        // Reservations (existing HostingScreen content)
-        widget.bookingLifecycleService != null
-            ? HostingScreen(
-                repository: widget.repository,
-                authState: widget.authState,
-                bookingLifecycleService: widget.bookingLifecycleService!,
-                bookingMessagingCoordinator: widget.bookingMessagingCoordinator,
-                messagingState: widget.messagingState,
-                notificationState: widget.notificationState,
-                onOpenInbox: _openInbox,
-                onOpenNotifications: _openNotificationCenter,
-              )
-            : const Center(child: Text('Reservations unavailable')),
+        // Reservations — the tabbed Upcoming / Active Stays / Completed view.
+        HostReservationsScreen(
+          repository: widget.repository,
+          authState: widget.authState,
+          messagingState: widget.messagingState,
+          bookingMessagingCoordinator: widget.bookingMessagingCoordinator,
+        ),
         // Earnings - slim header instead of full AppBar
         Column(
           children: [

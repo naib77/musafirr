@@ -275,4 +275,70 @@ void main() {
       expect(rules.canSubmitReview(booking, completedAt: now, now: now), isFalse);
     });
   });
+
+  group('BookingRules.shouldAutoComplete', () {
+    final now = DateTime(2026, 6, 22, 12, 0);
+    // Past the grace period (>24h after checkout).
+    final wellElapsedIn = now.subtract(const Duration(days: 3));
+    final wellElapsedOut = now.subtract(const Duration(days: 2));
+    // Checked out, but still inside the 24h grace window.
+    final justElapsedOut = now.subtract(const Duration(hours: 2));
+    final justElapsedIn = now.subtract(const Duration(days: 1, hours: 2));
+
+    test('confirmed booking elapsed beyond grace period auto-completes', () {
+      final booking = createBooking(
+        status: BookingStatus.confirmed,
+        startAt: wellElapsedIn,
+        endAt: wellElapsedOut,
+      );
+      expect(rules.shouldAutoComplete(booking, now: now), isTrue);
+    });
+
+    test('checked-in (active) booking elapsed beyond grace period auto-completes',
+        () {
+      final booking = createBooking(
+        status: BookingStatus.active,
+        startAt: wellElapsedIn,
+        endAt: wellElapsedOut,
+      );
+      expect(rules.shouldAutoComplete(booking, now: now), isTrue);
+    });
+
+    test('confirmed booking still inside the grace window does NOT auto-complete',
+        () {
+      final booking = createBooking(
+        status: BookingStatus.confirmed,
+        startAt: justElapsedIn,
+        endAt: justElapsedOut,
+      );
+      expect(rules.shouldAutoComplete(booking, now: now), isFalse);
+    });
+
+    test('confirmed booking whose checkout is still in the future does NOT '
+        'auto-complete', () {
+      final booking = createBooking(
+        status: BookingStatus.confirmed,
+        startAt: now.add(const Duration(days: 1)),
+        endAt: now.add(const Duration(days: 2)),
+      );
+      expect(rules.shouldAutoComplete(booking, now: now), isFalse);
+    });
+
+    test('pending and terminal statuses never auto-complete', () {
+      for (final status in [
+        BookingStatus.pending,
+        BookingStatus.completed,
+        BookingStatus.cancelled,
+        BookingStatus.rejected,
+      ]) {
+        final booking = createBooking(
+          status: status,
+          startAt: wellElapsedIn,
+          endAt: wellElapsedOut,
+        );
+        expect(rules.shouldAutoComplete(booking, now: now), isFalse,
+            reason: '${status.name} must not auto-complete');
+      }
+    });
+  });
 }

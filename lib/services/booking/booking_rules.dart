@@ -9,6 +9,13 @@ class BookingRules {
   /// Duration after which a pending booking auto-expires if host doesn't respond.
   static const Duration expirationDuration = Duration(hours: 24);
 
+  /// Grace period after checkout before a confirmed/active booking is presumed
+  /// complete. The stay is assumed to have happened (industry default — Airbnb /
+  /// Booking.com); check-in is optional bookkeeping, not a gate to completion.
+  /// The window gives the host time for a late check-in, a manual "complete", or
+  /// to report a no-show before the system auto-completes.
+  static const Duration autoCompleteGracePeriod = Duration(hours: 24);
+
   /// Duration after service completion during which reviews can be submitted.
   static const Duration reviewWindowDuration = Duration(days: 14);
 
@@ -79,6 +86,29 @@ class BookingRules {
     final expirationTime = createdAt.add(expirationDuration);
 
     return currentTime.isAfter(expirationTime);
+  }
+
+  /// Returns true if a confirmed or checked-in booking whose checkout has passed
+  /// (plus [autoCompleteGracePeriod]) should be auto-completed.
+  ///
+  /// This resolves the "confirmed but never checked in and the date is over"
+  /// case: rather than leaving the reservation stranded in Upcoming forever, the
+  /// system presumes the stay happened and moves it to `completed`, which opens
+  /// the review window and files it under past reservations. A host who wants a
+  /// different outcome (no-show) acts within the grace window. Mirrors the
+  /// server-side `auto_complete_elapsed_bookings()` scheduled job so the rule has
+  /// one definition.
+  bool shouldAutoComplete(Booking booking, {DateTime? now}) {
+    if (booking.status != BookingStatus.confirmed &&
+        booking.status != BookingStatus.active) {
+      return false;
+    }
+
+    final currentTime = now ?? DateTime.now();
+    final completeAfter =
+        booking.effectiveCheckOut.add(autoCompleteGracePeriod);
+
+    return currentTime.isAfter(completeAfter);
   }
 
   /// Returns true if a review can be submitted for this booking.

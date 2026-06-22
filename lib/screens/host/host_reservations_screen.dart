@@ -8,6 +8,7 @@ import '../../models/booking_status.dart';
 import '../../models/listing.dart';
 import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart' show MusafirRepository, BookingUpdateError;
+import '../../services/booking/booking_messaging_coordinator.dart';
 import '../../state/auth_state.dart';
 import '../../state/messaging_state.dart';
 import '../../widgets/price_display.dart';
@@ -35,6 +36,7 @@ class HostReservationsScreen extends StatefulWidget {
     required this.repository,
     required this.authState,
     this.messagingState,
+    this.bookingMessagingCoordinator,
     this.initialTabIndex = 0,
     this.highlightBookingId,
   });
@@ -42,6 +44,11 @@ class HostReservationsScreen extends StatefulWidget {
   final MusafirRepository repository;
   final AuthStateNotifier authState;
   final MessagingStateNotifier? messagingState;
+
+  /// When provided, accepting a booking also creates the guest conversation and
+  /// sends the optional welcome message (parity with the old HostingScreen
+  /// inline accept). When null, accept just updates the booking status.
+  final BookingMessagingCoordinator? bookingMessagingCoordinator;
 
   /// Initial tab to show (0=Upcoming, 1=Active, 2=Completed)
   final int initialTabIndex;
@@ -624,23 +631,52 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
           ),
           FilledButton(
             onPressed: () {
-              final updated = booking.copyWith(
-                status: BookingStatus.confirmed,
-                confirmedAt: DateTime.now(),
-                hostMessage: messageController.text.isNotEmpty
-                    ? messageController.text
-                    : null,
-              );
-              widget.repository.updateBooking(updated);
+              final message = messageController.text.isNotEmpty
+                  ? messageController.text
+                  : null;
               Navigator.pop(dialogContext);
               Navigator.pop(context);
-              _showSuccessBanner('Booking accepted!');
+              _acceptBooking(booking, message);
             },
             child: const Text('Accept'),
           ),
         ],
       ),
     );
+  }
+
+  /// Accept a booking. Uses the messaging coordinator when available so the
+  /// guest conversation + welcome message are created (parity with the old
+  /// HostingScreen inline accept); otherwise just updates the booking status.
+  Future<void> _acceptBooking(Booking booking, String? message) async {
+    final coordinator = widget.bookingMessagingCoordinator;
+    if (coordinator != null) {
+      final listing = widget.repository.getListingById(booking.listingId);
+      final hostId =
+          listing?.hostId ?? widget.authState.currentUser?.id ?? '';
+      try {
+        await coordinator.acceptBookingWithConversation(
+          bookingId: booking.id,
+          hostId: hostId,
+          message: message,
+        );
+        if (mounted) _showSuccessBanner('Booking accepted!');
+      } catch (_) {
+        // The booking-update error stream surfaces persistence failures; this
+        // catch covers the conversation step so a messaging hiccup never blocks
+        // the accept from being reported.
+        if (mounted) _showSuccessBanner('Booking accepted!');
+      }
+      return;
+    }
+
+    final updated = booking.copyWith(
+      status: BookingStatus.confirmed,
+      confirmedAt: DateTime.now(),
+      hostMessage: message,
+    );
+    widget.repository.updateBooking(updated);
+    if (mounted) _showSuccessBanner('Booking accepted!');
   }
 
   void _showRejectDialog(BuildContext context, Booking booking) {
