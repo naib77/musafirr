@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../models/booking.dart';
+import '../../models/booking_categorizer.dart';
 import '../../models/booking_status.dart';
 import '../../models/listing.dart';
 import '../../models/review.dart';
@@ -231,21 +232,13 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
                   .where((b) => hostListings.any((l) => l.id == b.listingId))
                   .toList();
 
-          // Use model's computed properties for consistent filtering
-          final upcomingBookings = hostBookings
-              .where((b) => b.isUpcoming)
-              .toList()
-            ..sort((a, b) => a.effectiveCheckIn.compareTo(b.effectiveCheckIn));
-
-          final currentBookings = hostBookings
-              .where((b) => b.isOngoing)
-              .toList()
-            ..sort((a, b) => a.effectiveCheckIn.compareTo(b.effectiveCheckIn));
-
-          final pastBookings = hostBookings
-              .where((b) => b.isPast)
-              .toList()
-            ..sort((a, b) => b.effectiveCheckIn.compareTo(a.effectiveCheckIn));
+          // Shared categorizer — identical bucketing to the guest Trips screen
+          // and the host dashboard, so a booking can't land in different tabs
+          // depending on which screen opened it.
+          final categorizer = BookingCategorizer(hostBookings);
+          final upcomingBookings = categorizer.upcoming;
+          final currentBookings = categorizer.current;
+          final pastBookings = categorizer.past;
 
           return TabBarView(
             controller: _tabController,

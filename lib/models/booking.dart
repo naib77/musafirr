@@ -112,22 +112,33 @@ class Booking {
   int get numberOfNights =>
       effectiveCheckOut.difference(effectiveCheckIn).inDays;
 
-  // Single source of truth for booking categorization. The time-injectable
-  // forms are canonical (testable); the no-arg getters delegate to "now".
-  // All callers (host dashboard, host reservations tabs, guest trips) must use
-  // these — do not re-derive "upcoming/ongoing/past" from dates alone, or a
-  // declined future booking gets miscategorized.
+  // Single source of truth for booking categorization, consumed everywhere via
+  // [BookingCategorizer] — the guest "My Trips" screen, the host "Reservations"
+  // tab (HostingScreen), the host Reservations sub-screen tabs, and the host
+  // dashboard. Do NOT re-derive "upcoming/ongoing/past" anywhere else, or two
+  // screens will disagree (that exact split caused the dashboard to show no
+  // upcoming reservations while the Reservations tab listed them).
+  //
+  // The rules are driven purely by lifecycle STATUS, NOT by dates. This is
+  // deliberate:
+  //   - pending + confirmed -> Upcoming. A booking the host has accepted (or
+  //     not yet responded to) is a live reservation; it must never vanish just
+  //     because its requested date slipped (test data, late check-in, a host
+  //     who hasn't checked the guest in yet). The host resolves it explicitly.
+  //   - active (the host tapped "Guest arrived") -> Current/Ongoing. Stays here
+  //     until the host marks it complete, even past the scheduled checkout.
+  //   - completed / cancelled / rejected -> Past.
+  //
+  // Date-independence is what guarantees all the reservation views agree — the
+  // `now` argument is kept for API stability and any future date-aware refinement.
+  // The three are mutually exclusive and exhaustive for every status.
+
+  bool isOngoingAt(DateTime now) => status == BookingStatus.active;
+
+  bool isPastAt(DateTime now) => status.isPast;
 
   bool isUpcomingAt(DateTime now) =>
-      status.isActive && effectiveCheckIn.isAfter(now);
-
-  bool isPastAt(DateTime now) =>
-      status.isPast || effectiveCheckOut.isBefore(now);
-
-  bool isOngoingAt(DateTime now) =>
-      status.isActive &&
-      effectiveCheckIn.isBefore(now) &&
-      effectiveCheckOut.isAfter(now);
+      status == BookingStatus.pending || status == BookingStatus.confirmed;
 
   bool get isUpcoming => isUpcomingAt(DateTime.now());
 

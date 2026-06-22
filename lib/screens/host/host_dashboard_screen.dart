@@ -4,6 +4,7 @@ import '../../core/currency/currency.dart';
 import '../../core/currency/money.dart';
 import '../../models/listing.dart';
 import '../../models/booking.dart';
+import '../../models/booking_categorizer.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
 import '../../state/messaging_state.dart';
@@ -43,12 +44,10 @@ class HostDashboardScreen extends StatelessWidget {
                   .where((b) => hostListings.any((l) => l.id == b.listingId))
                   .toList();
 
-          // Use the Booking model's status-aware computed property so this
-          // matches the Reservations "Upcoming" tab exactly — a future-dated
-          // but declined/cancelled booking is NOT upcoming. Most recent first.
-          final upcomingBookings = hostBookings
-              .where((b) => b.isUpcoming)
-              .toList()
+          // Same shared categorizer as the Reservations "Upcoming" tab, so the
+          // dashboard count and list always agree with that tab. The dashboard
+          // re-sorts by most-recently-requested for an "activity feed" feel.
+          final upcomingBookings = BookingCategorizer(hostBookings).upcoming
             ..sort((a, b) => (b.createdAt ?? b.effectiveCheckIn)
                 .compareTo(a.createdAt ?? a.effectiveCheckIn));
 

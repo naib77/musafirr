@@ -1015,10 +1015,7 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
   List<Booking> getUpcomingBookings(String userId) {
     final now = DateTime.now();
     return _bookings
-        .where((b) =>
-            b.userId == userId &&
-            b.status.isActive &&
-            b.effectiveCheckIn.isAfter(now))
+        .where((b) => b.userId == userId && b.isUpcomingAt(now))
         .toList()
       ..sort((a, b) => a.effectiveCheckIn.compareTo(b.effectiveCheckIn));
   }
@@ -1027,9 +1024,7 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
   List<Booking> getPastBookings(String userId) {
     final now = DateTime.now();
     return _bookings
-        .where((b) =>
-            b.userId == userId &&
-            (b.status.isPast || b.effectiveCheckOut.isBefore(now)))
+        .where((b) => b.userId == userId && b.isPastAt(now))
         .toList()
       ..sort((a, b) => b.effectiveCheckIn.compareTo(a.effectiveCheckIn));
   }
@@ -1537,7 +1532,6 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
   Future<Map<String, int>> getBookingCounts(String userId) async {
     try {
       final now = DateTime.now();
-      final nowIso = now.toIso8601String();
 
       // Fetch all bookings for this user (just id, status, dates for counting)
       final response = await _client
@@ -1550,23 +1544,25 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
       int past = 0;
 
       for (final row in response as List) {
-        final status = _bookingStatusFromString(row['booking_status'] as String?);
-        final checkIn = DateTime.parse(row['starts_at'] as String);
-        final checkOut = DateTime.parse(row['ends_at'] as String);
+        // Build a minimal Booking and reuse the single source-of-truth
+        // categorization so these badge counts always agree with the lists
+        // rendered from getUpcomingBookings/getPastBookings and the tabs.
+        final b = Booking(
+          id: row['id'] as String,
+          listingId: '',
+          tenantName: '',
+          startAt: DateTime.parse(row['starts_at'] as String),
+          endAt: DateTime.parse(row['ends_at'] as String),
+          totalPrice: 0,
+          unitLabel: 'night',
+          status: _bookingStatusFromString(row['booking_status'] as String?),
+        );
 
-        // Check if booking is ongoing (active and within stay period)
-        final isOngoing = status == BookingStatus.active ||
-            (status == BookingStatus.confirmed &&
-                !checkIn.isAfter(now) &&
-                checkOut.isAfter(now));
-
-        if (isOngoing) {
+        if (b.isOngoingAt(now)) {
           current++;
-        } else if (status.isPast || checkOut.isBefore(now)) {
-          // Past: completed, cancelled, rejected, or checkout is in the past
+        } else if (b.isPastAt(now)) {
           past++;
-        } else if (status.isActive && checkIn.isAfter(now)) {
-          // Upcoming: active status (pending/confirmed) and check-in is in the future
+        } else if (b.isUpcomingAt(now)) {
           upcoming++;
         }
       }

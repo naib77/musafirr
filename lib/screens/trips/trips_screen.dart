@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/booking.dart';
+import '../../models/booking_categorizer.dart';
 import '../../models/booking_status.dart';
 import '../../models/guest_review_ratings.dart';
 import '../../models/review.dart';
@@ -11,37 +12,8 @@ import '../../state/messaging_state.dart';
 import '../../state/notification_state.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/notification_bell.dart';
-import '../../widgets/price_display.dart';
 import '../messaging/chat_screen.dart';
 import '../review/guest_review_screen.dart';
-
-/// Categorizes bookings into upcoming, current (ongoing), and past.
-/// This is the shared logic used by both guest and host views.
-class BookingCategorizer {
-  final List<Booking> allBookings;
-  final DateTime now;
-
-  BookingCategorizer(this.allBookings, {DateTime? currentTime})
-      : now = currentTime ?? DateTime.now();
-
-  /// Bookings that are confirmed/pending and haven't started yet
-  List<Booking> get upcoming => allBookings
-      .where((b) => b.isUpcomingAt(now))
-      .toList()
-    ..sort((a, b) => a.effectiveCheckIn.compareTo(b.effectiveCheckIn));
-
-  /// Bookings that are currently ongoing (checked in and within stay period)
-  List<Booking> get current => allBookings
-      .where((b) => b.isOngoingAt(now))
-      .toList()
-    ..sort((a, b) => a.effectiveCheckOut.compareTo(b.effectiveCheckOut));
-
-  /// Bookings that are completed, cancelled, rejected, or past checkout
-  List<Booking> get past => allBookings
-      .where((b) => b.isPastAt(now))
-      .toList()
-    ..sort((a, b) => b.effectiveCheckIn.compareTo(a.effectiveCheckIn));
-}
 
 class TripsScreen extends StatefulWidget {
   const TripsScreen({

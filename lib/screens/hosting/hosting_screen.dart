@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/booking.dart';
+import '../../models/booking_categorizer.dart';
 import '../../models/booking_status.dart';
 import '../../models/listing.dart';
 import '../../repositories/musafir_repository.dart';
@@ -310,17 +311,21 @@ class _HostingDashboardState extends State<_HostingDashboard> {
     final today = DateTime(now.year, now.month, now.day);
     final tomorrow = today.add(const Duration(days: 1));
 
-    // Categorize bookings
-    final pendingBookings = widget.hostBookings
+    // Categorize via the shared seam so this screen, the dashboard, the guest
+    // Trips screen and the Reservations sub-screen can never disagree. The
+    // Upcoming bucket (pending + confirmed) is then split by status into the
+    // two sections this screen shows ("Pending Requests" vs "Upcoming"), and
+    // the Current bucket (checked-in) drives "Active Stays".
+    final categorizer = BookingCategorizer(widget.hostBookings);
+
+    final pendingBookings = categorizer.upcoming
         .where((b) => b.status == BookingStatus.pending)
         .toList()
       ..sort((a, b) => a.createdAt?.compareTo(b.createdAt ?? DateTime.now()) ?? 0);
 
-    final activeBookings = widget.hostBookings
-        .where((b) => b.status == BookingStatus.active)
-        .toList();
+    final activeBookings = categorizer.current;
 
-    final confirmedBookings = widget.hostBookings
+    final confirmedBookings = categorizer.upcoming
         .where((b) => b.status == BookingStatus.confirmed)
         .toList()
       ..sort((a, b) => a.effectiveCheckIn.compareTo(b.effectiveCheckIn));
@@ -1193,6 +1198,12 @@ class _UpcomingCard extends StatelessWidget {
     final checkInDay = DateTime(checkIn.year, checkIn.month, checkIn.day);
     final isToday = checkInDay == today;
     final daysUntil = checkInDay.difference(today).inDays;
+    // A confirmed booking whose check-in date has already passed is "overdue":
+    // the host still needs to check the guest in (or the guest is a no-show).
+    // Show the check-in action for today AND any past date, never a negative
+    // "In -5 days" countdown.
+    final isOverdue = checkInDay.isBefore(today);
+    final canCheckInNow = isToday || isOverdue;
 
     return Container(
       decoration: BoxDecoration(
@@ -1262,19 +1273,27 @@ class _UpcomingCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    isToday
-                        ? 'Arriving today'
-                        : 'In $daysUntil day${daysUntil > 1 ? 's' : ''}',
+                    isOverdue
+                        ? 'Overdue${daysUntil == -1 ? ' by 1 day' : ' by ${-daysUntil} days'}'
+                        : isToday
+                            ? 'Arriving today'
+                            : 'In $daysUntil day${daysUntil > 1 ? 's' : ''}',
                     style: theme.textTheme.labelSmall?.copyWith(
-                      color: isToday ? theme.colorScheme.primary : null,
-                      fontWeight: isToday ? FontWeight.bold : null,
+                      color: isOverdue
+                          ? Colors.orange.shade800
+                          : isToday
+                              ? theme.colorScheme.primary
+                              : null,
+                      fontWeight:
+                          (isToday || isOverdue) ? FontWeight.bold : null,
                     ),
                   ),
                 ],
               ),
             ),
-            // Check-in button (only show if today)
-            if (isToday)
+            // Check-in button — available on the arrival day and any time after
+            // (overdue), so a past-dated confirmed booking stays actionable.
+            if (canCheckInNow)
               FilledButton(
                 onPressed: onCheckIn,
                 child: const Text('Check in'),
