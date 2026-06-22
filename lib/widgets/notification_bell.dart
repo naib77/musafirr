@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/theme/app_colors.dart';
 import '../state/notification_state.dart';
 
 /// A notification bell icon with an unread count badge
@@ -133,6 +134,7 @@ class AnimatedNotificationBell extends StatefulWidget {
     this.iconSize = 24.0,
     this.badgeColor,
     this.iconColor,
+    this.decorated = false,
   });
 
   final NotificationStateNotifier notificationState;
@@ -140,6 +142,11 @@ class AnimatedNotificationBell extends StatefulWidget {
   final double iconSize;
   final Color? badgeColor;
   final Color? iconColor;
+
+  /// When true, renders inside a soft circular chip so it matches
+  /// [HeaderActionButton] in [AppPageHeader]. Default (false) keeps the bare
+  /// [IconButton] used elsewhere (e.g. the Explore search row).
+  final bool decorated;
 
   @override
   State<AnimatedNotificationBell> createState() => _AnimatedNotificationBellState();
@@ -190,42 +197,67 @@ class _AnimatedNotificationBellState extends State<AnimatedNotificationBell>
       listenable: widget.notificationState,
       builder: (context, _) {
         final unreadCount = widget.notificationState.unreadCount;
+        final tooltip = unreadCount > 0
+            ? '$unreadCount unread notification${unreadCount > 1 ? 's' : ''}'
+            : 'Notifications';
+
+        final iconStack = AnimatedBuilder(
+          animation: _shakeAnimation,
+          builder: (context, child) {
+            return Transform.rotate(
+              angle: _shakeAnimation.value * 0.1 *
+                  ((_shakeAnimation.value * 10).toInt().isEven ? 1 : -1),
+              child: child,
+            );
+          },
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(
+                unreadCount > 0 ? Icons.notifications : Icons.notifications_outlined,
+                size: widget.iconSize,
+                color: widget.iconColor ??
+                    (widget.decorated
+                        ? AppColors.ink
+                        : theme.colorScheme.onSurface),
+              ),
+              if (unreadCount > 0)
+                Positioned(
+                  right: -4,
+                  top: -4,
+                  child: _Badge(
+                    count: unreadCount,
+                    maxCount: 99,
+                    color: widget.badgeColor ?? Colors.red,
+                  ),
+                ),
+            ],
+          ),
+        );
+
+        if (widget.decorated) {
+          // Soft circular chip matching HeaderActionButton.
+          return Tooltip(
+            message: tooltip,
+            child: Material(
+              color: AppColors.surfaceMuted,
+              shape: const CircleBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: widget.onTap,
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: iconStack,
+                ),
+              ),
+            ),
+          );
+        }
 
         return IconButton(
           onPressed: widget.onTap,
-          icon: AnimatedBuilder(
-            animation: _shakeAnimation,
-            builder: (context, child) {
-              return Transform.rotate(
-                angle: _shakeAnimation.value * 0.1 *
-                    ((_shakeAnimation.value * 10).toInt().isEven ? 1 : -1),
-                child: child,
-              );
-            },
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Icon(
-                  unreadCount > 0 ? Icons.notifications : Icons.notifications_outlined,
-                  size: widget.iconSize,
-                  color: widget.iconColor ?? theme.colorScheme.onSurface,
-                ),
-                if (unreadCount > 0)
-                  Positioned(
-                    right: -4,
-                    top: -4,
-                    child: _Badge(
-                      count: unreadCount,
-                      maxCount: 99,
-                      color: widget.badgeColor ?? Colors.red,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          tooltip: unreadCount > 0
-              ? '$unreadCount unread notification${unreadCount > 1 ? 's' : ''}'
-              : 'Notifications',
+          icon: iconStack,
+          tooltip: tooltip,
         );
       },
     );

@@ -11,7 +11,10 @@ import '../../repositories/musafir_repository.dart' show MusafirRepository, Book
 import '../../services/booking/booking_messaging_coordinator.dart';
 import '../../state/auth_state.dart';
 import '../../state/messaging_state.dart';
+import '../../state/notification_state.dart';
+import '../../widgets/app_page_header.dart';
 import '../../widgets/modern_banner.dart';
+import '../../widgets/notification_bell.dart';
 import '../../widgets/price_display.dart';
 import '../messaging/chat_screen.dart';
 import '../review/host_review_screen.dart';
@@ -40,11 +43,20 @@ class HostReservationsScreen extends StatefulWidget {
     this.bookingMessagingCoordinator,
     this.initialTabIndex = 0,
     this.highlightBookingId,
+    this.notificationState,
+    this.onOpenInbox,
+    this.onOpenNotifications,
   });
 
   final MusafirRepository repository;
   final AuthStateNotifier authState;
   final MessagingStateNotifier? messagingState;
+
+  /// Wiring for the unified [AppPageHeader] action chips (messages + bell), so
+  /// this tab matches the other host tabs. Optional — actions hide when null.
+  final NotificationStateNotifier? notificationState;
+  final VoidCallback? onOpenInbox;
+  final VoidCallback? onOpenNotifications;
 
   /// When provided, accepting a booking also creates the guest conversation and
   /// sends the optional welcome message (parity with the old HostingScreen
@@ -124,21 +136,45 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
     final theme = Theme.of(context);
     final user = widget.authState.currentUser;
 
+    final unreadMessageCount = widget.messagingState?.totalUnreadCount ?? 0;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Reservations'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'Upcoming'),
-            Tab(text: 'Active Stays'),
-            Tab(text: 'Completed'),
-          ],
-        ),
-      ),
-      body: ListenableBuilder(
-        listenable: Listenable.merge([widget.repository, widget.authState]),
-        builder: (context, _) {
+      body: Column(
+        children: [
+          AppPageHeader(
+            title: 'Reservations',
+            subtitle: 'Manage your bookings',
+            actions: [
+              if (widget.messagingState != null && widget.onOpenInbox != null)
+                HeaderActionButton(
+                  icon: Icons.chat_bubble_outline,
+                  badgeCount: unreadMessageCount,
+                  onTap: widget.onOpenInbox,
+                  tooltip: 'Messages',
+                ),
+              if (widget.notificationState != null &&
+                  widget.onOpenNotifications != null)
+                AnimatedNotificationBell(
+                  notificationState: widget.notificationState!,
+                  onTap: widget.onOpenNotifications!,
+                  iconSize: 22,
+                  decorated: true,
+                ),
+            ],
+            bottom: TabBar(
+              controller: _tabController,
+              tabs: const [
+                Tab(text: 'Upcoming'),
+                Tab(text: 'Active Stays'),
+                Tab(text: 'Completed'),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListenableBuilder(
+              listenable:
+                  Listenable.merge([widget.repository, widget.authState]),
+              builder: (context, _) {
           // Get host's listings
           final hostListings = user != null
               ? widget.repository.listings
@@ -187,7 +223,10 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
               ),
             ],
           );
-        },
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

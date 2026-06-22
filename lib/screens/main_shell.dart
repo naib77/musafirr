@@ -11,6 +11,7 @@ import '../state/favorites_state.dart';
 import '../state/messaging_state.dart';
 import '../state/notification_state.dart';
 import '../state/search_state.dart';
+import '../widgets/app_page_header.dart';
 import '../widgets/guest_host_switcher.dart';
 import '../widgets/notification_bell.dart';
 import '../widgets/review_prompt_handler.dart';
@@ -136,13 +137,28 @@ class _MainShellState extends State<MainShell> {
                   },
                   hasHostNotification: _hasHostNotification,
                 ),
-              // Main content
+              // Main content.
+              //
+              // When the GuestHostSwitcher is shown it already consumes the top
+              // safe-area inset (status bar). Content below it must NOT consume
+              // that inset again — a sibling lower in the Column still sees the
+              // full MediaQuery.padding.top, so any descendant SafeArea/AppBar
+              // would inject the status-bar height a second time (invisible on
+              // web where the inset is 0, a large gap on Android). Strip the top
+              // inset here so descendants match the slim-header tabs that
+              // already render directly below the switcher. When logged out
+              // there is no switcher, so the inset is left intact for the
+              // child's own SafeArea to handle.
               Expanded(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
-                  child: _appModeState.isGuestMode || !_isLoggedIn
-                      ? _buildGuestContent()
-                      : _buildHostContent(),
+                child: MediaQuery.removePadding(
+                  context: context,
+                  removeTop: _isLoggedIn,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: _appModeState.isGuestMode || !_isLoggedIn
+                        ? _buildGuestContent()
+                        : _buildHostContent(),
+                  ),
                 ),
               ),
             ],
@@ -226,7 +242,8 @@ class _MainShellState extends State<MainShell> {
         // Wishlists - slim header instead of full AppBar
         Column(
           children: [
-            _buildSlimHeader('Wishlists', unreadMessageCount),
+            _buildSlimHeader('Wishlists', unreadMessageCount,
+                subtitle: 'Your saved places'),
             Expanded(
               child: WishlistsScreen(
                 repository: widget.repository,
@@ -249,7 +266,8 @@ class _MainShellState extends State<MainShell> {
         // Profile - slim header instead of full AppBar
         Column(
           children: [
-            _buildSlimHeader('Profile', unreadMessageCount),
+            _buildSlimHeader('Profile', unreadMessageCount,
+                subtitle: 'Account and settings'),
             Expanded(
               child: ProfileScreen(
                 authState: widget.authState,
@@ -314,7 +332,8 @@ class _MainShellState extends State<MainShell> {
         // Dashboard - slim header instead of full AppBar
         Column(
           children: [
-            _buildSlimHeader('Dashboard', unreadMessageCount),
+            _buildSlimHeader('Dashboard', unreadMessageCount,
+                subtitle: 'Your hosting at a glance'),
             Expanded(
               child: HostDashboardScreen(
                 repository: widget.repository,
@@ -330,11 +349,15 @@ class _MainShellState extends State<MainShell> {
           authState: widget.authState,
           messagingState: widget.messagingState,
           bookingMessagingCoordinator: widget.bookingMessagingCoordinator,
+          notificationState: widget.notificationState,
+          onOpenInbox: _openInbox,
+          onOpenNotifications: _openNotificationCenter,
         ),
         // Earnings - slim header instead of full AppBar
         Column(
           children: [
-            _buildSlimHeader('Earnings', unreadMessageCount),
+            _buildSlimHeader('Earnings', unreadMessageCount,
+                subtitle: 'Track your income'),
             Expanded(
               child: EarningsScreen(
                 repository: widget.repository,
@@ -346,7 +369,8 @@ class _MainShellState extends State<MainShell> {
         // Profile (shared) - slim header instead of full AppBar
         Column(
           children: [
-            _buildSlimHeader('Profile', unreadMessageCount),
+            _buildSlimHeader('Profile', unreadMessageCount,
+                subtitle: 'Account and settings'),
             Expanded(
               child: ProfileScreen(
                 authState: widget.authState,
@@ -364,73 +388,33 @@ class _MainShellState extends State<MainShell> {
   // SHARED COMPONENTS
   // ============================================================
 
-  AppBar _buildAppBar(String title, int unreadMessageCount) {
-    return AppBar(
-      title: Text(title),
-      centerTitle: false,
+  /// The unified page header shown at the top of every primary tab. Sits
+  /// directly below the Guest/Host switcher (which is the single top-inset
+  /// consumer, so this adds no SafeArea of its own).
+  Widget _buildSlimHeader(
+    String title,
+    int unreadMessageCount, {
+    String? subtitle,
+  }) {
+    return AppPageHeader(
+      title: title,
+      subtitle: subtitle,
       actions: [
-        // Messages icon with badge
         if (widget.messagingState != null)
-          IconButton(
-            icon: Badge(
-              isLabelVisible: unreadMessageCount > 0,
-              label: Text(
-                unreadMessageCount > 99 ? '99+' : '$unreadMessageCount',
-              ),
-              child: const Icon(Icons.chat_bubble_outline),
-            ),
-            onPressed: _openInbox,
+          HeaderActionButton(
+            icon: Icons.chat_bubble_outline,
+            badgeCount: unreadMessageCount,
+            onTap: _openInbox,
             tooltip: 'Messages',
           ),
-        // Notification bell
         if (widget.notificationState != null)
           AnimatedNotificationBell(
             notificationState: widget.notificationState!,
             onTap: _openNotificationCenter,
+            iconSize: 22,
+            decorated: true,
           ),
       ],
-    );
-  }
-
-  /// Slim header row - sits right below Guest/Host switcher with minimal gap
-  Widget _buildSlimHeader(String title, int unreadMessageCount) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: theme.colorScheme.surface,
-      child: Row(
-        children: [
-          Text(
-            title,
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const Spacer(),
-          // Messages icon with badge
-          if (widget.messagingState != null)
-            IconButton(
-              icon: Badge(
-                isLabelVisible: unreadMessageCount > 0,
-                label: Text(
-                  unreadMessageCount > 99 ? '99+' : '$unreadMessageCount',
-                ),
-                child: const Icon(Icons.chat_bubble_outline),
-              ),
-              onPressed: _openInbox,
-              tooltip: 'Messages',
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-            ),
-          // Notification bell
-          if (widget.notificationState != null)
-            AnimatedNotificationBell(
-              notificationState: widget.notificationState!,
-              onTap: _openNotificationCenter,
-            ),
-        ],
-      ),
     );
   }
 }

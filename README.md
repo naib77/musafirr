@@ -290,13 +290,13 @@ flutter build apk --release \
     --dart-define=MASTER_OTP=1234 \
     --dart-define=GOOGLE_MAPS_API_KEY=AIzaSyBw1uyOoZ2tS8-NS_83ov8rE3OusmmDWRM
     
-flutter build apk --release \
+flutter build apk --release \[app-release-v1.0.3.apk](build/app/outputs/flutter-apk/app-release-v1.0.3.apk)
       --dart-define=MASTER_OTP_ENABLED=true \
       --dart-define=MASTER_OTP=1234 \
       --dart-define=GOOGLE_MAPS_API_KEY=AIzaSyBw1uyOoZ2tS8-NS_83ov8rE3OusmmDWRM \
       --build-name=1.0.1 \
       --build-number=1 \
-  && mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/app-release-v1.0.1.apk
+  && mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/app-release-v1.0.3.apk
 
     
 npx supabase secrets set FCM_SERVER_KEY=AAAAvY_mLR8:APA91bEd_LXkSiW1QmBhDNPwYvwm7-lLXmSu7Q7N40_qrRr6YcTKYZzikat-Mh7THwob8xSeW88LlFm8MhnCuIxsSfprzqyMgCK6yB3OrTJ8i5UWyQz5mFitn_J2HwF68pBsdEAZ2HMO

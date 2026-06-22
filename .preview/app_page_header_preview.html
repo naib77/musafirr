@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Unified Page Header — before / after</title>
+<style>
+  :root{
+    --brand:#0B7285; --ink:#0E1F23; --inkMuted:#5B6B70;
+    --surface:#fff; --surfaceMuted:#EDF1F1; --outline:#E2E8E9; --scaffold:#F6F8F7;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:#0d1418;color:#fff;padding:28px 16px;display:flex;flex-direction:column;align-items:center;gap:26px}
+  h1{font-size:18px;font-weight:700;text-align:center}
+  .sub{opacity:.7;font-size:13px;text-align:center;max-width:560px;line-height:1.5;margin-top:-14px}
+  .row{display:flex;gap:22px;flex-wrap:wrap;justify-content:center;align-items:flex-start;width:100%}
+  .col{display:flex;flex-direction:column;gap:10px;align-items:center}
+  .tag{font-size:12px;letter-spacing:.5px;text-transform:uppercase;opacity:.6}
+  .tag.bad{color:#FF8A8A}.tag.good{color:#6EE7B7}
+
+  .phone{width:300px;background:var(--scaffold);border-radius:30px;padding:10px;
+    border:7px solid #0d1418;box-shadow:0 20px 50px rgba(0,0,0,.45);overflow:hidden}
+  .switcher{background:var(--surface);border-radius:20px 20px 0 0;padding:10px 16px 0}
+  .switcher .tabs{display:flex;gap:16px}
+  .switcher .t{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:6px 0;font-weight:600;font-size:14px;color:var(--ink)}
+  .switcher .t.off{color:var(--inkMuted);font-weight:500}
+  .switcher .bar{height:3px;background:rgba(0,0,0,.06);margin-top:6px;position:relative}
+  .switcher .bar i{position:absolute;left:0;top:0;height:3px;width:50%;background:var(--brand);border-radius:2px}
+
+  .screen{background:var(--surface);min-height:150px}
+
+  /* BEFORE — appbar style (small, tinted, centered) */
+  .appbar{height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 8px 0 16px;background:#F3F6F6;border-bottom:1px solid var(--outline)}
+  .appbar .ttl{font-size:18px;font-weight:500;color:var(--ink)}
+  .appbar .acts{display:flex;gap:2px}
+  .ibtn{width:40px;height:40px;display:flex;align-items:center;justify-content:center;color:var(--ink);font-size:19px}
+  /* BEFORE — slim header (big bold, no subtitle) */
+  .slim{padding:8px 16px;display:flex;align-items:center;justify-content:space-between}
+  .slim .ttl{font-size:23px;font-weight:700;color:var(--ink)}
+
+  /* AFTER — unified header */
+  .uni{padding:13px 12px 13px 20px}
+  .uni .top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .uni .ttl{font-size:25px;font-weight:800;letter-spacing:-.5px;color:var(--ink);line-height:1.05}
+  .uni .subt{font-size:12px;color:var(--inkMuted);margin-top:2px}
+  .uni .acts{display:flex;gap:6px;flex-shrink:0}
+  .chip{width:40px;height:40px;border-radius:50%;background:var(--surfaceMuted);display:flex;align-items:center;justify-content:center;color:var(--ink);font-size:18px;position:relative}
+  .chip .dot{position:absolute;top:-2px;right:-2px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#DC2626;color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid var(--surface)}
+  .tabsrow{display:flex;gap:0;margin-top:14px;border-bottom:1px solid var(--outline)}
+  .tabsrow .tb{flex:1;text-align:center;padding:10px 0 11px;font-size:13px;font-weight:600;color:var(--inkMuted);position:relative}
+  .tabsrow .tb.on{color:var(--brand)}
+  .tabsrow .tb.on::after{content:"";position:absolute;left:18%;right:18%;bottom:-1px;height:2.5px;background:var(--brand);border-radius:2px}
+
+  .body{padding:16px;display:flex;flex-direction:column;gap:10px}
+  .ph{height:12px;border-radius:6px;background:#ECF0F0}
+  .ph.s{width:55%}.ph.m{width:80%}
+  .legend{font-size:12px;opacity:.75;max-width:620px;line-height:1.6}
+  .legend b{color:#6EE7B7}
+</style>
+</head>
+<body>
+  <h1>Unified page header — every tab below the Guest | Host switcher</h1>
+  <p class="sub">Before: two header systems — a small Material AppBar (“My Trips”) and a big flat slim-header (“Wishlists”). After: one <code style="color:#6EE7B7">AppPageHeader</code> — same 26px / w800 title, optional subtitle, soft circular action chips, optional tab strip.</p>
+
+  <div class="row">
+    <!-- BEFORE -->
+    <div class="col">
+      <div class="tag bad">Before · inconsistent</div>
+      <div class="phone">
+        <div class="switcher"><div class="tabs"><div class="t">🧳 Guest</div><div class="t off">🏠 Host</div></div><div class="bar"><i></i></div></div>
+        <div class="screen">
+          <div class="appbar"><div class="ttl">My Trips</div><div class="acts"><div class="ibtn">💬</div><div class="ibtn">🔔</div></div></div>
+          <div class="body"><div class="ph m"></div><div class="ph s"></div><div class="ph m"></div></div>
+        </div>
+      </div>
+      <div class="phone">
+        <div class="switcher"><div class="tabs"><div class="t">🧳 Guest</div><div class="t off">🏠 Host</div></div><div class="bar"><i></i></div></div>
+        <div class="screen">
+          <div class="slim"><div class="ttl">Wishlists</div><div class="acts" style="display:flex"><div class="ibtn">💬</div><div class="ibtn">🔔</div></div></div>
+          <div class="body"><div class="ph m"></div><div class="ph s"></div><div class="ph m"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AFTER -->
+    <div class="col">
+      <div class="tag good">After · unified</div>
+      <div class="phone">
+        <div class="switcher"><div class="tabs"><div class="t">🧳 Guest</div><div class="t off">🏠 Host</div></div><div class="bar"><i></i></div></div>
+        <div class="screen">
+          <div class="uni">
+            <div class="top">
+              <div><div class="ttl">My Trips</div><div class="subt">Upcoming and past stays</div></div>
+              <div class="acts"><div class="chip">💬<span class="dot">3</span></div><div class="chip">🔔</div></div>
+            </div>
+            <div class="tabsrow"><div class="tb on">Upcoming</div><div class="tb">Current</div><div class="tb">Past</div></div>
+          </div>
+          <div class="body"><div class="ph m"></div><div class="ph s"></div><div class="ph m"></div></div>
+        </div>
+      </div>
+      <div class="phone">
+        <div class="switcher"><div class="tabs"><div class="t">🧳 Guest</div><div class="t off">🏠 Host</div></div><div class="bar"><i></i></div></div>
+        <div class="screen">
+          <div class="uni">
+            <div class="top">
+              <div><div class="ttl">Wishlists</div><div class="subt">Your saved places</div></div>
+              <div class="acts"><div class="chip">💬</div><div class="chip">🔔</div></div>
+            </div>
+          </div>
+          <div class="body"><div class="ph m"></div><div class="ph s"></div><div class="ph m"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="legend">
+    <b>One component, every tab:</b> Wishlists · My Trips · Profile · Dashboard · Reservations · Earnings all render through <code>AppPageHeader</code>.<br>
+    <b>Consistent title:</b> 26px, weight 800, −0.5 letter-spacing, ink color — no more “small vs big”.<br>
+    <b>Action chips:</b> messages + notification bell now share a soft circular chip (matches the Explore search bar’s rounded icons); the bell keeps its shake + unread badge.<br>
+    <b>Tabbed screens</b> (Trips, Reservations) drop the chunky Material AppBar+TabBar for the same flat header with a slim tab strip — and the earlier Android double-gap stays fixed (header adds no SafeArea).
+  </p>
+</body>
+</html>

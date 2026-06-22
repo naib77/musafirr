@@ -10,6 +10,7 @@ import '../../services/booking/booking_rules.dart';
 import '../../state/auth_state.dart';
 import '../../state/messaging_state.dart';
 import '../../state/notification_state.dart';
+import '../../widgets/app_page_header.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/notification_bell.dart';
 import '../messaging/chat_screen.dart';
@@ -147,33 +148,34 @@ class _TripsScreenState extends State<TripsScreen> {
     final unreadMessageCount = widget.messagingState?.totalUnreadCount ?? 0;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('My Trips'),
-        centerTitle: false,
-        actions: [
-          if (widget.messagingState != null && widget.onOpenInbox != null)
-            IconButton(
-              icon: Badge(
-                isLabelVisible: unreadMessageCount > 0,
-                label: Text(
-                  unreadMessageCount > 99 ? '99+' : '$unreadMessageCount',
+      body: Column(
+        children: [
+          AppPageHeader(
+            title: 'My Trips',
+            subtitle: 'Upcoming and past stays',
+            actions: [
+              if (widget.messagingState != null && widget.onOpenInbox != null)
+                HeaderActionButton(
+                  icon: Icons.chat_bubble_outline,
+                  badgeCount: unreadMessageCount,
+                  onTap: widget.onOpenInbox,
+                  tooltip: 'Messages',
                 ),
-                child: const Icon(Icons.chat_bubble_outline),
-              ),
-              onPressed: widget.onOpenInbox,
-              tooltip: 'Messages',
-            ),
-          if (widget.notificationState != null &&
-              widget.onOpenNotifications != null)
-            AnimatedNotificationBell(
-              notificationState: widget.notificationState!,
-              onTap: widget.onOpenNotifications!,
-            ),
-        ],
-      ),
-      body: ListenableBuilder(
-        listenable: Listenable.merge([widget.repository, widget.authState]),
-        builder: (context, _) {
+              if (widget.notificationState != null &&
+                  widget.onOpenNotifications != null)
+                AnimatedNotificationBell(
+                  notificationState: widget.notificationState!,
+                  onTap: widget.onOpenNotifications!,
+                  iconSize: 22,
+                  decorated: true,
+                ),
+            ],
+          ),
+          Expanded(
+            child: ListenableBuilder(
+              listenable:
+                  Listenable.merge([widget.repository, widget.authState]),
+              builder: (context, _) {
           final user = widget.authState.currentUser;
           if (user == null) {
             return _buildLoginPrompt(context, theme);
@@ -215,7 +217,10 @@ class _TripsScreenState extends State<TripsScreen> {
               ),
             ],
           );
-        },
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
