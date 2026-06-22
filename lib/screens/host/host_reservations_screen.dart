@@ -11,6 +11,7 @@ import '../../repositories/musafir_repository.dart' show MusafirRepository, Book
 import '../../services/booking/booking_messaging_coordinator.dart';
 import '../../state/auth_state.dart';
 import '../../state/messaging_state.dart';
+import '../../widgets/modern_banner.dart';
 import '../../widgets/price_display.dart';
 import '../messaging/chat_screen.dart';
 import '../review/host_review_screen.dart';
@@ -98,36 +99,7 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
   }
 
   void _showErrorBanner(String message) {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.clearMaterialBanners();
-    messenger.showMaterialBanner(
-      MaterialBanner(
-        content: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.red.shade700,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        leadingPadding: EdgeInsets.zero,
-        actions: [
-          TextButton(
-            onPressed: () => messenger.hideCurrentMaterialBanner(),
-            child: const Text('OK', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-    Future.delayed(const Duration(seconds: 5), () {
-      messenger.hideCurrentMaterialBanner();
-    });
+    ModernBanner.showError(context, message);
   }
 
   @override
@@ -137,72 +109,14 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
     super.dispose();
   }
 
-  /// Show a modern success banner at the top
+  /// Modern animated success toast (see [ModernBanner]).
   void _showSuccessBanner(String message) {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.clearMaterialBanners();
-    messenger.showMaterialBanner(
-      MaterialBanner(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle_outline, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.green.shade700,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        leadingPadding: EdgeInsets.zero,
-        actions: [
-          TextButton(
-            onPressed: () => messenger.hideCurrentMaterialBanner(),
-            child: const Text('OK', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-    Future.delayed(const Duration(seconds: 3), () {
-      messenger.hideCurrentMaterialBanner();
-    });
+    ModernBanner.showSuccess(context, message);
   }
 
-  /// Show a modern info/warning banner at the top
+  /// Modern animated info toast (see [ModernBanner]).
   void _showInfoBanner(String message) {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.clearMaterialBanners();
-    messenger.showMaterialBanner(
-      MaterialBanner(
-        content: Row(
-          children: [
-            const Icon(Icons.info_outline, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.orange.shade700,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        leadingPadding: EdgeInsets.zero,
-        actions: [
-          TextButton(
-            onPressed: () => messenger.hideCurrentMaterialBanner(),
-            child: const Text('OK', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-    Future.delayed(const Duration(seconds: 4), () {
-      messenger.hideCurrentMaterialBanner();
-    });
+    ModernBanner.showInfo(context, message);
   }
 
   @override

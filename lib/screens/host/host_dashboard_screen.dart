@@ -5,6 +5,7 @@ import '../../core/currency/money.dart';
 import '../../models/listing.dart';
 import '../../models/booking.dart';
 import '../../models/booking_categorizer.dart';
+import '../../models/booking_status.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
 import '../../state/messaging_state.dart';
@@ -50,6 +51,23 @@ class HostDashboardScreen extends StatelessWidget {
           final upcomingBookings = BookingCategorizer(hostBookings).upcoming
             ..sort((a, b) => (b.createdAt ?? b.effectiveCheckIn)
                 .compareTo(a.createdAt ?? a.effectiveCheckIn));
+
+          // Today's overview (migrated from the retired HostingScreen): how many
+          // guests arrive / leave today, and how many are currently in-house.
+          final now = DateTime.now();
+          final today = DateTime(now.year, now.month, now.day);
+          bool isSameDay(DateTime d) =>
+              d.year == today.year && d.month == today.month && d.day == today.day;
+
+          final activeBookings =
+              hostBookings.where((b) => b.status == BookingStatus.active).toList();
+          final todayCheckIns = hostBookings
+              .where((b) =>
+                  b.status == BookingStatus.confirmed &&
+                  isSameDay(b.effectiveCheckIn))
+              .length;
+          final todayCheckOuts =
+              activeBookings.where((b) => isSameDay(b.effectiveCheckOut)).length;
 
           final totalEarnings = hostBookings.fold<Money>(
             Money.zero(Currency.BDT),
@@ -110,6 +128,15 @@ class HostDashboardScreen extends StatelessWidget {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 24),
+
+                // Today's overview
+                _TodayCard(
+                  checkInsCount: todayCheckIns,
+                  checkOutsCount: todayCheckOuts,
+                  activeCount: activeBookings.length,
+                  theme: theme,
                 ),
                 const SizedBox(height: 24),
 
@@ -379,6 +406,131 @@ class _StatCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Glanceable "Today" summary for the host — migrated from the retired
+/// HostingScreen so the dashboard keeps that overview in one place.
+class _TodayCard extends StatelessWidget {
+  const _TodayCard({
+    required this.checkInsCount,
+    required this.checkOutsCount,
+    required this.activeCount,
+    required this.theme,
+  });
+
+  final int checkInsCount;
+  final int checkOutsCount;
+  final int activeCount;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            theme.colorScheme.primaryContainer,
+            theme.colorScheme.primaryContainer.withValues(alpha: 0.7),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.wb_sunny_outlined,
+                color: theme.colorScheme.onPrimaryContainer,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Today',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.onPrimaryContainer,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _TodayStat(
+                  label: 'Check-ins',
+                  count: checkInsCount,
+                  theme: theme,
+                ),
+              ),
+              Container(
+                width: 1,
+                height: 40,
+                color: theme.colorScheme.onPrimaryContainer.withValues(alpha: 0.2),
+              ),
+              Expanded(
+                child: _TodayStat(
+                  label: 'Check-outs',
+                  count: checkOutsCount,
+                  theme: theme,
+                ),
+              ),
+              Container(
+                width: 1,
+                height: 40,
+                color: theme.colorScheme.onPrimaryContainer.withValues(alpha: 0.2),
+              ),
+              Expanded(
+                child: _TodayStat(
+                  label: 'Hosting',
+                  count: activeCount,
+                  theme: theme,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TodayStat extends StatelessWidget {
+  const _TodayStat({
+    required this.label,
+    required this.count,
+    required this.theme,
+  });
+
+  final String label;
+  final int count;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          '$count',
+          style: theme.textTheme.headlineMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.onPrimaryContainer,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
+          ),
+        ),
+      ],
     );
   }
 }

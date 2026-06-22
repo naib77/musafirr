@@ -555,11 +555,8 @@ class _TripsScreenState extends State<TripsScreen> {
       final hostId = listing?.hostId;
       if (hostId == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Cannot message: host information not available'),
-            ),
-          );
+          ModernBanner.showInfo(
+            context, 'Cannot message: host information not available');
         }
         return;
       }
@@ -583,11 +580,8 @@ class _TripsScreenState extends State<TripsScreen> {
 
       if (conversation == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to start conversation. Please try again.'),
-            ),
-          );
+          ModernBanner.showError(
+            context, 'Failed to start conversation. Please try again.');
         }
         return;
       }

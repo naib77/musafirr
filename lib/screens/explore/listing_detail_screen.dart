@@ -11,8 +11,10 @@ import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
+import '../../widgets/modern_banner.dart';
 import '../../widgets/price_breakdown_card.dart';
 import '../../widgets/price_display.dart';
+import '../../widgets/success_sheet.dart';
 import 'navigation_screen.dart';
 
 class ListingDetailScreen extends StatefulWidget {
@@ -419,35 +421,7 @@ class _LocationSectionState extends State<_LocationSection> {
       await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
     } catch (e) {
       if (mounted) {
-        final messenger = ScaffoldMessenger.of(context);
-        final theme = Theme.of(context);
-        messenger.clearMaterialBanners();
-        messenger.showMaterialBanner(
-          MaterialBanner(
-            content: const Row(
-              children: [
-                Icon(Icons.error_outline, color: Colors.white),
-                SizedBox(width: 12),
-                Text(
-                  'Could not open maps',
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
-                ),
-              ],
-            ),
-            backgroundColor: theme.colorScheme.error,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            leadingPadding: EdgeInsets.zero,
-            actions: [
-              TextButton(
-                onPressed: () => messenger.hideCurrentMaterialBanner(),
-                child: const Text('OK', style: TextStyle(color: Colors.white)),
-              ),
-            ],
-          ),
-        );
-        Future.delayed(const Duration(seconds: 4), () {
-          messenger.hideCurrentMaterialBanner();
-        });
+        ModernBanner.showError(context, 'Could not open maps');
       }
     }
   }
@@ -835,107 +809,14 @@ class _BookingSheetState extends State<_BookingSheet> {
     _durationType = widget.listing.cheapestPlan ?? DurationType.daily;
   }
 
-  /// Show a modern error banner at the top
+  /// Modern animated error toast (see [ModernBanner]).
   void _showErrorBanner(String message) {
-    final messenger = ScaffoldMessenger.of(context);
-    final theme = Theme.of(context);
-    messenger.clearMaterialBanners();
-    messenger.showMaterialBanner(
-      MaterialBanner(
-        content: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: theme.colorScheme.error,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        leadingPadding: EdgeInsets.zero,
-        actions: [
-          TextButton(
-            onPressed: () => messenger.hideCurrentMaterialBanner(),
-            child: const Text('Dismiss', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-    Future.delayed(const Duration(seconds: 4), () {
-      messenger.hideCurrentMaterialBanner();
-    });
+    ModernBanner.showError(context, message);
   }
 
-  /// Show a modern success banner at the top
-  void _showSuccessBanner(String message) {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.clearMaterialBanners();
-    messenger.showMaterialBanner(
-      MaterialBanner(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle_outline, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.green.shade700,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        leadingPadding: EdgeInsets.zero,
-        actions: [
-          TextButton(
-            onPressed: () => messenger.hideCurrentMaterialBanner(),
-            child: const Text('OK', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-    Future.delayed(const Duration(seconds: 3), () {
-      messenger.hideCurrentMaterialBanner();
-    });
-  }
-
-  /// Show a modern warning/info banner at the top
+  /// Modern animated warning toast (see [ModernBanner]).
   void _showWarningBanner(String message) {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.clearMaterialBanners();
-    messenger.showMaterialBanner(
-      MaterialBanner(
-        content: Row(
-          children: [
-            const Icon(Icons.info_outline, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.orange.shade700,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        leadingPadding: EdgeInsets.zero,
-        actions: [
-          TextButton(
-            onPressed: () => messenger.hideCurrentMaterialBanner(),
-            child: const Text('OK', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-    Future.delayed(const Duration(seconds: 4), () {
-      messenger.hideCurrentMaterialBanner();
-    });
+    ModernBanner.showWarning(context, message);
   }
 
   void _checkAvailability() {
@@ -1136,7 +1017,16 @@ class _BookingSheetState extends State<_BookingSheet> {
 
       if (mounted) {
         Navigator.pop(context);
-        _showSuccessBanner('Booking request sent! Awaiting host confirmation.');
+        // Celebrate the milestone with a modern confirmation sheet instead of a
+        // flat banner — a booking request is a "done!" moment.
+        SuccessSheet.show(
+          context,
+          title: 'Request sent!',
+          message:
+              'Your booking request for ${widget.listing.title} is on its way. '
+              "You'll be notified as soon as the host confirms.",
+          primaryLabel: 'Got it',
+        );
       }
     } on BookingConflictException catch (e) {
       if (mounted) {

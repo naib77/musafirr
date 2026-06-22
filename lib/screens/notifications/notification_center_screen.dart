@@ -11,6 +11,7 @@ import '../../state/notification_state.dart';
 import '../../widgets/booking_details_sheet.dart';
 import '../../widgets/dialogs/booking_action_dialogs.dart';
 import '../../widgets/expandable_notification_item.dart';
+import '../../widgets/modern_banner.dart';
 import '../../widgets/notification_item.dart';
 import '../host/host_reservations_screen.dart';
 import 'notification_settings_screen.dart';
@@ -725,77 +726,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   }
 
   /// Show a modern error banner at the top
+  /// Modern animated error toast (see [ModernBanner]).
   void _showErrorBanner(String message) {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.clearMaterialBanners();
-    messenger.showMaterialBanner(
-      MaterialBanner(
-        content: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Theme.of(context).colorScheme.error,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        leadingPadding: EdgeInsets.zero,
-        actions: [
-          TextButton(
-            onPressed: () => messenger.hideCurrentMaterialBanner(),
-            child: const Text('Dismiss', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-    Future.delayed(const Duration(seconds: 4), () {
-      messenger.hideCurrentMaterialBanner();
-    });
+    ModernBanner.showError(context, message);
   }
 
-  /// Show a modern success banner at the top
+  /// Modern animated success toast (see [ModernBanner]).
   void _showSuccessBanner(String message) {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.clearMaterialBanners();
-    messenger.showMaterialBanner(
-      MaterialBanner(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle_outline, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.green.shade700,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        leadingPadding: EdgeInsets.zero,
-        actions: [
-          TextButton(
-            onPressed: () => messenger.hideCurrentMaterialBanner(),
-            child: const Text('OK', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-    Future.delayed(const Duration(seconds: 3), () {
-      messenger.hideCurrentMaterialBanner();
-    });
+    ModernBanner.showSuccess(context, message);
   }
 }
 

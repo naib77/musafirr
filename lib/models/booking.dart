@@ -114,10 +114,10 @@ class Booking {
 
   // Single source of truth for booking categorization, consumed everywhere via
   // [BookingCategorizer] — the guest "My Trips" screen, the host "Reservations"
-  // tab (HostingScreen), the host Reservations sub-screen tabs, and the host
-  // dashboard. Do NOT re-derive "upcoming/ongoing/past" anywhere else, or two
-  // screens will disagree (that exact split caused the dashboard to show no
-  // upcoming reservations while the Reservations tab listed them).
+  // tab (HostReservationsScreen, the tabbed Upcoming/Active/Completed view), and
+  // the host dashboard. Do NOT re-derive "upcoming/ongoing/past" anywhere else,
+  // or two screens will disagree (that exact split caused the dashboard to show
+  // no upcoming reservations while the Reservations tab listed them).
   //
   // The rules are driven purely by lifecycle STATUS, NOT by dates. This is
   // deliberate:
