@@ -1,5 +1,4 @@
 import '../../models/discount.dart';
-import '../../models/discount_eligibility.dart';
 import '../../models/loyalty_tier.dart';
 import 'loyalty_service.dart';
 import 'referral_service.dart';

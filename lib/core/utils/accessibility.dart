@@ -403,7 +403,7 @@ class ContrastChecker {
 
 extension _DoubleExtension on double {
   double pow(double exponent) {
-    return this == 0 ? 0 : (this > 0 ? 1 : -1) * (this.abs()).toDouble().pow2(exponent);
+    return this == 0 ? 0 : (this > 0 ? 1 : -1) * (abs()).toDouble().pow2(exponent);
   }
 
   double pow2(double exponent) {

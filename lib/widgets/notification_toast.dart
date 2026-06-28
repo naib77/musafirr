@@ -242,15 +242,15 @@ class _NotificationToastState extends State<NotificationToast>
   }
 
   Color _getIconBackgroundColor(ThemeData theme) {
-    return _getIconColor(theme).withOpacity(0.1);
+    return _getIconColor(theme).withValues(alpha: 0.1);
   }
 
   Color _getBorderColor(ThemeData theme) {
     if (widget.notification.priority == NotificationPriority.urgent) {
-      return Colors.red.withOpacity(0.5);
+      return Colors.red.withValues(alpha: 0.5);
     }
     if (widget.notification.priority == NotificationPriority.high) {
-      return theme.colorScheme.primary.withOpacity(0.3);
+      return theme.colorScheme.primary.withValues(alpha: 0.3);
     }
     return theme.colorScheme.outlineVariant;
   }
@@ -349,7 +349,7 @@ class NotificationBanner extends StatelessWidget {
                       Text(
                         notification.body,
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: Colors.white.withOpacity(0.9),
+                          color: Colors.white.withValues(alpha: 0.9),
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

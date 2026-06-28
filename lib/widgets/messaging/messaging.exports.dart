@@ -1,5 +1,5 @@
 /// Barrel export for messaging widgets
-library messaging_widgets;
+library;
 
 export 'channel_selector.dart';
 export 'conversation_tile.dart';

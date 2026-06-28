@@ -424,6 +424,6 @@ class NotificationGroup {
     if (count == 1) {
       return notifications.first.body;
     }
-    return '${count} ${category} notifications';
+    return '$count $category notifications';
   }
 }

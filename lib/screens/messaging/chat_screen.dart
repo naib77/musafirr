@@ -661,8 +661,8 @@ class _SuggestedMessages extends StatelessWidget {
               color: theme.colorScheme.primary,
             ),
           ),
-          backgroundColor: theme.colorScheme.primaryContainer.withOpacity(0.3),
-          side: BorderSide(color: theme.colorScheme.primary.withOpacity(0.3)),
+          backgroundColor: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+          side: BorderSide(color: theme.colorScheme.primary.withValues(alpha: 0.3)),
           onPressed: () => onSelect(suggestion),
         );
       }).toList(),

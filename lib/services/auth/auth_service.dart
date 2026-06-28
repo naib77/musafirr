@@ -62,6 +62,14 @@ abstract class AuthService {
   /// Get the currently authenticated user (if any)
   User? get currentUser;
 
+  /// Whether a persisted auth session exists.
+  ///
+  /// This is resolved synchronously from local storage (e.g. a restored
+  /// Supabase session) and is available before the user profile finishes
+  /// loading over the network. Startup routing uses this to avoid flashing
+  /// the login screen while the profile is still being fetched.
+  bool get hasActiveSession;
+
   /// Stream of authentication state changes
   Stream<User?> get authStateChanges;
 

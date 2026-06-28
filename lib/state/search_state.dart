@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import '../core/state/safe_notifier.dart';
 import 'package:flutter/material.dart';
 

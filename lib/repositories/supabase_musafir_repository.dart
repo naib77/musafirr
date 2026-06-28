@@ -245,7 +245,7 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
 
         // Parse listings and merge with ratings
         for (final e in listingsResponse) {
-          final json = e as Map<String, dynamic>;
+          final json = e;
           final listingId = json['id'] as String;
           final ratingData = ratingsMap[listingId];
 
@@ -258,7 +258,7 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
         }
 
         // Update cursor to the oldest item's created_at
-        final lastItem = listingsResponse.last as Map<String, dynamic>;
+        final lastItem = listingsResponse.last;
         final createdAtStr = lastItem['created_at'] as String?;
         if (createdAtStr != null) {
           _listingsCursor = DateTime.parse(createdAtStr);
@@ -1235,7 +1235,7 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
       final response = await _client.from('bookings').update(updateData).eq('id', booking.id).select();
 
       // Check if update actually affected any rows
-      if (response is List && response.isEmpty) {
+      if (response.isEmpty) {
         final errorMsg = 'Update failed - you may not have permission to modify this booking';
         debugPrint('[DEBUG-booking] WARNING: No rows updated for ${booking.id}! RLS may be blocking the update.');
         debugPrint('[DEBUG-booking] Check that current user ($currentUserId) is the host of listing ${booking.listingId}');
@@ -1273,7 +1273,7 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
   void _rollbackBookingUpdate(String bookingId, Booking originalBooking) {
     final index = _bookings.indexWhere((b) => b.id == bookingId);
     if (index != -1) {
-      debugPrint('[DEBUG-booking] Rolling back booking ${bookingId} to original state');
+      debugPrint('[DEBUG-booking] Rolling back booking $bookingId to original state');
       _bookings[index] = originalBooking;
       notifyListeners();
     }
@@ -1491,11 +1491,11 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
       } else {
         // Parse bookings
         for (final e in bookingsResponse) {
-          newBookings.add(_bookingFromJson(e as Map<String, dynamic>));
+          newBookings.add(_bookingFromJson(e));
         }
 
         // Update cursor to the oldest item's created_at
-        final lastItem = bookingsResponse.last as Map<String, dynamic>;
+        final lastItem = bookingsResponse.last;
         final createdAtStr = lastItem['created_at'] as String?;
         if (createdAtStr != null) {
           _bookingsCursor = DateTime.parse(createdAtStr);

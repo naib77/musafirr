@@ -165,7 +165,7 @@ class _TypingIndicatorState extends State<TypingIndicator>
             width: 8,
             height: 8,
             decoration: BoxDecoration(
-              color: dotColor.withOpacity(opacity),
+              color: dotColor.withValues(alpha: opacity),
               shape: BoxShape.circle,
             ),
           ),
@@ -279,7 +279,7 @@ class _SmallTypingDotsState extends State<_SmallTypingDots>
               width: 5,
               height: 5,
               decoration: BoxDecoration(
-                color: dotColor.withOpacity(opacity),
+                color: dotColor.withValues(alpha: opacity),
                 shape: BoxShape.circle,
               ),
             );
@@ -388,7 +388,7 @@ class _TypingIndicatorBubbleState extends State<TypingIndicatorBubble>
                           height: 8,
                           decoration: BoxDecoration(
                             color: theme.colorScheme.onSurfaceVariant
-                                .withOpacity(0.6),
+                                .withValues(alpha: 0.6),
                             shape: BoxShape.circle,
                           ),
                         ),

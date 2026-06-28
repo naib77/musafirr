@@ -64,7 +64,7 @@ class CampaignBanner extends StatelessWidget {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              bannerColor.withOpacity(0.8),
+              bannerColor.withValues(alpha: 0.8),
               bannerColor,
             ],
           ),
@@ -74,7 +74,7 @@ class CampaignBanner extends StatelessWidget {
                   image: NetworkImage(campaign.bannerImageUrl!),
                   fit: BoxFit.cover,
                   colorFilter: ColorFilter.mode(
-                    bannerColor.withOpacity(0.3),
+                    bannerColor.withValues(alpha: 0.3),
                     BlendMode.srcOver,
                   ),
                 )
@@ -91,7 +91,7 @@ class CampaignBanner extends StatelessWidget {
                   end: Alignment.bottomCenter,
                   colors: [
                     Colors.transparent,
-                    Colors.black.withOpacity(0.5),
+                    Colors.black.withValues(alpha: 0.5),
                   ],
                 ),
               ),
@@ -136,7 +136,7 @@ class CampaignBanner extends StatelessWidget {
                     Text(
                       campaign.bannerSubtitle!,
                       style: theme.textTheme.bodyMedium?.copyWith(
-                        color: Colors.white.withOpacity(0.9),
+                        color: Colors.white.withValues(alpha: 0.9),
                       ),
                     ),
                   ],
@@ -178,7 +178,7 @@ class CampaignBanner extends StatelessWidget {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      bannerColor.withOpacity(0.8),
+                      bannerColor.withValues(alpha: 0.8),
                       bannerColor,
                     ],
                   ),
@@ -193,7 +193,7 @@ class CampaignBanner extends StatelessWidget {
                     ? Center(
                         child: Icon(
                           Icons.local_offer,
-                          color: Colors.white.withOpacity(0.8),
+                          color: Colors.white.withValues(alpha: 0.8),
                           size: 40,
                         ),
                       )
@@ -241,7 +241,7 @@ class CampaignBanner extends StatelessWidget {
                         Text(
                           campaign.bannerSubtitle!,
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurface.withOpacity(0.7),
+                            color: colorScheme.onSurface.withValues(alpha: 0.7),
                           ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
@@ -264,7 +264,7 @@ class CampaignBanner extends StatelessWidget {
                 padding: const EdgeInsets.only(right: 12),
                 child: Icon(
                   Icons.chevron_right,
-                  color: colorScheme.onSurface.withOpacity(0.5),
+                  color: colorScheme.onSurface.withValues(alpha: 0.5),
                 ),
               ),
             ],
@@ -288,7 +288,7 @@ class CampaignBanner extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: bannerColor.withOpacity(0.3),
+              color: bannerColor.withValues(alpha: 0.3),
               blurRadius: 20,
               offset: const Offset(0, 8),
             ),
@@ -312,7 +312,7 @@ class CampaignBanner extends StatelessWidget {
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                       colors: [
-                        bannerColor.withOpacity(0.8),
+                        bannerColor.withValues(alpha: 0.8),
                         bannerColor,
                       ],
                     ),
@@ -327,7 +327,7 @@ class CampaignBanner extends StatelessWidget {
                     end: Alignment.bottomCenter,
                     colors: [
                       Colors.transparent,
-                      Colors.black.withOpacity(0.6),
+                      Colors.black.withValues(alpha: 0.6),
                     ],
                   ),
                 ),
@@ -351,7 +351,7 @@ class CampaignBanner extends StatelessWidget {
                           borderRadius: BorderRadius.circular(24),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
+                              color: Colors.black.withValues(alpha: 0.1),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -383,7 +383,7 @@ class CampaignBanner extends StatelessWidget {
                       Text(
                         campaign.bannerSubtitle!,
                         style: theme.textTheme.bodyLarge?.copyWith(
-                          color: Colors.white.withOpacity(0.9),
+                          color: Colors.white.withValues(alpha: 0.9),
                         ),
                       ),
                     ],
@@ -413,9 +413,9 @@ class CampaignBanner extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: bannerColor.withOpacity(0.1),
+          color: bannerColor.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: bannerColor.withOpacity(0.3)),
+          border: Border.all(color: bannerColor.withValues(alpha: 0.3)),
         ),
         child: Row(
           children: [
@@ -437,7 +437,7 @@ class CampaignBanner extends StatelessWidget {
                     Text(
                       discountLabel!,
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurface.withOpacity(0.7),
+                        color: colorScheme.onSurface.withValues(alpha: 0.7),
                       ),
                     ),
                 ],
@@ -524,7 +524,7 @@ class _CampaignCountdownState extends State<CampaignCountdown> {
           Icon(
             Icons.timer_outlined,
             size: 14,
-            color: widget.textColor.withOpacity(0.8),
+            color: widget.textColor.withValues(alpha: 0.8),
           ),
           const SizedBox(width: 4),
           Text(
@@ -548,14 +548,14 @@ class _CampaignCountdownState extends State<CampaignCountdown> {
       children: [
         Icon(
           Icons.timer_outlined,
-          color: widget.textColor.withOpacity(0.8),
+          color: widget.textColor.withValues(alpha: 0.8),
           size: 18,
         ),
         const SizedBox(width: 8),
         Text(
           'Ends in: ',
           style: TextStyle(
-            color: widget.textColor.withOpacity(0.8),
+            color: widget.textColor.withValues(alpha: 0.8),
             fontSize: 14,
           ),
         ),
@@ -573,7 +573,7 @@ class _CampaignCountdownState extends State<CampaignCountdown> {
       margin: const EdgeInsets.only(right: 4),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.2),
+        color: Colors.black.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
@@ -592,7 +592,7 @@ class _CampaignCountdownState extends State<CampaignCountdown> {
           Text(
             label,
             style: TextStyle(
-              color: widget.textColor.withOpacity(0.7),
+              color: widget.textColor.withValues(alpha: 0.7),
               fontSize: 10,
             ),
           ),

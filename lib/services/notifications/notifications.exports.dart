@@ -1,5 +1,5 @@
 /// Barrel export for notifications module
-library notifications;
+library;
 
 export 'notification_service.dart';
 export 'in_memory_notification_service.dart';

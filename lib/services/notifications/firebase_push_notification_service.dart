@@ -5,7 +5,6 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-import '../../models/notification.dart';
 import 'push_notification_service.dart';
 
 /// Background message handler - must be top-level function

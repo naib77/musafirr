@@ -86,9 +86,9 @@ class DiscountBadge extends StatelessWidget {
   final String? _label;
 
   String get _displayText {
-    if (_label != null) return _label!;
-    if (_percentage != null) return '${_percentage!.toStringAsFixed(0)}% OFF';
-    if (_fixedAmount != null) return '৳${_fixedAmount!.toStringAsFixed(0)} OFF';
+    if (_label != null) return _label;
+    if (_percentage != null) return '${_percentage.toStringAsFixed(0)}% OFF';
+    if (_fixedAmount != null) return '৳${_fixedAmount.toStringAsFixed(0)} OFF';
 
     if (discount == null) return '';
 
@@ -215,9 +215,9 @@ class DiscountBadge extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: bgColor.withOpacity(0.1),
+          color: bgColor.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: bgColor.withOpacity(0.3)),
+          border: Border.all(color: bgColor.withValues(alpha: 0.3)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -241,7 +241,7 @@ class DiscountBadge extends StatelessWidget {
               Text(
                 discount!.description!,
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurface.withOpacity(0.7),
+                  color: colorScheme.onSurface.withValues(alpha: 0.7),
                 ),
                 textAlign: TextAlign.center,
                 maxLines: 2,
@@ -402,7 +402,7 @@ class FlashSaleBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
-            color: Colors.pink.withOpacity(0.3),
+            color: Colors.pink.withValues(alpha: 0.3),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -424,7 +424,7 @@ class FlashSaleBadge extends StatelessWidget {
               Text(
                 'FLASH SALE',
                 style: theme.textTheme.labelSmall?.copyWith(
-                  color: Colors.white.withOpacity(0.9),
+                  color: Colors.white.withValues(alpha: 0.9),
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.5,
                 ),
@@ -473,7 +473,7 @@ class _CountdownTimer extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.2),
+        color: Colors.black.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(

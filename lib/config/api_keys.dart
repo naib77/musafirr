@@ -9,6 +9,7 @@
 /// ```
 /// flutter build web --dart-define=GOOGLE_MAPS_API_KEY=your_key
 /// ```
+library;
 
 const String googleMapsApiKey = String.fromEnvironment(
   'GOOGLE_MAPS_API_KEY',

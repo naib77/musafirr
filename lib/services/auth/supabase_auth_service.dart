@@ -139,6 +139,9 @@ class SupabaseAuthService implements AuthService {
   User? get currentUser => _currentUser;
 
   @override
+  bool get hasActiveSession => _auth.currentSession != null;
+
+  @override
   Stream<User?> get authStateChanges => _authStateController.stream;
 
   @override

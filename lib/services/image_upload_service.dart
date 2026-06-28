@@ -444,7 +444,7 @@ class ImageUploadService {
     if (params.isEmpty) return url;
 
     final separator = url.contains('?') ? '&' : '?';
-    return '$url${separator}${params.join('&')}';
+    return '$url$separator${params.join('&')}';
   }
 
   /// Get thumbnail URL (300px width)

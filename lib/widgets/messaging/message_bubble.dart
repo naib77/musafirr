@@ -88,7 +88,7 @@ class MessageBubble extends StatelessWidget {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withValues(alpha: 0.05),
                       blurRadius: 4,
                       offset: const Offset(0, 2),
                     ),
@@ -169,7 +169,7 @@ class MessageBubble extends StatelessWidget {
   Widget _buildFooter(BuildContext context) {
     final theme = Theme.of(context);
     final textColor = isMe
-        ? theme.colorScheme.onPrimary.withOpacity(0.7)
+        ? theme.colorScheme.onPrimary.withValues(alpha: 0.7)
         : theme.colorScheme.onSurfaceVariant;
 
     return Row(
@@ -317,7 +317,7 @@ class _DeletedMessageBubble extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+            color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: theme.colorScheme.outlineVariant,
@@ -362,10 +362,10 @@ class _ReplyPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final bgColor = isMe
-        ? theme.colorScheme.onPrimary.withOpacity(0.1)
-        : theme.colorScheme.primary.withOpacity(0.1);
+        ? theme.colorScheme.onPrimary.withValues(alpha: 0.1)
+        : theme.colorScheme.primary.withValues(alpha: 0.1);
     final textColor = isMe
-        ? theme.colorScheme.onPrimary.withOpacity(0.8)
+        ? theme.colorScheme.onPrimary.withValues(alpha: 0.8)
         : theme.colorScheme.onSurface;
 
     return Container(
@@ -571,7 +571,7 @@ class _LocationContent extends StatelessWidget {
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
+                          color: Colors.black.withValues(alpha: 0.2),
                           blurRadius: 8,
                           offset: const Offset(0, 2),
                         ),
@@ -646,7 +646,7 @@ class _LocationContent extends StatelessWidget {
                   metadata!.address!,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: isMe
-                        ? theme.colorScheme.onPrimary.withOpacity(0.8)
+                        ? theme.colorScheme.onPrimary.withValues(alpha: 0.8)
                         : theme.colorScheme.onSurfaceVariant,
                   ),
                   maxLines: 2,
@@ -667,7 +667,7 @@ class _LocationContent extends StatelessWidget {
       child: Icon(
         Icons.map,
         size: 48,
-        color: theme.colorScheme.onSurfaceVariant.withOpacity(0.5),
+        color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
       ),
     );
   }
@@ -846,9 +846,9 @@ class _BookingStatusBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -895,8 +895,8 @@ class _FileContent extends StatelessWidget {
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: isMe
-                  ? theme.colorScheme.onPrimary.withOpacity(0.2)
-                  : theme.colorScheme.primary.withOpacity(0.1),
+                  ? theme.colorScheme.onPrimary.withValues(alpha: 0.2)
+                  : theme.colorScheme.primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
@@ -928,7 +928,7 @@ class _FileContent extends StatelessWidget {
                       metadata?.extension ?? 'FILE',
                       style: TextStyle(
                         fontSize: 10,
-                        color: textColor.withOpacity(0.7),
+                        color: textColor.withValues(alpha: 0.7),
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -937,7 +937,7 @@ class _FileContent extends StatelessWidget {
                       metadata?.formattedSize ?? '',
                       style: TextStyle(
                         fontSize: 10,
-                        color: textColor.withOpacity(0.7),
+                        color: textColor.withValues(alpha: 0.7),
                       ),
                     ),
                   ],
@@ -948,7 +948,7 @@ class _FileContent extends StatelessWidget {
           const SizedBox(width: 8),
           Icon(
             Icons.download,
-            color: textColor.withOpacity(0.7),
+            color: textColor.withValues(alpha: 0.7),
             size: 20,
           ),
         ],
@@ -990,7 +990,7 @@ class _MessageStatusIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = theme.colorScheme.onPrimary.withOpacity(0.7);
+    final color = theme.colorScheme.onPrimary.withValues(alpha: 0.7);
 
     switch (status) {
       case MessageStatus.sending:

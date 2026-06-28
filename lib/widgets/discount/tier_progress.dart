@@ -34,7 +34,7 @@ class TierProgressCard extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: tierColor.withOpacity(0.3)),
+        side: BorderSide(color: tierColor.withValues(alpha: 0.3)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -43,7 +43,7 @@ class TierProgressCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: tierColor.withOpacity(0.1),
+                color: tierColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
@@ -75,7 +75,7 @@ class TierProgressCard extends StatelessWidget {
                     Text(
                       '${progress.overallProgress.toStringAsFixed(0)}% to ${progress.nextTier!.name}',
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurface.withOpacity(0.6),
+                        color: colorScheme.onSurface.withValues(alpha: 0.6),
                       ),
                     ),
                   ] else ...[
@@ -110,7 +110,7 @@ class TierProgressCard extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: tierColor.withOpacity(0.3)),
+        side: BorderSide(color: tierColor.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -121,7 +121,7 @@ class TierProgressCard extends StatelessWidget {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  tierColor.withOpacity(0.8),
+                  tierColor.withValues(alpha: 0.8),
                   tierColor,
                 ],
               ),
@@ -134,7 +134,7 @@ class TierProgressCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
+                    color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
@@ -158,7 +158,7 @@ class TierProgressCard extends StatelessWidget {
                       Text(
                         'Member',
                         style: theme.textTheme.bodyMedium?.copyWith(
-                          color: Colors.white.withOpacity(0.9),
+                          color: Colors.white.withValues(alpha: 0.9),
                         ),
                       ),
                     ],
@@ -171,7 +171,7 @@ class TierProgressCard extends StatelessWidget {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
+                      color: Colors.white.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
@@ -278,7 +278,7 @@ class TierProgressCard extends StatelessWidget {
                         Text(
                           'Enjoy all the exclusive benefits',
                           style: theme.textTheme.bodyMedium?.copyWith(
-                            color: colorScheme.onSurface.withOpacity(0.7),
+                            color: colorScheme.onSurface.withValues(alpha: 0.7),
                           ),
                         ),
                       ],
@@ -332,7 +332,7 @@ class TierProgressCard extends StatelessWidget {
       children: [
         Row(
           children: [
-            Icon(icon, size: 16, color: colorScheme.onSurface.withOpacity(0.6)),
+            Icon(icon, size: 16, color: colorScheme.onSurface.withValues(alpha: 0.6)),
             const SizedBox(width: 8),
             Text(
               label,
@@ -342,7 +342,7 @@ class TierProgressCard extends StatelessWidget {
             Text(
               '$currentText / $requiredText',
               style: theme.textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurface.withOpacity(0.7),
+                color: colorScheme.onSurface.withValues(alpha: 0.7),
               ),
             ),
           ],
@@ -370,7 +370,7 @@ class TierProgressCard extends StatelessWidget {
                 remaining > 0 ? '$remainingText left' : '✓',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: remaining > 0
-                      ? colorScheme.onSurface.withOpacity(0.6)
+                      ? colorScheme.onSurface.withValues(alpha: 0.6)
                       : Colors.green,
                   fontWeight: remaining > 0 ? null : FontWeight.bold,
                 ),
@@ -429,10 +429,10 @@ class TierBadge extends StatelessWidget {
         Container(
           padding: EdgeInsets.all(padding),
           decoration: BoxDecoration(
-            color: tier.color.withOpacity(0.1),
+            color: tier.color.withValues(alpha: 0.1),
             shape: BoxShape.circle,
             border: Border.all(
-              color: tier.color.withOpacity(0.3),
+              color: tier.color.withValues(alpha: 0.3),
               width: 2,
             ),
           ),
@@ -578,7 +578,7 @@ class TiersOverview extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: isCurrentOrPast
                             ? tier.color
-                            : tier.color.withOpacity(0.2),
+                            : tier.color.withValues(alpha: 0.2),
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: tier.color,

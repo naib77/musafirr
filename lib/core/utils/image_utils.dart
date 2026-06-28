@@ -96,7 +96,7 @@ class ImageCache {
   ImageCache({this.maxSize = 100 * 1024 * 1024}); // 100MB default
 
   final int maxSize;
-  final _cache = LinkedHashMap<String, _CacheEntry>();
+  final _cache = <String, _CacheEntry>{};
   int _currentSize = 0;
 
   /// Get cached image

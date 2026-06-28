@@ -109,7 +109,9 @@ class MockMusafirRepository implements MusafirRepository {
   });
 
   List<User> users;
+  @override
   List<Listing> listings;
+  @override
   List<Booking> bookings;
   List<Review> reviews;
   List<Conversation> conversations;

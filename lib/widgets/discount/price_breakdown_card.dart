@@ -93,7 +93,7 @@ class PriceBreakdownCard extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: colorScheme.outline.withOpacity(0.2)),
+        side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -117,7 +117,7 @@ class PriceBreakdownCard extends StatelessWidget {
                   if (onExpandToggle != null)
                     Icon(
                       isExpanded ? Icons.expand_less : Icons.expand_more,
-                      color: colorScheme.onSurface.withOpacity(0.5),
+                      color: colorScheme.onSurface.withValues(alpha: 0.5),
                     ),
                 ],
               ),
@@ -208,7 +208,7 @@ class PriceBreakdownCard extends StatelessWidget {
                           '$currencySymbol${_originalTotal.toStringAsFixed(0)}',
                           style: theme.textTheme.bodySmall?.copyWith(
                             decoration: TextDecoration.lineThrough,
-                            color: colorScheme.onSurface.withOpacity(0.5),
+                            color: colorScheme.onSurface.withValues(alpha: 0.5),
                           ),
                         ),
                       Text(
@@ -231,7 +231,7 @@ class PriceBreakdownCard extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
+                color: Colors.green.withValues(alpha: 0.1),
                 borderRadius: const BorderRadius.vertical(
                   bottom: Radius.circular(16),
                 ),
@@ -278,7 +278,7 @@ class PriceBreakdownCard extends StatelessWidget {
             Icon(
               icon,
               size: 16,
-              color: colorScheme.onSurface.withOpacity(0.5),
+              color: colorScheme.onSurface.withValues(alpha: 0.5),
             ),
             const SizedBox(width: 8),
           ],
@@ -294,7 +294,7 @@ class PriceBreakdownCard extends StatelessWidget {
                   Text(
                     subtitle,
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface.withOpacity(0.6),
+                      color: colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                   ),
               ],
@@ -325,7 +325,7 @@ class PriceBreakdownCard extends StatelessWidget {
             Icon(
               item.icon,
               size: 16,
-              color: item.color ?? colorScheme.onSurface.withOpacity(0.5),
+              color: item.color ?? colorScheme.onSurface.withValues(alpha: 0.5),
             ),
             const SizedBox(width: 8),
           ],
@@ -356,7 +356,7 @@ class PriceBreakdownCard extends StatelessWidget {
                   Text(
                     item.subtitle!,
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface.withOpacity(0.6),
+                      color: colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                   ),
               ],
@@ -384,7 +384,7 @@ class PriceBreakdownCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              color: Colors.green.withOpacity(0.1),
+              color: Colors.green.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(4),
             ),
             child: const Icon(
@@ -448,7 +448,7 @@ class PriceBreakdownCard extends StatelessWidget {
                 '$currencySymbol${_originalTotal.toStringAsFixed(0)}',
                 style: theme.textTheme.bodySmall?.copyWith(
                   decoration: TextDecoration.lineThrough,
-                  color: colorScheme.onSurface.withOpacity(0.5),
+                  color: colorScheme.onSurface.withValues(alpha: 0.5),
                 ),
               ),
             Text(
@@ -498,7 +498,7 @@ class CompactPriceSummary extends StatelessWidget {
             '$currencySymbol${originalPrice.toStringAsFixed(0)}',
             style: theme.textTheme.bodySmall?.copyWith(
               decoration: TextDecoration.lineThrough,
-              color: colorScheme.onSurface.withOpacity(0.5),
+              color: colorScheme.onSurface.withValues(alpha: 0.5),
             ),
           ),
           const SizedBox(width: 4),
@@ -513,7 +513,7 @@ class CompactPriceSummary extends StatelessWidget {
           Text(
             ' /night',
             style: theme.textTheme.bodySmall?.copyWith(
-              color: colorScheme.onSurface.withOpacity(0.6),
+              color: colorScheme.onSurface.withValues(alpha: 0.6),
             ),
           ),
         if (discountPercentage != null && discountPercentage! > 0) ...[

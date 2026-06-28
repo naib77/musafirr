@@ -71,6 +71,9 @@ class MockAuthService implements AuthService {
   User? get currentUser => _currentUser;
 
   @override
+  bool get hasActiveSession => _currentUser != null;
+
+  @override
   Stream<User?> get authStateChanges => _authStateController.stream;
 
   void _setCurrentUser(User? user) {

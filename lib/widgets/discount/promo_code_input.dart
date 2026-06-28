@@ -315,9 +315,9 @@ class _PromoCodeInputState extends State<PromoCodeInput> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.green.withOpacity(0.1),
+        color: Colors.green.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.green.withOpacity(0.3)),
+        border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
@@ -355,16 +355,16 @@ class _PromoCodeInputState extends State<PromoCodeInput> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: colorScheme.primaryContainer.withOpacity(0.3),
+        color: colorScheme.primaryContainer.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colorScheme.primary.withOpacity(0.3)),
+        border: Border.all(color: colorScheme.primary.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: colorScheme.primary.withOpacity(0.1),
+              color: colorScheme.primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
@@ -409,7 +409,7 @@ class _PromoCodeInputState extends State<PromoCodeInput> {
                 Text(
                   discount?.name ?? 'Promo Code Applied',
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurface.withOpacity(0.7),
+                    color: colorScheme.onSurface.withValues(alpha: 0.7),
                   ),
                 ),
                 if (amount > 0)
@@ -427,7 +427,7 @@ class _PromoCodeInputState extends State<PromoCodeInput> {
             IconButton(
               icon: Icon(
                 Icons.close,
-                color: colorScheme.onSurface.withOpacity(0.5),
+                color: colorScheme.onSurface.withValues(alpha: 0.5),
               ),
               onPressed: _removeCode,
               tooltip: 'Remove code',
@@ -511,8 +511,8 @@ class _CompactPromoCodeInputState extends State<CompactPromoCodeInput> {
       ),
       deleteIcon: const Icon(Icons.close, size: 18),
       onDeleted: widget.onRemoved,
-      backgroundColor: colorScheme.primaryContainer.withOpacity(0.3),
-      side: BorderSide(color: colorScheme.primary.withOpacity(0.3)),
+      backgroundColor: colorScheme.primaryContainer.withValues(alpha: 0.3),
+      side: BorderSide(color: colorScheme.primary.withValues(alpha: 0.3)),
     );
   }
 }

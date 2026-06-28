@@ -320,7 +320,7 @@ class MemoryCache<T> {
   final int maxSize;
   final Duration defaultTtl;
 
-  final _cache = LinkedHashMap<String, CacheEntry<T>>();
+  final _cache = <String, CacheEntry<T>>{};
 
   /// Get a cached value
   T? get(String key) {

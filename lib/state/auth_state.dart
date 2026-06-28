@@ -50,20 +50,39 @@ class AuthStateNotifier extends ChangeNotifier with SafeNotifier {
   /// Current authentication status (initializing, authenticated, unauthenticated)
   AuthStatus get status => _status;
 
-  /// Initialize auth state - waits for first auth event or timeout
+  /// Initialize auth state from the persisted session.
+  ///
+  /// A restored session is available synchronously (before the user profile
+  /// finishes loading over the network). So we decide the startup status from
+  /// the session, NOT from whether the profile has loaded yet:
+  ///
+  /// - Session present -> the user IS authenticated. We stay on the splash
+  ///   screen (status = initializing) until the profile arrives via
+  ///   [_onAuthChange], so the login screen never flashes. A safety timeout
+  ///   marks the user authenticated even if the profile fetch stalls.
+  /// - No session -> mark unauthenticated after a brief grace period that
+  ///   lets the auth service emit its first event.
   Future<void> _initializeAuthState() async {
-    // Give the auth service time to check existing session and load profile
-    // This covers the async gap between session check and profile load
-    await Future.delayed(const Duration(milliseconds: 1500));
+    final hasSession = _service.hasActiveSession;
 
-    // If we still haven't received an auth event, determine status from current state
-    if (!_hasReceivedFirstAuthEvent) {
-      _hasReceivedFirstAuthEvent = true;
-      _status = _currentUser != null
-          ? AuthStatus.authenticated
-          : AuthStatus.unauthenticated;
-      notifyListeners();
-    }
+    // A session that exists means a logged-in user; give the profile fetch a
+    // generous window. Without a session, only a short grace period is needed.
+    await Future.delayed(
+      hasSession
+          ? const Duration(seconds: 8)
+          : const Duration(milliseconds: 400),
+    );
+
+    // If the profile already loaded, _onAuthChange has set the status.
+    if (_hasReceivedFirstAuthEvent) return;
+
+    _hasReceivedFirstAuthEvent = true;
+    // Trust the session: if one exists, the user is authenticated even if the
+    // profile fetch hasn't completed yet.
+    _status = (hasSession || _currentUser != null)
+        ? AuthStatus.authenticated
+        : AuthStatus.unauthenticated;
+    notifyListeners();
   }
 
   void _onAuthChange(User? user) {

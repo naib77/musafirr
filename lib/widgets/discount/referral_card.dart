@@ -37,7 +37,7 @@ class ReferralCard extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: colorScheme.outline.withOpacity(0.2)),
+        side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -46,7 +46,7 @@ class ReferralCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.purple.withOpacity(0.1),
+                color: Colors.purple.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Icon(
@@ -69,7 +69,7 @@ class ReferralCard extends StatelessWidget {
                   Text(
                     'Give ৳${referral.refereeDiscountAmount.toStringAsFixed(0)}, get ৳${referral.referrerRewardAmount.toStringAsFixed(0)}',
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface.withOpacity(0.7),
+                      color: colorScheme.onSurface.withValues(alpha: 0.7),
                     ),
                   ),
                 ],
@@ -93,7 +93,7 @@ class ReferralCard extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.purple.withOpacity(0.2)),
+        side: BorderSide(color: Colors.purple.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -117,7 +117,7 @@ class ReferralCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
+                    color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(
@@ -141,7 +141,7 @@ class ReferralCard extends StatelessWidget {
                       Text(
                         'Give ৳${referral.refereeDiscountAmount.toStringAsFixed(0)}, get ৳${referral.referrerRewardAmount.toStringAsFixed(0)}',
                         style: theme.textTheme.bodyMedium?.copyWith(
-                          color: Colors.white.withOpacity(0.9),
+                          color: Colors.white.withValues(alpha: 0.9),
                         ),
                       ),
                     ],
@@ -160,17 +160,17 @@ class ReferralCard extends StatelessWidget {
                 Text(
                   'Your referral code',
                   style: theme.textTheme.labelLarge?.copyWith(
-                    color: colorScheme.onSurface.withOpacity(0.7),
+                    color: colorScheme.onSurface.withValues(alpha: 0.7),
                   ),
                 ),
                 const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.purple.withOpacity(0.05),
+                    color: Colors.purple.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: Colors.purple.withOpacity(0.2),
+                      color: Colors.purple.withValues(alpha: 0.2),
                       style: BorderStyle.solid,
                     ),
                   ),
@@ -236,7 +236,7 @@ class ReferralCard extends StatelessWidget {
                       Container(
                         height: 40,
                         width: 1,
-                        color: colorScheme.outline.withOpacity(0.2),
+                        color: colorScheme.outline.withValues(alpha: 0.2),
                       ),
                       Expanded(
                         child: _buildStatItem(
@@ -249,7 +249,7 @@ class ReferralCard extends StatelessWidget {
                       Container(
                         height: 40,
                         width: 1,
-                        color: colorScheme.outline.withOpacity(0.2),
+                        color: colorScheme.outline.withValues(alpha: 0.2),
                       ),
                       Expanded(
                         child: _buildStatItem(
@@ -284,7 +284,7 @@ class ReferralCard extends StatelessWidget {
         Icon(
           icon,
           size: 20,
-          color: Colors.purple.withOpacity(0.7),
+          color: Colors.purple.withValues(alpha: 0.7),
         ),
         const SizedBox(height: 4),
         Text(
@@ -296,7 +296,7 @@ class ReferralCard extends StatelessWidget {
         Text(
           label,
           style: theme.textTheme.bodySmall?.copyWith(
-            color: colorScheme.onSurface.withOpacity(0.6),
+            color: colorScheme.onSurface.withValues(alpha: 0.6),
           ),
         ),
       ],
@@ -324,7 +324,7 @@ class ReferralCompletionCard extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: colorScheme.outline.withOpacity(0.2)),
+        side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -333,7 +333,7 @@ class ReferralCompletionCard extends StatelessWidget {
             // Avatar
             CircleAvatar(
               radius: 24,
-              backgroundColor: _getStatusColor(completion.status).withOpacity(0.1),
+              backgroundColor: _getStatusColor(completion.status).withValues(alpha: 0.1),
               backgroundImage: completion.refereeAvatarUrl != null
                   ? NetworkImage(completion.refereeAvatarUrl!)
                   : null,
@@ -363,13 +363,13 @@ class ReferralCompletionCard extends StatelessWidget {
                   Text(
                     _getStatusText(completion.status),
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface.withOpacity(0.6),
+                      color: colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                   ),
                   Text(
                     'Joined ${_formatDate(completion.signedUpAt)}',
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface.withOpacity(0.5),
+                      color: colorScheme.onSurface.withValues(alpha: 0.5),
                     ),
                   ),
                 ],
@@ -383,7 +383,7 @@ class ReferralCompletionCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: _getStatusColor(completion.status).withOpacity(0.1),
+                    color: _getStatusColor(completion.status).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -540,7 +540,7 @@ class ReferralHowItWorks extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: Colors.purple.withOpacity(0.1),
+                color: Colors.purple.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: Center(
@@ -555,7 +555,7 @@ class ReferralHowItWorks extends StatelessWidget {
               Container(
                 width: 2,
                 height: 40,
-                color: Colors.purple.withOpacity(0.2),
+                color: Colors.purple.withValues(alpha: 0.2),
               ),
           ],
         ),
@@ -576,7 +576,7 @@ class ReferralHowItWorks extends StatelessWidget {
                 Text(
                   description,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurface.withOpacity(0.7),
+                    color: colorScheme.onSurface.withValues(alpha: 0.7),
                   ),
                 ),
               ],

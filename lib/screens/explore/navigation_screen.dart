@@ -116,30 +116,31 @@ class _NavigationScreenState extends State<NavigationScreen> {
         return;
       }
 
-      // On mobile, get directions
+      // On mobile, try to fetch an in-app route polyline. This needs a key
+      // that authorizes the Directions REST API; if it isn't available (empty
+      // key, REST not enabled, or an "Android apps" restriction that REST
+      // calls can't satisfy) we degrade gracefully rather than dead-end.
       final directions = await DirectionsService.getDirections(
         origin: _currentLocation!,
         destination: _destinationLocation,
         mode: _travelMode,
       );
 
-      if (directions == null) {
-        setState(() {
-          _error = 'Could not find directions. Please try again.';
-          _isLoading = false;
-        });
-        return;
-      }
-
       setState(() {
         _directions = directions;
         _isLoading = false;
       });
 
-      // Fit map to show entire route
-      _mapController?.animateCamera(
-        CameraUpdate.newLatLngBounds(directions.bounds, 80),
-      );
+      if (directions != null) {
+        // Fit map to show the entire route.
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLngBounds(directions.bounds, 80),
+        );
+      } else {
+        // No in-app route — still useful: show both pins and let the user open
+        // the native Google Maps app for turn-by-turn navigation.
+        _fitMapToBothLocations();
+      }
     } catch (e) {
       setState(() {
         _error = 'Error: $e';
@@ -299,7 +300,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
             ),
 
           // Bottom info panel
-          if ((_directions != null || (kIsWeb && _currentLocation != null)) && !_isLoading)
+          if (_currentLocation != null && !_isLoading)
             Positioned(
               bottom: 0,
               left: 0,
@@ -429,18 +430,22 @@ class _NavigationScreenState extends State<NavigationScreen> {
                           ),
                         ),
 
-                        // Open in Google Maps button (for web or as an option)
-                        if (kIsWeb) ...[
-                          const SizedBox(height: 16),
-                          FilledButton.icon(
-                            onPressed: _openInGoogleMaps,
-                            icon: const Icon(Icons.navigation),
-                            label: const Text('Start Navigation in Google Maps'),
-                            style: FilledButton.styleFrom(
-                              minimumSize: const Size(double.infinity, 48),
-                            ),
+                        // Open in Google Maps for true turn-by-turn. Always
+                        // available — it's the most reliable path on Android
+                        // and the fallback when the in-app route is missing.
+                        const SizedBox(height: 16),
+                        FilledButton.icon(
+                          onPressed: _openInGoogleMaps,
+                          icon: const Icon(Icons.navigation),
+                          label: Text(
+                            _directions != null
+                                ? 'Start in Google Maps'
+                                : 'Open in Google Maps',
                           ),
-                        ],
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size(double.infinity, 48),
+                          ),
+                        ),
                       ],
                     ),
                   ),

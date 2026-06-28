@@ -147,7 +147,7 @@ class _ChannelChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final backgroundColor = isSelected
-        ? _getChannelColor(channel).withOpacity(0.15)
+        ? _getChannelColor(channel).withValues(alpha: 0.15)
         : theme.colorScheme.surfaceContainerHighest;
 
     return Material(
@@ -162,8 +162,8 @@ class _ChannelChip extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: isSelected
-                  ? _getChannelColor(channel).withOpacity(0.5)
-                  : theme.colorScheme.outline.withOpacity(0.3),
+                  ? _getChannelColor(channel).withValues(alpha: 0.5)
+                  : theme.colorScheme.outline.withValues(alpha: 0.3),
               width: 1,
             ),
           ),
@@ -249,7 +249,7 @@ class ChannelIndicatorBadge extends StatelessWidget {
     return Container(
       padding: EdgeInsets.all(padding),
       decoration: BoxDecoration(
-        color: _getChannelColor(channel).withOpacity(0.15),
+        color: _getChannelColor(channel).withValues(alpha: 0.15),
         shape: BoxShape.circle,
       ),
       child: Icon(
@@ -295,7 +295,7 @@ class ChannelConnectionCard extends StatelessWidget {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: channelColor.withOpacity(0.15),
+                color: channelColor.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
@@ -382,7 +382,7 @@ class ChannelPreferencesSheet extends StatelessWidget {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.outline.withOpacity(0.3),
+                  color: theme.colorScheme.outline.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -516,7 +516,7 @@ class _ChannelOptionTile extends StatelessWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: channelColor.withOpacity(0.15),
+          color: channelColor.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(

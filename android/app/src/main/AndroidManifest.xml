@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required for map tiles, Directions API and network images in release
+         builds. Flutter only auto-adds INTERNET to the debug/profile manifests,
+         so without this a release APK/AAB has no network access. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Location for maps -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -71,6 +76,17 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Lets url_launcher see a maps/browser app on Android 11+ so
+             "View on Map" / "Open in Google Maps" can launch. Without these,
+             launchUrl(...externalApplication) throws on API 30+. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="geo"/>
         </intent>
     </queries>
 </manifest>

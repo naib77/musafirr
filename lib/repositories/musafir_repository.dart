@@ -83,6 +83,7 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   List<Booking> getBookingsForUser(String userId);
   List<Booking> getUpcomingBookings(String userId);
   List<Booking> getPastBookings(String userId);
+  @override
   Booking? getBookingById(String id);
   Booking createMarketplaceBooking({
     required String listingId,
@@ -101,6 +102,7 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   /// remote write finishes — await it before performing actions that depend on
   /// the new status being committed (e.g. sending booking messages gated by
   /// RLS on booking status). Safe to call fire-and-forget for optimistic UI.
+  @override
   Future<void> updateBooking(Booking booking);
   List<Booking> getPendingBookingsForHost(String hostId);
   List<Booking> getBookingsForHost(String hostId);

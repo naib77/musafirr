@@ -1,5 +1,5 @@
 /// Barrel export for currency module
-library currency;
+library;
 
 export 'currency.dart';
 export 'currency_config.dart';

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'config/supabase_config.dart';
 import 'core/theme/app_theme.dart';
 import 'repositories/supabase_musafir_repository.dart';
 import 'screens/auth/login_screen.dart';

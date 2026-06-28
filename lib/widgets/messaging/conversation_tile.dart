@@ -43,7 +43,7 @@ class ConversationTile extends StatelessWidget {
           onLongPress: onLongPress,
           child: Container(
             color: hasUnread
-                ? theme.colorScheme.primaryContainer.withOpacity(0.1)
+                ? theme.colorScheme.primaryContainer.withValues(alpha: 0.1)
                 : null,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
@@ -448,7 +448,7 @@ class _TypingIndicatorWidgetState extends State<TypingIndicatorWidget>
                     height: 6,
                     decoration: BoxDecoration(
                       color: theme.colorScheme.onSurfaceVariant
-                          .withOpacity(opacity),
+                          .withValues(alpha: opacity),
                       shape: BoxShape.circle,
                     ),
                   );
