@@ -466,6 +466,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             messagingState: widget.messagingState,
             initialTabIndex: initialTab,
             highlightBookingId: highlightBookingId,
+            showBackButton: true,
           ),
         ),
       );
@@ -615,6 +616,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   messagingState: widget.messagingState,
                   initialTabIndex: initialTab,
                   highlightBookingId: bookingId,
+                  showBackButton: true,
                 ),
               ),
             );

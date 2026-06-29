@@ -18,6 +18,7 @@ class Listing {
     this.monthlyRate,
     required this.facilities,
     required this.available,
+    this.hostAvailable = true,
     // New fields for marketplace
     this.hostId,
     this.hostAvatarUrl,
@@ -52,6 +53,11 @@ class Listing {
 
   final List<Facility> facilities;
   bool available;
+
+  /// Whether the listing's host is currently accepting bookings (mirror of
+  /// the host's profile availability). Guests don't see listings where this is
+  /// false; the host's own management views ignore it.
+  final bool hostAvailable;
 
   // New marketplace fields
   final String? hostId;
@@ -144,6 +150,7 @@ class Listing {
     double? monthlyRate,
     List<Facility>? facilities,
     bool? available,
+    bool? hostAvailable,
     String? hostId,
     String? hostAvatarUrl,
     String? description,
@@ -172,6 +179,7 @@ class Listing {
       monthlyRate: monthlyRate ?? this.monthlyRate,
       facilities: facilities ?? this.facilities,
       available: available ?? this.available,
+      hostAvailable: hostAvailable ?? this.hostAvailable,
       hostId: hostId ?? this.hostId,
       hostAvatarUrl: hostAvatarUrl ?? this.hostAvatarUrl,
       description: description ?? this.description,
@@ -212,6 +220,7 @@ class Listing {
       monthlyRate: monthlyRate,
       facilities: facilities,
       available: available,
+      hostAvailable: hostAvailable,
       hostId: hostId,
       hostAvatarUrl: hostAvatarUrl,
       description: description,

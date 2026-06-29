@@ -924,7 +924,7 @@ class _EnhancedBookingCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
-              '${booking.numberOfNights} night${booking.numberOfNights == 1 ? '' : 's'}',
+              booking.durationLabel,
               style: theme.textTheme.labelMedium?.copyWith(
                 color: theme.colorScheme.onPrimaryContainer,
                 fontWeight: FontWeight.w600,
@@ -1536,8 +1536,7 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
           _DetailRow(
             icon: Icons.nights_stay_rounded,
             label: 'Duration',
-            value:
-                '${booking.numberOfNights} night${booking.numberOfNights > 1 ? 's' : ''}',
+            value: booking.durationLabel,
           ),
           const SizedBox(height: 16),
           _DetailRow(

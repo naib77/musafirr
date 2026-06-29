@@ -46,6 +46,7 @@ class HostReservationsScreen extends StatefulWidget {
     this.notificationState,
     this.onOpenInbox,
     this.onOpenNotifications,
+    this.showBackButton = false,
   });
 
   final MusafirRepository repository;
@@ -68,6 +69,12 @@ class HostReservationsScreen extends StatefulWidget {
 
   /// Optional booking ID to highlight/scroll to
   final String? highlightBookingId;
+
+  /// Show a leading back button in the header. Set to true when this screen is
+  /// pushed as a route (e.g. from the dashboard or a notification), where the
+  /// shell's bottom nav isn't present to navigate away. Defaults to false so
+  /// the shell's Reservations *tab* shows no (pointless) back arrow.
+  final bool showBackButton;
 
   @override
   State<HostReservationsScreen> createState() => _HostReservationsScreenState();
@@ -144,6 +151,9 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
           AppPageHeader(
             title: 'Reservations',
             subtitle: 'Manage your bookings',
+            onBack: widget.showBackButton
+                ? () => Navigator.of(context).maybePop()
+                : null,
             actions: [
               if (widget.messagingState != null && widget.onOpenInbox != null)
                 HeaderActionButton(
@@ -961,15 +971,7 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
     };
   }
 
-  String _getDurationValue(Booking booking) {
-    final duration = booking.effectiveCheckOut.difference(booking.effectiveCheckIn);
-
-    return switch (booking.unitLabel) {
-      'hour' => '${duration.inHours} hour${duration.inHours != 1 ? 's' : ''}',
-      'month' => '${(duration.inDays / 30).round()} month${(duration.inDays / 30).round() != 1 ? 's' : ''}',
-      _ => '${duration.inDays} night${duration.inDays != 1 ? 's' : ''}',
-    };
-  }
+  String _getDurationValue(Booking booking) => booking.durationLabel;
 }
 
 class _ReservationCard extends StatelessWidget {

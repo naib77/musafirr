@@ -407,6 +407,128 @@ class ImageUploadService {
     );
   }
 
+  /// Upload one side of an identity document captured as an [XFile]
+  /// (camera/gallery) to the private `documents` bucket, then record it in
+  /// `owner_documents` so it's linked to the user and enters verification.
+  ///
+  /// [idType] is the human-meaningful document the user chose
+  /// ('nid' | 'passport' | 'driving_license' | 'student_id' | 'office_id'); it
+  /// is encoded in the storage path and stored on `profiles.id_document_type`
+  /// (see [setIdDocumentType]). The two `owner_documents` slots stay
+  /// `nid_front` / `nid_back` regardless of [idType], because that table's CHECK
+  /// constraint and verification trigger are keyed to those two slot names.
+  ///
+  /// Must be called while authenticated (storage + table RLS require auth.uid()).
+  Future<UploadResult> uploadIdentityImage({
+    required XFile image,
+    required String userId,
+    required String idType,
+    required bool isFront,
+    UploadProgressCallback? onProgress,
+  }) async {
+    final ext = p.extension(image.name).toLowerCase().replaceAll('.', '');
+    final safeExt = ext.isEmpty ? 'jpg' : ext;
+    final side = isFront ? 'front' : 'back';
+    final path =
+        '$userId/${idType}_${side}_${DateTime.now().millisecondsSinceEpoch}.$safeExt';
+
+    final result = await uploadXFile(
+      file: image,
+      bucket: StorageBuckets.documents,
+      path: path,
+      onProgress: onProgress,
+    );
+
+    if (!result.success) return result;
+
+    // Best-effort: link the stored file to the user. The image is already
+    // safely in storage even if this row write fails.
+    final slot = isFront ? DocumentType.nidFront : DocumentType.nidBack;
+    try {
+      await _client.from('owner_documents').upsert(
+        {
+          'user_id': userId,
+          'document_type': slot,
+          'file_path': result.storagePath,
+          'file_name': image.name,
+          'mime_type': image.mimeType ?? lookupMimeType(image.path) ?? 'image/jpeg',
+        },
+        onConflict: 'user_id,document_type',
+      );
+    } catch (e) {
+      debugPrint('[ImageUploadService] owner_documents record failed: $e');
+    }
+
+    return result;
+  }
+
+  /// Records which identity document the user uploaded on their profile.
+  /// Best-effort: signup still succeeds (and images still upload) even if the
+  /// `id_document_type` column hasn't been migrated yet.
+  Future<void> setIdDocumentType({
+    required String userId,
+    required String idType,
+  }) async {
+    try {
+      await _client
+          .from('profiles')
+          .update({'id_document_type': idType}).eq('id', userId);
+    } catch (e) {
+      debugPrint('[ImageUploadService] setIdDocumentType failed: $e');
+    }
+  }
+
+  // ============== Proof of address (host) ==============
+
+  /// Uploads a host's proof-of-address document (utility bill, etc.) to the
+  /// private `documents` bucket and stores its path on the profile. Presence of
+  /// that path is what unlocks listing creation when the requirement is on.
+  Future<UploadResult> uploadAddressProof({
+    required XFile image,
+    required String userId,
+    UploadProgressCallback? onProgress,
+  }) async {
+    final ext = p.extension(image.name).toLowerCase().replaceAll('.', '');
+    final safeExt = ext.isEmpty ? 'jpg' : ext;
+    final path =
+        '$userId/address_proof_${DateTime.now().millisecondsSinceEpoch}.$safeExt';
+
+    final result = await uploadXFile(
+      file: image,
+      bucket: StorageBuckets.documents,
+      path: path,
+      onProgress: onProgress,
+    );
+
+    if (!result.success) return result;
+
+    try {
+      await _client
+          .from('profiles')
+          .update({'address_proof_path': result.storagePath}).eq('id', userId);
+    } catch (e) {
+      debugPrint('[ImageUploadService] address_proof_path update failed: $e');
+    }
+
+    return result;
+  }
+
+  /// Whether the user has a proof-of-address document on file.
+  Future<bool> hasAddressProof(String userId) async {
+    try {
+      final row = await _client
+          .from('profiles')
+          .select('address_proof_path')
+          .eq('id', userId)
+          .maybeSingle();
+      final path = row?['address_proof_path'] as String?;
+      return path != null && path.isNotEmpty;
+    } catch (e) {
+      debugPrint('[ImageUploadService] hasAddressProof failed: $e');
+      return false;
+    }
+  }
+
   // ============== Helpers ==============
 
   /// Delete a file from storage

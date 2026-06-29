@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/currency/currency.dart';
 import '../../core/currency/money.dart';
+import '../../core/theme/app_colors.dart';
 import '../../models/listing.dart';
 import '../../models/booking.dart';
 import '../../models/booking_categorizer.dart';
@@ -9,6 +10,7 @@ import '../../models/booking_status.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
 import '../../state/messaging_state.dart';
+import '../../widgets/modern_banner.dart';
 import 'create_listing_screen.dart';
 import 'host_listings_screen.dart';
 import 'host_reservations_screen.dart';
@@ -19,11 +21,17 @@ class HostDashboardScreen extends StatelessWidget {
     required this.repository,
     required this.authState,
     this.messagingState,
+    this.onOpenReservations,
   });
 
   final MusafirRepository repository;
   final AuthStateNotifier authState;
   final MessagingStateNotifier? messagingState;
+
+  /// Switches the shell to the Reservations tab. Preferred over pushing a new
+  /// route so the user sees the full tabbed UI (Guest/Host switcher + bottom
+  /// nav), exactly as if they tapped the Reservations tab directly.
+  final VoidCallback? onOpenReservations;
 
   @override
   Widget build(BuildContext context) {
@@ -92,6 +100,22 @@ class HostDashboardScreen extends StatelessWidget {
                   style: theme.textTheme.bodyLarge?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
+                ),
+                const SizedBox(height: 20),
+
+                // Host-wide availability toggle
+                _AvailabilityCard(
+                  available: user?.hostAvailable ?? true,
+                  onChanged: (value) {
+                    if (user == null) return;
+                    authState.updateUser(user.copyWith(hostAvailable: value));
+                    ModernBanner.showInfo(
+                      context,
+                      value
+                          ? "You're now available — guests can book you."
+                          : "You're now away — you won't receive new bookings.",
+                    );
+                  },
                 ),
                 const SizedBox(height: 24),
 
@@ -187,7 +211,8 @@ class HostDashboardScreen extends StatelessWidget {
                   icon: Icons.book_online,
                   title: 'Reservations',
                   description: 'View upcoming and past bookings',
-                  onTap: () => _navigateToReservations(context),
+                  onTap: onOpenReservations ??
+                      () => _navigateToReservations(context),
                   trailing: upcomingBookings.isNotEmpty
                       ? Container(
                           padding: const EdgeInsets.symmetric(
@@ -326,6 +351,7 @@ class HostDashboardScreen extends StatelessWidget {
           repository: repository,
           authState: authState,
           messagingState: messagingState,
+          showBackButton: true,
         ),
       ),
     );
@@ -343,6 +369,7 @@ class HostDashboardScreen extends StatelessWidget {
           messagingState: messagingState,
           initialTabIndex: HostReservationTab.forBooking(booking),
           highlightBookingId: booking.id,
+          showBackButton: true,
         ),
       ),
     );
@@ -364,6 +391,77 @@ class HostDashboardScreen extends StatelessWidget {
       'Dec'
     ];
     return '${months[date.month - 1]} ${date.day}';
+  }
+}
+
+/// Modern host-wide availability toggle. Green when available, amber "Away"
+/// when not, with a switch.
+class _AvailabilityCard extends StatelessWidget {
+  const _AvailabilityCard({required this.available, required this.onChanged});
+
+  final bool available;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = available ? AppColors.success : AppColors.warning;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              available
+                  ? Icons.check_circle_rounded
+                  : Icons.do_not_disturb_on_rounded,
+              color: color,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  available ? 'Available' : 'Away',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  available
+                      ? "You're accepting new bookings"
+                      : "You're not accepting new bookings",
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: available,
+            activeTrackColor: AppColors.success,
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
   }
 }
 

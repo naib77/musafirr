@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
 import 'config/supabase_config.dart';
+import 'services/app_settings_service.dart';
 import 'services/auth/supabase_auth_service.dart';
 import 'services/notifications/firebase_push_notification_service.dart';
 import 'services/notifications/push_notification_service.dart';
@@ -42,6 +43,10 @@ void main() async {
 
     // Initialize Supabase auth service to listen for auth state changes
     SupabaseAuthService.instance.initialize();
+
+    // Load admin-configurable flags (e.g. require_listing_address_proof) in the
+    // background — the gate awaits this if it hasn't finished by listing time.
+    AppSettingsService.instance.load();
   }
 
   runApp(const MusafirApp());

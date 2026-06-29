@@ -58,6 +58,10 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   User? getUserByEmail(String email);
   void addUser(User user);
 
+  /// Whether a host is currently accepting bookings (host-wide availability).
+  /// Defaults to true if the host can't be resolved.
+  Future<bool> isHostAvailable(String hostId);
+
   // Listing methods
   Listing? getListingById(String id);
   List<Listing> searchListings(SearchFilters filters);

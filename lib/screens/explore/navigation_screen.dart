@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/theme/app_colors.dart';
 import '../../models/listing.dart';
 import '../../services/directions_service.dart';
 import '../../services/location_service.dart';
@@ -363,35 +364,43 @@ class _NavigationScreenState extends State<NavigationScreen> {
                         ],
 
                         // Travel mode selector
-                        SegmentedButton<String>(
-                          segments: const [
-                            ButtonSegment(
-                              value: 'driving',
-                              icon: Icon(Icons.directions_car),
-                              label: Text('Drive'),
-                            ),
-                            ButtonSegment(
-                              value: 'walking',
-                              icon: Icon(Icons.directions_walk),
-                              label: Text('Walk'),
-                            ),
-                            ButtonSegment(
-                              value: 'bicycling',
-                              icon: Icon(Icons.directions_bike),
-                              label: Text('Bike'),
-                            ),
-                            ButtonSegment(
-                              value: 'transit',
-                              icon: Icon(Icons.directions_transit),
-                              label: Text('Transit'),
-                            ),
-                          ],
-                          selected: {_travelMode},
-                          onSelectionChanged: (selected) {
-                            _changeTravelMode(selected.first);
-                          },
+                        _TravelModeSelector(
+                          selected: _travelMode,
+                          onChanged: _changeTravelMode,
                         ),
                         const SizedBox(height: 16),
+
+                        // Hint shown when the in-app route couldn't load
+                        // (e.g. Directions API key restricted/disabled).
+                        if (!kIsWeb && _directions == null) ...[
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppColors.amber.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: AppColors.amber.withValues(alpha: 0.25),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.info_outline_rounded,
+                                    size: 18, color: AppColors.amber),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'In-app route preview is unavailable. Open '
+                                    'Google Maps below for turn-by-turn directions.',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
 
                         // Destination info
                         Container(
@@ -490,6 +499,80 @@ class _InfoChip extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Width-fitting travel-mode selector (replaces SegmentedButton, whose
+/// 4 icon+label segments overflow on phone widths). Each mode gets an equal
+/// Expanded slot, so labels never clip.
+class _TravelModeSelector extends StatelessWidget {
+  const _TravelModeSelector({required this.selected, required this.onChanged});
+
+  final String selected;
+  final ValueChanged<String> onChanged;
+
+  static const _modes = <(String, IconData, String)>[
+    ('driving', Icons.directions_car_filled_rounded, 'Drive'),
+    ('walking', Icons.directions_walk_rounded, 'Walk'),
+    ('bicycling', Icons.directions_bike_rounded, 'Bike'),
+    ('transit', Icons.directions_transit_rounded, 'Transit'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceMuted,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          for (final (value, icon, label) in _modes)
+            Expanded(
+              child: GestureDetector(
+                onTap: () => onChanged(value),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOut,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(
+                    gradient:
+                        value == selected ? AppColors.brandGradient : null,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(
+                        icon,
+                        size: 20,
+                        color: value == selected
+                            ? Colors.white
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.visible,
+                        softWrap: false,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: value == selected
+                              ? Colors.white
+                              : theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

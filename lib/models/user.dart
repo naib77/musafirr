@@ -13,6 +13,7 @@ class User {
     this.phone,
     this.createdAt,
     this.isHost = false,
+    this.hostAvailable = true,
     this.hostSince,
     this.bio,
     this.responseRate,
@@ -33,6 +34,10 @@ class User {
 
   // Host-related fields
   final bool isHost;
+
+  /// Host-wide availability. When false the host is "away" / not accepting new
+  /// bookings. Independent of each listing's own visibility.
+  final bool hostAvailable;
   final DateTime? hostSince;
   final String? bio;
   final int? responseRate; // percentage
@@ -64,6 +69,7 @@ class User {
           ? DateTime.parse(json['created_at'] as String)
           : null,
       isHost: json['is_host'] as bool? ?? false,
+      hostAvailable: json['is_available'] as bool? ?? true,
       hostSince: json['host_since'] != null
           ? DateTime.parse(json['host_since'] as String)
           : null,
@@ -92,6 +98,7 @@ class User {
       'phone': phone,
       'created_at': createdAt?.toIso8601String(),
       'is_host': isHost,
+      'is_available': hostAvailable,
       'host_since': hostSince?.toIso8601String(),
       'bio': bio,
       'response_rate': responseRate,
@@ -112,6 +119,7 @@ class User {
     String? phone,
     DateTime? createdAt,
     bool? isHost,
+    bool? hostAvailable,
     DateTime? hostSince,
     String? bio,
     int? responseRate,
@@ -130,6 +138,7 @@ class User {
       phone: phone ?? this.phone,
       createdAt: createdAt ?? this.createdAt,
       isHost: isHost ?? this.isHost,
+      hostAvailable: hostAvailable ?? this.hostAvailable,
       hostSince: hostSince ?? this.hostSince,
       bio: bio ?? this.bio,
       responseRate: responseRate ?? this.responseRate,

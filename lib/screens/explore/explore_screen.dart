@@ -84,7 +84,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
   List<Listing> get _filteredListings {
     var listings = widget.searchState.results;
     if (listings.isEmpty) {
-      listings = widget.repository.listings.where((l) => l.available).toList();
+      listings = widget.repository.listings
+          .where((l) => l.available && l.hostAvailable)
+          .toList();
     }
     if (_selectedType != null) {
       listings = listings.where((l) => l.type == _selectedType).toList();

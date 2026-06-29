@@ -112,6 +112,27 @@ class Booking {
   int get numberOfNights =>
       effectiveCheckOut.difference(effectiveCheckIn).inDays;
 
+  /// Human-readable duration that respects the booking's unit:
+  /// hourly → "N hours", monthly → "N months", otherwise → "N nights".
+  ///
+  /// [unitLabel] is the persisted pricing unit ('hour' / 'day' / 'month').
+  /// Use this everywhere a booking's length is shown so hourly/monthly
+  /// bookings don't render as "0 nights".
+  String get durationLabel {
+    final span = effectiveCheckOut.difference(effectiveCheckIn);
+    switch (unitLabel) {
+      case 'hour':
+        final hours = span.inHours;
+        return '$hours hour${hours == 1 ? '' : 's'}';
+      case 'month':
+        final months = (span.inDays / 30).round();
+        return '$months month${months == 1 ? '' : 's'}';
+      default:
+        final nights = span.inDays;
+        return '$nights night${nights == 1 ? '' : 's'}';
+    }
+  }
+
   // Single source of truth for booking categorization, consumed everywhere via
   // [BookingCategorizer] — the guest "My Trips" screen, the host "Reservations"
   // tab (HostReservationsScreen, the tabbed Upcoming/Active/Completed view), and

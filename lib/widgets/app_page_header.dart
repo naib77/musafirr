@@ -37,10 +37,16 @@ class AppPageHeader extends StatelessWidget {
     this.subtitle,
     this.actions = const [],
     this.bottom,
+    this.onBack,
   });
 
   final String title;
   final String? subtitle;
+
+  /// When non-null, a leading back button is shown before the title.
+  /// Used when this header sits on a pushed route (not a shell tab), where
+  /// there is otherwise no way to navigate back.
+  final VoidCallback? onBack;
 
   /// Trailing action widgets (messages, notification bell, …). Prefer
   /// [HeaderActionButton] so every action chip matches.
@@ -69,6 +75,16 @@ class AppPageHeader extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
+                if (onBack != null) ...[
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    color: AppColors.ink,
+                    onPressed: onBack,
+                    tooltip: 'Back',
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  const SizedBox(width: 4),
+                ],
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

@@ -339,6 +339,8 @@ class _MainShellState extends State<MainShell> {
                 repository: widget.repository,
                 authState: widget.authState,
                 messagingState: widget.messagingState,
+                onOpenReservations: () =>
+                    setState(() => _hostTabIndex = 1),
               ),
             ),
           ],

@@ -305,6 +305,7 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
       monthlyRate: (json['monthly_rate'] as num?)?.toDouble(),
       facilities: facilities,
       available: json['is_active'] as bool? ?? true,
+      hostAvailable: json['host_available'] as bool? ?? true,
       hostId: json['owner_id'] as String?,
       hostAvatarUrl: json['host_avatar_url'] as String?,
       description: json['description'] as String?,
@@ -614,7 +615,7 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
     return _listings.where((listing) {
       final insideLat = (listing.latitude - centerLat).abs() <= delta;
       final insideLng = (listing.longitude - centerLng).abs() <= delta;
-      return listing.available && insideLat && insideLng;
+      return listing.available && listing.hostAvailable && insideLat && insideLng;
     }).toList();
   }
 
@@ -767,6 +768,7 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
   List<Listing> searchListings(SearchFilters filters) {
     return _listings.where((listing) {
       if (!listing.available) return false;
+      if (!listing.hostAvailable) return false;
 
       if (filters.propertyTypes.isNotEmpty &&
           !filters.propertyTypes.contains(listing.type)) {
@@ -820,7 +822,8 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
 
   @override
   List<Listing> getFeaturedListings({int limit = 10}) {
-    final available = _listings.where((l) => l.available).toList()
+    final available =
+        _listings.where((l) => l.available && l.hostAvailable).toList()
       ..sort((a, b) {
         final ratingA = a.rating ?? 0;
         final ratingB = b.rating ?? 0;
@@ -1059,6 +1062,24 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
       debugPrint('Error fetching booking $id: $e');
     }
     return null;
+  }
+
+  @override
+  Future<bool> isHostAvailable(String hostId) async {
+    // Trust a cached profile if we have it; otherwise check the server.
+    final cached = getUserById(hostId);
+    if (cached != null) return cached.hostAvailable;
+    try {
+      final row = await _client
+          .from('profiles')
+          .select('is_available')
+          .eq('id', hostId)
+          .maybeSingle();
+      return row?['is_available'] as bool? ?? true;
+    } catch (e) {
+      debugPrint('Error checking host availability: $e');
+      return true; // fail-open: don't block booking on a lookup error
+    }
   }
 
   @override

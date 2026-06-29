@@ -99,6 +99,7 @@ class SupabaseAuthService implements AuthService {
       role: _parseRole(profile?['role'] as String?),
       createdAt: DateTime.tryParse(authUser.createdAt),
       isHost: profile?['is_host'] as bool? ?? false,
+      hostAvailable: profile?['is_available'] as bool? ?? true,
       hostSince: profile?['host_since'] != null
           ? DateTime.tryParse(profile!['host_since'] as String)
           : null,
@@ -442,6 +443,7 @@ class SupabaseAuthService implements AuthService {
         'role': updatedUser.role.name,
         'bio': updatedUser.bio,
         'is_host': updatedUser.isHost,
+        'is_available': updatedUser.hostAvailable,
         'host_since': updatedUser.hostSince?.toIso8601String(),
         'response_rate': updatedUser.responseRate,
         'response_time': updatedUser.responseTime,

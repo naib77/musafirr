@@ -172,8 +172,9 @@ class SearchStateNotifier extends ChangeNotifier with SafeNotifier {
   // Apply filters to listings
   void _applyFilters() {
     _results = _allListings.where((listing) {
-      // Filter by availability
+      // Filter by availability (listing hidden, or host is away)
       if (!listing.available) return false;
+      if (!listing.hostAvailable) return false;
 
       // Filter by property type
       if (_filters.propertyTypes.isNotEmpty &&

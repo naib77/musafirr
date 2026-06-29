@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_colors.dart';
 import '../../models/listing.dart';
 import '../../models/rental_plan.dart';
 import '../../repositories/musafir_repository.dart';
+import '../../services/app_settings_service.dart';
+import '../../services/image_upload_service.dart';
 import '../../state/auth_state.dart';
 import '../../widgets/modern_banner.dart';
+import 'address_proof_screen.dart';
 import 'create_listing_screen.dart';
 import 'edit_listing_screen.dart';
 
@@ -104,7 +108,30 @@ class HostListingsScreen extends StatelessWidget {
     );
   }
 
-  void _createListing(BuildContext context) {
+  Future<void> _createListing(BuildContext context) async {
+    final userId = authState.currentUser?.id;
+
+    // When configured, a host must have a proof-of-address document on file
+    // before publishing a listing. Upload is enough to unlock (no approval).
+    if (userId != null &&
+        await AppSettingsService.instance
+            .ensureRequireListingAddressProof()) {
+      final hasProof =
+          await ImageUploadService.instance.hasAddressProof(userId);
+      if (!hasProof) {
+        if (!context.mounted) return;
+        final uploaded = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (context) => AddressProofScreen(userId: userId),
+          ),
+        );
+        // User backed out without uploading — don't proceed to the form.
+        if (uploaded != true) return;
+      }
+    }
+
+    if (!context.mounted) return;
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -202,25 +229,40 @@ class _ListingCard extends StatelessWidget {
                       )
                     : _buildPlaceholder(theme),
               ),
-              // Status badge
+              // Visibility badge
               Positioned(
-                top: 8,
-                left: 8,
+                top: 10,
+                left: 10,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
+                    horizontal: 10,
+                    vertical: 5,
                   ),
                   decoration: BoxDecoration(
-                    color: listing.available ? Colors.green : Colors.red,
-                    borderRadius: BorderRadius.circular(4),
+                    color: listing.available
+                        ? AppColors.success
+                        : AppColors.inkMuted,
+                    borderRadius: BorderRadius.circular(30),
                   ),
-                  child: Text(
-                    listing.available ? 'Active' : 'Paused',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        listing.available
+                            ? Icons.visibility_rounded
+                            : Icons.visibility_off_rounded,
+                        size: 13,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        listing.available ? 'Live' : 'Hidden',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -286,9 +328,12 @@ class _ListingCard extends StatelessWidget {
                       child: OutlinedButton.icon(
                         onPressed: onToggleAvailability,
                         icon: Icon(
-                          listing.available ? Icons.pause : Icons.play_arrow,
+                          listing.available
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          size: 18,
                         ),
-                        label: Text(listing.available ? 'Pause' : 'Activate'),
+                        label: Text(listing.available ? 'Hide' : 'Show'),
                       ),
                     ),
                     const SizedBox(width: 8),

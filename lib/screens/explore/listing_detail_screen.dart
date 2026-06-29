@@ -54,7 +54,22 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     super.dispose();
   }
 
-  void _openBookingSheet() {
+  Future<void> _openBookingSheet() async {
+    // Block booking when the host has marked themselves unavailable.
+    final hostId = widget.listing.hostId;
+    if (hostId != null) {
+      final available = await widget.repository.isHostAvailable(hostId);
+      if (!available) {
+        if (!mounted) return;
+        ModernBanner.showWarning(
+          context,
+          "This host isn't accepting bookings right now.",
+        );
+        return;
+      }
+    }
+
+    if (!mounted) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1018,6 +1033,71 @@ class _ReviewsSection extends StatelessWidget {
 
   final List<Review> reviews;
 
+  void _showAllReviews(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
+        return ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(sheetContext).size.height * 0.85,
+          ),
+          child: Material(
+            color: theme.colorScheme.surface,
+            clipBehavior: Clip.antiAlias,
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(24)),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 12),
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.outlineVariant,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 8, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _SectionTitle('${reviews.length} reviews'),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.pop(sheetContext),
+                        tooltip: 'Close',
+                      ),
+                    ],
+                  ),
+                ),
+                Flexible(
+                  child: ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                    itemCount: reviews.length,
+                    separatorBuilder: (_, __) => Divider(
+                      height: 24,
+                      color: theme.colorScheme.outlineVariant,
+                    ),
+                    itemBuilder: (context, i) =>
+                        _ReviewCard(review: reviews[i]),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -1028,9 +1108,7 @@ class _ReviewsSection extends StatelessWidget {
         ...reviews.take(3).map((review) => _ReviewCard(review: review)),
         if (reviews.length > 3)
           TextButton(
-            onPressed: () {
-              // TODO: Show all reviews
-            },
+            onPressed: () => _showAllReviews(context),
             child: Text('Show all ${reviews.length} reviews'),
           ),
       ],
