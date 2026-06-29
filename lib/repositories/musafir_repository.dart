@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/booking.dart';
 import '../models/booking_duration.dart';
+import '../models/leaderboard_entry.dart';
 import '../models/listing.dart';
 import '../models/owner_registration_draft.dart';
 import '../models/review.dart';
@@ -61,6 +62,21 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   /// Whether a host is currently accepting bookings (host-wide availability).
   /// Defaults to true if the host can't be resolved.
   Future<bool> isHostAvailable(String hostId);
+
+  /// Ranked hosts for the public leaderboard (composite "Host Score").
+  /// Computed server-side; the app only reads the ranked rows.
+  Future<List<LeaderboardEntry>> getHostLeaderboard({
+    required LeaderboardPeriod period,
+    int limit,
+    int offset,
+  });
+
+  /// This host's own leaderboard rank, or null if they aren't ranked yet
+  /// (e.g. no completed bookings, or opted out).
+  Future<LeaderboardEntry?> getMyHostRank({
+    required String hostId,
+    required LeaderboardPeriod period,
+  });
 
   // Listing methods
   Listing? getListingById(String id);

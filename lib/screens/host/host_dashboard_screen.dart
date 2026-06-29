@@ -7,10 +7,12 @@ import '../../models/listing.dart';
 import '../../models/booking.dart';
 import '../../models/booking_categorizer.dart';
 import '../../models/booking_status.dart';
+import '../../models/leaderboard_entry.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
 import '../../state/messaging_state.dart';
 import '../../widgets/modern_banner.dart';
+import '../leaderboard/host_leaderboard_screen.dart';
 import 'create_listing_screen.dart';
 import 'host_listings_screen.dart';
 import 'host_reservations_screen.dart';
@@ -77,10 +79,15 @@ class HostDashboardScreen extends StatelessWidget {
           final todayCheckOuts =
               activeBookings.where((b) => isSameDay(b.effectiveCheckOut)).length;
 
-          final totalEarnings = hostBookings.fold<Money>(
-            Money.zero(Currency.BDT),
-            (sum, b) => sum.add(b.totalPriceMoney),
-          );
+          // Realized earnings only (completed bookings) so this matches the
+          // Earnings tab. Summing all bookings here inflated the figure with
+          // pending/cancelled/rejected money that was never earned.
+          final totalEarnings = hostBookings
+              .where((b) => b.status == BookingStatus.completed)
+              .fold<Money>(
+                Money.zero(Currency.BDT),
+                (sum, b) => sum.add(b.totalPriceMoney),
+              );
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
@@ -117,6 +124,11 @@ class HostDashboardScreen extends StatelessWidget {
                     );
                   },
                 ),
+                const SizedBox(height: 12),
+
+                // Leaderboard rank card
+                if (user != null)
+                  _RankCard(repository: repository, hostId: user.id),
                 const SizedBox(height: 24),
 
                 // Stats cards
@@ -461,6 +473,121 @@ class _AvailabilityCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// "You're #X this month" card linking to the public leaderboard. Fetches the
+/// host's rank once; shows a softer prompt if they aren't ranked yet.
+class _RankCard extends StatefulWidget {
+  const _RankCard({required this.repository, required this.hostId});
+
+  final MusafirRepository repository;
+  final String hostId;
+
+  @override
+  State<_RankCard> createState() => _RankCardState();
+}
+
+class _RankCardState extends State<_RankCard> {
+  late Future<LeaderboardEntry?> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = widget.repository.getMyHostRank(
+      hostId: widget.hostId,
+      period: LeaderboardPeriod.monthly,
+    );
+  }
+
+  void _openLeaderboard() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => HostLeaderboardScreen(
+          repository: widget.repository,
+          currentUserId: widget.hostId,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return FutureBuilder<LeaderboardEntry?>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox.shrink();
+        }
+        final entry = snapshot.data;
+        final ranked = entry != null;
+
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _openLeaderboard,
+            borderRadius: BorderRadius.circular(18),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: AppColors.brandGradient,
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.brand.withValues(alpha: 0.3),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.emoji_events_rounded,
+                        color: Colors.white),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          ranked
+                              ? "You're #${entry.rank} this month"
+                              : 'Host leaderboard',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          ranked
+                              ? 'Host Score ${entry.score.toStringAsFixed(0)} • tap to view Top Hosts'
+                              : 'Complete bookings to climb the rankings',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: Colors.white.withValues(alpha: 0.9),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right_rounded, color: Colors.white),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

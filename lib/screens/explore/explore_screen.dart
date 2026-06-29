@@ -4,6 +4,7 @@ import '../../models/listing.dart';
 import '../../models/listing_type.dart';
 import '../../models/search_filters.dart';
 import '../../repositories/musafir_repository.dart';
+import '../leaderboard/host_leaderboard_screen.dart';
 import '../../services/booking/booking_lifecycle_service.dart';
 import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
@@ -233,6 +234,48 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                 ),
                               ),
                           ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Top Hosts leaderboard — gold chip so it reads as a reward
+                  // worth tapping, not just another grey action.
+                  const SizedBox(width: 6),
+                  Tooltip(
+                    message: 'Top Hosts',
+                    child: Material(
+                      shape: const CircleBorder(),
+                      clipBehavior: Clip.antiAlias,
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => HostLeaderboardScreen(
+                              repository: widget.repository,
+                              currentUserId: widget.authState.currentUser?.id,
+                            ),
+                          ),
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.all(9),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFFFB300), Color(0xFFFF8F00)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFFFB300)
+                                    .withValues(alpha: 0.45),
+                                blurRadius: 12,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(Icons.emoji_events_rounded,
+                              size: 22, color: Colors.white),
                         ),
                       ),
                     ),

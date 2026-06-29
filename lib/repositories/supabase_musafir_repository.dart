@@ -13,6 +13,7 @@ import '../models/booking_duration.dart';
 import '../models/booking_status.dart';
 import '../models/facility.dart';
 import '../models/guest_review_ratings.dart';
+import '../models/leaderboard_entry.dart';
 import '../models/listing.dart';
 import '../models/listing_type.dart';
 import '../models/owner_registration_draft.dart';
@@ -1079,6 +1080,46 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
     } catch (e) {
       debugPrint('Error checking host availability: $e');
       return true; // fail-open: don't block booking on a lookup error
+    }
+  }
+
+  @override
+  Future<List<LeaderboardEntry>> getHostLeaderboard({
+    required LeaderboardPeriod period,
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    try {
+      final rows = await _client.rpc('get_host_leaderboard', params: {
+        'p_period': period.apiValue,
+        'p_limit': limit,
+        'p_offset': offset,
+      });
+      return (rows as List)
+          .map((e) => LeaderboardEntry.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('Error fetching host leaderboard: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<LeaderboardEntry?> getMyHostRank({
+    required String hostId,
+    required LeaderboardPeriod period,
+  }) async {
+    try {
+      final rows = await _client.rpc('get_host_rank', params: {
+        'p_host_id': hostId,
+        'p_period': period.apiValue,
+      });
+      final list = rows as List;
+      if (list.isEmpty) return null;
+      return LeaderboardEntry.fromJson(list.first as Map<String, dynamic>);
+    } catch (e) {
+      debugPrint('Error fetching host rank: $e');
+      return null;
     }
   }
 
