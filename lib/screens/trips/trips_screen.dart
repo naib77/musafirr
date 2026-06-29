@@ -1342,6 +1342,33 @@ class _ReviewPromptBanner extends StatelessWidget {
 // ENHANCED BOOKING DETAILS SHEET
 // =============================================================================
 
+/// Opens the guest-facing booking detail sheet for [booking].
+///
+/// Public so other entry points — e.g. tapping a booking notification — can
+/// deep-link straight to a specific trip, reusing the exact same detail view
+/// (host message, lifecycle timestamps, cancel/review actions) the Trips tab
+/// shows.
+Future<void> showGuestBookingDetails(
+  BuildContext context, {
+  required Booking booking,
+  required MusafirRepository repository,
+  required AuthStateNotifier authState,
+  VoidCallback? onNavigateToExplore,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (context) => _EnhancedBookingDetailsSheet(
+      booking: booking,
+      repository: repository,
+      authState: authState,
+      bookingRules: BookingRules(),
+      onNavigateToExplore: onNavigateToExplore,
+    ),
+  );
+}
+
 class _EnhancedBookingDetailsSheet extends StatelessWidget {
   const _EnhancedBookingDetailsSheet({
     required this.booking,
@@ -1358,6 +1385,12 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
   final BookingRules bookingRules;
   final VoidCallback? onNavigateToExplore;
   final VoidCallback? onMessageHost;
+
+  /// The host's welcome/accept message, if any (null when blank).
+  String? get _hostMessage {
+    final msg = booking.hostMessage?.trim();
+    return (msg == null || msg.isEmpty) ? null : msg;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1390,6 +1423,14 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
             // Status-specific banner at top
             _buildStatusBanner(context, theme),
             const SizedBox(height: 20),
+
+            // Host's welcome / message — shown here so the guest always sees it
+            // even if the chat thread fails to load. Sourced from the booking
+            // row (booking.hostMessage), independent of the messaging system.
+            if (_hostMessage != null) ...[
+              _HostMessageCard(message: _hostMessage!),
+              const SizedBox(height: 20),
+            ],
 
             // Title
             Text(
@@ -1522,15 +1563,15 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
       child: Column(
         children: [
           _DetailRow(
-            icon: Icons.calendar_today_rounded,
+            icon: Icons.login_rounded,
             label: 'Check-in',
-            value: _formatFullDate(booking.effectiveCheckIn),
+            value: _formatDateTime(booking.effectiveCheckIn),
           ),
           const SizedBox(height: 16),
           _DetailRow(
-            icon: Icons.calendar_today_rounded,
+            icon: Icons.logout_rounded,
             label: 'Check-out',
-            value: _formatFullDate(booking.effectiveCheckOut),
+            value: _formatDateTime(booking.effectiveCheckOut),
           ),
           const SizedBox(height: 16),
           _DetailRow(
@@ -1555,6 +1596,33 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
               color: theme.colorScheme.primary,
             ),
           ),
+
+          // Lifecycle timestamps — only those that have happened, so the guest
+          // can see the actual progress of their stay.
+          if (booking.confirmedAt != null) ...[
+            const Divider(height: 32),
+            _DetailRow(
+              icon: Icons.event_available_rounded,
+              label: 'Accepted',
+              value: _formatDateTime(booking.confirmedAt!),
+            ),
+          ],
+          if (booking.actualCheckIn != null) ...[
+            const SizedBox(height: 16),
+            _DetailRow(
+              icon: Icons.meeting_room_rounded,
+              label: 'Checked in',
+              value: _formatDateTime(booking.actualCheckIn!),
+            ),
+          ],
+          if (booking.completedAt != null) ...[
+            const SizedBox(height: 16),
+            _DetailRow(
+              icon: Icons.task_alt_rounded,
+              label: 'Completed',
+              value: _formatDateTime(booking.completedAt!),
+            ),
+          ],
         ],
       ),
     );
@@ -1795,6 +1863,67 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
     return '${weekdays[date.weekday - 1]}, ${months[date.month - 1]} ${date.day}';
+  }
+
+  /// Date + time, e.g. "Jun 28, 3:30 PM" — used for check-in/out and lifecycle
+  /// timestamps so the guest can see the actual time, not just the day.
+  String _formatDateTime(DateTime date) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final hour12 = date.hour % 12 == 0 ? 12 : date.hour % 12;
+    final minute = date.minute.toString().padLeft(2, '0');
+    final period = date.hour < 12 ? 'AM' : 'PM';
+    return '${months[date.month - 1]} ${date.day}, $hour12:$minute $period';
+  }
+}
+
+/// Card surfacing the host's welcome message on the booking detail. Decoupled
+/// from chat so the guest sees it regardless of messaging state.
+class _HostMessageCard extends StatelessWidget {
+  const _HostMessageCard({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryContainer.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: theme.colorScheme.primary.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.format_quote_rounded,
+                  size: 18, color: theme.colorScheme.primary),
+              const SizedBox(width: 6),
+              Text(
+                'Message from your host',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+          ),
+        ],
+      ),
+    );
   }
 }
 

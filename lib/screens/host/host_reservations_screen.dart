@@ -414,6 +414,35 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
                 label: 'Guests',
                 value: '${booking.guestCount}',
               ),
+
+              // Lifecycle timestamps — show the actual progress of the stay.
+              if (booking.confirmedAt != null) ...[
+                const SizedBox(height: 12),
+                _DetailRow(
+                  icon: Icons.event_available,
+                  label: 'Accepted',
+                  value: _formatDateTimeForBooking(
+                      booking.confirmedAt!, 'hour'),
+                ),
+              ],
+              if (booking.actualCheckIn != null) ...[
+                const SizedBox(height: 12),
+                _DetailRow(
+                  icon: Icons.meeting_room,
+                  label: 'Checked in',
+                  value: _formatDateTimeForBooking(
+                      booking.actualCheckIn!, 'hour'),
+                ),
+              ],
+              if (booking.completedAt != null) ...[
+                const SizedBox(height: 12),
+                _DetailRow(
+                  icon: Icons.task_alt,
+                  label: 'Completed',
+                  value: _formatDateTimeForBooking(
+                      booking.completedAt!, 'hour'),
+                ),
+              ],
               const Divider(height: 32),
 
               // Earnings

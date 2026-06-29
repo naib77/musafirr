@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../models/booking_status.dart';
+import '../../models/guest_review_ratings.dart';
 import '../../models/notification.dart';
+import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../repositories/supabase_musafir_repository.dart';
 import '../../services/booking/booking_lifecycle_service.dart';
@@ -14,6 +16,9 @@ import '../../widgets/expandable_notification_item.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/notification_item.dart';
 import '../host/host_reservations_screen.dart';
+import '../review/guest_review_screen.dart';
+import '../review/host_review_screen.dart';
+import '../trips/trips_screen.dart';
 import 'notification_settings_screen.dart';
 
 /// Main notification center screen displaying all user notifications
@@ -25,6 +30,7 @@ class NotificationCenterScreen extends StatefulWidget {
     required this.bookingLifecycleService,
     required this.authState,
     this.messagingState,
+    this.onViewReservations,
   });
 
   final NotificationStateNotifier notificationState;
@@ -32,6 +38,12 @@ class NotificationCenterScreen extends StatefulWidget {
   final BookingLifecycleService bookingLifecycleService;
   final AuthStateNotifier authState;
   final MessagingStateNotifier? messagingState;
+
+  /// Called after a host accepts a booking, to return to the shell's live
+  /// Reservations tab instead of pushing a bare duplicate screen (which can
+  /// render empty because it sits outside the shell's loaded state). When null,
+  /// falls back to pushing a standalone HostReservationsScreen.
+  final VoidCallback? onViewReservations;
 
   @override
   State<NotificationCenterScreen> createState() =>
@@ -473,8 +485,146 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       return;
     }
 
+    // Review prompts: open the correct review screen. The DB trigger sends
+    // hosts '/review/$id/host' (review the guest) and guests '/review/$id/guest'
+    // (review the host). A bare '/review/$id' falls back to role inference.
+    if (actionUrl.startsWith('/review/')) {
+      _openReviewFlow(actionUrl, notification);
+      return;
+    }
+
+    // Guest-side trip deep-links: open the specific booking's detail sheet so
+    // the guest lands directly on that trip (with the host message, lifecycle
+    // timestamps, and actions). Covers '/trips/$id' and '/payments/$id'.
+    if (actionUrl.startsWith('/trips') || actionUrl.startsWith('/payments')) {
+      final bookingId = notification.data?['booking_id'] as String?;
+      final booking =
+          bookingId != null ? widget.repository.getBookingById(bookingId) : null;
+      if (booking != null) {
+        showGuestBookingDetails(
+          context,
+          booking: booking,
+          repository: widget.repository,
+          authState: widget.authState,
+        );
+      } else {
+        ModernBanner.showInfo(
+            context, 'This booking is no longer available.');
+      }
+      return;
+    }
+
     // For unhandled routes, do nothing (deep linking not implemented yet)
     debugPrint('Unhandled action URL: $actionUrl');
+  }
+
+  /// Opens the appropriate review screen for a '/review/...' notification.
+  ///
+  /// URL shapes (from the booking-lifecycle trigger):
+  ///   `/review/{bookingId}/host`  -> host reviews the guest  (HostReviewScreen)
+  ///   `/review/{bookingId}/guest` -> guest reviews the host  (GuestReviewScreen)
+  ///   `/review/{bookingId}`       -> infer role from the booking
+  Future<void> _openReviewFlow(
+      String actionUrl, AppNotification notification) async {
+    final user = widget.authState.currentUser;
+    if (user == null) return;
+
+    final segments = actionUrl.split('/').where((s) => s.isNotEmpty).toList();
+    // ['review', '<bookingId>', optional 'host'|'guest']
+    final bookingId = segments.length >= 2
+        ? segments[1]
+        : (notification.data?['booking_id'] as String?);
+    if (bookingId == null) {
+      _showErrorBanner('Booking not found.');
+      return;
+    }
+    final roleSuffix = segments.length >= 3 ? segments[2] : null;
+
+    var booking = widget.repository.getBookingById(bookingId);
+    if (booking == null && widget.repository is SupabaseMusafirRepository) {
+      booking = await (widget.repository as SupabaseMusafirRepository)
+          .fetchBookingById(bookingId);
+    }
+    if (booking == null) {
+      if (mounted) {
+        _showErrorBanner('Booking not found. It may have been removed.');
+      }
+      return;
+    }
+    if (!mounted) return;
+
+    // 'host' suffix → reviewing the guest; otherwise reviewing the host.
+    // With no suffix, infer: the booking's guest reviews the host.
+    final reviewAsHost =
+        roleSuffix == 'host' || (roleSuffix == null && booking.userId != user.id);
+
+    final wantedType =
+        reviewAsHost ? ReviewType.hostToGuest : ReviewType.guestToHost;
+    final existing = widget.repository.getReviewsForBooking(booking.id);
+    if (existing.any(
+        (r) => r.reviewerId == user.id && r.reviewType == wantedType)) {
+      ModernBanner.showInfo(
+        context,
+        reviewAsHost
+            ? 'You have already reviewed this guest.'
+            : 'You have already reviewed this stay.',
+      );
+      return;
+    }
+
+    final b = booking; // non-null for the closures below
+
+    if (reviewAsHost) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => HostReviewScreen(
+            booking: b,
+            onSubmit: (double rating, String? comment) {
+              final review = Review.hostReview(
+                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                bookingId: b.id,
+                reviewerId: user.id,
+                reviewerName: user.name,
+                reviewerAvatarUrl: user.avatarUrl,
+                guestId: b.userId ?? '',
+                rating: rating,
+                comment: comment,
+              );
+              widget.repository.saveReview(review);
+              Navigator.pop(context);
+              _showSuccessBanner('Thank you for your review!');
+            },
+          ),
+        ),
+      );
+    } else {
+      final listing = widget.repository.getListingById(b.listingId);
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => GuestReviewScreen(
+            booking: b,
+            onSubmit: (GuestReviewRatings ratings, String comment) {
+              final review = Review.guestReview(
+                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                bookingId: b.id,
+                listingId: b.listingId,
+                reviewerId: user.id,
+                reviewerName: user.name,
+                reviewerAvatarUrl: user.avatarUrl,
+                hostId: listing?.hostId ?? '',
+                ratings: ratings,
+                comment: comment,
+              );
+              widget.repository.saveReview(review);
+              Navigator.pop(context);
+              _showSuccessBanner('Thank you for your review!');
+            },
+          ),
+        ),
+      );
+    }
   }
 
   bool _isSameDay(DateTime a, DateTime b) {
@@ -596,17 +746,22 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       _showSuccessBadge(notification.id, 'Accepted');
       await widget.notificationState.markAsRead(notification.id);
 
-      // Navigate to the appropriate tab in host reservations
+      // Navigate to the host's reservations. Prefer returning to the shell's
+      // live Reservations tab (onViewReservations) — pushing a standalone
+      // HostReservationsScreen here rendered empty because it sat outside the
+      // shell. Delay slightly so the success badge is visible.
       if (mounted) {
-        // Re-fetch the updated booking to get the correct tab
         final updatedBooking = widget.repository.getBookingById(bookingId);
         final initialTab = updatedBooking != null
             ? HostReservationTab.forBooking(updatedBooking)
             : HostReservationTab.upcoming;
 
-        // Delay navigation slightly to show the success badge
         Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted) {
+          if (!mounted) return;
+          if (widget.onViewReservations != null) {
+            Navigator.of(context).pop(); // close the notification center
+            widget.onViewReservations!(); // shell switches to Reservations tab
+          } else {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(

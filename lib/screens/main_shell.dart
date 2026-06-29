@@ -19,6 +19,7 @@ import 'explore/explore_screen.dart';
 import 'hosting/earnings_screen.dart';
 import 'host/host_dashboard_screen.dart';
 import 'host/host_reservations_screen.dart';
+import 'leaderboard/host_leaderboard_screen.dart';
 import 'inbox/inbox_screen.dart';
 import 'notifications/notification_center_screen.dart';
 import 'profile/profile_screen.dart';
@@ -101,6 +102,9 @@ class _MainShellState extends State<MainShell> {
           bookingLifecycleService: widget.bookingLifecycleService!,
           authState: widget.authState,
           messagingState: widget.messagingState,
+          // After a host accepts a booking, land them on the shell's live
+          // Reservations tab (index 1) rather than a standalone screen.
+          onViewReservations: () => setState(() => _hostTabIndex = 1),
         ),
       ),
     );
@@ -333,7 +337,8 @@ class _MainShellState extends State<MainShell> {
         Column(
           children: [
             _buildSlimHeader('Dashboard', unreadMessageCount,
-                subtitle: 'Your hosting at a glance'),
+                subtitle: 'Your hosting at a glance',
+                showLeaderboard: true),
             Expanded(
               child: HostDashboardScreen(
                 repository: widget.repository,
@@ -397,11 +402,14 @@ class _MainShellState extends State<MainShell> {
     String title,
     int unreadMessageCount, {
     String? subtitle,
+    bool showLeaderboard = false,
   }) {
     return AppPageHeader(
       title: title,
       subtitle: subtitle,
       actions: [
+        if (showLeaderboard)
+          _LeaderboardHeaderButton(onTap: _openLeaderboard),
         if (widget.messagingState != null)
           HeaderActionButton(
             icon: Icons.chat_bubble_outline,
@@ -417,6 +425,61 @@ class _MainShellState extends State<MainShell> {
             decorated: true,
           ),
       ],
+    );
+  }
+
+  void _openLeaderboard() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => HostLeaderboardScreen(
+          repository: widget.repository,
+          currentUserId: widget.authState.currentUser?.id,
+        ),
+      ),
+    );
+  }
+}
+
+/// Eye-catching gold trophy chip used in the host header so the leaderboard
+/// reads as a reward worth chasing — deliberately *not* the muted grey of the
+/// other header chips. A soft glow + amber gradient draws the eye to it.
+class _LeaderboardHeaderButton extends StatelessWidget {
+  const _LeaderboardHeaderButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Top Hosts',
+      child: Material(
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFFFB300), Color(0xFFFF8F00)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFFFB300).withValues(alpha: 0.45),
+                  blurRadius: 12,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: const Icon(Icons.emoji_events_rounded,
+                size: 22, color: Colors.white),
+          ),
+        ),
+      ),
     );
   }
 }
