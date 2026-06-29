@@ -172,16 +172,23 @@ class _PhoneEntryScreenState extends State<PhoneEntryScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // Email signup link
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                // Email signup link — Wrap so it flows to a second line on
+                // narrow screens instead of overflowing.
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                      "Don't have an account? ",
+                      "Don't have an account?",
                       style: theme.textTheme.bodyMedium,
                     ),
                     TextButton(
                       onPressed: widget.onEmailSignupTap,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: const Size(0, 36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                       child: const Text('Sign up with Email'),
                     ),
                   ],
