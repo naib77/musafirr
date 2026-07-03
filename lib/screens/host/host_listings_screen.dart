@@ -35,9 +35,7 @@ class HostListingsScreen extends StatelessWidget {
         listenable: Listenable.merge([repository, authState]),
         builder: (context, _) {
           final hostListings = user != null
-              ? repository.listings
-                  .where((l) => l.hostId == user.id || l.ownerName == user.name)
-                  .toList()
+              ? repository.listings.where((l) => l.hostId == user.id).toList()
               : <Listing>[];
 
           if (hostListings.isEmpty) {
@@ -114,8 +112,7 @@ class HostListingsScreen extends StatelessWidget {
     // When configured, a host must have a proof-of-address document on file
     // before publishing a listing. Upload is enough to unlock (no approval).
     if (userId != null &&
-        await AppSettingsService.instance
-            .ensureRequireListingAddressProof()) {
+        await AppSettingsService.instance.ensureRequireListingAddressProof()) {
       final hasProof =
           await ImageUploadService.instance.hasAddressProof(userId);
       if (!hasProof) {
@@ -158,19 +155,31 @@ class HostListingsScreen extends StatelessWidget {
   void _confirmDelete(BuildContext context, Listing listing) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Delete Listing'),
         content: Text('Are you sure you want to delete "${listing.title}"?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
-              repository.deleteListing(listing.id);
-              Navigator.pop(context);
-              ModernBanner.showSuccess(context, 'Listing deleted');
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              try {
+                await repository.deleteListing(listing.id);
+                // Use the screen context (not the popped dialog's) for the banner.
+                if (context.mounted) {
+                  ModernBanner.showSuccess(context, 'Listing deleted');
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ModernBanner.showError(
+                    context,
+                    e.toString().replaceFirst('Exception: ', ''),
+                  );
+                }
+              }
             },
             style: FilledButton.styleFrom(
               backgroundColor: Colors.red,

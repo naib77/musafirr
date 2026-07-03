@@ -96,10 +96,14 @@ class NotificationStateNotifier extends ChangeNotifier with SafeNotifier {
   Future<void> initialize(String userId) async {
     if (_currentUserId == userId) return;
 
+    // Claim the user id BEFORE the first await so a second auth event firing
+    // during login short-circuits on the guard above — otherwise both calls
+    // pass and create duplicate (leaked) realtime subscriptions.
+    _currentUserId = userId;
+
     // Cleanup previous user's subscriptions
     await _cleanup();
 
-    _currentUserId = userId;
     _setLoading(true);
     _error = null;
 

@@ -112,6 +112,26 @@ serve(async (req) => {
   }
 
   try {
+    // Only the server (the notification-insert trigger) may send pushes.
+    // The trigger forwards a shared secret in the x-push-secret header; any
+    // caller without it is rejected so arbitrary users cannot spam pushes.
+    // If PUSH_SHARED_SECRET is unset the check is skipped (backwards
+    // compatible) — set it in both the DB GUC and the function secret to
+    // enforce. See migration 051.
+    const expectedSecret = Deno.env.get("PUSH_SHARED_SECRET");
+    if (expectedSecret) {
+      const providedSecret = req.headers.get("x-push-secret");
+      if (providedSecret !== expectedSecret) {
+        return new Response(
+          JSON.stringify({ error: "Unauthorized" }),
+          {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+    }
+
     const saJson = Deno.env.get("FIREBASE_SERVICE_ACCOUNT");
     if (!saJson) {
       throw new Error(

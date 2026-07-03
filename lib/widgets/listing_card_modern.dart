@@ -203,15 +203,26 @@ class _ListingCardModernState extends State<ListingCardModern>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Text(
+                    listing.title,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.2,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  // Place and rating share the second line.
                   Row(
                     children: [
                       Expanded(
                         child: Text(
-                          listing.title,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            height: 1.2,
+                          listing.city ?? listing.address.split(',').first,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontSize: 11,
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -235,17 +246,7 @@ class _ListingCardModernState extends State<ListingCardModern>
                       ],
                     ],
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    listing.city ?? listing.address.split(',').first,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontSize: 11,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const Spacer(),
+                  const SizedBox(height: 4),
                   // Secondary rates + quick stats on one muted line.
                   Row(
                     children: [

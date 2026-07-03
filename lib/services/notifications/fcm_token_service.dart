@@ -17,6 +17,11 @@ class FcmTokenService {
 
   SupabaseClient get _supabase => Supabase.instance.client;
 
+  /// Last user this device registered a token for. Retained so logout can
+  /// deactivate the token even after the Supabase session (currentUser) is
+  /// already torn down.
+  String? _activeUserId;
+
   String get _deviceType {
     if (kIsWeb) return 'web';
     if (Platform.isAndroid) return 'android';
@@ -32,6 +37,7 @@ class FcmTokenService {
         debugPrint('[FcmTokenService] No user logged in, skipping token save');
         return false;
       }
+      _activeUserId = userId;
 
       debugPrint('[FcmTokenService] Saving FCM token for user: $userId');
 
@@ -54,7 +60,10 @@ class FcmTokenService {
   /// Deactivate FCM token (on logout)
   Future<bool> deactivateToken(String token) async {
     try {
-      final userId = _supabase.auth.currentUser?.id;
+      // Fall back to the last-registered user: on logout the session is often
+      // already cleared, so currentUser is null but the token must still be
+      // deactivated (otherwise a shared device keeps getting the ex-user's pushes).
+      final userId = _supabase.auth.currentUser?.id ?? _activeUserId;
       if (userId == null) return false;
 
       await _supabase
@@ -133,6 +142,8 @@ class FcmTokenService {
       }
     } catch (e) {
       debugPrint('[FcmTokenService] Error cleaning up token: $e');
+    } finally {
+      _activeUserId = null;
     }
   }
 }

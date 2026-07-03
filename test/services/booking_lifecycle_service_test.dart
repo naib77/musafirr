@@ -100,7 +100,8 @@ void main() {
         message: 'Welcome! Here is the door code: 1234',
       );
 
-      expect(result.hostMessage, equals('Welcome! Here is the door code: 1234'));
+      expect(
+          result.hostMessage, equals('Welcome! Here is the door code: 1234'));
     });
 
     test('throws when booking not found', () {
@@ -233,7 +234,11 @@ void main() {
 
   group('BookingLifecycleService.completeService', () {
     test('transitions active booking to completed', () {
-      final booking = createBooking(status: BookingStatus.active);
+      final booking = createBooking(
+        status: BookingStatus.active,
+        startAt: DateTime.now().subtract(const Duration(days: 2)),
+        endAt: DateTime.now().subtract(const Duration(hours: 1)),
+      );
       store.add(booking);
 
       final result = service.completeService(booking.id);
@@ -243,12 +248,30 @@ void main() {
     });
 
     test('records completion timestamp', () {
-      final booking = createBooking(status: BookingStatus.active);
+      final booking = createBooking(
+        status: BookingStatus.active,
+        startAt: DateTime.now().subtract(const Duration(days: 2)),
+        endAt: DateTime.now().subtract(const Duration(hours: 1)),
+      );
       store.add(booking);
 
       final result = service.completeService(booking.id);
 
       expect(result.completedAt, isNotNull);
+    });
+
+    test('throws when completing before checkout (mid-stay)', () {
+      final booking = createBooking(
+        status: BookingStatus.active,
+        startAt: DateTime.now().subtract(const Duration(days: 1)),
+        endAt: DateTime.now().add(const Duration(days: 3)),
+      );
+      store.add(booking);
+
+      expect(
+        () => service.completeService(booking.id),
+        throwsA(isA<InvalidBookingStateException>()),
+      );
     });
 
     test('throws when booking not active', () {
@@ -365,7 +388,8 @@ void main() {
       store.add(oldBooking);
       store.add(newBooking);
 
-      final expired = service.expireStaleBookings([oldBooking, newBooking], now: now);
+      final expired =
+          service.expireStaleBookings([oldBooking, newBooking], now: now);
 
       expect(expired.length, equals(1));
       expect(expired.first.id, equals('old_booking'));

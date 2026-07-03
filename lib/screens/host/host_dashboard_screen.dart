@@ -45,7 +45,7 @@ class HostDashboardScreen extends StatelessWidget {
         builder: (context, _) {
           final hostListings = user != null
               ? repository.listings
-                  .where((l) => l.hostId == user.id || l.ownerName == user.name)
+                  .where((l) => l.hostId == user.id)
                   .toList()
               : <Listing>[];
 

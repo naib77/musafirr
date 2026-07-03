@@ -4,6 +4,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class FavoritesStateNotifier extends ChangeNotifier with SafeNotifier {
   final Set<String> _favoriteIds = {};
+  // Listings with an in-flight toggle request, to drop overlapping rapid taps.
+  final Set<String> _togglingIds = {};
   String? _userId;
   bool _isLoading = false;
 
@@ -50,6 +52,12 @@ class FavoritesStateNotifier extends ChangeNotifier with SafeNotifier {
       return;
     }
 
+    // Drop rapid repeat taps while a request for this listing is in flight —
+    // overlapping insert/delete can otherwise land out of order and leave the
+    // UI and database disagreeing.
+    if (_togglingIds.contains(listingId)) return;
+    _togglingIds.add(listingId);
+
     final wasFavorite = _favoriteIds.contains(listingId);
 
     // Optimistic update
@@ -82,6 +90,8 @@ class FavoritesStateNotifier extends ChangeNotifier with SafeNotifier {
         _favoriteIds.remove(listingId);
       }
       notifyListeners();
+    } finally {
+      _togglingIds.remove(listingId);
     }
   }
 

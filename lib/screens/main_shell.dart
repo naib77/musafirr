@@ -78,7 +78,7 @@ class _MainShellState extends State<MainShell> {
 
     // Check for pending booking requests
     final hostListings = widget.repository.listings
-        .where((l) => l.hostId == user.id || l.ownerName == user.name)
+        .where((l) => l.hostId == user.id)
         .toList();
 
     if (hostListings.isEmpty) return false;

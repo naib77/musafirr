@@ -162,8 +162,8 @@ class _EditListingScreenState extends State<EditListingScreen> {
           listingId: widget.listing.id,
           onProgress: (p) {
             if (mounted) {
-              setState(() =>
-                  _images[i] = _images[i].copyWith(uploadProgress: p));
+              setState(
+                  () => _images[i] = _images[i].copyWith(uploadProgress: p));
             }
           },
         );
@@ -227,7 +227,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
         available: l.available,
       );
 
-      widget.repository.updateListing(updated);
+      await widget.repository.updateListing(updated);
 
       // Delete photos the host removed (originally uploaded, now gone).
       final removed =

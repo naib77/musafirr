@@ -34,10 +34,10 @@ class EarningsScreen extends StatelessWidget {
           return const _NotLoggedInView();
         }
 
-        // Host's own listings (same matching rule as the dashboard).
-        final hostListings = repository.listings
-            .where((l) => l.hostId == user.id || l.ownerName == user.name)
-            .toList();
+        // Host's own listings — match strictly by owner id. Matching on
+        // display name would fold in a different host who shares the same name.
+        final hostListings =
+            repository.listings.where((l) => l.hostId == user.id).toList();
 
         if (hostListings.isEmpty) {
           return _RefreshWrap(
@@ -288,7 +288,8 @@ class _EarningsDashboard extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 10),
               child: _EarningItem(
                 booking: booking,
-                listingTitle: listing?.title ?? booking.listingTitle ?? 'Listing',
+                listingTitle:
+                    listing?.title ?? booking.listingTitle ?? 'Listing',
               ),
             );
           }),
@@ -676,8 +677,18 @@ String _compact(double amount) {
 
 String _formatDate(DateTime date) {
   const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'
   ];
   return '${months[date.month - 1]} ${date.day}, ${date.year}';
 }

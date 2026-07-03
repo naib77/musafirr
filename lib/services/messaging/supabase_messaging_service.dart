@@ -29,8 +29,10 @@ class SupabaseMessagingService implements MessagingService {
 
   // Stream controllers for real-time updates
   final Map<String, StreamController<Message>> _messageControllers = {};
-  final Map<String, StreamController<Conversation>> _conversationControllers = {};
-  final Map<String, StreamController<List<TypingIndicator>>> _typingControllers = {};
+  final Map<String, StreamController<Conversation>> _conversationControllers =
+      {};
+  final Map<String, StreamController<List<TypingIndicator>>>
+      _typingControllers = {};
   StreamController<int>? _unreadCountController;
 
   // Supabase realtime subscriptions
@@ -205,25 +207,30 @@ class SupabaseMessagingService implements MessagingService {
   }
 
   /// Populate booking context fields on a conversation from the booking data
-  Future<void> _populateBookingContext(String conversationId, String bookingId) async {
+  Future<void> _populateBookingContext(
+      String conversationId, String bookingId) async {
     try {
       // Fetch booking with listing info
       final bookingResponse = await _client
           .from('bookings')
-          .select('starts_at, ends_at, listing_title, listings!inner(listing_type, title)')
+          .select(
+              'starts_at, ends_at, listing_title, listings!inner(listing_type, title)')
           .eq('id', bookingId)
           .maybeSingle();
 
       if (bookingResponse != null) {
-        final listingData = bookingResponse['listings'] as Map<String, dynamic>?;
+        final listingData =
+            bookingResponse['listings'] as Map<String, dynamic>?;
         final listingType = listingData?['listing_type'] as String?;
         final listingTitle = bookingResponse['listing_title'] as String? ??
-                            listingData?['title'] as String?;
+            listingData?['title'] as String?;
 
         final updateData = <String, dynamic>{};
         if (listingType != null) updateData['listing_type'] = listingType;
-        if (bookingResponse['starts_at'] != null) updateData['booking_start'] = bookingResponse['starts_at'];
-        if (bookingResponse['ends_at'] != null) updateData['booking_end'] = bookingResponse['ends_at'];
+        if (bookingResponse['starts_at'] != null)
+          updateData['booking_start'] = bookingResponse['starts_at'];
+        if (bookingResponse['ends_at'] != null)
+          updateData['booking_end'] = bookingResponse['ends_at'];
         if (listingTitle != null) updateData['listing_title'] = listingTitle;
 
         if (updateData.isNotEmpty) {
@@ -231,32 +238,39 @@ class SupabaseMessagingService implements MessagingService {
               .from('conversations')
               .update(updateData)
               .eq('id', conversationId);
-          debugPrint('[SupabaseMessagingService] Populated booking context for conversation $conversationId');
+          debugPrint(
+              '[SupabaseMessagingService] Populated booking context for conversation $conversationId');
         }
       }
     } catch (e) {
-      debugPrint('[SupabaseMessagingService] Error populating booking context: $e');
+      debugPrint(
+          '[SupabaseMessagingService] Error populating booking context: $e');
       // Don't fail the whole operation if this fails
     }
   }
 
   @override
-  Future<MessagingResult<void>> archiveConversation(String conversationId) async {
-    return _updateConversationStatus(conversationId, ConversationStatus.archived);
+  Future<MessagingResult<void>> archiveConversation(
+      String conversationId) async {
+    return _updateConversationStatus(
+        conversationId, ConversationStatus.archived);
   }
 
   @override
-  Future<MessagingResult<void>> unarchiveConversation(String conversationId) async {
+  Future<MessagingResult<void>> unarchiveConversation(
+      String conversationId) async {
     return _updateConversationStatus(conversationId, ConversationStatus.active);
   }
 
   @override
   Future<MessagingResult<void>> blockConversation(String conversationId) async {
-    return _updateConversationStatus(conversationId, ConversationStatus.blocked);
+    return _updateConversationStatus(
+        conversationId, ConversationStatus.blocked);
   }
 
   @override
-  Future<MessagingResult<void>> unblockConversation(String conversationId) async {
+  Future<MessagingResult<void>> unblockConversation(
+      String conversationId) async {
     return _updateConversationStatus(conversationId, ConversationStatus.active);
   }
 
@@ -267,8 +281,7 @@ class SupabaseMessagingService implements MessagingService {
     try {
       await _client
           .from('conversations')
-          .update({'status': status.name})
-          .eq('id', conversationId);
+          .update({'status': status.name}).eq('id', conversationId);
 
       return const MessagingResult.success(null);
     } catch (e) {
@@ -319,9 +332,8 @@ class SupabaseMessagingService implements MessagingService {
         query = query.gt('created_at', afterMsg['created_at']);
       }
 
-      final response = await query
-          .order('created_at', ascending: false)
-          .limit(limit);
+      final response =
+          await query.order('created_at', ascending: false).limit(limit);
 
       final messages = <Message>[];
       for (final row in response as List) {
@@ -361,11 +373,8 @@ class SupabaseMessagingService implements MessagingService {
         'reply_to_id': request.replyToId,
       };
 
-      final response = await _client
-          .from('messages')
-          .insert(messageData)
-          .select()
-          .single();
+      final response =
+          await _client.from('messages').insert(messageData).select().single();
 
       var message = Message.fromJson(response);
 
@@ -410,8 +419,8 @@ class SupabaseMessagingService implements MessagingService {
       // Soft delete
       await _client
           .from('messages')
-          .update({'deleted_at': DateTime.now().toUtc().toIso8601String()})
-          .eq('id', messageId);
+          .update({'deleted_at': DateTime.now().toUtc().toIso8601String()}).eq(
+              'id', messageId);
 
       return const MessagingResult.success(null);
     } catch (e) {
@@ -509,8 +518,12 @@ class SupabaseMessagingService implements MessagingService {
     String conversationId,
   ) async {
     try {
-      // Clean up old indicators first
-      final cutoff = DateTime.now().subtract(const Duration(seconds: 10));
+      // Clean up old indicators first. Serialize the cutoff as UTC — a naive
+      // local (UTC+6) string is read by the timestamptz column as UTC, i.e.
+      // ~6h in the future, so the delete would wipe every fresh indicator and
+      // the "typing…" state would never show.
+      final cutoff =
+          DateTime.now().toUtc().subtract(const Duration(seconds: 10));
       await _client
           .from('typing_indicators')
           .delete()
@@ -580,7 +593,8 @@ class SupabaseMessagingService implements MessagingService {
     final key = 'conversation_$conversationId';
 
     if (!_conversationControllers.containsKey(key)) {
-      _conversationControllers[key] = StreamController<Conversation>.broadcast();
+      _conversationControllers[key] =
+          StreamController<Conversation>.broadcast();
 
       final channel = _client.channel(key);
       channel
@@ -612,7 +626,8 @@ class SupabaseMessagingService implements MessagingService {
     final key = 'conversations_$userId';
 
     if (!_conversationControllers.containsKey(key)) {
-      _conversationControllers[key] = StreamController<Conversation>.broadcast();
+      _conversationControllers[key] =
+          StreamController<Conversation>.broadcast();
 
       // Subscribe to conversation updates for this user
       // Note: Supabase realtime doesn't support OR filters directly,
@@ -668,7 +683,8 @@ class SupabaseMessagingService implements MessagingService {
     final key = 'typing_$conversationId';
 
     if (!_typingControllers.containsKey(key)) {
-      _typingControllers[key] = StreamController<List<TypingIndicator>>.broadcast();
+      _typingControllers[key] =
+          StreamController<List<TypingIndicator>>.broadcast();
 
       final channel = _client.channel(key);
       channel
@@ -784,7 +800,8 @@ class SupabaseMessagingService implements MessagingService {
 
       return response as int? ?? 0;
     } catch (e) {
-      debugPrint('[SupabaseMessagingService] Error in _getUnreadCountInternal: $e');
+      debugPrint(
+          '[SupabaseMessagingService] Error in _getUnreadCountInternal: $e');
       return 0;
     }
   }

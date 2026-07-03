@@ -212,6 +212,10 @@ class MessagingStateNotifier extends ChangeNotifier with SafeNotifier {
         lastMessageText: text,
         lastMessageAt: DateTime.now(),
         lastMessageSenderId: _currentUserId,
+        // The active chat still holds the pre-open unread count; the user is
+        // reading this thread right now, so it must be zero — otherwise the
+        // list's delta math re-lights the Messages badge for a read thread.
+        unreadCount: 0,
       );
       _conversationList.updateConversation(updatedConv);
     }

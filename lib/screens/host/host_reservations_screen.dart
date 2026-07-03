@@ -7,7 +7,8 @@ import '../../models/booking_categorizer.dart';
 import '../../models/booking_status.dart';
 import '../../models/listing.dart';
 import '../../models/review.dart';
-import '../../repositories/musafir_repository.dart' show MusafirRepository, BookingUpdateError;
+import '../../repositories/musafir_repository.dart'
+    show MusafirRepository, BookingUpdateError;
 import '../../services/booking/booking_lifecycle_service.dart'
     show InvalidBookingStateException;
 import '../../services/booking/booking_messaging_coordinator.dart';
@@ -105,7 +106,8 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
     });
 
     // Subscribe to booking update errors
-    _errorSubscription = widget.repository.bookingUpdateErrors.listen(_onBookingUpdateError);
+    _errorSubscription =
+        widget.repository.bookingUpdateErrors.listen(_onBookingUpdateError);
 
     // Re-pull everything so reservations never depend on a stale in-memory
     // cache (e.g. after the guest Trips tab repaginated the bookings list).
@@ -121,7 +123,8 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
   }
 
   void _showHighlightBanner() {
-    final booking = widget.repository.getBookingById(widget.highlightBookingId!);
+    final booking =
+        widget.repository.getBookingById(widget.highlightBookingId!);
     if (booking != null) {
       _showSuccessBanner('Viewing ${booking.tenantName}\'s booking');
     }
@@ -191,88 +194,90 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
               listenable:
                   Listenable.merge([widget.repository, widget.authState]),
               builder: (context, _) {
-          // Get host's listings
-          final hostListings = user != null
-              ? widget.repository.listings
-                  .where((l) => l.hostId == user.id || l.ownerName == user.name)
-                  .toList()
-              : <Listing>[];
+                // Get host's listings
+                final hostListings = user != null
+                    ? widget.repository.listings
+                        .where((l) => l.hostId == user.id)
+                        .toList()
+                    : <Listing>[];
 
-          // Get bookings for host's listings
-          final hostBookings = hostListings.isEmpty
-              ? <Booking>[]
-              : widget.repository.bookings
-                  .where((b) => hostListings.any((l) => l.id == b.listingId))
-                  .toList();
+                // Get bookings for host's listings
+                final hostBookings = hostListings.isEmpty
+                    ? <Booking>[]
+                    : widget.repository.bookings
+                        .where(
+                            (b) => hostListings.any((l) => l.id == b.listingId))
+                        .toList();
 
-          // Shared categorizer — identical bucketing to the guest Trips screen
-          // and the host dashboard, so a booking can't land in different tabs
-          // depending on which screen opened it.
-          final categorizer = BookingCategorizer(hostBookings);
-          final rawLists = [
-            categorizer.upcoming,
-            categorizer.current,
-            categorizer.past,
-          ];
+                // Shared categorizer — identical bucketing to the guest Trips screen
+                // and the host dashboard, so a booking can't land in different tabs
+                // depending on which screen opened it.
+                final categorizer = BookingCategorizer(hostBookings);
+                final rawLists = [
+                  categorizer.upcoming,
+                  categorizer.current,
+                  categorizer.past,
+                ];
 
-          // Per-tab effective status (ignore a filter not valid for that tab).
-          BookingStatus? effFor(List<Booking> list) =>
-              (_statusFilter != null &&
-                      distinctStatuses(list).contains(_statusFilter))
-                  ? _statusFilter
-                  : null;
+                // Per-tab effective status (ignore a filter not valid for that tab).
+                BookingStatus? effFor(List<Booking> list) =>
+                    (_statusFilter != null &&
+                            distinctStatuses(list).contains(_statusFilter))
+                        ? _statusFilter
+                        : null;
 
-          List<Booking> processFor(List<Booking> list) =>
-              applyBookingFilterSort(
-                list,
-                statusFilter: effFor(list),
-                sortDescending: _sortDescending,
-              );
+                List<Booking> processFor(List<Booking> list) =>
+                    applyBookingFilterSort(
+                      list,
+                      statusFilter: effFor(list),
+                      sortDescending: _sortDescending,
+                    );
 
-          // The filter bar reflects the currently visible tab.
-          final activeRaw = rawLists[_tabController.index.clamp(0, 2)];
+                // The filter bar reflects the currently visible tab.
+                final activeRaw = rawLists[_tabController.index.clamp(0, 2)];
 
-          return Column(
-            children: [
-              BookingFilterBar(
-                sortDescending: _sortDescending,
-                statusFilter: effFor(activeRaw),
-                availableStatuses: distinctStatuses(activeRaw),
-                onSortChanged: (desc) =>
-                    setState(() => _sortDescending = desc),
-                onStatusChanged: (status) =>
-                    setState(() => _statusFilter = status),
-              ),
-              Expanded(
-                child: TabBarView(
-                  controller: _tabController,
+                return Column(
                   children: [
-                    _buildBookingsList(
-                      context,
-                      theme,
-                      processFor(rawLists[0]),
-                      emptyMessage: 'No upcoming reservations',
-                      emptySubtitle: 'New bookings will appear here',
+                    BookingFilterBar(
+                      sortDescending: _sortDescending,
+                      statusFilter: effFor(activeRaw),
+                      availableStatuses: distinctStatuses(activeRaw),
+                      onSortChanged: (desc) =>
+                          setState(() => _sortDescending = desc),
+                      onStatusChanged: (status) =>
+                          setState(() => _statusFilter = status),
                     ),
-                    _buildBookingsList(
-                      context,
-                      theme,
-                      processFor(rawLists[1]),
-                      emptyMessage: 'No current guests',
-                      emptySubtitle: 'Active stays will appear here',
-                    ),
-                    _buildBookingsList(
-                      context,
-                      theme,
-                      processFor(rawLists[2]),
-                      emptyMessage: 'No past reservations',
-                      emptySubtitle: 'Completed bookings will appear here',
+                    Expanded(
+                      child: TabBarView(
+                        controller: _tabController,
+                        children: [
+                          _buildBookingsList(
+                            context,
+                            theme,
+                            processFor(rawLists[0]),
+                            emptyMessage: 'No upcoming reservations',
+                            emptySubtitle: 'New bookings will appear here',
+                          ),
+                          _buildBookingsList(
+                            context,
+                            theme,
+                            processFor(rawLists[1]),
+                            emptyMessage: 'No current guests',
+                            emptySubtitle: 'Active stays will appear here',
+                          ),
+                          _buildBookingsList(
+                            context,
+                            theme,
+                            processFor(rawLists[2]),
+                            emptyMessage: 'No past reservations',
+                            emptySubtitle:
+                                'Completed bookings will appear here',
+                          ),
+                        ],
+                      ),
                     ),
                   ],
-                ),
-              ),
-            ],
-          );
+                );
               },
             ),
           ),
@@ -434,13 +439,15 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
               _DetailRow(
                 icon: Icons.login,
                 label: 'Check-in',
-                value: _formatDateTimeForBooking(booking.effectiveCheckIn, booking.unitLabel),
+                value: _formatDateTimeForBooking(
+                    booking.effectiveCheckIn, booking.unitLabel),
               ),
               const SizedBox(height: 12),
               _DetailRow(
                 icon: Icons.logout,
                 label: 'Check-out',
-                value: _formatDateTimeForBooking(booking.effectiveCheckOut, booking.unitLabel),
+                value: _formatDateTimeForBooking(
+                    booking.effectiveCheckOut, booking.unitLabel),
               ),
               const SizedBox(height: 12),
               _DetailRow(
@@ -461,8 +468,8 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
                 _DetailRow(
                   icon: Icons.event_available,
                   label: 'Accepted',
-                  value: _formatDateTimeForBooking(
-                      booking.confirmedAt!, 'hour'),
+                  value:
+                      _formatDateTimeForBooking(booking.confirmedAt!, 'hour'),
                 ),
               ],
               if (booking.actualCheckIn != null) ...[
@@ -470,8 +477,8 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
                 _DetailRow(
                   icon: Icons.meeting_room,
                   label: 'Checked in',
-                  value: _formatDateTimeForBooking(
-                      booking.actualCheckIn!, 'hour'),
+                  value:
+                      _formatDateTimeForBooking(booking.actualCheckIn!, 'hour'),
                 ),
               ],
               if (booking.completedAt != null) ...[
@@ -479,8 +486,8 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
                 _DetailRow(
                   icon: Icons.task_alt,
                   label: 'Completed',
-                  value: _formatDateTimeForBooking(
-                      booking.completedAt!, 'hour'),
+                  value:
+                      _formatDateTimeForBooking(booking.completedAt!, 'hour'),
                 ),
               ],
               const Divider(height: 32),
@@ -516,9 +523,10 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
     final theme = Theme.of(context);
     final now = DateTime.now();
     final canCheckIn = booking.status == BookingStatus.confirmed &&
-        !DateTime(now.year, now.month, now.day).isBefore(
-            DateTime(booking.effectiveCheckIn.year,
-                booking.effectiveCheckIn.month, booking.effectiveCheckIn.day));
+        !DateTime(now.year, now.month, now.day).isBefore(DateTime(
+            booking.effectiveCheckIn.year,
+            booking.effectiveCheckIn.month,
+            booking.effectiveCheckIn.day));
 
     return switch (booking.status) {
       // Pending: Accept or Reject
@@ -691,10 +699,14 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
         );
         if (mounted) _showSuccessBanner('Booking accepted!');
       } catch (_) {
-        // The booking-update error stream surfaces persistence failures; this
-        // catch covers the conversation step so a messaging hiccup never blocks
-        // the accept from being reported.
-        if (mounted) _showSuccessBanner('Booking accepted!');
+        // The welcome-message step captures its own errors in the result, so an
+        // exception here means the accept itself failed (e.g. the guest already
+        // cancelled). Report the failure instead of a false success.
+        if (mounted) {
+          _showErrorBanner(
+            "Couldn't accept — this request may have been cancelled or already handled.",
+          );
+        }
       }
       return;
     }
@@ -994,7 +1006,8 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
 
     // Find the conversation for this booking
     final conversations = widget.messagingState!.conversations;
-    var conversation = conversations.where((c) => c.bookingId == booking.id).firstOrNull;
+    var conversation =
+        conversations.where((c) => c.bookingId == booking.id).firstOrNull;
 
     // If no conversation exists, create one
     if (conversation == null) {
@@ -1075,13 +1088,26 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
   }
 
   String _formatDateTimeForBooking(DateTime date, String unitLabel) {
+    // Timestamps are stored/parsed as UTC — show them in local time.
+    date = date.toLocal();
     final weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
 
-    final dateStr = '${weekdays[date.weekday - 1]}, ${months[date.month - 1]} ${date.day}';
+    final dateStr =
+        '${weekdays[date.weekday - 1]}, ${months[date.month - 1]} ${date.day}';
 
     // For hourly bookings, always show time
     // For daily bookings, show time if it's not midnight

@@ -22,20 +22,19 @@ class AppModeStateNotifier extends ChangeNotifier with SafeNotifier {
   bool get isGuestMode => _mode == AppMode.guest;
   bool get isHostMode => _mode == AppMode.host;
 
-  static const String _storageKey = 'app_mode';
+  // Persist the mode PER USER. A global key leaks one user's host mode to the
+  // next account that logs in on the same device, dropping a guest-only user
+  // into the host dashboard.
+  String get _storageKey {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    return userId == null ? 'app_mode' : 'app_mode_$userId';
+  }
 
   Future<void> _loadSavedMode() async {
     try {
-      final prefs = Supabase.instance.client.auth.currentSession;
-      // Use local storage via shared preferences pattern
-      // For now, we'll use a simple in-memory default that persists per session
-      // The mode will be saved when changed
-
-      // Try to get from local storage
+      // Try to get from local storage (scoped to the current user).
       final savedMode = await _getFromLocalStorage();
-      if (savedMode != null) {
-        _mode = savedMode;
-      }
+      _mode = savedMode ?? AppMode.guest;
     } catch (e) {
       // Default to guest mode on error
       _mode = AppMode.guest;

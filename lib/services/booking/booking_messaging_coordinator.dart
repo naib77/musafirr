@@ -96,19 +96,20 @@ class BookingMessagingCoordinator {
     required String hostId,
     DateTime? now,
   }) async {
-    final current = _lifecycleService.store.getBookingById(bookingId);
-    if (current != null) {
-      final conversation = await _pairThreadFor(current, hostId);
-      if (conversation != null) {
-        await _conversationService.onBookingCompleted(
-          booking: current,
-          conversation: conversation,
-          hostId: hostId,
-        );
-      }
+    // Transition first — this validates the state and throws if completion
+    // isn't allowed, so we never announce a completion that didn't happen.
+    final booking = _lifecycleService.completeService(bookingId, now: now);
+
+    final conversation = await _pairThreadFor(booking, hostId);
+    if (conversation != null) {
+      await _conversationService.onBookingCompleted(
+        booking: booking,
+        conversation: conversation,
+        hostId: hostId,
+      );
     }
 
-    return _lifecycleService.completeService(bookingId, now: now);
+    return booking;
   }
 
   /// Cancel a booking and notify the other party.
@@ -119,25 +120,26 @@ class BookingMessagingCoordinator {
     required String hostId,
     DateTime? now,
   }) async {
-    final current = _lifecycleService.store.getBookingById(bookingId);
-    if (current != null) {
-      final conversation = await _pairThreadFor(current, hostId);
-      if (conversation != null) {
-        await _conversationService.onBookingCancelled(
-          booking: current,
-          conversationId: conversation.id,
-          cancelledByUserId: cancelledBy,
-          cancelledByHost: isHost,
-        );
-      }
-    }
-
-    return _lifecycleService.cancelBooking(
+    // Cancel first — this validates the state and throws if cancellation
+    // isn't allowed, so we never announce a cancellation that didn't happen.
+    final booking = _lifecycleService.cancelBooking(
       bookingId,
       cancelledBy: cancelledBy,
       isHost: isHost,
       now: now,
     );
+
+    final conversation = await _pairThreadFor(booking, hostId);
+    if (conversation != null) {
+      await _conversationService.onBookingCancelled(
+        booking: booking,
+        conversationId: conversation.id,
+        cancelledByUserId: cancelledBy,
+        cancelledByHost: isHost,
+      );
+    }
+
+    return booking;
   }
 
   /// Resolves the single guest↔host thread for [booking].

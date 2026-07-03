@@ -23,9 +23,15 @@ class BookingRules {
   static const Duration reviewRevealDuration = Duration(days: 14);
 
   /// Returns true if host can accept this booking.
-  /// Only pending bookings can be accepted.
-  bool canAccept(Booking booking) {
-    return booking.status == BookingStatus.pending;
+  /// Only pending bookings whose stay has not already ended can be accepted —
+  /// confirming an elapsed booking would immediately auto-complete it and open
+  /// a review window for a stay that never happened.
+  bool canAccept(Booking booking, {DateTime? now}) {
+    if (booking.status != BookingStatus.pending) {
+      return false;
+    }
+    final currentTime = now ?? DateTime.now();
+    return booking.effectiveCheckOut.isAfter(currentTime);
   }
 
   /// Returns true if host can reject this booking.
@@ -51,9 +57,15 @@ class BookingRules {
   }
 
   /// Returns true if host can mark service as complete.
-  /// Only active (checked-in) bookings can be completed.
-  bool canComplete(Booking booking) {
-    return booking.status == BookingStatus.active;
+  /// Only active (checked-in) bookings whose checkout has been reached can be
+  /// completed. Completing mid-stay would free the remaining nights in the
+  /// overlap constraint and let the room be double-booked while occupied.
+  bool canComplete(Booking booking, {DateTime? now}) {
+    if (booking.status != BookingStatus.active) {
+      return false;
+    }
+    final currentTime = now ?? DateTime.now();
+    return !currentTime.isBefore(booking.effectiveCheckOut);
   }
 
   /// Returns true if guest can cancel this booking.

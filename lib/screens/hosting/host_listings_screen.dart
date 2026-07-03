@@ -31,7 +31,7 @@ class HostListingsScreen extends StatelessWidget {
         }
 
         final hostListings = repository.listings
-            .where((l) => l.hostId == user.id || l.ownerName == user.name)
+            .where((l) => l.hostId == user.id)
             .toList();
 
         if (hostListings.isEmpty) {

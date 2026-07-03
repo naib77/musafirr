@@ -42,6 +42,7 @@ class TripsScreen extends StatefulWidget {
   final BookingMessagingCoordinator? bookingMessagingCoordinator;
   final VoidCallback? onOpenNotifications;
   final VoidCallback? onNavigateToExplore;
+
   /// Called when the bottom navigation tab is tapped while already on this screen
   final VoidCallback? onTabTapped;
 
@@ -68,8 +69,10 @@ class _TripsScreenState extends State<TripsScreen> {
   @override
   void initState() {
     super.initState();
-    _upcomingScrollController = ScrollController()..addListener(_onUpcomingScroll);
-    _currentScrollController = ScrollController()..addListener(_onCurrentScroll);
+    _upcomingScrollController = ScrollController()
+      ..addListener(_onUpcomingScroll);
+    _currentScrollController = ScrollController()
+      ..addListener(_onCurrentScroll);
     _pastScrollController = ScrollController()..addListener(_onPastScroll);
 
     // Safe to call directly from initState: the repository uses SafeNotifier,
@@ -101,7 +104,8 @@ class _TripsScreenState extends State<TripsScreen> {
 
   void _onScroll(ScrollController controller) {
     // Load more when 80% scrolled
-    if (controller.position.pixels >= controller.position.maxScrollExtent * 0.8) {
+    if (controller.position.pixels >=
+        controller.position.maxScrollExtent * 0.8) {
       _loadMore();
     }
   }
@@ -110,7 +114,8 @@ class _TripsScreenState extends State<TripsScreen> {
     final user = widget.authState.currentUser;
     if (user == null) return;
 
-    if (!widget.repository.isLoadingBookings && widget.repository.hasMoreBookings) {
+    if (!widget.repository.isLoadingBookings &&
+        widget.repository.hasMoreBookings) {
       widget.repository.fetchNextBookingsPage(user.id);
     }
   }
@@ -178,83 +183,87 @@ class _TripsScreenState extends State<TripsScreen> {
               listenable:
                   Listenable.merge([widget.repository, widget.authState]),
               builder: (context, _) {
-          final user = widget.authState.currentUser;
-          if (user == null) {
-            return _buildLoginPrompt(context, theme);
-          }
+                final user = widget.authState.currentUser;
+                if (user == null) {
+                  return _buildLoginPrompt(context, theme);
+                }
 
-          final allBookings = widget.repository.getBookingsForUser(user.id);
-          final categorizer = BookingCategorizer(allBookings);
+                final allBookings =
+                    widget.repository.getBookingsForUser(user.id);
+                final categorizer = BookingCategorizer(allBookings);
 
-          // Use cached total counts for badges (not loaded count)
-          final counts = widget.repository.cachedBookingCounts;
-          final tabs = [
-            _TabData('Upcoming', counts?['upcoming'] ?? categorizer.upcoming.length),
-            _TabData('Current', counts?['current'] ?? categorizer.current.length),
-            _TabData('Past', counts?['past'] ?? categorizer.past.length),
-          ];
+                // Use cached total counts for badges (not loaded count)
+                final counts = widget.repository.cachedBookingCounts;
+                final tabs = [
+                  _TabData('Upcoming',
+                      counts?['upcoming'] ?? categorizer.upcoming.length),
+                  _TabData('Current',
+                      counts?['current'] ?? categorizer.current.length),
+                  _TabData('Past', counts?['past'] ?? categorizer.past.length),
+                ];
 
-          // The current tab's raw bucket, then derive filter options and
-          // apply the user's status filter + date sort.
-          final rawList = switch (_selectedIndex) {
-            0 => categorizer.upcoming,
-            1 => categorizer.current,
-            _ => categorizer.past,
-          };
-          final available = distinctStatuses(rawList);
-          // If the active filter isn't valid for this tab, ignore it.
-          final effectiveStatus =
-              (_statusFilter != null && available.contains(_statusFilter))
-                  ? _statusFilter
-                  : null;
-          final processed = applyBookingFilterSort(
-            rawList,
-            statusFilter: effectiveStatus,
-            sortDescending: _sortDescending,
-          );
-          final tabType = switch (_selectedIndex) {
-            0 => _TabType.upcoming,
-            1 => _TabType.current,
-            _ => _TabType.past,
-          };
+                // The current tab's raw bucket, then derive filter options and
+                // apply the user's status filter + date sort.
+                final rawList = switch (_selectedIndex) {
+                  0 => categorizer.upcoming,
+                  1 => categorizer.current,
+                  _ => categorizer.past,
+                };
+                final available = distinctStatuses(rawList);
+                // If the active filter isn't valid for this tab, ignore it.
+                final effectiveStatus =
+                    (_statusFilter != null && available.contains(_statusFilter))
+                        ? _statusFilter
+                        : null;
+                final processed = applyBookingFilterSort(
+                  rawList,
+                  statusFilter: effectiveStatus,
+                  sortDescending: _sortDescending,
+                );
+                final tabType = switch (_selectedIndex) {
+                  0 => _TabType.upcoming,
+                  1 => _TabType.current,
+                  _ => _TabType.past,
+                };
 
-          return Column(
-            children: [
-              // Modern 3-tab segmented control with badges
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: _SegmentedControlWithBadges(
-                  selectedIndex: _selectedIndex,
-                  tabs: tabs,
-                  onChanged: (index) => setState(() => _selectedIndex = index),
-                ),
-              ),
-              // Sort + status filter controls
-              BookingFilterBar(
-                sortDescending: _sortDescending,
-                statusFilter: effectiveStatus,
-                availableStatuses: available,
-                onSortChanged: (desc) =>
-                    setState(() => _sortDescending = desc),
-                onStatusChanged: (status) =>
-                    setState(() => _statusFilter = status),
-              ),
-              // Content
-              Expanded(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
-                  child: _buildBookingsList(
-                    context,
-                    theme,
-                    processed,
-                    tabType: tabType,
-                    userId: user.id,
-                    key: ValueKey('tab-$_selectedIndex'),
-                  ),
-                ),
-              ),
-            ],
-          );
+                return Column(
+                  children: [
+                    // Modern 3-tab segmented control with badges
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                      child: _SegmentedControlWithBadges(
+                        selectedIndex: _selectedIndex,
+                        tabs: tabs,
+                        onChanged: (index) =>
+                            setState(() => _selectedIndex = index),
+                      ),
+                    ),
+                    // Sort + status filter controls
+                    BookingFilterBar(
+                      sortDescending: _sortDescending,
+                      statusFilter: effectiveStatus,
+                      availableStatuses: available,
+                      onSortChanged: (desc) =>
+                          setState(() => _sortDescending = desc),
+                      onStatusChanged: (status) =>
+                          setState(() => _statusFilter = status),
+                    ),
+                    // Content
+                    Expanded(
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        child: _buildBookingsList(
+                          context,
+                          theme,
+                          processed,
+                          tabType: tabType,
+                          userId: user.id,
+                          key: ValueKey('tab-$_selectedIndex'),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
               },
             ),
           ),
@@ -273,7 +282,8 @@ class _TripsScreenState extends State<TripsScreen> {
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+                color:
+                    theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -326,7 +336,8 @@ class _TripsScreenState extends State<TripsScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             SliverFillRemaining(
-              child: _buildEmptyState(context, theme, tabType: tabType, key: key),
+              child:
+                  _buildEmptyState(context, theme, tabType: tabType, key: key),
             ),
           ],
         ),
@@ -342,7 +353,8 @@ class _TripsScreenState extends State<TripsScreen> {
               widget.repository.getReviewsForBooking(booking.id);
           final hasReviewed = existingReviews.any(
             (r) =>
-                r.reviewerId == userId && r.reviewType == ReviewType.guestToHost,
+                r.reviewerId == userId &&
+                r.reviewType == ReviewType.guestToHost,
           );
           if (!hasReviewed) {
             needsReviewBookings.add(booking);
@@ -351,7 +363,8 @@ class _TripsScreenState extends State<TripsScreen> {
       }
     }
 
-    final hasReviewBanner = tabType == _TabType.past && needsReviewBookings.isNotEmpty;
+    final hasReviewBanner =
+        tabType == _TabType.past && needsReviewBookings.isNotEmpty;
     final isLoading = widget.repository.isLoadingBookings;
     final hasMore = widget.repository.hasMoreBookings;
 
@@ -529,9 +542,8 @@ class _TripsScreenState extends State<TripsScreen> {
         bookingRules: _bookingRules,
         bookingMessagingCoordinator: widget.bookingMessagingCoordinator,
         onNavigateToExplore: widget.onNavigateToExplore,
-        onMessageHost: showMessageButton
-            ? () => _openChatForBooking(booking)
-            : null,
+        onMessageHost:
+            showMessageButton ? () => _openChatForBooking(booking) : null,
       ),
     );
   }
@@ -544,7 +556,8 @@ class _TripsScreenState extends State<TripsScreen> {
 
     // Find the conversation for this booking
     final conversations = widget.messagingState!.conversations;
-    var conversation = conversations.where((c) => c.bookingId == booking.id).firstOrNull;
+    var conversation =
+        conversations.where((c) => c.bookingId == booking.id).firstOrNull;
 
     // If no conversation exists, create one
     if (conversation == null) {
@@ -557,7 +570,7 @@ class _TripsScreenState extends State<TripsScreen> {
       if (hostId == null) {
         if (mounted) {
           ModernBanner.showInfo(
-            context, 'Cannot message: host information not available');
+              context, 'Cannot message: host information not available');
         }
         return;
       }
@@ -582,7 +595,7 @@ class _TripsScreenState extends State<TripsScreen> {
       if (conversation == null) {
         if (mounted) {
           ModernBanner.showError(
-            context, 'Failed to start conversation. Please try again.');
+              context, 'Failed to start conversation. Please try again.');
         }
         return;
       }
@@ -779,8 +792,7 @@ class _EnhancedBookingCard extends StatelessWidget {
     // CONFIRMED: Show check-in readiness + Message Host button
     if (booking.status == BookingStatus.confirmed) {
       final canCheckIn = bookingRules.canCheckIn(booking, now: now);
-      final daysUntilCheckIn =
-          booking.effectiveCheckIn.difference(now).inDays;
+      final daysUntilCheckIn = booking.effectiveCheckIn.difference(now).inDays;
 
       Widget infoBanner;
       if (canCheckIn) {
@@ -792,7 +804,8 @@ class _EnhancedBookingCard extends StatelessWidget {
       } else if (daysUntilCheckIn <= 3) {
         infoBanner = _InfoBanner(
           icon: Icons.event_available_rounded,
-          text: 'Check-in in $daysUntilCheckIn day${daysUntilCheckIn == 1 ? '' : 's'}',
+          text:
+              'Check-in in $daysUntilCheckIn day${daysUntilCheckIn == 1 ? '' : 's'}',
           color: Colors.blue,
         );
       } else {
@@ -826,7 +839,8 @@ class _EnhancedBookingCard extends StatelessWidget {
         children: [
           _InfoBanner(
             icon: Icons.hotel_rounded,
-            text: 'Day $daysStayed of $totalDays • ${daysLeft > 0 ? '$daysLeft days left' : 'Checkout today'}',
+            text:
+                'Day $daysStayed of $totalDays • ${daysLeft > 0 ? '$daysLeft days left' : 'Checkout today'}',
             color: Colors.teal,
             showProgress: true,
             progress: daysStayed / totalDays,
@@ -842,8 +856,7 @@ class _EnhancedBookingCard extends StatelessWidget {
     // COMPLETED: Show review deadline
     if (booking.status == BookingStatus.completed && showReviewBadge) {
       final completedAt = booking.completedAt ?? booking.effectiveCheckOut;
-      final reviewDeadline =
-          completedAt.add(BookingRules.reviewWindowDuration);
+      final reviewDeadline = completedAt.add(BookingRules.reviewWindowDuration);
       final daysLeft = reviewDeadline.difference(now).inDays;
 
       if (daysLeft > 0) {
@@ -875,7 +888,9 @@ class _EnhancedBookingCard extends StatelessWidget {
       final cancelledByGuest = booking.cancelledBy == booking.userId;
       return _InfoBanner(
         icon: Icons.cancel_outlined,
-        text: cancelledByGuest ? 'You cancelled this booking' : 'Cancelled by host',
+        text: cancelledByGuest
+            ? 'You cancelled this booking'
+            : 'Cancelled by host',
         color: Colors.grey,
       );
     }
@@ -968,8 +983,18 @@ class _EnhancedBookingCard extends StatelessWidget {
 
   String _formatDate(DateTime date) {
     final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     return '${months[date.month - 1]} ${date.day}';
   }
@@ -1196,8 +1221,7 @@ class _PendingExpirationBanner extends StatelessWidget {
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: remaining.inHours < 6
                       ? Colors.red.withValues(alpha: 0.2)
@@ -1534,7 +1558,8 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
       return _DetailsBanner(
         icon: Icons.cancel_rounded,
         title: 'Request Declined',
-        subtitle: booking.rejectionReason ?? 'The host couldn\'t accommodate your request',
+        subtitle: booking.rejectionReason ??
+            'The host couldn\'t accommodate your request',
         color: Colors.red.shade700,
       );
     }
@@ -1731,6 +1756,31 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
     final completedAt = booking.completedAt ?? booking.effectiveCheckOut;
     final reviewDeadline = completedAt.add(BookingRules.reviewWindowDuration);
     final now = DateTime.now();
+
+    // The 14-day review window has closed — reviews are no longer accepted.
+    if (now.isAfter(reviewDeadline)) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.lock_clock_rounded,
+                color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'The 14-day review window for this stay has closed',
+                style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     final daysLeft = reviewDeadline.difference(now).inDays;
 
     return Column(
@@ -1889,7 +1939,8 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
         if (context.mounted) ModernBanner.showError(context, e.message);
       } catch (_) {
         if (context.mounted) {
-          ModernBanner.showError(context, 'Could not cancel. Please try again.');
+          ModernBanner.showError(
+              context, 'Could not cancel. Please try again.');
         }
       }
       return;
@@ -1909,8 +1960,18 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
   String _formatFullDate(DateTime date) {
     final weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December'
     ];
     return '${weekdays[date.weekday - 1]}, ${months[date.month - 1]} ${date.day}';
   }
@@ -1918,9 +1979,21 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
   /// Date + time, e.g. "Jun 28, 3:30 PM" — used for check-in/out and lifecycle
   /// timestamps so the guest can see the actual time, not just the day.
   String _formatDateTime(DateTime date) {
+    // Milestone timestamps are stored/parsed as UTC — show them in local time.
+    date = date.toLocal();
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     final hour12 = date.hour % 12 == 0 ? 12 : date.hour % 12;
     final minute = date.minute.toString().padLeft(2, '0');
@@ -2176,7 +2249,8 @@ class _SegmentedControlWithBadges extends StatelessWidget {
                                 decoration: BoxDecoration(
                                   color: isSelected
                                       ? theme.colorScheme.primary
-                                      : theme.colorScheme.surfaceContainerHighest,
+                                      : theme
+                                          .colorScheme.surfaceContainerHighest,
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Text(

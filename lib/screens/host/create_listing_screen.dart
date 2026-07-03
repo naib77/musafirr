@@ -197,7 +197,8 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
               error: result.errorMessage ?? 'Upload failed',
             );
           });
-          throw Exception('Failed to upload image ${i + 1}: ${result.errorMessage}');
+          throw Exception(
+              'Failed to upload image ${i + 1}: ${result.errorMessage}');
         }
       }
 
@@ -233,8 +234,9 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         available: true,
       );
 
-      // Add to repository
-      widget.repository.addListing(listing);
+      // Add to repository — await so a failed insert surfaces below instead
+      // of showing a success banner for a listing that was never created.
+      await widget.repository.addListing(listing);
 
       if (mounted) {
         Navigator.pop(context);

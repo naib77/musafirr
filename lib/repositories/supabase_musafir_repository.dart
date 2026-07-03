@@ -2,7 +2,8 @@ import 'dart:async';
 
 import '../core/state/safe_notifier.dart';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' hide User, RealtimeChannel;
+import 'package:supabase_flutter/supabase_flutter.dart'
+    hide User, RealtimeChannel;
 import 'package:supabase_flutter/supabase_flutter.dart' show RealtimeChannel;
 
 import '../data/facility_catalog.dart';
@@ -25,7 +26,8 @@ import 'musafir_repository.dart';
 ///
 /// This repository fetches and caches data from Supabase PostgreSQL database.
 /// It extends [ChangeNotifier] to support reactive UI updates.
-class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
+class SupabaseMusafirRepository extends ChangeNotifier
+    with SafeNotifier
     implements MusafirRepository {
   SupabaseMusafirRepository() {
     _initialize();
@@ -34,16 +36,18 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
   SupabaseClient get _client => Supabase.instance.client;
 
   // Local cache
-  List<Listing> _listings = [];
+  final List<Listing> _listings = [];
   List<Booking> _bookings = [];
   List<Review> _reviews = [];
   final Map<String, User> _users = {};
 
   // Error notification stream for booking updates
-  final _bookingUpdateErrorController = StreamController<BookingUpdateError>.broadcast();
+  final _bookingUpdateErrorController =
+      StreamController<BookingUpdateError>.broadcast();
 
   @override
-  Stream<BookingUpdateError> get bookingUpdateErrors => _bookingUpdateErrorController.stream;
+  Stream<BookingUpdateError> get bookingUpdateErrors =>
+      _bookingUpdateErrorController.stream;
 
   // Realtime subscription for bookings
   RealtimeChannel? _bookingsChannel;
@@ -87,12 +91,50 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
     notifyListeners();
   }
 
+  /// Wipe all cached state and tear down the realtime subscription.
+  /// Called on logout so the next user never sees the previous user's data.
+  void _clearCaches() {
+    _bookingsChannel?.unsubscribe();
+    _bookingsChannel = null;
+    _listings.clear();
+    _bookings = [];
+    _reviews = [];
+    _users.clear();
+    _cachedBookingCounts = null;
+    _listingsCursor = null;
+    _hasMoreListings = true;
+    _isLoadingListings = false;
+    _bookingsCursor = null;
+    _hasMoreBookings = true;
+    _isLoadingBookings = false;
+    _currentBookingsUserId = null;
+    _initialized = false;
+  }
+
+  /// Clear all cached data on logout.
+  void clearSession() {
+    _clearCaches();
+    notifyListeners();
+  }
+
+  /// Re-initialize for a (possibly different) logged-in user: drop the previous
+  /// user's cache, refetch, and re-establish the bookings realtime subscription.
+  /// The subscription is otherwise only created once in the constructor, so a
+  /// session that started logged-out (or a re-login) would never get live
+  /// booking updates without this.
+  Future<void> resetForAuthChange() async {
+    _clearCaches();
+    notifyListeners();
+    await _initialize();
+  }
+
   /// Set up realtime subscription for booking changes.
   /// This ensures the UI updates when bookings are created/updated from other devices.
   void _setupBookingsRealtimeSubscription() {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) {
-      debugPrint('[Bookings Realtime] No user logged in, skipping subscription');
+      debugPrint(
+          '[Bookings Realtime] No user logged in, skipping subscription');
       return;
     }
 
@@ -124,7 +166,8 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
   }
 
   /// Handle realtime booking changes
-  void _handleBookingRealtimeChange(Map<String, dynamic> record, {required bool isInsert}) {
+  void _handleBookingRealtimeChange(Map<String, dynamic> record,
+      {required bool isInsert}) {
     try {
       final booking = _bookingFromJson(record);
       final userId = _client.auth.currentUser?.id;
@@ -135,7 +178,8 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
           _listings.any((l) => l.id == booking.listingId && l.hostId == userId);
 
       if (!isRelevant) {
-        debugPrint('[Bookings Realtime] Ignoring irrelevant booking: ${booking.id}');
+        debugPrint(
+            '[Bookings Realtime] Ignoring irrelevant booking: ${booking.id}');
         return;
       }
 
@@ -151,12 +195,14 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
         final index = _bookings.indexWhere((b) => b.id == booking.id);
         if (index != -1) {
           _bookings[index] = booking;
-          debugPrint('[Bookings Realtime] Updated booking: ${booking.id}, status: ${booking.status.name}');
+          debugPrint(
+              '[Bookings Realtime] Updated booking: ${booking.id}, status: ${booking.status.name}');
           notifyListeners();
         } else {
           // Booking not in cache, add it
           _bookings.add(booking);
-          debugPrint('[Bookings Realtime] Added missing booking: ${booking.id}');
+          debugPrint(
+              '[Bookings Realtime] Added missing booking: ${booking.id}');
           notifyListeners();
         }
       }
@@ -253,9 +299,8 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
         query = query.lt('created_at', _listingsCursor!.toIso8601String());
       }
 
-      final listingsResponse = await query
-          .order('created_at', ascending: false)
-          .limit(_pageSize);
+      final listingsResponse =
+          await query.order('created_at', ascending: false).limit(_pageSize);
 
       final newListings = <Listing>[];
 
@@ -263,7 +308,8 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
         _hasMoreListings = false;
       } else {
         // Fetch rating data for these listings
-        final listingIds = listingsResponse.map((e) => e['id'] as String).toList();
+        final listingIds =
+            listingsResponse.map((e) => e['id'] as String).toList();
         final ratingsResponse = await _client
             .from('listing_ratings')
             .select('listing_id, review_count, average_rating')
@@ -300,8 +346,7 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
         // Add to accumulated list (skip ids already cached, e.g. the user's
         // own listings loaded by _loadOwnListings)
         final existingIds = _listings.map((l) => l.id).toSet();
-        _listings.addAll(
-            newListings.where((l) => !existingIds.contains(l.id)));
+        _listings.addAll(newListings.where((l) => !existingIds.contains(l.id)));
 
         // Check if we got fewer items than page size (means no more)
         if (listingsResponse.length < _pageSize) {
@@ -412,7 +457,9 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
         listings!inner(listing_type)
       ''');
 
-      _bookings = (response as List).map((e) => _bookingFromJson(e as Map<String, dynamic>)).toList();
+      _bookings = (response as List)
+          .map((e) => _bookingFromJson(e as Map<String, dynamic>))
+          .toList();
       notifyListeners();
     } catch (e) {
       debugPrint('Error fetching bookings: $e');
@@ -489,8 +536,10 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
       'listing_id': listingId,
       'tenant_id': tenantId,
       'tenant_name': tenantName,
-      'starts_at': startsAt.toIso8601String(),
-      'ends_at': endsAt.toIso8601String(),
+      // Serialize as UTC — a naive local (UTC+6) string is read by the
+      // timestamptz column as UTC, shifting every booking 6 hours ahead.
+      'starts_at': startsAt.toUtc().toIso8601String(),
+      'ends_at': endsAt.toUtc().toIso8601String(),
       'total_price': totalPrice,
       'pricing_unit': pricingUnit,
       'guest_count': guestCount,
@@ -517,9 +566,17 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
 
   Future<void> _refreshReviews() async {
     try {
-      final response = await _client.from('reviews').select();
+      // Order newest-first so that if PostgREST's row cap ever truncates the
+      // result, the rows kept are the most recent — the ones a user is most
+      // likely to be checking against (e.g. "did I already review this stay?").
+      final response = await _client
+          .from('reviews')
+          .select()
+          .order('created_at', ascending: false);
 
-      _reviews = (response as List).map((e) => _reviewFromJson(e as Map<String, dynamic>)).toList();
+      _reviews = (response as List)
+          .map((e) => _reviewFromJson(e as Map<String, dynamic>))
+          .toList();
       notifyListeners();
     } catch (e) {
       debugPrint('Error fetching reviews: $e');
@@ -534,7 +591,8 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
         overall: (json['overall_rating'] as num?)?.toDouble() ?? 0.0,
         cleanliness: (json['cleanliness_rating'] as num?)?.toDouble() ?? 0.0,
         accuracy: (json['accuracy_rating'] as num?)?.toDouble() ?? 0.0,
-        communication: (json['communication_rating'] as num?)?.toDouble() ?? 0.0,
+        communication:
+            (json['communication_rating'] as num?)?.toDouble() ?? 0.0,
         location: (json['location_rating'] as num?)?.toDouble() ?? 0.0,
         value: (json['value_rating'] as num?)?.toDouble() ?? 0.0,
       );
@@ -544,12 +602,18 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
       id: json['id'] as String,
       bookingId: json['booking_id'] as String? ?? '',
       listingId: json['listing_id'] as String?,
-      reviewerId: json['reviewer_id'] as String? ?? json['user_id'] as String? ?? '',
-      reviewerName: json['reviewer_name'] as String? ?? json['user_name'] as String? ?? 'Guest',
-      reviewerAvatarUrl: json['reviewer_avatar_url'] as String? ?? json['user_avatar_url'] as String?,
+      reviewerId:
+          json['reviewer_id'] as String? ?? json['user_id'] as String? ?? '',
+      reviewerName: json['reviewer_name'] as String? ??
+          json['user_name'] as String? ??
+          'Guest',
+      reviewerAvatarUrl: json['reviewer_avatar_url'] as String? ??
+          json['user_avatar_url'] as String?,
       revieweeId: json['reviewee_id'] as String? ?? '',
       reviewType: _reviewTypeFromString(json['review_type'] as String?),
-      overallRating: (json['overall_rating'] as num?)?.toDouble() ?? (json['rating'] as num?)?.toDouble() ?? 0.0,
+      overallRating: (json['overall_rating'] as num?)?.toDouble() ??
+          (json['rating'] as num?)?.toDouble() ??
+          0.0,
       categoryRatings: categoryRatings,
       comment: json['comment'] as String?,
       isRevealed: json['is_revealed'] as bool? ?? true,
@@ -586,7 +650,8 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
     };
 
     // Add category ratings for guest-to-host reviews
-    if (review.reviewType == ReviewType.guestToHost && review.categoryRatings != null) {
+    if (review.reviewType == ReviewType.guestToHost &&
+        review.categoryRatings != null) {
       json['cleanliness_rating'] = review.categoryRatings!.cleanliness;
       json['accuracy_rating'] = review.categoryRatings!.accuracy;
       json['communication_rating'] = review.categoryRatings!.communication;
@@ -651,7 +716,10 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
     return _listings.where((listing) {
       final insideLat = (listing.latitude - centerLat).abs() <= delta;
       final insideLng = (listing.longitude - centerLng).abs() <= delta;
-      return listing.available && listing.hostAvailable && insideLat && insideLng;
+      return listing.available &&
+          listing.hostAvailable &&
+          insideLat &&
+          insideLng;
     }).toList();
   }
 
@@ -697,10 +765,11 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
         ),
     };
     final unitRate = switch (duration.unitLabel) {
-      'hour' => listing.hourlyRate,
-      'day' => listing.dailyRate,
-      _ => listing.monthlyRate,
-    } ?? 0;
+          'hour' => listing.hourlyRate,
+          'day' => listing.dailyRate,
+          _ => listing.monthlyRate,
+        } ??
+        0;
 
     final booking = Booking(
       id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
@@ -860,14 +929,14 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
   List<Listing> getFeaturedListings({int limit = 10}) {
     final available =
         _listings.where((l) => l.available && l.hostAvailable).toList()
-      ..sort((a, b) {
-        final ratingA = a.rating ?? 0;
-        final ratingB = b.rating ?? 0;
-        if (ratingA != ratingB) {
-          return ratingB.compareTo(ratingA);
-        }
-        return b.reviewCount.compareTo(a.reviewCount);
-      });
+          ..sort((a, b) {
+            final ratingA = a.rating ?? 0;
+            final ratingB = b.rating ?? 0;
+            if (ratingA != ratingB) {
+              return ratingB.compareTo(ratingA);
+            }
+            return b.reviewCount.compareTo(a.reviewCount);
+          });
     return available.take(limit).toList();
   }
 
@@ -876,46 +945,122 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
     return _listings.where((l) => l.hostId == hostId).toList();
   }
 
+  /// Replace the full amenity set for a listing in the listing_facilities
+  /// join table. Facility rows are matched by name against the facilities
+  /// catalog; unknown names are skipped rather than failing the whole save.
+  Future<void> _saveListingFacilities(
+      String listingId, List<Facility> facilities) async {
+    // Clear the existing set first so edits that remove an amenity take effect.
+    await _client
+        .from('listing_facilities')
+        .delete()
+        .eq('listing_id', listingId);
+    if (facilities.isEmpty) return;
+
+    final catalog = await _client.from('facilities').select('id, name') as List;
+    final idByName = <String, String>{
+      for (final row in catalog)
+        (row['name'] as String).toLowerCase(): row['id'] as String,
+    };
+
+    final rows = <Map<String, dynamic>>[];
+    for (final f in facilities) {
+      final id = idByName[f.name.toLowerCase()];
+      if (id != null) {
+        rows.add({'listing_id': listingId, 'facility_id': id});
+      }
+    }
+    if (rows.isNotEmpty) {
+      await _client.from('listing_facilities').insert(rows);
+    }
+  }
+
   @override
-  void addListing(Listing listing) async {
+  Future<void> addListing(Listing listing) async {
+    // Optimistic add for instant UI feedback (carries the client temp id).
     _listings.add(listing);
     notifyListeners();
 
     try {
-      await _client.from('listings').insert(_listingToJson(listing));
+      // Insert WITHOUT an id and read back the DB-assigned uuid, so the local
+      // cache uses the real id — otherwise the temp-id copy lingers alongside
+      // the real row and edits target a non-existent id.
+      final inserted = await _client
+          .from('listings')
+          .insert(_listingToJson(listing))
+          .select()
+          .single();
+      final realId = inserted['id'] as String;
+
+      await _saveListingFacilities(realId, listing.facilities);
+
+      // Drop the temp-id copy; _refreshListings brings in the canonical row.
+      _listings.removeWhere((l) => l.id == listing.id);
       await _refreshListings();
     } catch (e) {
-      debugPrint('Error adding listing: $e');
-    }
-  }
-
-  @override
-  void updateListing(Listing listing) async {
-    final index = _listings.indexWhere((l) => l.id == listing.id);
-    if (index != -1) {
-      _listings[index] = listing;
+      // Roll back the optimistic add so a failed create doesn't leave a ghost.
+      _listings.removeWhere((l) => l.id == listing.id);
       notifyListeners();
-
-      try {
-        await _client
-            .from('listings')
-            .update(_listingToJson(listing))
-            .eq('id', listing.id);
-      } catch (e) {
-        debugPrint('Error updating listing: $e');
-      }
+      debugPrint('Error adding listing: $e');
+      rethrow;
     }
   }
 
   @override
-  void deleteListing(String listingId) async {
+  Future<void> updateListing(Listing listing) async {
+    final index = _listings.indexWhere((l) => l.id == listing.id);
+    if (index == -1) return;
+
+    final previous = _listings[index];
+    _listings[index] = listing;
+    notifyListeners();
+
+    try {
+      await _client
+          .from('listings')
+          .update(_listingToJson(listing))
+          .eq('id', listing.id);
+      await _saveListingFacilities(listing.id, listing.facilities);
+    } catch (e) {
+      // Roll back to the previous value on failure.
+      final i = _listings.indexWhere((l) => l.id == listing.id);
+      if (i != -1) _listings[i] = previous;
+      notifyListeners();
+      debugPrint('Error updating listing: $e');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> deleteListing(String listingId) async {
+    // Refuse to delete a listing that still has live bookings. bookings.listing_id
+    // is ON DELETE CASCADE, so deleting would silently destroy guests' pending/
+    // confirmed/active reservations with no cancellation or notification.
+    final live = await _client
+        .from('bookings')
+        .select('id')
+        .eq('listing_id', listingId)
+        .inFilter(
+            'booking_status', ['pending', 'confirmed', 'active']).limit(1);
+    if ((live as List).isNotEmpty) {
+      throw Exception(
+        'This listing has active or upcoming bookings. Cancel or complete them '
+        'before deleting.',
+      );
+    }
+
+    final removed = _listings.where((l) => l.id == listingId).toList();
     _listings.removeWhere((l) => l.id == listingId);
     notifyListeners();
 
     try {
       await _client.from('listings').delete().eq('id', listingId);
     } catch (e) {
+      // Restore the optimistic removal so the UI reflects reality.
+      _listings.addAll(removed);
+      notifyListeners();
       debugPrint('Error deleting listing: $e');
+      rethrow;
     }
   }
 
@@ -936,8 +1081,8 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
       final listing = getListingById(review.listingId!);
       if (listing != null) {
         final reviews = getReviewsForListing(review.listingId!);
-        final avgRating =
-            reviews.map((r) => r.rating).reduce((a, b) => a + b) / reviews.length;
+        final avgRating = reviews.map((r) => r.rating).reduce((a, b) => a + b) /
+            reviews.length;
         final index = _listings.indexOf(listing);
         _listings[index] = listing.copyWith(
           rating: avgRating,
@@ -1103,11 +1248,8 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
 
     // Fetch from Supabase
     try {
-      final response = await _client
-          .from('bookings')
-          .select()
-          .eq('id', id)
-          .maybeSingle();
+      final response =
+          await _client.from('bookings').select().eq('id', id).maybeSingle();
 
       if (response != null) {
         final booking = _bookingFromJson(response);
@@ -1181,7 +1323,7 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
   }
 
   @override
-  Booking createMarketplaceBooking({
+  Future<Booking> createMarketplaceBooking({
     required String listingId,
     required String userId,
     required String userName,
@@ -1190,7 +1332,7 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
     required int guestCount,
     required double totalPrice,
     required String unitLabel,
-  }) {
+  }) async {
     final listing = getListingById(listingId);
     if (listing == null) {
       throw Exception('Listing not found');
@@ -1235,7 +1377,8 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
       checkOut: checkOut,
       totalPrice: totalPrice,
       unitLabel: unitLabel,
-      status: BookingStatus.pending, // New bookings start as pending until host accepts
+      status: BookingStatus
+          .pending, // New bookings start as pending until host accepts
       guestCount: guestCount,
       createdAt: DateTime.now(),
       listingTitle: listing.title,
@@ -1246,33 +1389,37 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
     _bookings.add(booking);
     notifyListeners();
 
-    // Insert async
-    _insertMarketplaceBookingAsync(booking);
+    // Await the insert so a failure (offline, RLS, overlap constraint) is
+    // surfaced to the caller instead of leaving a phantom local booking that
+    // the host never received. Roll back the optimistic add on failure.
+    try {
+      await _insertMarketplaceBooking(booking);
+    } catch (e) {
+      _bookings.removeWhere((b) => b.id == booking.id);
+      notifyListeners();
+      rethrow;
+    }
 
     return booking;
   }
 
-  Future<void> _insertMarketplaceBookingAsync(Booking booking) async {
-    try {
-      final data = _bookingToJson(
-        listingId: booking.listingId,
-        tenantId: booking.userId ?? '',
-        tenantName: booking.tenantName,
-        startsAt: booking.checkIn ?? booking.startAt,
-        endsAt: booking.checkOut ?? booking.endAt,
-        totalPrice: booking.totalPrice,
-        pricingUnit: booking.unitLabel,
-        guestCount: booking.guestCount,
-        listingTitle: booking.listingTitle,
-        listingImageUrl: booking.listingImageUrl,
-        listingCity: booking.listingCity,
-      );
+  Future<void> _insertMarketplaceBooking(Booking booking) async {
+    final data = _bookingToJson(
+      listingId: booking.listingId,
+      tenantId: booking.userId ?? '',
+      tenantName: booking.tenantName,
+      startsAt: booking.checkIn ?? booking.startAt,
+      endsAt: booking.checkOut ?? booking.endAt,
+      totalPrice: booking.totalPrice,
+      pricingUnit: booking.unitLabel,
+      guestCount: booking.guestCount,
+      listingTitle: booking.listingTitle,
+      listingImageUrl: booking.listingImageUrl,
+      listingCity: booking.listingCity,
+    );
 
-      await _client.from('bookings').insert(data);
-      await _refreshBookings();
-    } catch (e) {
-      debugPrint('Error inserting marketplace booking: $e');
-    }
+    await _client.from('bookings').insert(data);
+    await _refreshBookings();
   }
 
   @override
@@ -1317,14 +1464,16 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
   /// Persist booking update to Supabase.
   /// If persistence fails, emits an error to [bookingUpdateErrors] stream
   /// and optionally rolls back the local state.
-  Future<void> _persistBookingUpdate(Booking booking, Booking originalBooking) async {
+  Future<void> _persistBookingUpdate(
+      Booking booking, Booking originalBooking) async {
     try {
       final currentUserId = _client.auth.currentUser?.id;
       final updateData = <String, dynamic>{
         'booking_status': booking.status.name,
       };
       debugPrint('[DEBUG-booking] Updating Supabase with: $updateData');
-      debugPrint('[DEBUG-booking] Current user: $currentUserId, booking tenant: ${booking.userId}');
+      debugPrint(
+          '[DEBUG-booking] Current user: $currentUserId, booking tenant: ${booking.userId}');
 
       // Add lifecycle fields if present
       if (booking.hostMessage != null) {
@@ -1357,13 +1506,20 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
 
       debugPrint('[DEBUG-booking] Full update data: $updateData');
 
-      final response = await _client.from('bookings').update(updateData).eq('id', booking.id).select();
+      final response = await _client
+          .from('bookings')
+          .update(updateData)
+          .eq('id', booking.id)
+          .select();
 
       // Check if update actually affected any rows
       if (response.isEmpty) {
-        final errorMsg = 'Update failed - you may not have permission to modify this booking';
-        debugPrint('[DEBUG-booking] WARNING: No rows updated for ${booking.id}! RLS may be blocking the update.');
-        debugPrint('[DEBUG-booking] Check that current user ($currentUserId) is the host of listing ${booking.listingId}');
+        final errorMsg =
+            'Update failed - you may not have permission to modify this booking';
+        debugPrint(
+            '[DEBUG-booking] WARNING: No rows updated for ${booking.id}! RLS may be blocking the update.');
+        debugPrint(
+            '[DEBUG-booking] Check that current user ($currentUserId) is the host of listing ${booking.listingId}');
 
         // Emit error so UI can notify user
         _bookingUpdateErrorController.add(BookingUpdateError(
@@ -1375,7 +1531,8 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
         // Rollback local state
         _rollbackBookingUpdate(booking.id, originalBooking);
       } else {
-        debugPrint('[DEBUG-booking] Supabase update SUCCESS for ${booking.id}, response: $response');
+        debugPrint(
+            '[DEBUG-booking] Supabase update SUCCESS for ${booking.id}, response: $response');
       }
     } catch (e, stackTrace) {
       // Log the full error
@@ -1398,7 +1555,8 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
   void _rollbackBookingUpdate(String bookingId, Booking originalBooking) {
     final index = _bookings.indexWhere((b) => b.id == bookingId);
     if (index != -1) {
-      debugPrint('[DEBUG-booking] Rolling back booking $bookingId to original state');
+      debugPrint(
+          '[DEBUG-booking] Rolling back booking $bookingId to original state');
       _bookings[index] = originalBooking;
       notifyListeners();
     }
@@ -1407,30 +1565,25 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
   @override
   List<Booking> getPendingBookingsForHost(String hostId) {
     // Get listings owned by this host
-    final hostListingIds = _listings
-        .where((l) => l.hostId == hostId)
-        .map((l) => l.id)
-        .toSet();
+    final hostListingIds =
+        _listings.where((l) => l.hostId == hostId).map((l) => l.id).toSet();
 
     return _bookings
         .where((b) =>
             hostListingIds.contains(b.listingId) &&
             b.status == BookingStatus.pending)
         .toList()
-      ..sort((a, b) => a.createdAt?.compareTo(b.createdAt ?? DateTime.now()) ?? 0);
+      ..sort(
+          (a, b) => a.createdAt?.compareTo(b.createdAt ?? DateTime.now()) ?? 0);
   }
 
   @override
   List<Booking> getBookingsForHost(String hostId) {
     // Get listings owned by this host
-    final hostListingIds = _listings
-        .where((l) => l.hostId == hostId)
-        .map((l) => l.id)
-        .toSet();
+    final hostListingIds =
+        _listings.where((l) => l.hostId == hostId).map((l) => l.id).toSet();
 
-    return _bookings
-        .where((b) => hostListingIds.contains(b.listingId))
-        .toList()
+    return _bookings.where((b) => hostListingIds.contains(b.listingId)).toList()
       ..sort((a, b) => b.effectiveCheckIn.compareTo(a.effectiveCheckIn));
   }
 
@@ -1505,19 +1658,20 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
     String? excludeListingId,
   }) {
     // Get all active bookings for this user
-    final userBookings = _bookings.where((b) =>
-      b.userId == userId &&
-      b.status.isActive &&
-      (excludeListingId == null || b.listingId != excludeListingId)
-    ).toList();
+    final userBookings = _bookings
+        .where((b) =>
+            b.userId == userId &&
+            b.status.isActive &&
+            (excludeListingId == null || b.listingId != excludeListingId))
+        .toList();
 
     return userBookings.where((booking) {
       final bookingStart = booking.effectiveCheckIn;
       final bookingEnd = booking.effectiveCheckOut;
 
       // Check for overlap
-      final hasOverlap = checkIn.isBefore(bookingEnd) &&
-                         bookingStart.isBefore(checkOut);
+      final hasOverlap =
+          checkIn.isBefore(bookingEnd) && bookingStart.isBefore(checkOut);
 
       return hasOverlap;
     }).toList();
@@ -1540,18 +1694,16 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
   @override
   List<Booking> getUnreviewedCompletedBookings(String userId) {
     // Get all completed bookings for this user
-    final completedBookings = _bookings.where((b) =>
-      b.userId == userId &&
-      b.status == BookingStatus.completed
-    ).toList();
+    final completedBookings = _bookings
+        .where((b) => b.userId == userId && b.status == BookingStatus.completed)
+        .toList();
 
     // Filter out bookings that already have a guest review
     return completedBookings.where((booking) {
       final existingReview = _reviews.any((r) =>
-        r.bookingId == booking.id &&
-        r.reviewerId == userId &&
-        r.reviewType == ReviewType.guestToHost
-      );
+          r.bookingId == booking.id &&
+          r.reviewerId == userId &&
+          r.reviewType == ReviewType.guestToHost);
       return !existingReview;
     }).toList()
       ..sort((a, b) => (a.completedAt ?? a.effectiveCheckOut)
@@ -1599,19 +1751,15 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
 
     try {
       // Build query with cursor pagination
-      var query = _client
-          .from('bookings')
-          .select()
-          .eq('tenant_id', userId);
+      var query = _client.from('bookings').select().eq('tenant_id', userId);
 
       // Apply cursor if we have one (fetch items older than cursor)
       if (_bookingsCursor != null) {
         query = query.lt('created_at', _bookingsCursor!.toIso8601String());
       }
 
-      final bookingsResponse = await query
-          .order('created_at', ascending: false)
-          .limit(_pageSize);
+      final bookingsResponse =
+          await query.order('created_at', ascending: false).limit(_pageSize);
 
       final newBookings = <Booking>[];
 

@@ -107,12 +107,20 @@ class _MusafirAppState extends State<MusafirApp> {
       favoritesState.initializeForUser(authState.currentUser!.id);
       messagingState.initialize(authState.currentUser!.id);
 
+      // Re-fetch data and (re-)subscribe to booking realtime for this user.
+      // The subscription is created once in the repository constructor, so a
+      // login after a logged-out start or a re-login needs this to get live
+      // updates and to drop any previous user's cached data.
+      repository.resetForAuthChange();
+
       // Save FCM token to Supabase for push notifications
       FcmTokenService.instance.initializeForUser();
     } else {
-      // User logged out - clear notifications, favorites, messaging, and deactivate FCM token
+      // User logged out - clear all per-user state and deactivate FCM token.
       notificationState.clear();
       favoritesState.clearAll();
+      messagingState.clear();
+      repository.clearSession();
       FcmTokenService.instance.cleanupOnLogout();
     }
   }

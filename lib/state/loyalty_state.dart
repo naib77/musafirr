@@ -41,8 +41,8 @@ class LoyaltyStateNotifier extends ChangeNotifier with SafeNotifier {
   String? get userId => _userId;
 
   /// Initialize with user ID
-  Future<void> initialize(String userId) async {
-    if (_userId == userId && _userLoyalty != null) return;
+  Future<void> initialize(String userId, {bool forceReload = false}) async {
+    if (!forceReload && _userId == userId && _userLoyalty != null) return;
 
     _userId = userId;
     _isLoading = true;
@@ -84,7 +84,7 @@ class LoyaltyStateNotifier extends ChangeNotifier with SafeNotifier {
     // Clear recent upgrade on refresh
     _recentUpgrade = null;
 
-    await initialize(_userId!);
+    await initialize(_userId!, forceReload: true);
   }
 
   /// Record a booking and check for tier upgrade
@@ -116,8 +116,7 @@ class LoyaltyStateNotifier extends ChangeNotifier with SafeNotifier {
       _userLoyalty = bookingResult.data;
 
       // Check for tier upgrade
-      final upgradeResult =
-          await _loyaltyService.checkAndUpgradeTier(_userId!);
+      final upgradeResult = await _loyaltyService.checkAndUpgradeTier(_userId!);
 
       if (upgradeResult.isSuccess && upgradeResult.data != null) {
         _recentUpgrade = upgradeResult.data;
@@ -245,8 +244,7 @@ class LoyaltyStateNotifier extends ChangeNotifier with SafeNotifier {
   String? get upgradeMessage => _recentUpgrade?.message;
 
   /// Get new benefits from upgrade
-  List<String> get newBenefitsFromUpgrade =>
-      _recentUpgrade?.newBenefits ?? [];
+  List<String> get newBenefitsFromUpgrade => _recentUpgrade?.newBenefits ?? [];
 
   /// Dispose resources
   @override

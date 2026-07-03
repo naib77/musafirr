@@ -137,7 +137,8 @@ class SupabaseConversationRepository implements ConversationRepository {
 
       return ConversationResult.success(conversation);
     } catch (e) {
-      debugPrint('[SupabaseConversationRepository] findByParticipants error: $e');
+      debugPrint(
+          '[SupabaseConversationRepository] findByParticipants error: $e');
       return ConversationResult.failure(ConversationNetworkError(e.toString()));
     }
   }
@@ -210,11 +211,16 @@ class SupabaseConversationRepository implements ConversationRepository {
       final conversationId = response as String;
 
       // Update with booking context fields if provided
-      if (listingTitle != null || bookingStart != null || bookingEnd != null || listingType != null) {
+      if (listingTitle != null ||
+          bookingStart != null ||
+          bookingEnd != null ||
+          listingType != null) {
         final updateData = <String, dynamic>{};
         if (listingTitle != null) updateData['listing_title'] = listingTitle;
-        if (bookingStart != null) updateData['booking_start'] = bookingStart.toIso8601String();
-        if (bookingEnd != null) updateData['booking_end'] = bookingEnd.toIso8601String();
+        if (bookingStart != null)
+          updateData['booking_start'] = bookingStart.toIso8601String();
+        if (bookingEnd != null)
+          updateData['booking_end'] = bookingEnd.toIso8601String();
         if (listingType != null) updateData['listing_type'] = listingType;
 
         await _client
@@ -275,7 +281,8 @@ class SupabaseConversationRepository implements ConversationRepository {
 
       return ConversationResult.success(total);
     } catch (e) {
-      debugPrint('[SupabaseConversationRepository] getTotalUnreadCount error: $e');
+      debugPrint(
+          '[SupabaseConversationRepository] getTotalUnreadCount error: $e');
       return ConversationResult.failure(ConversationNetworkError(e.toString()));
     }
   }
@@ -340,18 +347,21 @@ class SupabaseConversationRepository implements ConversationRepository {
       for (final row in items) {
         final json = row as Map<String, dynamic>;
         final bookingId = json['booking_id'] as String?;
-        final hasContext = json['listing_type'] != null && json['booking_start'] != null;
+        final hasContext =
+            json['listing_type'] != null && json['booking_start'] != null;
 
         if (bookingId != null && !hasContext) {
           try {
             final bookingData = await _client
                 .from('bookings')
-                .select('starts_at, ends_at, listing_title, listings!inner(listing_type, title)')
+                .select(
+                    'starts_at, ends_at, listing_title, listings!inner(listing_type, title)')
                 .eq('id', bookingId)
                 .maybeSingle();
 
             if (bookingData != null) {
-              final listingData = bookingData['listings'] as Map<String, dynamic>?;
+              final listingData =
+                  bookingData['listings'] as Map<String, dynamic>?;
               final listingType = listingData?['listing_type'] as String?;
               final listingTitle = bookingData['listing_title'] as String? ??
                   listingData?['title'] as String?;
@@ -359,9 +369,12 @@ class SupabaseConversationRepository implements ConversationRepository {
               // Update the conversation in the database
               final updateData = <String, dynamic>{};
               if (listingType != null) updateData['listing_type'] = listingType;
-              if (bookingData['starts_at'] != null) updateData['booking_start'] = bookingData['starts_at'];
-              if (bookingData['ends_at'] != null) updateData['booking_end'] = bookingData['ends_at'];
-              if (listingTitle != null) updateData['listing_title'] = listingTitle;
+              if (bookingData['starts_at'] != null)
+                updateData['booking_start'] = bookingData['starts_at'];
+              if (bookingData['ends_at'] != null)
+                updateData['booking_end'] = bookingData['ends_at'];
+              if (listingTitle != null)
+                updateData['listing_title'] = listingTitle;
 
               if (updateData.isNotEmpty) {
                 await _client
@@ -375,11 +388,13 @@ class SupabaseConversationRepository implements ConversationRepository {
                 json['booking_end'] = bookingData['ends_at'];
                 json['listing_title'] = listingTitle;
 
-                debugPrint('[ConversationRepo] Backfilled booking context for conv ${json['id']}');
+                debugPrint(
+                    '[ConversationRepo] Backfilled booking context for conv ${json['id']}');
               }
             }
           } catch (e) {
-            debugPrint('[ConversationRepo] Error backfilling booking context: $e');
+            debugPrint(
+                '[ConversationRepo] Error backfilling booking context: $e');
           }
         }
       }
@@ -397,18 +412,32 @@ class SupabaseConversationRepository implements ConversationRepository {
         conversations.add(conversation);
       }
 
+      // Base the cursor on the RAW page boundary (items.last), not the
+      // unread-filtered list — otherwise a page whose last kept conversation
+      // differs from the last fetched row paginates from the wrong point.
+      // A null last_message_at (no messages; nulls sort last) means there is
+      // nothing after it, so stop rather than returning a null cursor with
+      // hasMore=true, which would re-query page 1 forever.
       String? nextCursor;
-      if (hasMore && conversations.isNotEmpty) {
-        nextCursor = conversations.last.lastMessageAt?.toIso8601String();
+      var effectiveHasMore = hasMore;
+      if (hasMore && items.isNotEmpty) {
+        final lastRow = items.last as Map<String, dynamic>;
+        final lastAt = lastRow['last_message_at'] as String?;
+        if (lastAt == null) {
+          effectiveHasMore = false;
+        } else {
+          nextCursor = lastAt;
+        }
       }
 
       return ConversationResult.success(ConversationPage(
         conversations: conversations,
-        hasMore: hasMore,
+        hasMore: effectiveHasMore,
         nextCursor: nextCursor,
       ));
     } catch (e) {
-      debugPrint('[SupabaseConversationRepository] _queryConversations error: $e');
+      debugPrint(
+          '[SupabaseConversationRepository] _queryConversations error: $e');
       return ConversationResult.failure(ConversationNetworkError(e.toString()));
     }
   }
@@ -420,8 +449,7 @@ class SupabaseConversationRepository implements ConversationRepository {
     try {
       await _client
           .from('conversations')
-          .update({'status': status.name})
-          .eq('id', conversationId);
+          .update({'status': status.name}).eq('id', conversationId);
 
       return const ConversationResult.success(null);
     } catch (e) {

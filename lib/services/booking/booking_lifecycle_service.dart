@@ -148,9 +148,11 @@ class BookingLifecycleService {
   Booking completeService(String bookingId, {DateTime? now}) {
     final booking = _getBookingOrThrow(bookingId);
 
-    if (!rules.canComplete(booking)) {
+    if (!rules.canComplete(booking, now: now)) {
       throw InvalidBookingStateException(
-        'Cannot complete booking in ${booking.status.title} state',
+        booking.status == BookingStatus.active
+            ? 'Cannot complete before checkout'
+            : 'Cannot complete booking in ${booking.status.title} state',
         booking: booking,
       );
     }
@@ -184,9 +186,8 @@ class BookingLifecycleService {
   }) {
     final booking = _getBookingOrThrow(bookingId);
 
-    final canCancel = isHost
-        ? rules.canHostCancel(booking)
-        : rules.canGuestCancel(booking);
+    final canCancel =
+        isHost ? rules.canHostCancel(booking) : rules.canGuestCancel(booking);
 
     if (!canCancel) {
       final role = isHost ? 'Host' : 'Guest';

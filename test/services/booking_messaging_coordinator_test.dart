@@ -374,8 +374,12 @@ void main() {
       final oldBooking = createBooking(id: 'booking_old');
       final thread = seedBookingWithConversation(oldBooking);
 
-      final newBooking =
-          createBooking(id: 'booking_new', status: BookingStatus.active);
+      final newBooking = createBooking(
+        id: 'booking_new',
+        status: BookingStatus.active,
+        startAt: DateTime.now().subtract(const Duration(days: 2)),
+        endAt: DateTime.now().subtract(const Duration(hours: 1)),
+      );
       store.add(newBooking);
 
       await coordinator.completeServiceWithNotification(
@@ -393,7 +397,11 @@ void main() {
     test(
         'completes the booking, sends the thank-you message, '
         'and keeps the conversation writable (never archives)', () async {
-      final booking = createBooking(status: BookingStatus.active);
+      final booking = createBooking(
+        status: BookingStatus.active,
+        startAt: DateTime.now().subtract(const Duration(days: 2)),
+        endAt: DateTime.now().subtract(const Duration(hours: 1)),
+      );
       final conversation = seedBookingWithConversation(booking);
 
       final completed = await coordinator.completeServiceWithNotification(

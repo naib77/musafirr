@@ -310,19 +310,40 @@ async function validateDiscount(
     }
   }
 
-  // Check first booking only
+  // Check first booking only. Columns are tenant_id / booking_status on the
+  // bookings table; a query error must FAIL CLOSED (deny) rather than grant.
   if (discount.first_booking_only) {
     const { count, error } = await supabase
       .from('bookings')
       .select('*', { count: 'exact', head: true })
-      .eq('guest_id', request.user_id)
-      .eq('status', 'completed')
+      .eq('tenant_id', request.user_id)
+      .eq('booking_status', 'completed')
 
-    if (!error && count !== null && count > 0) {
+    if (error || count === null || count > 0) {
       return {
         valid: false,
         error: 'This discount is only for your first booking',
         error_code: 'NOT_FIRST_BOOKING',
+      }
+    }
+  }
+
+  // Check new users only — account must have been created within 30 days.
+  // A lookup error fails closed.
+  if (discount.new_users_only) {
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('created_at')
+      .eq('id', request.user_id)
+      .single()
+
+    const createdAt = profile?.created_at ? new Date(profile.created_at) : null
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    if (error || !createdAt || createdAt < thirtyDaysAgo) {
+      return {
+        valid: false,
+        error: 'This discount is only for new users',
+        error_code: 'NOT_NEW_USER',
       }
     }
   }
@@ -363,10 +384,15 @@ async function validateDiscount(
   }
 
   // Calculate discount amount
-  const discountAmount = calculateDiscountAmount(
+  const rawDiscount = calculateDiscountAmount(
     discount,
     request.booking_amount,
     request.nights
+  )
+  // A discount can never be negative (a surcharge) or exceed the total.
+  const discountAmount = Math.max(
+    0,
+    Math.min(rawDiscount, request.booking_amount)
   )
 
   const finalAmount = request.booking_amount - discountAmount
@@ -410,10 +436,14 @@ function calculateDiscountAmount(
     case 'free_nights': {
       if (
         discount.free_nights_config &&
+        nights > 0 &&
         nights >= discount.free_nights_config.stay
       ) {
-        const freeNights =
+        // Never negative: a config with pay >= stay gives zero free nights.
+        const freeNights = Math.max(
+          0,
           discount.free_nights_config.stay - discount.free_nights_config.pay
+        )
         const perNightRate = bookingAmount / nights
         return freeNights * perNightRate
       }

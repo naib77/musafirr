@@ -83,9 +83,9 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   List<Listing> searchListings(SearchFilters filters);
   List<Listing> getFeaturedListings({int limit = 10});
   List<Listing> getListingsByHost(String hostId);
-  void addListing(Listing listing);
-  void updateListing(Listing listing);
-  void deleteListing(String listingId);
+  Future<void> addListing(Listing listing);
+  Future<void> updateListing(Listing listing);
+  Future<void> deleteListing(String listingId);
 
   // Review methods (legacy - for simple listing reviews)
   List<Review> getReviewsForListing(String listingId);
@@ -96,6 +96,7 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   List<Review> getReviewsForBooking(String bookingId);
   List<Review> getRevealedReviewsForListing(String listingId);
   List<Review> getRevealedReviewsForGuest(String guestId);
+
   /// Persists a review. Returns false if saving failed (e.g. network or
   /// permission error) so callers can surface the failure to the user.
   Future<bool> saveReview(Review review);
@@ -111,7 +112,7 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   List<Booking> getPastBookings(String userId);
   @override
   Booking? getBookingById(String id);
-  Booking createMarketplaceBooking({
+  Future<Booking> createMarketplaceBooking({
     required String listingId,
     required String userId,
     required String userName,

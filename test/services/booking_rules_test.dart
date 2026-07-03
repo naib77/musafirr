@@ -62,6 +62,16 @@ void main() {
       final booking = createBooking(status: BookingStatus.cancelled);
       expect(rules.canAccept(booking), isFalse);
     });
+
+    test('returns false for pending booking whose stay has already ended', () {
+      final now = DateTime.now();
+      final booking = createBooking(
+        status: BookingStatus.pending,
+        startAt: now.subtract(const Duration(days: 2)),
+        endAt: now.subtract(const Duration(hours: 3)),
+      );
+      expect(rules.canAccept(booking, now: now), isFalse);
+    });
   });
 
   group('BookingRules.canReject', () {
@@ -126,9 +136,24 @@ void main() {
   });
 
   group('BookingRules.canComplete', () {
-    test('returns true for active booking', () {
-      final booking = createBooking(status: BookingStatus.active);
-      expect(rules.canComplete(booking), isTrue);
+    test('returns true for active booking whose checkout has passed', () {
+      final now = DateTime.now();
+      final booking = createBooking(
+        status: BookingStatus.active,
+        startAt: now.subtract(const Duration(days: 2)),
+        endAt: now.subtract(const Duration(hours: 1)),
+      );
+      expect(rules.canComplete(booking, now: now), isTrue);
+    });
+
+    test('returns false for active booking before checkout (mid-stay)', () {
+      final now = DateTime.now();
+      final booking = createBooking(
+        status: BookingStatus.active,
+        startAt: now.subtract(const Duration(days: 1)),
+        endAt: now.add(const Duration(days: 5)),
+      );
+      expect(rules.canComplete(booking, now: now), isFalse);
     });
 
     test('returns false for confirmed booking (not checked in)', () {
@@ -259,20 +284,23 @@ void main() {
       final now = DateTime.now();
       final completedAt = now.subtract(const Duration(days: 7));
       final booking = createBooking(status: BookingStatus.completed);
-      expect(rules.canSubmitReview(booking, completedAt: completedAt, now: now), isTrue);
+      expect(rules.canSubmitReview(booking, completedAt: completedAt, now: now),
+          isTrue);
     });
 
     test('returns false for completed booking after 14 days', () {
       final now = DateTime.now();
       final completedAt = now.subtract(const Duration(days: 15));
       final booking = createBooking(status: BookingStatus.completed);
-      expect(rules.canSubmitReview(booking, completedAt: completedAt, now: now), isFalse);
+      expect(rules.canSubmitReview(booking, completedAt: completedAt, now: now),
+          isFalse);
     });
 
     test('returns false for non-completed booking', () {
       final now = DateTime.now();
       final booking = createBooking(status: BookingStatus.confirmed);
-      expect(rules.canSubmitReview(booking, completedAt: now, now: now), isFalse);
+      expect(
+          rules.canSubmitReview(booking, completedAt: now, now: now), isFalse);
     });
   });
 
@@ -294,7 +322,8 @@ void main() {
       expect(rules.shouldAutoComplete(booking, now: now), isTrue);
     });
 
-    test('checked-in (active) booking elapsed beyond grace period auto-completes',
+    test(
+        'checked-in (active) booking elapsed beyond grace period auto-completes',
         () {
       final booking = createBooking(
         status: BookingStatus.active,
@@ -304,7 +333,8 @@ void main() {
       expect(rules.shouldAutoComplete(booking, now: now), isTrue);
     });
 
-    test('confirmed booking still inside the grace window does NOT auto-complete',
+    test(
+        'confirmed booking still inside the grace window does NOT auto-complete',
         () {
       final booking = createBooking(
         status: BookingStatus.confirmed,
@@ -314,7 +344,8 @@ void main() {
       expect(rules.shouldAutoComplete(booking, now: now), isFalse);
     });
 
-    test('confirmed booking whose checkout is still in the future does NOT '
+    test(
+        'confirmed booking whose checkout is still in the future does NOT '
         'auto-complete', () {
       final booking = createBooking(
         status: BookingStatus.confirmed,

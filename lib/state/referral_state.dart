@@ -51,8 +51,8 @@ class ReferralStateNotifier extends ChangeNotifier with SafeNotifier {
   String? get userId => _userId;
 
   /// Initialize with user ID
-  Future<void> initialize(String userId) async {
-    if (_userId == userId && _userReferral != null) return;
+  Future<void> initialize(String userId, {bool forceReload = false}) async {
+    if (!forceReload && _userId == userId && _userReferral != null) return;
 
     _userId = userId;
     _isLoading = true;
@@ -97,7 +97,7 @@ class ReferralStateNotifier extends ChangeNotifier with SafeNotifier {
   /// Refresh referral data
   Future<void> refresh() async {
     if (_userId == null) return;
-    await initialize(_userId!);
+    await initialize(_userId!, forceReload: true);
   }
 
   /// Validate a referral code
@@ -215,8 +215,7 @@ class ReferralStateNotifier extends ChangeNotifier with SafeNotifier {
   String get referralCode => _userReferral?.referralCode ?? '';
 
   /// Get reward amount for referrer
-  double get referrerRewardAmount =>
-      _userReferral?.referrerRewardAmount ?? 500;
+  double get referrerRewardAmount => _userReferral?.referrerRewardAmount ?? 500;
 
   /// Get discount amount for referee
   double get refereeDiscountAmount =>

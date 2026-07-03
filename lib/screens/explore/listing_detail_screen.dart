@@ -1271,7 +1271,9 @@ class _ReviewCard extends StatelessWidget {
                     ? NetworkImage(review.userAvatarUrl!)
                     : null,
                 child: review.userAvatarUrl == null
-                    ? Text(review.userName[0].toUpperCase())
+                    ? Text(review.userName.isNotEmpty
+                        ? review.userName[0].toUpperCase()
+                        : '?')
                     : null,
               ),
               const SizedBox(width: 12),
@@ -1475,7 +1477,9 @@ class _BookingSheetState extends State<_BookingSheet> {
   bool get _isSelectionComplete {
     return switch (_durationType) {
       DurationType.hourly => _hourlyDate != null && _startTime != null,
-      DurationType.daily => _dateRange != null,
+      // A same-day range (start == end) is 0 nights / ৳0 — require ≥ 1 night.
+      DurationType.daily => _dateRange != null &&
+          _dateRange!.end.difference(_dateRange!.start).inDays >= 1,
       DurationType.monthly => _monthlyStartDate != null,
     };
   }
@@ -1570,6 +1574,13 @@ class _BookingSheetState extends State<_BookingSheet> {
       return;
     }
 
+    // The start must be in the future — the hourly time picker allows any
+    // time-of-day, so a slot earlier today would otherwise be bookable.
+    if (!_checkIn.isAfter(DateTime.now())) {
+      _showWarningBanner('Please choose a start time in the future');
+      return;
+    }
+
     // Double-check availability before booking
     _checkAvailability();
     if (_hasConflict) {
@@ -1586,7 +1597,7 @@ class _BookingSheetState extends State<_BookingSheet> {
     setState(() => _isBooking = true);
 
     try {
-      widget.repository.createMarketplaceBooking(
+      await widget.repository.createMarketplaceBooking(
         listingId: widget.listing.id,
         userId: user.id,
         userName: user.name,

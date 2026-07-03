@@ -162,17 +162,15 @@ class _ExploreScreenState extends State<ExploreScreen> {
           children: [
             // Search bar with notification bell
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
               child: Row(
                 children: [
                   Expanded(
                     child: GestureDetector(
                       onTap: _openSearch,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
+                        height: 44,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
                         decoration: BoxDecoration(
                           color: theme.colorScheme.surface,
                           borderRadius: BorderRadius.circular(32),
@@ -189,55 +187,50 @@ class _ExploreScreenState extends State<ExploreScreen> {
                         ),
                         child: Row(
                           children: [
-                            Icon(
-                              Icons.search,
-                              color: theme.colorScheme.primary,
-                            ),
-                            const SizedBox(width: 12),
+                            // Balances the trailing icon so the label stays
+                            // visually centered.
+                            const SizedBox(width: 24),
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Text(
-                                    widget.searchState.filters.location ??
-                                        'Where to?',
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                                  Icon(
+                                    Icons.search,
+                                    size: 20,
+                                    color: theme.colorScheme.primary,
                                   ),
-                                  Text(
-                                    _getSearchSubtitle(),
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
+                                  const SizedBox(width: 8),
+                                  Flexible(
+                                    child: Text(
+                                      widget.searchState.filters.location ??
+                                          'Search your comfort',
+                                      style:
+                                          theme.textTheme.bodyMedium?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
                             if (widget.searchState.filters.hasActiveFilters)
-                              IconButton(
-                                icon: const Icon(Icons.close),
-                                onPressed: () {
+                              GestureDetector(
+                                onTap: () {
                                   widget.searchState.clearFilters();
                                   _searchController.clear();
                                   setState(() {});
                                 },
-                              )
-                            else
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: theme.colorScheme.outlineVariant,
-                                  ),
-                                  borderRadius: BorderRadius.circular(24),
-                                ),
                                 child: Icon(
-                                  Icons.tune,
-                                  size: 20,
+                                  Icons.close,
+                                  size: 18,
                                   color: theme.colorScheme.onSurfaceVariant,
                                 ),
-                              ),
+                              )
+                            else
+                              const SizedBox(width: 18),
+                            const SizedBox(width: 6),
                           ],
                         ),
                       ),
@@ -388,7 +381,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                 // Staggered entrance; modulo keeps the delay
                                 // small for items revealed far down on scroll.
                                 return FadeSlideIn(
-                                  delay: Duration(milliseconds: 45 * (index % 6)),
+                                  delay:
+                                      Duration(milliseconds: 45 * (index % 6)),
                                   child: ListingCardModern(
                                     listing: listing,
                                     isFavorite: widget.favoritesState
@@ -442,66 +436,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
         ),
       ),
     );
-  }
-
-  String _getSearchSubtitle() {
-    final filters = widget.searchState.filters;
-    final parts = <String>[];
-
-    // Property type
-    if (filters.propertyTypes.isNotEmpty) {
-      if (filters.propertyTypes.length == 1) {
-        parts.add(filters.propertyTypes.first.title);
-      } else {
-        parts.add('${filters.propertyTypes.length} types');
-      }
-    }
-
-    // Date/time
-    if (filters.dateMode == SearchDateMode.dateRange) {
-      if (filters.checkIn != null && filters.checkOut != null) {
-        parts.add(
-            '${_formatDate(filters.checkIn!)} - ${_formatDate(filters.checkOut!)}');
-      } else {
-        parts.add('Any week');
-      }
-    } else {
-      if (filters.singleDate != null) {
-        var dateStr = _formatDate(filters.singleDate!);
-        if (filters.startTime != null && filters.endTime != null) {
-          dateStr += ' ${_formatTime(filters.startTime!)} - ${_formatTime(filters.endTime!)}';
-        }
-        parts.add(dateStr);
-      } else {
-        parts.add('Any day');
-      }
-    }
-
-    return parts.join(' · ');
-  }
-
-  String _formatTime(TimeOfDay time) {
-    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
-    final period = time.period == DayPeriod.am ? 'AM' : 'PM';
-    return '$hour$period';
-  }
-
-  String _formatDate(DateTime date) {
-    final months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec'
-    ];
-    return '${months[date.month - 1]} ${date.day}';
   }
 }
 
@@ -670,14 +604,19 @@ class _SearchSheetState extends State<_SearchSheet> {
         location: widget.searchController.text.isEmpty
             ? null
             : widget.searchController.text,
-        checkIn: _dateMode == SearchDateMode.dateRange ? _dateRange?.start : null,
-        checkOut: _dateMode == SearchDateMode.dateRange ? _dateRange?.end : null,
+        checkIn:
+            _dateMode == SearchDateMode.dateRange ? _dateRange?.start : null,
+        checkOut:
+            _dateMode == SearchDateMode.dateRange ? _dateRange?.end : null,
         guestCount: _guestCount,
         propertyTypes: _selectedTypes,
         dateMode: _dateMode,
-        singleDate: _dateMode == SearchDateMode.singleDateWithTime ? _singleDate : null,
-        startTime: _dateMode == SearchDateMode.singleDateWithTime ? _startTime : null,
-        endTime: _dateMode == SearchDateMode.singleDateWithTime ? _endTime : null,
+        singleDate:
+            _dateMode == SearchDateMode.singleDateWithTime ? _singleDate : null,
+        startTime:
+            _dateMode == SearchDateMode.singleDateWithTime ? _startTime : null,
+        endTime:
+            _dateMode == SearchDateMode.singleDateWithTime ? _endTime : null,
         clearLocation: widget.searchController.text.isEmpty,
         clearDates: _dateMode == SearchDateMode.dateRange && _dateRange == null,
         clearTime: _dateMode == SearchDateMode.dateRange,
@@ -746,10 +685,10 @@ class _SearchSheetState extends State<_SearchSheet> {
                   },
                 ),
                 ...ListingType.values.map((type) => FilterChip(
-                  label: Text(type.title),
-                  selected: _selectedTypes.contains(type),
-                  onSelected: (_) => _togglePropertyType(type),
-                )),
+                      label: Text(type.title),
+                      selected: _selectedTypes.contains(type),
+                      onSelected: (_) => _togglePropertyType(type),
+                    )),
               ],
             ),
             const SizedBox(height: 20),
