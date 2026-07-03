@@ -1,5 +1,9 @@
 import 'guest_review_ratings.dart';
 
+// GuestReviewRatings appears in Review's public API (categoryRatings), so
+// importing review.dart alone must be enough to construct one.
+export 'guest_review_ratings.dart';
+
 /// Type of review indicating direction
 enum ReviewType {
   /// Guest reviewing the host/listing

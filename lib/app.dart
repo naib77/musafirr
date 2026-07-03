@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'core/theme/app_theme.dart';
+import 'models/notification.dart';
 import 'repositories/supabase_musafir_repository.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/otp_verification_screen.dart';
@@ -13,6 +14,7 @@ import 'services/booking/booking_lifecycle_service.dart';
 import 'services/booking/booking_messaging_coordinator.dart';
 import 'services/booking/booking_rules.dart';
 import 'repositories/supabase_conversation_repository.dart';
+import 'repositories/supabase_message_template_repository.dart';
 import 'services/messaging/booking_conversation_service.dart';
 import 'services/messaging/supabase_messaging_service.dart';
 import 'services/notifications/fcm_token_service.dart';
@@ -59,6 +61,7 @@ class _MusafirAppState extends State<MusafirApp> {
     bookingConversationService = BookingConversationService(
       conversationRepository: SupabaseConversationRepository.instance,
       messagingService: SupabaseMessagingService.instance,
+      templateProvider: SupabaseMessageTemplateRepository.instance,
     );
 
     // Initialize booking-messaging coordinator
@@ -77,6 +80,15 @@ class _MusafirAppState extends State<MusafirApp> {
       conversationRepository: SupabaseConversationRepository.instance,
       messagingService: SupabaseMessagingService.instance,
     );
+
+    // The notifications realtime channel is the most reliable delivery path
+    // (simple RLS), so let a new_message notification also refresh the
+    // Messages tab unread badge.
+    notificationState.onNewNotification = (notification) {
+      if (notification.type == NotificationType.newMessage) {
+        messagingState.refreshConversations();
+      }
+    };
 
     // Initialize search state with listings
     _initializeSearchState();
@@ -131,7 +143,12 @@ class _MusafirAppState extends State<MusafirApp> {
     return MaterialApp(
       title: 'Musafir',
       debugShowCheckedModeBanner: false,
+      // The design system is light-only; pinning themeMode (plus
+      // forceDarkAllowed=false in the Android styles) stops OEM "force dark"
+      // from auto-inverting the UI into an unreadable mix.
       theme: AppTheme.light,
+      darkTheme: AppTheme.light,
+      themeMode: ThemeMode.light,
       home: ListenableBuilder(
         listenable: authState,
         builder: (context, _) {

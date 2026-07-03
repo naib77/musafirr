@@ -361,6 +361,11 @@ class ExpandableNotificationItem extends StatelessWidget {
 
     final isStale =
         bookingStatus != null && bookingStatus != BookingStatus.pending;
+    // Accept/Decline require a PROVEN pending booking. An unknown (null)
+    // status must not show them: the status lookup may have missed the
+    // local cache even though the request was already accepted elsewhere,
+    // and accepting again just errors.
+    final canAct = bookingStatus == BookingStatus.pending;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -394,7 +399,7 @@ class ExpandableNotificationItem extends StatelessWidget {
           ],
           const SizedBox(height: 12),
           // Action buttons
-          _buildActionButtons(context, theme, isStale: isStale),
+          _buildActionButtons(context, theme, canAct: canAct),
         ],
       ),
     );
@@ -610,7 +615,7 @@ class ExpandableNotificationItem extends StatelessWidget {
   Widget _buildActionButtons(
     BuildContext context,
     ThemeData theme, {
-    required bool isStale,
+    required bool canAct,
   }) {
     if (isProcessing) {
       return const Center(
@@ -621,85 +626,53 @@ class ExpandableNotificationItem extends StatelessWidget {
       );
     }
 
-    // Check if we need vertical layout based on screen width
-    // 3 buttons need ~300px minimum to display properly horizontally
-    final screenWidth = MediaQuery.of(context).size.width;
-    final useVerticalLayout = screenWidth < 400;
+    // Compact style — the theme's default button padding (22px) and bold
+    // labelLarge overflow when three buttons share one row on a small phone.
+    const compactText = TextStyle(fontSize: 12, fontWeight: FontWeight.w600);
+    const compactPadding = EdgeInsets.symmetric(horizontal: 8, vertical: 10);
 
-    if (useVerticalLayout) {
-      // Vertical layout for narrow screens - full width buttons
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Primary actions row (Accept + Decline)
-          if (!isStale)
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton(
-                    onPressed: onAccept,
-                    child: const Text('Accept'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: onDecline,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red,
-                      side: const BorderSide(color: Colors.red),
-                    ),
-                    child: const Text('Decline'),
-                  ),
-                ),
-              ],
-            ),
-          if (!isStale) const SizedBox(height: 8),
-          // View Details - full width
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: onViewDetails,
-              icon: const Icon(Icons.info_outline, size: 18),
-              label: const Text('View Details'),
-            ),
-          ),
-        ],
-      );
-    }
+    final detailsButton = OutlinedButton(
+      onPressed: onViewDetails,
+      style: OutlinedButton.styleFrom(
+        padding: compactPadding,
+        visualDensity: VisualDensity.compact,
+        textStyle: compactText,
+      ),
+      child: const Text('Details', maxLines: 1, overflow: TextOverflow.fade),
+    );
 
-    // Horizontal layout for wider screens
+    final declineButton = OutlinedButton(
+      onPressed: onDecline,
+      style: OutlinedButton.styleFrom(
+        padding: compactPadding,
+        visualDensity: VisualDensity.compact,
+        textStyle: compactText,
+        foregroundColor: Colors.red,
+        side: const BorderSide(color: Colors.red),
+      ),
+      child: const Text('Decline', maxLines: 1, overflow: TextOverflow.fade),
+    );
+
+    final acceptButton = FilledButton(
+      onPressed: onAccept,
+      style: FilledButton.styleFrom(
+        padding: compactPadding,
+        visualDensity: VisualDensity.compact,
+        textStyle: compactText,
+      ),
+      child: const Text('Accept', maxLines: 1, overflow: TextOverflow.fade),
+    );
+
+    // One row: Details · Decline · Accept (Accept slightly wider).
     return Row(
       children: [
-        // View Details
-        Expanded(
-          child: OutlinedButton(
-            onPressed: onViewDetails,
-            child: const Text('View Details'),
-          ),
-        ),
-        const SizedBox(width: 8),
-        // Decline
-        if (!isStale)
-          Expanded(
-            child: OutlinedButton(
-              onPressed: onDecline,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.red,
-                side: const BorderSide(color: Colors.red),
-              ),
-              child: const Text('Decline'),
-            ),
-          ),
-        if (!isStale) const SizedBox(width: 8),
-        // Accept
-        if (!isStale)
-          Expanded(
-            child: FilledButton(
-              onPressed: onAccept,
-              child: const Text('Accept'),
-            ),
-          ),
+        Expanded(child: detailsButton),
+        if (canAct) ...[
+          const SizedBox(width: 6),
+          Expanded(child: declineButton),
+          const SizedBox(width: 6),
+          Expanded(child: acceptButton),
+        ],
       ],
     );
   }

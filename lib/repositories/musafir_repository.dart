@@ -96,7 +96,13 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   List<Review> getReviewsForBooking(String bookingId);
   List<Review> getRevealedReviewsForListing(String listingId);
   List<Review> getRevealedReviewsForGuest(String guestId);
-  void saveReview(Review review);
+  /// Persists a review. Returns false if saving failed (e.g. network or
+  /// permission error) so callers can surface the failure to the user.
+  Future<bool> saveReview(Review review);
+
+  /// Resolves the host (owner) of a listing, even when the listing is not in
+  /// the local cache or is no longer active (e.g. reviewing an old stay).
+  Future<String?> fetchHostIdForListing(String listingId);
   void updateReview(Review review);
 
   // Booking methods

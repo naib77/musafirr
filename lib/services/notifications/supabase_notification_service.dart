@@ -134,7 +134,7 @@ class SupabaseNotificationService implements NotificationService {
           .from('notifications')
           .update({
             'status': 'read',
-            'read_at': DateTime.now().toIso8601String(),
+            'read_at': DateTime.now().toUtc().toIso8601String(),
           })
           .eq('id', notificationId)
           .select()
@@ -289,7 +289,7 @@ class SupabaseNotificationService implements NotificationService {
           'device_id': token.deviceId,
           'device_name': token.deviceName,
           'is_active': true,
-          'last_used_at': DateTime.now().toIso8601String(),
+          'last_used_at': DateTime.now().toUtc().toIso8601String(),
         },
         onConflict: 'user_id,device_id',
       );

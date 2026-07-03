@@ -68,7 +68,8 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
-          textStyle: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+          textStyle:
+              textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
         ),
       ),
 
@@ -85,7 +86,8 @@ class AppTheme {
 
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          textStyle: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+          textStyle:
+              textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
         ),
       ),
 
@@ -137,6 +139,35 @@ class AppTheme {
         unselectedItemColor: AppColors.inkMuted,
         type: BottomNavigationBarType.fixed,
         elevation: 8,
+      ),
+
+      // Airbnb-style compact tab bar: small single-line labels, no pill
+      // indicator, tinted icon as the only selection cue.
+      navigationBarTheme: NavigationBarThemeData(
+        height: 64,
+        backgroundColor: AppColors.surface,
+        surfaceTintColor: Colors.transparent,
+        indicatorColor: Colors.transparent,
+        elevation: 0,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          final selected = states.contains(WidgetState.selected);
+          return textTheme.labelSmall!.copyWith(
+            fontSize: 10,
+            height: 1.2,
+            letterSpacing: 0,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            color: selected ? AppColors.brand : AppColors.inkMuted,
+          );
+        }),
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          return IconThemeData(
+            size: 24,
+            color: states.contains(WidgetState.selected)
+                ? AppColors.brand
+                : AppColors.inkMuted,
+          );
+        }),
       ),
 
       snackBarTheme: SnackBarThemeData(

@@ -192,6 +192,10 @@ class MessagingStateNotifier extends ChangeNotifier with SafeNotifier {
   Future<void> openConversation(String conversationId) async {
     if (_currentUserId == null) return;
     await _activeChat.openConversation(conversationId, _currentUserId!);
+    // The active chat advanced the server-side read cursor while opening;
+    // mirror that locally or the Messages badge stays lit until a realtime
+    // echo (or a sent message) happens to refresh the list.
+    _conversationList.markAsRead(conversationId);
   }
 
   /// Close the active conversation.

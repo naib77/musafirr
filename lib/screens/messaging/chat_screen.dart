@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
 
-import '../../models/conversation.dart';
 import '../../models/message.dart';
 import '../../services/messaging/message_router.dart';
 import '../../state/messaging_state.dart';
@@ -26,8 +27,10 @@ class ChatScreen extends StatefulWidget {
   final MessagingStateNotifier messagingState;
   final String otherParticipantName;
   final String? otherParticipantAvatarUrl;
+
   /// Booking context subtitle (e.g., "Room • Jan 1-5")
   final String? bookingContextSubtitle;
+
   /// Whether the conversation is archived (read-only)
   final bool isArchived;
 
@@ -78,6 +81,66 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendMessage(String text) async {
     await widget.messagingState.sendTextMessage(text);
     _cancelReply();
+  }
+
+  /// Shares the sender's current location as a map message.
+  Future<void> _sendLocation() async {
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          ModernBanner.showWarning(
+            context,
+            'Allow location access to share your location.',
+          );
+        }
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition();
+
+      // Reverse-geocode for a readable label; not supported on web, and never
+      // worth failing the send over.
+      String? address;
+      try {
+        final placemarks = await placemarkFromCoordinates(
+          position.latitude,
+          position.longitude,
+        );
+        if (placemarks.isNotEmpty) {
+          final p = placemarks.first;
+          address = [p.street, p.subLocality, p.locality]
+              .whereType<String>()
+              .where((part) => part.isNotEmpty)
+              .join(', ');
+          if (address.isEmpty) address = null;
+        }
+      } catch (_) {}
+
+      final sent = await widget.messagingState.sendLocationMessage(
+        latitude: position.latitude,
+        longitude: position.longitude,
+        address: address,
+      );
+
+      if (!sent && mounted) {
+        ModernBanner.showError(
+          context,
+          'Could not share your location. Please try again.',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ModernBanner.showError(
+          context,
+          'Could not get your location. Check that location is turned on.',
+        );
+      }
+    }
   }
 
   void _replyToMessage(Message message) {
@@ -225,7 +288,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                   vertical: 2,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: theme.colorScheme.surfaceContainerHighest,
+                                  color:
+                                      theme.colorScheme.surfaceContainerHighest,
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
@@ -335,32 +399,6 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: Column(
         children: [
-          // Read-only banner for archived conversations
-          if (widget.isArchived)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              color: theme.colorScheme.surfaceContainerHighest,
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.lock_outline,
-                    size: 18,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'This conversation is read-only. The booking has ended.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
           // Messages list
           Expanded(
             child: ListenableBuilder(
@@ -382,8 +420,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   messages: messages,
                   currentUserId: widget.messagingState.currentUserId ?? '',
                   scrollController: _scrollController,
-                  onReply: widget.isArchived ? null : _replyToMessage,
-                  onDelete: widget.isArchived ? null : _deleteMessage,
+                  onReply: _replyToMessage,
+                  onDelete: _deleteMessage,
                   onCopy: _copyMessage,
                   typingIndicator: _buildTypingIndicator(),
                 );
@@ -391,29 +429,27 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
 
-          // Input area (hidden when archived)
-          if (!widget.isArchived)
-            ListenableBuilder(
-              listenable: widget.messagingState,
-              builder: (context, _) {
-                return MessageInput(
-                  onSendMessage: _sendMessage,
-                  onSendImage: () {
-                    ModernBanner.showInfo(context, 'Image sharing coming soon');
-                  },
-                  onSendLocation: () {
-                    ModernBanner.showInfo(context, 'Location sharing coming soon');
-                  },
-                  onSendFile: () {
-                    ModernBanner.showInfo(context, 'File sharing coming soon');
-                  },
-                  onTextChanged: widget.messagingState.onTextChanged,
-                  replyingTo: _replyingTo,
-                  onCancelReply: _cancelReply,
-                  isSending: widget.messagingState.isSendingMessage,
-                );
-              },
-            ),
+          // Input area — always shown: guests and hosts can keep messaging
+          // even after the booking ends.
+          ListenableBuilder(
+            listenable: widget.messagingState,
+            builder: (context, _) {
+              return MessageInput(
+                onSendMessage: _sendMessage,
+                onSendImage: () {
+                  ModernBanner.showInfo(context, 'Image sharing coming soon');
+                },
+                onSendLocation: _sendLocation,
+                onSendFile: () {
+                  ModernBanner.showInfo(context, 'File sharing coming soon');
+                },
+                onTextChanged: widget.messagingState.onTextChanged,
+                replyingTo: _replyingTo,
+                onCancelReply: _cancelReply,
+                isSending: widget.messagingState.isSendingMessage,
+              );
+            },
+          ),
         ],
       ),
     );
@@ -473,14 +509,15 @@ class _MessagesList extends StatelessWidget {
 
         return Column(
           children: [
-            if (showDateHeader) _DateHeader(date: message.createdAt),
+            if (showDateHeader) _DateHeader(date: message.createdAt.toLocal()),
             MessageBubble(
               message: message,
               isMe: isMe,
               showAvatar: showAvatar,
               avatarUrl: message.sender?.photoUrl,
               onReply: onReply != null ? () => onReply!(message) : null,
-              onDelete: isMe && onDelete != null ? () => onDelete!(message) : null,
+              onDelete:
+                  isMe && onDelete != null ? () => onDelete!(message) : null,
               onCopy: message.contentType == MessageContentType.text
                   ? () => onCopy(message)
                   : null,
@@ -494,15 +531,19 @@ class _MessagesList extends StatelessWidget {
   bool _shouldShowDateHeader(Message current, Message? previous) {
     if (previous == null) return true;
 
+    // Compare LOCAL calendar days — timestamps arrive as UTC, and a UTC day
+    // boundary splits an evening (BD time) conversation in the wrong place.
+    final currentLocal = current.createdAt.toLocal();
+    final previousLocal = previous.createdAt.toLocal();
     final currentDate = DateTime(
-      current.createdAt.year,
-      current.createdAt.month,
-      current.createdAt.day,
+      currentLocal.year,
+      currentLocal.month,
+      currentLocal.day,
     );
     final previousDate = DateTime(
-      previous.createdAt.year,
-      previous.createdAt.month,
-      previous.createdAt.day,
+      previousLocal.year,
+      previousLocal.month,
+      previousLocal.day,
     );
 
     return currentDate != previousDate;
@@ -544,8 +585,18 @@ class _DateHeader extends StatelessWidget {
       dateText = 'Yesterday';
     } else if (date.year == now.year) {
       final months = [
-        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec'
       ];
       dateText = '${months[date.month - 1]} ${date.day}';
     } else {
@@ -661,8 +712,10 @@ class _SuggestedMessages extends StatelessWidget {
               color: theme.colorScheme.primary,
             ),
           ),
-          backgroundColor: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
-          side: BorderSide(color: theme.colorScheme.primary.withValues(alpha: 0.3)),
+          backgroundColor:
+              theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+          side: BorderSide(
+              color: theme.colorScheme.primary.withValues(alpha: 0.3)),
           onPressed: () => onSelect(suggestion),
         );
       }).toList(),

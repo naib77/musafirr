@@ -7,6 +7,7 @@ import '../../widgets/avatar_upload.dart';
 import '../../widgets/modern_banner.dart';
 import '../host/become_host_screen.dart';
 import '../host/host_dashboard_screen.dart';
+import '../host/scheduled_messages_screen.dart';
 import '../notifications/notification_settings_screen.dart';
 import '../verification/nid_verification_screen.dart';
 
@@ -195,6 +196,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         icon: Icons.add_home_outlined,
                         title: 'Create New Listing',
                         onTap: () => _navigateToHostDashboard(context),
+                      ),
+                      _SettingsItem(
+                        icon: Icons.schedule_send_outlined,
+                        title: 'Scheduled messages',
+                        subtitle: 'Automatic guest messages for each stay',
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => ScheduledMessagesScreen(
+                              hostId: user.id,
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ],

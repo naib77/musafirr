@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../../models/booking_status.dart';
-import '../../models/guest_review_ratings.dart';
 import '../../models/notification.dart';
 import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../repositories/supabase_musafir_repository.dart';
 import '../../services/booking/booking_lifecycle_service.dart';
+import '../../services/booking/booking_messaging_coordinator.dart';
 import '../../state/auth_state.dart';
 import '../../state/messaging_state.dart';
 import '../../state/notification_state.dart';
@@ -16,6 +16,7 @@ import '../../widgets/expandable_notification_item.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/notification_item.dart';
 import '../host/host_reservations_screen.dart';
+import '../messaging/chat_screen.dart';
 import '../review/guest_review_screen.dart';
 import '../review/host_review_screen.dart';
 import '../trips/trips_screen.dart';
@@ -30,6 +31,7 @@ class NotificationCenterScreen extends StatefulWidget {
     required this.bookingLifecycleService,
     required this.authState,
     this.messagingState,
+    this.bookingMessagingCoordinator,
     this.onViewReservations,
   });
 
@@ -38,6 +40,11 @@ class NotificationCenterScreen extends StatefulWidget {
   final BookingLifecycleService bookingLifecycleService;
   final AuthStateNotifier authState;
   final MessagingStateNotifier? messagingState;
+
+  /// When provided, accepting a booking also creates the guest conversation
+  /// and sends the host's scheduled welcome message. Without it the accept
+  /// only updates the booking status.
+  final BookingMessagingCoordinator? bookingMessagingCoordinator;
 
   /// Called after a host accepts a booking, to return to the shell's live
   /// Reservations tab instead of pushing a bare duplicate screen (which can
@@ -514,8 +521,49 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       return;
     }
 
+    // New-message notifications: open the conversation.
+    if (actionUrl.startsWith('/messages')) {
+      final segments = actionUrl.split('/').where((s) => s.isNotEmpty).toList();
+      final conversationId = notification.data?['conversation_id'] as String? ??
+          (segments.length > 1 ? segments[1] : null);
+      if (conversationId != null && widget.messagingState != null) {
+        _openConversationById(conversationId);
+      }
+      return;
+    }
+
     // For unhandled routes, do nothing (deep linking not implemented yet)
     debugPrint('Unhandled action URL: $actionUrl');
+  }
+
+  /// Opens the chat screen for [conversationId], refreshing the conversation
+  /// list first if it isn't loaded yet.
+  Future<void> _openConversationById(String conversationId) async {
+    final messagingState = widget.messagingState!;
+
+    var conversation = messagingState.conversations
+        .where((c) => c.id == conversationId)
+        .firstOrNull;
+    if (conversation == null) {
+      await messagingState.refreshConversations();
+      conversation = messagingState.conversations
+          .where((c) => c.id == conversationId)
+          .firstOrNull;
+    }
+    if (conversation == null || !mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          conversationId: conversationId,
+          messagingState: messagingState,
+          otherParticipantName: conversation!.displayName,
+          otherParticipantAvatarUrl: conversation.avatarUrl,
+          bookingContextSubtitle: conversation.bookingContextSubtitle,
+        ),
+      ),
+    );
   }
 
   /// Opens the appropriate review screen for a '/review/...' notification.
@@ -580,7 +628,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         MaterialPageRoute(
           builder: (context) => HostReviewScreen(
             booking: b,
-            onSubmit: (double rating, String? comment) {
+            onSubmit: (double rating, String? comment) async {
               final review = Review.hostReview(
                 id: DateTime.now().millisecondsSinceEpoch.toString(),
                 bookingId: b.id,
@@ -591,21 +639,37 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 rating: rating,
                 comment: comment,
               );
-              widget.repository.saveReview(review);
+              final saved = await widget.repository.saveReview(review);
+              if (!context.mounted) return saved;
+              if (!saved) {
+                _showErrorBanner(
+                  'Could not submit review. Please check your connection and try again.',
+                );
+                return false;
+              }
               Navigator.pop(context);
               _showSuccessBanner('Thank you for your review!');
+              return true;
             },
           ),
         ),
       );
     } else {
-      final listing = widget.repository.getListingById(b.listingId);
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => GuestReviewScreen(
             booking: b,
-            onSubmit: (GuestReviewRatings ratings, String comment) {
+            onSubmit: (GuestReviewRatings ratings, String comment) async {
+              final hostId =
+                  await widget.repository.fetchHostIdForListing(b.listingId);
+              if (!context.mounted) return false;
+              if (hostId == null || hostId.isEmpty) {
+                _showErrorBanner(
+                  'Could not submit review. Please try again later.',
+                );
+                return false;
+              }
               final review = Review.guestReview(
                 id: DateTime.now().millisecondsSinceEpoch.toString(),
                 bookingId: b.id,
@@ -613,13 +677,21 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 reviewerId: user.id,
                 reviewerName: user.name,
                 reviewerAvatarUrl: user.avatarUrl,
-                hostId: listing?.hostId ?? '',
+                hostId: hostId,
                 ratings: ratings,
                 comment: comment,
               );
-              widget.repository.saveReview(review);
+              final saved = await widget.repository.saveReview(review);
+              if (!context.mounted) return saved;
+              if (!saved) {
+                _showErrorBanner(
+                  'Could not submit review. Please check your connection and try again.',
+                );
+                return false;
+              }
               Navigator.pop(context);
               _showSuccessBanner('Thank you for your review!');
+              return true;
             },
           ),
         ),
@@ -686,13 +758,28 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     });
   }
 
-  /// Check and cache the current booking status.
-  void _checkBookingStatus(String notificationId, String bookingId) {
-    final booking = widget.repository.getBookingById(bookingId);
+  /// Check and cache the current booking status: the local cache answers
+  /// instantly, then the server confirms. The cache alone lies when the
+  /// request was accepted from the Reservations screen on another device or
+  /// in a previous session — the stale/missing status kept the Accept button
+  /// visible on an already-confirmed booking.
+  Future<void> _checkBookingStatus(
+      String notificationId, String bookingId) async {
+    final cached = widget.repository.getBookingById(bookingId);
     if (mounted) {
       setState(() {
-        _bookingStatusCache[notificationId] = booking?.status;
+        _bookingStatusCache[notificationId] = cached?.status;
       });
+    }
+
+    final repo = widget.repository;
+    if (repo is SupabaseMusafirRepository) {
+      final fresh = await repo.fetchBookingById(bookingId, forceRefresh: true);
+      if (mounted && fresh != null) {
+        setState(() {
+          _bookingStatusCache[notificationId] = fresh.status;
+        });
+      }
     }
   }
 
@@ -739,10 +826,25 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     // Process
     setState(() => _processingNotificationId = notification.id);
     try {
-      await widget.bookingLifecycleService.acceptBooking(
-        bookingId,
-        message: result.message,
-      );
+      final coordinator = widget.bookingMessagingCoordinator;
+      if (coordinator != null) {
+        // Accept via the coordinator so the guest conversation is created
+        // and the host's scheduled welcome message goes out.
+        final hostId = await widget.repository
+                .fetchHostIdForListing(booking.listingId) ??
+            widget.authState.currentUser?.id ??
+            '';
+        await coordinator.acceptBookingWithConversation(
+          bookingId: bookingId,
+          hostId: hostId,
+          message: result.message,
+        );
+      } else {
+        await widget.bookingLifecycleService.acceptBooking(
+          bookingId,
+          message: result.message,
+        );
+      }
       _showSuccessBadge(notification.id, 'Accepted');
       await widget.notificationState.markAsRead(notification.id);
 

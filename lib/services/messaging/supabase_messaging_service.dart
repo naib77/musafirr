@@ -390,7 +390,7 @@ class SupabaseMessagingService implements MessagingService {
           .from('messages')
           .update({
             'content': newContent,
-            'updated_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
           })
           .eq('id', messageId)
           .select()
@@ -410,7 +410,7 @@ class SupabaseMessagingService implements MessagingService {
       // Soft delete
       await _client
           .from('messages')
-          .update({'deleted_at': DateTime.now().toIso8601String()})
+          .update({'deleted_at': DateTime.now().toUtc().toIso8601String()})
           .eq('id', messageId);
 
       return const MessagingResult.success(null);
@@ -431,7 +431,7 @@ class SupabaseMessagingService implements MessagingService {
         'conversation_id': conversationId,
         'user_id': userId,
         'last_read_message_id': messageId,
-        'last_read_at': DateTime.now().toIso8601String(),
+        'last_read_at': DateTime.now().toUtc().toIso8601String(),
       });
 
       return const MessagingResult.success(null);
@@ -487,7 +487,7 @@ class SupabaseMessagingService implements MessagingService {
         await _client.from('typing_indicators').upsert({
           'conversation_id': conversationId,
           'user_id': userId,
-          'started_at': DateTime.now().toIso8601String(),
+          'started_at': DateTime.now().toUtc().toIso8601String(),
         });
       } else {
         await _client

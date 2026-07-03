@@ -25,6 +25,10 @@ class NotificationStateNotifier extends ChangeNotifier with SafeNotifier {
   StreamSubscription<AppNotification>? _notificationSubscription;
   StreamSubscription<int>? _unreadCountSubscription;
 
+  /// Called for every realtime notification, letting other state (e.g. the
+  /// messaging unread badge) piggyback on this channel's delivery.
+  void Function(AppNotification notification)? onNewNotification;
+
   // ============================================================
   // GETTERS
   // ============================================================
@@ -102,7 +106,8 @@ class NotificationStateNotifier extends ChangeNotifier with SafeNotifier {
     try {
       // Load initial data in parallel
       final results = await Future.wait([
-        _service.getNotifications(userId, filter: const NotificationFilter(limit: 50)),
+        _service.getNotifications(userId,
+            filter: const NotificationFilter(limit: 50)),
         _service.getUnreadCount(userId),
         _service.getPreferences(userId),
       ]);
@@ -126,7 +131,8 @@ class NotificationStateNotifier extends ChangeNotifier with SafeNotifier {
 
   void _subscribeToUpdates(String userId) {
     // Subscribe to new notifications
-    _notificationSubscription = _service.subscribeToNotifications(userId).listen(
+    _notificationSubscription =
+        _service.subscribeToNotifications(userId).listen(
       (notification) {
         _onNewNotification(notification);
       },
@@ -151,7 +157,8 @@ class NotificationStateNotifier extends ChangeNotifier with SafeNotifier {
 
   void _onNewNotification(AppNotification notification) {
     // Check if notification already exists
-    final existingIndex = _notifications.indexWhere((n) => n.id == notification.id);
+    final existingIndex =
+        _notifications.indexWhere((n) => n.id == notification.id);
 
     if (existingIndex >= 0) {
       // Update existing notification
@@ -162,6 +169,8 @@ class NotificationStateNotifier extends ChangeNotifier with SafeNotifier {
     }
 
     notifyListeners();
+
+    onNewNotification?.call(notification);
 
     // Show in-app toast/banner for new notifications
     _showInAppNotification(notification);
@@ -281,9 +290,7 @@ class NotificationStateNotifier extends ChangeNotifier with SafeNotifier {
 
   /// Get notifications by category
   List<AppNotification> getByCategory(String category) {
-    return _notifications
-        .where((n) => n.type.category == category)
-        .toList();
+    return _notifications.where((n) => n.type.category == category).toList();
   }
 
   /// Get notifications by type

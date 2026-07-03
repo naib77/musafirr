@@ -259,12 +259,12 @@ class SupabaseConversationRepository implements ConversationRepository {
   @override
   Future<ConversationResult<int>> getTotalUnreadCount(String userId) async {
     try {
-      // Get all conversations for user
+      // All conversations for the user — archived (ended-booking) chats stay
+      // writable, so their unread messages must count toward the badge too.
       final response = await _client
           .from('conversations')
           .select('id')
-          .or('participant_one_id.eq.$userId,participant_two_id.eq.$userId')
-          .eq('status', 'active');
+          .or('participant_one_id.eq.$userId,participant_two_id.eq.$userId');
 
       int total = 0;
       for (final row in response as List) {

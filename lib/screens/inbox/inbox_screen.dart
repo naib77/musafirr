@@ -5,34 +5,26 @@ import '../../state/messaging_state.dart';
 import '../../widgets/messaging/conversation_tile.dart';
 import '../messaging/chat_screen.dart';
 
+/// Unified message inbox, Airbnb-style: one list with every conversation —
+/// inquiries, upcoming stays, and past bookings — sorted by latest activity.
 class InboxScreen extends StatefulWidget {
   const InboxScreen({
     super.key,
     this.messagingState,
+    this.embedded = false,
   });
 
   final MessagingStateNotifier? messagingState;
+
+  /// When true the screen renders without its own AppBar, for use as a
+  /// bottom-navigation tab where the shell provides the header.
+  final bool embedded;
 
   @override
   State<InboxScreen> createState() => _InboxScreenState();
 }
 
-class _InboxScreenState extends State<InboxScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
+class _InboxScreenState extends State<InboxScreen> {
   void _openConversation(Conversation conversation) {
     if (widget.messagingState == null) return;
 
@@ -51,177 +43,65 @@ class _InboxScreenState extends State<InboxScreen>
     );
   }
 
-  void _showConversationOptions(Conversation conversation) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => _ConversationOptionsSheet(
-        conversation: conversation,
-        onArchive: () {
-          Navigator.pop(context);
-          widget.messagingState?.archiveConversation(conversation.id);
-        },
-        onDelete: () {
-          Navigator.pop(context);
-          // Show confirmation dialog
-          _confirmDelete(conversation);
-        },
-      ),
-    );
-  }
-
-  void _confirmDelete(Conversation conversation) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete conversation?'),
-        content: const Text(
-          'This will permanently delete this conversation and all messages. This action cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // For now, just archive since we don't have a delete method
-              widget.messagingState?.archiveConversation(conversation.id);
-            },
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    // If no messaging state provided, show placeholder
-    if (widget.messagingState == null) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('Messages'),
-        ),
-        body: const _InboxPlaceholder(),
-      );
-    }
+    final body = _buildBody();
+
+    if (widget.embedded) return body;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Messages'),
       ),
-      body: ListenableBuilder(
-        listenable: widget.messagingState!,
-        builder: (context, _) {
-          final activeConversations = widget.messagingState!.activeConversations;
-          final archivedConversations = widget.messagingState!.archivedConversations;
-
-          return Column(
-            children: [
-              // Tab bar - Active bookings vs Past bookings
-              TabBar(
-                controller: _tabController,
-                tabs: [
-                  Tab(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('Active'),
-                        if (widget.messagingState!.totalUnreadCount > 0) ...[
-                          const SizedBox(width: 8),
-                          _UnreadBadge(
-                            count: widget.messagingState!.totalUnreadCount,
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  Tab(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('Past'),
-                        if (archivedConversations.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          Text(
-                            '(${archivedConversations.length})',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-
-              // Tab content
-              Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    // Active bookings - conversations with confirmed/active bookings
-                    _buildConversationList(
-                      conversations: activeConversations,
-                      isLoading: widget.messagingState!.isLoadingConversations,
-                      emptyTitle: 'No active conversations',
-                      emptySubtitle:
-                          'When a booking is accepted, you can message your host or guest here.',
-                    ),
-
-                    // Past bookings - completed/cancelled bookings (read-only)
-                    _buildConversationList(
-                      conversations: archivedConversations,
-                      isLoading: false,
-                      emptyTitle: 'No past conversations',
-                      emptySubtitle:
-                          'Conversations from completed bookings will appear here.',
-                      emptyIcon: Icons.history,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          );
-        },
-      ),
+      body: body,
     );
   }
 
-  Widget _buildConversationList({
-    required List<Conversation> conversations,
-    required bool isLoading,
-    required String emptyTitle,
-    required String emptySubtitle,
-    IconData emptyIcon = Icons.chat_bubble_outline,
-  }) {
-    if (isLoading) {
-      return const Center(child: CircularProgressIndicator());
+  Widget _buildBody() {
+    final messagingState = widget.messagingState;
+    if (messagingState == null) {
+      return const _InboxPlaceholder();
     }
 
-    if (conversations.isEmpty) {
-      return ConversationsEmptyState(
-        title: emptyTitle,
-        subtitle: emptySubtitle,
-        icon: emptyIcon,
-      );
-    }
+    return ListenableBuilder(
+      listenable: messagingState,
+      builder: (context, _) {
+        // One unified list: every conversation, newest activity first.
+        final conversations = [...messagingState.conversations]..sort((a, b) {
+            final aTime = a.lastMessageAt ?? a.updatedAt;
+            final bTime = b.lastMessageAt ?? b.updatedAt;
+            return bTime.compareTo(aTime);
+          });
 
-    return RefreshIndicator(
-      onRefresh: () => widget.messagingState!.refreshConversations(),
-      child: ListView.builder(
-        itemCount: conversations.length,
-        itemBuilder: (context, index) {
-          final conversation = conversations[index];
-          return ConversationTile(
-            conversation: conversation,
-            showDivider: index < conversations.length - 1,
-            onTap: () => _openConversation(conversation),
-            onLongPress: () => _showConversationOptions(conversation),
+        if (messagingState.isLoadingConversations && conversations.isEmpty) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (conversations.isEmpty) {
+          return const ConversationsEmptyState(
+            title: 'No messages yet',
+            subtitle:
+                'When you contact a host or receive a booking, your '
+                'conversations will appear here.',
+            icon: Icons.chat_bubble_outline,
           );
-        },
-      ),
+        }
+
+        return RefreshIndicator(
+          onRefresh: () => messagingState.refreshConversations(),
+          child: ListView.builder(
+            itemCount: conversations.length,
+            itemBuilder: (context, index) {
+              final conversation = conversations[index];
+              return ConversationTile(
+                conversation: conversation,
+                showDivider: index < conversations.length - 1,
+                onTap: () => _openConversation(conversation),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }
@@ -262,114 +142,6 @@ class _InboxPlaceholder extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// Unread count badge
-class _UnreadBadge extends StatelessWidget {
-  const _UnreadBadge({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.primary,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(
-        count > 99 ? '99+' : '$count',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-}
-
-/// Bottom sheet for conversation options
-class _ConversationOptionsSheet extends StatelessWidget {
-  const _ConversationOptionsSheet({
-    required this.conversation,
-    required this.onArchive,
-    required this.onDelete,
-  });
-
-  final Conversation conversation;
-  final VoidCallback onArchive;
-  final VoidCallback onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    final isArchived = conversation.status == ConversationStatus.archived;
-
-    return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Handle
-          Container(
-            margin: const EdgeInsets.only(top: 12),
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.grey[300],
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Conversation preview
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  backgroundImage: conversation.avatarUrl != null
-                      ? NetworkImage(conversation.avatarUrl!)
-                      : null,
-                  child: conversation.avatarUrl == null
-                      ? Text(conversation.displayName[0].toUpperCase())
-                      : null,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    conversation.displayName,
-                    style: Theme.of(context).textTheme.titleMedium,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Divider(height: 1),
-
-          // Actions
-          ListTile(
-            leading: Icon(
-              isArchived ? Icons.unarchive : Icons.archive,
-            ),
-            title: Text(isArchived ? 'Unarchive' : 'Archive'),
-            onTap: onArchive,
-          ),
-          ListTile(
-            leading: const Icon(Icons.delete_outline, color: Colors.red),
-            title: const Text('Delete', style: TextStyle(color: Colors.red)),
-            onTap: onDelete,
-          ),
-          const SizedBox(height: 8),
-        ],
       ),
     );
   }

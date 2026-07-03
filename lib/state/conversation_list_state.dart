@@ -155,12 +155,21 @@ class ConversationListState extends ChangeNotifier with SafeNotifier {
   }
 
   /// Update a conversation in the list.
+  ///
+  /// Also applies the conversation's unread delta to [totalUnreadCount] —
+  /// realtime conversation updates are the badge's only live signal, so a
+  /// stale total here means the Messages tab dot never appears.
   void updateConversation(Conversation conversation) {
     final index = _conversations.indexWhere((c) => c.id == conversation.id);
     if (index >= 0) {
+      final oldUnread = _conversations[index].unreadCount;
       _conversations[index] = conversation;
+      _totalUnreadCount =
+          (_totalUnreadCount + conversation.unreadCount - oldUnread)
+              .clamp(0, 999999);
     } else {
       _conversations.insert(0, conversation);
+      _totalUnreadCount += conversation.unreadCount;
     }
     _sortConversations();
     notifyListeners();
@@ -171,6 +180,7 @@ class ConversationListState extends ChangeNotifier with SafeNotifier {
     final exists = _conversations.any((c) => c.id == conversation.id);
     if (!exists) {
       _conversations.insert(0, conversation);
+      _totalUnreadCount += conversation.unreadCount;
       _sortConversations();
       notifyListeners();
     }

@@ -5,7 +5,9 @@ import '../../models/booking_status.dart';
 import '../../models/conversation.dart';
 import '../../models/conversation_participant.dart';
 import '../../models/message.dart';
+import '../../models/message_template.dart';
 import '../../repositories/conversation_repository.dart';
+import 'message_template_provider.dart';
 import 'messaging_service.dart';
 
 /// Result of a booking conversation operation
@@ -30,24 +32,29 @@ class BookingConversationResult<T> {
 /// - Automatic conversation creation when bookings are confirmed
 /// - System messages for booking events
 /// - Participant role tracking (host vs guest)
-/// - Conversation archival when bookings complete/cancel
 ///
 /// ## Lifecycle Rules
 ///
 /// 1. **Booking Confirmed**: Creates conversation, sends welcome message
 /// 2. **Guest Checked In**: Sends check-in notification
-/// 3. **Booking Completed**: Sends completion message, optionally archives
-/// 4. **Booking Cancelled**: Sends cancellation notice, archives conversation
+/// 3. **Booking Completed**: Sends completion message
+/// 4. **Booking Cancelled**: Sends cancellation notice
+///
+/// Conversations are never locked: guests and hosts can keep messaging after
+/// the reservation flow completes.
 ///
 class BookingConversationService {
   BookingConversationService({
     required ConversationRepository conversationRepository,
     required MessagingService messagingService,
+    MessageTemplateProvider? templateProvider,
   })  : _conversationRepository = conversationRepository,
-        _messagingService = messagingService;
+        _messagingService = messagingService,
+        _templates = templateProvider ?? const DefaultMessageTemplateProvider();
 
   final ConversationRepository _conversationRepository;
   final MessagingService _messagingService;
+  final MessageTemplateProvider _templates;
 
   /// Get or create a conversation for a booking.
   ///
@@ -103,9 +110,13 @@ class BookingConversationService {
     return null;
   }
 
-  /// Handle booking confirmation - creates conversation and sends welcome.
+  /// Handle booking confirmation - creates conversation and sends the host's
+  /// scheduled welcome (Airbnb-style).
   ///
-  /// Called when a host accepts a booking request.
+  /// The welcome is the host's booking-confirmed template rendered with the
+  /// booking's details; [hostMessage] — the note typed in the accept dialog —
+  /// is the host's own words and goes out as a separate message. With the
+  /// template disabled and no note, nothing is auto-sent.
   Future<BookingConversationResult<Conversation>> onBookingConfirmed({
     required Booking booking,
     required String hostId,
@@ -123,25 +134,51 @@ class BookingConversationService {
 
     final conversation = convResult.data!;
 
-    // Send confirmation message from the host
-    final confirmationMessage = _buildConfirmationMessage(booking, hostMessage);
-    await _sendMessageFromUser(
-      conversationId: conversation.id,
-      senderId: hostId,
-      text: confirmationMessage,
-      metadata: BookingCardMetadata(
-        bookingId: booking.id,
-        listingName: booking.listingTitle ?? 'Booking',
-        listingImageUrl: booking.listingImageUrl,
-        checkIn: booking.effectiveCheckIn,
-        checkOut: booking.effectiveCheckOut,
-        totalPrice: booking.totalPrice,
-        currency: booking.currency.code,
-        status: BookingStatus.confirmed.name,
-      ),
+    final template = await _templates.templateFor(
+      hostId,
+      MessageTemplateTrigger.bookingConfirmed,
     );
 
-    debugPrint('[BookingConversationService] Created conversation for booking ${booking.id}');
+    if (template.enabled) {
+      // Airbnb-style, two separate messages: the reservation card, then the
+      // welcome text. The card renderer ignores message content, so welcome
+      // text embedded in a card message is invisible to the guest.
+      await _sendMessageFromUser(
+        conversationId: conversation.id,
+        senderId: hostId,
+        text: 'Reservation confirmed · ${booking.listingTitle ?? 'your stay'}',
+        metadata: BookingCardMetadata(
+          bookingId: booking.id,
+          listingName: booking.listingTitle ?? 'Booking',
+          listingImageUrl: booking.listingImageUrl,
+          checkIn: booking.effectiveCheckIn,
+          checkOut: booking.effectiveCheckOut,
+          totalPrice: booking.totalPrice,
+          currency: booking.currency.code,
+          status: BookingStatus.confirmed.name,
+          durationLabel: booking.durationLabel,
+        ),
+      );
+
+      final rendered = await _render(template.content, booking, conversation);
+      await _sendMessageFromUser(
+        conversationId: conversation.id,
+        senderId: hostId,
+        text: rendered,
+      );
+    }
+
+    final note = hostMessage?.trim();
+    if (note != null && note.isNotEmpty) {
+      await _sendMessageFromUser(
+        conversationId: conversation.id,
+        senderId: hostId,
+        text: note,
+      );
+    }
+
+    debugPrint(
+        '[BookingConversationService] Created conversation for booking ${booking.id}');
     return BookingConversationResult.success(conversation);
   }
 
@@ -161,32 +198,34 @@ class BookingConversationService {
       text: message,
     );
 
-    debugPrint('[BookingConversationService] Sent check-in message for booking ${booking.id}');
+    debugPrint(
+        '[BookingConversationService] Sent check-in message for booking ${booking.id}');
   }
 
   /// Handle booking completion.
   ///
-  /// Called when a host marks a service as complete.
+  /// Sends the host's checkout template (when enabled). The conversation
+  /// stays writable — guests and hosts can keep messaging after the stay.
   Future<void> onBookingCompleted({
     required Booking booking,
-    required String conversationId,
+    required Conversation conversation,
     required String hostId,
-    bool archiveConversation = false,
   }) async {
-    final message = 'Your stay has been completed. '
-        'Thank you for choosing us! We hope to see you again. ⭐';
+    final template = await _templates.templateFor(
+      hostId,
+      MessageTemplateTrigger.checkOut,
+    );
+    if (!template.enabled) return;
 
+    final rendered = await _render(template.content, booking, conversation);
     await _sendMessageFromUser(
-      conversationId: conversationId,
+      conversationId: conversation.id,
       senderId: hostId,
-      text: message,
+      text: rendered,
     );
 
-    if (archiveConversation) {
-      await _conversationRepository.archive(conversationId);
-    }
-
-    debugPrint('[BookingConversationService] Sent completion message for booking ${booking.id}');
+    debugPrint(
+        '[BookingConversationService] Sent completion message for booking ${booking.id}');
   }
 
   /// Handle booking cancellation.
@@ -208,10 +247,8 @@ class BookingConversationService {
       text: message,
     );
 
-    // Archive the conversation since the booking is cancelled
-    await _conversationRepository.archive(conversationId);
-
-    debugPrint('[BookingConversationService] Sent cancellation message for booking ${booking.id}');
+    debugPrint(
+        '[BookingConversationService] Sent cancellation message for booking ${booking.id}');
   }
 
   /// Get participant roles for a booking conversation.
@@ -252,19 +289,27 @@ class BookingConversationService {
   // Private Helpers
   // ============================================
 
-  String _buildConfirmationMessage(Booking booking, String? hostMessage) {
-    final buffer = StringBuffer();
-    buffer.writeln('🎉 Booking Confirmed!');
-    buffer.writeln();
-    buffer.writeln('Your reservation has been accepted.');
-
-    if (hostMessage != null && hostMessage.isNotEmpty) {
-      buffer.writeln();
-      buffer.writeln('Message from host:');
-      buffer.writeln('"$hostMessage"');
+  /// Renders a template's variables with the booking's details. The host
+  /// name is resolved from the guest's perspective of the conversation,
+  /// falling back to a neutral label when unavailable.
+  Future<String> _render(
+    String templateContent,
+    Booking booking,
+    Conversation conversation,
+  ) async {
+    var hostName = 'Your host';
+    final guestId = booking.userId;
+    if (guestId != null) {
+      final result = await _conversationRepository.loadOtherParticipant(
+        conversation: conversation,
+        currentUserId: guestId,
+      );
+      final name = result.data?.name;
+      if (name != null && name.isNotEmpty) hostName = name;
     }
 
-    return buffer.toString().trim();
+    return TemplateContext.fromBooking(booking, hostName: hostName)
+        .render(templateContent);
   }
 
   Future<void> _sendMessageFromUser({
@@ -275,14 +320,17 @@ class BookingConversationService {
   }) async {
     final request = SendMessageRequest(
       conversationId: conversationId,
-      contentType: metadata != null ? MessageContentType.bookingCard : MessageContentType.text,
+      contentType: metadata != null
+          ? MessageContentType.bookingCard
+          : MessageContentType.text,
       content: text,
       metadata: metadata,
     );
 
     final result = await _messagingService.sendMessage(request, senderId);
     if (!result.isSuccess) {
-      debugPrint('[BookingConversationService] Failed to send message: ${result.error}');
+      debugPrint(
+          '[BookingConversationService] Failed to send message: ${result.error}');
     }
   }
 }

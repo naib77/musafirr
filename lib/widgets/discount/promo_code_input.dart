@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../models/discount.dart';
-import '../../models/discount_eligibility.dart';
 
 /// Status of promo code validation
 enum PromoCodeStatus {

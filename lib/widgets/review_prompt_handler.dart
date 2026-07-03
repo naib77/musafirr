@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../models/booking.dart';
-import '../models/guest_review_ratings.dart';
 import '../models/review.dart';
 import '../repositories/supabase_musafir_repository.dart';
 import '../screens/review/guest_review_screen.dart';
+import '../services/review/review_prompt_config.dart';
 import '../state/auth_state.dart';
 import 'modern_banner.dart';
 
-/// Handles showing review prompts for completed bookings
+/// Handles showing review prompts for completed bookings.
+///
+/// Prompts are throttled by [ReviewPromptConfig] (default: at most twice a
+/// week) instead of appearing on every app open.
 class ReviewPromptHandler extends StatefulWidget {
   const ReviewPromptHandler({
     super.key,
@@ -65,12 +68,18 @@ class _ReviewPromptHandlerState extends State<ReviewPromptHandler>
 
     _hasCheckedReviews = true;
 
+    // Respect the user's reminder frequency (off / weekly / twice a week)
+    // instead of prompting on every app open.
+    if (!await ReviewPromptConfig.shouldShowPrompt()) return;
+
     // Refresh data first to get latest bookings and reviews
     await widget.repository.refresh();
 
     final pending = widget.repository.getUnreviewedCompletedBookings(userId);
 
     if (pending.isNotEmpty && mounted) {
+      await ReviewPromptConfig.markPromptShown();
+      if (!mounted) return;
       setState(() {
         _pendingReviews = pending;
         _currentReviewIndex = 0;
@@ -94,8 +103,6 @@ class _ReviewPromptHandlerState extends State<ReviewPromptHandler>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      isDismissible: false,
-      enableDrag: false,
       backgroundColor: Colors.transparent,
       builder: (context) => _ReviewPromptModal(
         booking: booking,
@@ -119,27 +126,44 @@ class _ReviewPromptHandlerState extends State<ReviewPromptHandler>
     final user = widget.authState.currentUser;
     if (user == null) return;
 
-    final listing = widget.repository.getListingById(booking.listingId);
-
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => GuestReviewScreen(
           booking: booking,
-          onSubmit: (GuestReviewRatings ratings, String comment) {
+          onSubmit: (GuestReviewRatings ratings, String comment) async {
+            final hostId =
+                await widget.repository.fetchHostIdForListing(booking.listingId);
+            if (!context.mounted) return false;
+            if (hostId == null || hostId.isEmpty) {
+              ModernBanner.showError(
+                context,
+                'Could not submit review. Please try again later.',
+              );
+              return false;
+            }
+
             final review = Review.guestReview(
               id: DateTime.now().millisecondsSinceEpoch.toString(),
               bookingId: booking.id,
               listingId: booking.listingId,
               reviewerId: user.id,
-              reviewerName: user.name ?? 'Guest',
+              reviewerName: user.name,
               reviewerAvatarUrl: user.avatarUrl,
-              hostId: listing?.hostId ?? '',
+              hostId: hostId,
               ratings: ratings,
               comment: comment,
             );
 
-            widget.repository.saveReview(review);
+            final saved = await widget.repository.saveReview(review);
+            if (!context.mounted) return saved;
+            if (!saved) {
+              ModernBanner.showError(
+                context,
+                'Could not submit review. Please check your connection and try again.',
+              );
+              return false;
+            }
 
             Navigator.pop(context);
             ModernBanner.showSuccess(context, 'Thank you for your review!');
@@ -149,6 +173,7 @@ class _ReviewPromptHandlerState extends State<ReviewPromptHandler>
             Future.delayed(const Duration(milliseconds: 300), () {
               if (mounted) _showNextReviewPrompt();
             });
+            return true;
           },
         ),
       ),

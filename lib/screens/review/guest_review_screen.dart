@@ -13,7 +13,11 @@ class GuestReviewScreen extends StatefulWidget {
   });
 
   final Booking booking;
-  final void Function(GuestReviewRatings ratings, String comment) onSubmit;
+
+  /// Called with the entered ratings and comment. Should return true when the
+  /// review was saved; on false the screen re-enables the submit button.
+  final Future<bool> Function(GuestReviewRatings ratings, String comment)
+      onSubmit;
 
   @override
   State<GuestReviewScreen> createState() => _GuestReviewScreenState();
@@ -39,7 +43,7 @@ class _GuestReviewScreenState extends State<GuestReviewScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isSubmitting = true);
@@ -53,7 +57,11 @@ class _GuestReviewScreenState extends State<GuestReviewScreen> {
       value: _value,
     );
 
-    widget.onSubmit(ratings, _commentController.text.trim());
+    final success =
+        await widget.onSubmit(ratings, _commentController.text.trim());
+    if (!success && mounted) {
+      setState(() => _isSubmitting = false);
+    }
   }
 
   @override

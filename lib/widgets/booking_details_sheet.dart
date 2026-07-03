@@ -74,6 +74,9 @@ class BookingDetailsSheet extends StatelessWidget {
 
     final isStale =
         bookingStatus != null && bookingStatus != BookingStatus.pending;
+    // Accept/Decline require a PROVEN pending status; unknown (null) means
+    // the lookup missed and the request may already be handled elsewhere.
+    final canAct = bookingStatus == BookingStatus.pending;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.7,
@@ -205,7 +208,7 @@ class BookingDetailsSheet extends StatelessWidget {
                 ),
               ),
               // Action buttons (fixed at bottom)
-              _buildActionBar(context, theme, isStale: isStale),
+              _buildActionBar(context, theme, canAct: canAct),
             ],
           ),
         );
@@ -376,7 +379,7 @@ class BookingDetailsSheet extends StatelessWidget {
   Widget _buildActionBar(
     BuildContext context,
     ThemeData theme, {
-    required bool isStale,
+    required bool canAct,
   }) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -394,7 +397,7 @@ class BookingDetailsSheet extends StatelessWidget {
         top: false,
         child: isProcessing
             ? const Center(child: CircularProgressIndicator())
-            : isStale
+            : !canAct
                 ? FilledButton(
                     onPressed: () => Navigator.pop(context),
                     child: const Text('Close'),

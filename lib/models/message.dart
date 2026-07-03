@@ -1,3 +1,5 @@
+import 'package:intl/intl.dart';
+
 import 'user.dart';
 
 /// Type of message content
@@ -137,13 +139,18 @@ class Message {
     if (diff.inHours < 24) return '${diff.inHours}h ago';
     if (diff.inDays < 7) return '${diff.inDays}d ago';
 
-    return '${createdAt.day}/${createdAt.month}/${createdAt.year}';
+    final local = createdAt.toLocal();
+    return '${local.day}/${local.month}/${local.year}';
   }
 
-  /// Get time string (HH:mm format)
+  /// Get time string (HH:mm format).
+  ///
+  /// createdAt is parsed from Supabase timestamps and is UTC — convert to
+  /// the device's timezone or every bubble shows a time 6h off (in BD).
   String get timeString {
-    final hour = createdAt.hour.toString().padLeft(2, '0');
-    final minute = createdAt.minute.toString().padLeft(2, '0');
+    final local = createdAt.toLocal();
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
   }
 
@@ -259,7 +266,8 @@ class Message {
   int get hashCode => id.hashCode;
 
   @override
-  String toString() => 'Message(id: $id, type: $contentType, content: $content)';
+  String toString() =>
+      'Message(id: $id, type: $contentType, content: $content)';
 }
 
 /// Base class for message metadata
@@ -397,6 +405,7 @@ class BookingCardMetadata extends MessageMetadata {
     required this.totalPrice,
     required this.currency,
     required this.status,
+    this.durationLabel,
   });
 
   final String bookingId;
@@ -408,11 +417,39 @@ class BookingCardMetadata extends MessageMetadata {
   final String currency;
   final String status;
 
-  /// Get formatted date range
+  /// Unit-aware stay length from the booking ("2 hours" / "7 nights" /
+  /// "1 month"). Optional because older messages predate it.
+  final String? durationLabel;
+
+  /// Formatted date range. Same-day (hourly) bookings show the time span
+  /// instead of two identical dates.
   String get dateRange {
-    final checkInStr = '${checkIn.day}/${checkIn.month}';
-    final checkOutStr = '${checkOut.day}/${checkOut.month}';
-    return '$checkInStr - $checkOutStr';
+    final sameDay = checkIn.year == checkOut.year &&
+        checkIn.month == checkOut.month &&
+        checkIn.day == checkOut.day;
+    final day = DateFormat('MMM d');
+    if (sameDay) {
+      final time = DateFormat.jm();
+      return '${day.format(checkIn)} · '
+          '${time.format(checkIn)} – ${time.format(checkOut)}';
+    }
+    return '${day.format(checkIn)} – ${day.format(checkOut)}';
+  }
+
+  /// Stay length to display: the booking's own label when present, otherwise
+  /// derived from the timestamps — hours for same-day spans so an hourly
+  /// booking never reads "0 nights".
+  String get displayDuration {
+    final label = durationLabel;
+    if (label != null && label.isNotEmpty) return label;
+
+    final span = checkOut.difference(checkIn);
+    if (span.inHours < 24) {
+      final hours = span.inHours.clamp(1, 23);
+      return '$hours hour${hours == 1 ? '' : 's'}';
+    }
+    final nights = span.inDays.clamp(1, 10000);
+    return '$nights night${nights == 1 ? '' : 's'}';
   }
 
   /// Get number of nights
@@ -428,6 +465,7 @@ class BookingCardMetadata extends MessageMetadata {
       totalPrice: (json['total_price'] as num).toDouble(),
       currency: json['currency'] as String? ?? 'BDT',
       status: json['status'] as String,
+      durationLabel: json['duration_label'] as String?,
     );
   }
 
@@ -442,6 +480,7 @@ class BookingCardMetadata extends MessageMetadata {
       'total_price': totalPrice,
       'currency': currency,
       'status': status,
+      'duration_label': durationLabel,
     };
   }
 }
@@ -463,7 +502,9 @@ class FileMetadata extends MessageMetadata {
   /// Get human-readable file size
   String get formattedSize {
     if (sizeBytes < 1024) return '$sizeBytes B';
-    if (sizeBytes < 1024 * 1024) return '${(sizeBytes / 1024).toStringAsFixed(1)} KB';
+    if (sizeBytes < 1024 * 1024) {
+      return '${(sizeBytes / 1024).toStringAsFixed(1)} KB';
+    }
     if (sizeBytes < 1024 * 1024 * 1024) {
       return '${(sizeBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     }

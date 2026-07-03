@@ -5,6 +5,9 @@ import '../models/listing.dart';
 import '../models/listing_type.dart';
 import '../models/rental_plan.dart';
 
+/// Explore-grid listing card, Airbnb-style: the photo is the hero — large,
+/// rounded on all corners, floating on the scaffold with a soft shadow —
+/// with tiny overlay pills and compact text below instead of a boxed card.
 class ListingCardModern extends StatefulWidget {
   const ListingCardModern({
     super.key,
@@ -59,335 +62,221 @@ class _ListingCardModernState extends State<ListingCardModern>
 
     return GestureDetector(
       onTap: widget.onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.08),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Image with overlays
-            Expanded(
-              flex: 3,
-              child: Stack(
-                children: [
-                  // Image
-                  ClipRRect(
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(16),
-                    ),
-                    child: listing.primaryImage != null
-                        ? Image.network(
-                            listing.primaryImage!,
-                            width: double.infinity,
-                            height: double.infinity,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                _buildPlaceholder(theme),
-                            loadingBuilder: (context, child, loadingProgress) {
-                              if (loadingProgress == null) return child;
-                              return _buildShimmer(theme);
-                            },
-                          )
-                        : _buildPlaceholder(theme),
-                  ),
-
-                  // Gradient overlay at bottom
-                  Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    child: Container(
-                      height: 60,
-                      decoration: BoxDecoration(
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(0),
-                        ),
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.transparent,
-                            Colors.black.withValues(alpha: 0.5),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // Price badge on image
-                  Positioned(
-                    bottom: 8,
-                    left: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.15),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: _buildPriceTeaser(theme),
-                    ),
-                  ),
-
-                  // Animated favorite button
-                  Positioned(
-                    top: 10,
-                    right: 10,
-                    child: GestureDetector(
-                      onTap: _onFavoriteTap,
-                      child: AnimatedBuilder(
-                        animation: _heartScale,
-                        builder: (context, child) {
-                          return Transform.scale(
-                            scale: _heartScale.value,
-                            child: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.15),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              child: Icon(
-                                widget.isFavorite
-                                    ? Icons.favorite
-                                    : Icons.favorite_border,
-                                color: widget.isFavorite
-                                    ? Colors.redAccent
-                                    : Colors.grey[600],
-                                size: 20,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-
-                  // Top left badges
-                  Positioned(
-                    top: 10,
-                    left: 10,
-                    child: Row(
-                      children: [
-                        // Colorful listing-type chip
-                        _CategoryChip(type: listing.type),
-                        const SizedBox(width: 6),
-                        // Superhost badge
-                        if (listing.isSuperhost)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.amber.shade600,
-                                  Colors.orange.shade600,
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(6),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.orange.withValues(alpha: 0.3),
-                                  blurRadius: 4,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.workspace_premium,
-                                  size: 12,
-                                  color: Colors.white,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Superhost',
-                                  style: theme.textTheme.labelSmall?.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 10,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        // "New" badge if no reviews
-                        if (!hasReviews && !listing.isSuperhost)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.primary,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              'New',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── The hero photo: dominant, rounded everywhere, floating ──
+          Expanded(
+            flex: 5,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.14),
+                    blurRadius: 14,
+                    offset: const Offset(0, 6),
                   ),
                 ],
               ),
-            ),
-
-            // Info section
-            Expanded(
-              flex: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: Stack(
+                  fit: StackFit.expand,
                   children: [
-                    // Title and rating row
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            listing.title,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              height: 1.2,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                    if (listing.primaryImage != null)
+                      Image.network(
+                        listing.primaryImage!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _buildPlaceholder(theme),
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return _buildShimmer(theme);
+                        },
+                      )
+                    else
+                      _buildPlaceholder(theme),
+
+                    // Bottom scrim so the price pill always reads.
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: Container(
+                        height: 44,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withValues(alpha: 0.45),
+                            ],
                           ),
                         ),
-                        if (hasReviews) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.amber.shade50,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.star_rounded,
-                                  size: 14,
-                                  color: Colors.amber.shade700,
-                                ),
-                                const SizedBox(width: 2),
-                                Text(
-                                  listing.rating!.toStringAsFixed(1),
-                                  style: theme.textTheme.labelSmall?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.amber.shade800,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ],
+                      ),
                     ),
 
-                    const SizedBox(height: 6),
-
-                    // Location with icon
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.location_on_outlined,
-                          size: 14,
-                          color: theme.colorScheme.onSurfaceVariant,
+                    // Compact price pill
+                    Positioned(
+                      bottom: 6,
+                      left: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
                         ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            listing.city ?? listing.address.split(',').first,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.95),
+                          borderRadius: BorderRadius.circular(20),
                         ),
-                      ],
+                        child: _buildPriceTeaser(theme),
+                      ),
                     ),
 
-                    const Spacer(),
+                    // Favorite button
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: GestureDetector(
+                        onTap: _onFavoriteTap,
+                        child: AnimatedBuilder(
+                          animation: _heartScale,
+                          builder: (context, child) {
+                            return Transform.scale(
+                              scale: _heartScale.value,
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  widget.isFavorite
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  color: widget.isFavorite
+                                      ? Colors.redAccent
+                                      : Colors.grey[700],
+                                  size: 16,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
 
-                    // Other offered plan rates, de-emphasized (cheapest is the
-                    // "from" teaser badge on the image above).
-                    _buildSecondaryRates(theme),
-
-                    // Quick stats row
-                    if (listing.maxGuests > 0 || listing.bedrooms > 0)
-                      Row(
+                    // Tiny type / status pills
+                    Positioned(
+                      top: 6,
+                      left: 6,
+                      child: Row(
                         children: [
-                          if (listing.bedrooms > 0) ...[
-                            _buildStatChip(
-                              Icons.bed_outlined,
-                              '${listing.bedrooms}',
-                              theme,
-                            ),
-                            const SizedBox(width: 8),
-                          ],
-                          if (listing.maxGuests > 0)
-                            _buildStatChip(
-                              Icons.person_outline,
-                              '${listing.maxGuests}',
-                              theme,
+                          _CategoryChip(type: listing.type),
+                          const SizedBox(width: 4),
+                          if (listing.isSuperhost)
+                            _MiniPill(
+                              label: 'Superhost',
+                              icon: Icons.workspace_premium,
+                              background: Colors.orange.shade600,
+                            )
+                          else if (!hasReviews)
+                            _MiniPill(
+                              label: 'New',
+                              background: theme.colorScheme.primary,
                             ),
                         ],
                       ),
+                    ),
                   ],
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+
+          // ── Compact info below, no box — Airbnb style ──
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          listing.title,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            height: 1.2,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (hasReviews) ...[
+                        const SizedBox(width: 6),
+                        Icon(
+                          Icons.star_rounded,
+                          size: 13,
+                          color: Colors.amber.shade700,
+                        ),
+                        const SizedBox(width: 1),
+                        Text(
+                          listing.rating!.toStringAsFixed(1),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    listing.city ?? listing.address.split(',').first,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 11,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const Spacer(),
+                  // Secondary rates + quick stats on one muted line.
+                  Row(
+                    children: [
+                      Expanded(child: _buildSecondaryRates(theme)),
+                      if (listing.bedrooms > 0) ...[
+                        _buildStatChip(
+                          Icons.bed_outlined,
+                          '${listing.bedrooms}',
+                          theme,
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      if (listing.maxGuests > 0)
+                        _buildStatChip(
+                          Icons.person_outline,
+                          '${listing.maxGuests}',
+                          theme,
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  /// Bold "from ৳X/unit" teaser for the cheapest offered plan.
+  /// Compact "from ৳X/unit" teaser for the cheapest offered plan.
   /// "from" only appears when more than one plan is offered.
   Widget _buildPriceTeaser(ThemeData theme) {
     final listing = widget.listing;
@@ -404,24 +293,27 @@ class _ListingCardModernState extends State<ListingCardModern>
       textBaseline: TextBaseline.alphabetic,
       children: [
         if (hasMore)
-          Text(
+          const Text(
             'from ',
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+            style: TextStyle(
+              fontSize: 9,
               fontWeight: FontWeight.w500,
+              color: Colors.black54,
             ),
           ),
         Text(
           money.format(useCompact: true),
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.bold,
-            color: theme.colorScheme.onSurface,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: Colors.black87,
           ),
         ),
         Text(
           '/${cheapest.shortUnit}',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+          style: const TextStyle(
+            fontSize: 9,
+            color: Colors.black54,
           ),
         ),
       ],
@@ -433,8 +325,7 @@ class _ListingCardModernState extends State<ListingCardModern>
   Widget _buildSecondaryRates(ThemeData theme) {
     final listing = widget.listing;
     final cheapest = listing.cheapestPlan;
-    final others =
-        listing.offeredPlans.where((p) => p != cheapest).toList();
+    final others = listing.offeredPlans.where((p) => p != cheapest).toList();
     if (others.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -442,18 +333,16 @@ class _ListingCardModernState extends State<ListingCardModern>
     final text = others
         .map((p) =>
             '${listing.moneyFor(p)!.format(useCompact: true)}/${p.shortUnit}')
-        .join('  ·  ');
+        .join(' · ');
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Text(
-        text,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+    return Text(
+      text,
+      style: theme.textTheme.labelSmall?.copyWith(
+        fontSize: 10,
+        color: theme.colorScheme.onSurfaceVariant,
       ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
     );
   }
 
@@ -463,13 +352,14 @@ class _ListingCardModernState extends State<ListingCardModern>
       children: [
         Icon(
           icon,
-          size: 14,
+          size: 12,
           color: theme.colorScheme.onSurfaceVariant,
         ),
         const SizedBox(width: 2),
         Text(
           label,
           style: theme.textTheme.bodySmall?.copyWith(
+            fontSize: 11,
             color: theme.colorScheme.onSurfaceVariant,
             fontWeight: FontWeight.w500,
           ),
@@ -480,12 +370,7 @@ class _ListingCardModernState extends State<ListingCardModern>
 
   Widget _buildPlaceholder(ThemeData theme) {
     return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(16),
-        ),
-      ),
+      color: theme.colorScheme.surfaceContainerHighest,
       child: Center(
         child: Icon(
           Icons.home_outlined,
@@ -498,12 +383,7 @@ class _ListingCardModernState extends State<ListingCardModern>
 
   Widget _buildShimmer(ThemeData theme) {
     return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(16),
-        ),
-      ),
+      color: theme.colorScheme.surfaceContainerHighest,
       child: Center(
         child: SizedBox(
           width: 24,
@@ -513,6 +393,47 @@ class _ListingCardModernState extends State<ListingCardModern>
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Tiny colored pill for Superhost / New badges on the photo.
+class _MiniPill extends StatelessWidget {
+  const _MiniPill({
+    required this.label,
+    required this.background,
+    this.icon,
+  });
+
+  final String label;
+  final Color background;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: background.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 9, color: Colors.white),
+            const SizedBox(width: 3),
+          ],
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 9,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -539,29 +460,22 @@ class _CategoryChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
-        color: _color,
-        borderRadius: BorderRadius.circular(6),
-        boxShadow: [
-          BoxShadow(
-            color: _color.withValues(alpha: 0.4),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: _color.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(_icon, size: 12, color: Colors.white),
-          const SizedBox(width: 4),
+          Icon(_icon, size: 9, color: Colors.white),
+          const SizedBox(width: 3),
           Text(
             type.title,
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w700,
-              fontSize: 10,
+              fontSize: 9,
             ),
           ),
         ],

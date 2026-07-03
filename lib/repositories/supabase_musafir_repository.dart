@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import '../core/state/safe_notifier.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User, RealtimeChannel;
@@ -12,7 +11,6 @@ import '../models/booking_conflict_exception.dart';
 import '../models/booking_duration.dart';
 import '../models/booking_status.dart';
 import '../models/facility.dart';
-import '../models/guest_review_ratings.dart';
 import '../models/leaderboard_entry.dart';
 import '../models/listing.dart';
 import '../models/listing_type.dart';
@@ -177,9 +175,40 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
   Future<void> _refreshAll() async {
     await Future.wait([
       _refreshListings(),
+      _loadOwnListings(),
       _refreshBookings(),
       _refreshReviews(),
     ]);
+  }
+
+  /// Loads ALL of the signed-in user's own listings into the cache.
+  ///
+  /// The explore pagination only holds the newest marketplace-wide page, so
+  /// a host's listing can easily fall outside it — which made that listing's
+  /// bookings invisible on the host screens (Reservations, Dashboard, ...),
+  /// since they derive "my listings" from this cache.
+  Future<void> _loadOwnListings() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return;
+
+    try {
+      final response = await _client
+          .from('listings')
+          .select('*, listing_facilities(facility_id, facilities(name))')
+          .eq('owner_id', userId);
+
+      final own = (response as List)
+          .map((e) => _listingFromJson(e as Map<String, dynamic>))
+          .toList();
+      if (own.isEmpty) return;
+
+      final ownIds = own.map((l) => l.id).toSet();
+      _listings.removeWhere((l) => ownIds.contains(l.id));
+      _listings.addAll(own);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading own listings: $e');
+    }
   }
 
   // ============== Listings ==============
@@ -191,7 +220,10 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
 
   @override
   Future<void> resetListingsPagination() async {
-    _listings = [];
+    // Keep the signed-in user's own listings — host screens depend on them
+    // being present regardless of where they rank in the explore feed.
+    final ownId = _client.auth.currentUser?.id;
+    _listings.removeWhere((l) => ownId == null || l.hostId != ownId);
     _listingsCursor = null;
     _hasMoreListings = true;
     _isLoadingListings = false;
@@ -265,8 +297,11 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
           _listingsCursor = DateTime.parse(createdAtStr);
         }
 
-        // Add to accumulated list
-        _listings.addAll(newListings);
+        // Add to accumulated list (skip ids already cached, e.g. the user's
+        // own listings loaded by _loadOwnListings)
+        final existingIds = _listings.map((l) => l.id).toSet();
+        _listings.addAll(
+            newListings.where((l) => !existingIds.contains(l.id)));
 
         // Check if we got fewer items than page size (means no more)
         if (listingsResponse.length < _pageSize) {
@@ -965,27 +1000,46 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
   }
 
   @override
-  void saveReview(Review review) async {
+  Future<bool> saveReview(Review review) async {
     _reviews.add(review);
     notifyListeners();
 
     try {
-      final reviewJson = _reviewToJson(review);
-      debugPrint('[DEBUG-review] Saving review: $reviewJson');
-      debugPrint('[DEBUG-review] Current user: ${_client.auth.currentUser?.id}');
-
-      // Check booking status in database
-      final bookingCheck = await _client
-          .from('bookings')
-          .select('id, booking_status, tenant_id')
-          .eq('id', review.bookingId)
-          .maybeSingle();
-      debugPrint('[DEBUG-review] Booking in DB: $bookingCheck');
-
-      await _client.from('reviews').insert(reviewJson);
+      // Upsert on the (booking, reviewer, type) unique key so retrying a
+      // submission never fails with a duplicate error.
+      await _client.from('reviews').upsert(
+            _reviewToJson(review),
+            onConflict: 'booking_id,reviewer_id,review_type',
+          );
       await _refreshReviews();
+      return true;
     } catch (e) {
       debugPrint('Error saving review: $e');
+      // Roll back the optimistic local copy so the UI reflects reality.
+      _reviews.removeWhere((r) => r.id == review.id);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  @override
+  Future<String?> fetchHostIdForListing(String listingId) async {
+    final cached = getListingById(listingId)?.hostId;
+    if (cached != null && cached.isNotEmpty) return cached;
+
+    try {
+      // The listings cache is paginated and RLS hides inactive listings, so
+      // resolve the owner through a definer function that also covers
+      // listings the caller has booked.
+      final result = await _client.rpc(
+        'get_listing_owner',
+        params: {'p_listing_id': listingId},
+      );
+      final hostId = result as String?;
+      return (hostId != null && hostId.isNotEmpty) ? hostId : null;
+    } catch (e) {
+      debugPrint('Error fetching listing owner: $e');
+      return null;
     }
   }
 
@@ -1038,11 +1092,14 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
     return _bookings.where((b) => b.id == id).firstOrNull;
   }
 
-  /// Fetch booking directly from Supabase (async version for when local cache misses)
-  Future<Booking?> fetchBookingById(String id) async {
-    // First check local cache
+  /// Fetch booking directly from Supabase (async version for when local cache
+  /// misses). With [forceRefresh] the server is always consulted and the
+  /// cached row replaced — use when the status must be authoritative (e.g.
+  /// deciding whether a booking request is still pending).
+  Future<Booking?> fetchBookingById(String id,
+      {bool forceRefresh = false}) async {
     final local = _bookings.where((b) => b.id == id).firstOrNull;
-    if (local != null) return local;
+    if (local != null && !forceRefresh) return local;
 
     // Fetch from Supabase
     try {
@@ -1054,7 +1111,7 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
 
       if (response != null) {
         final booking = _bookingFromJson(response);
-        // Add to local cache
+        _bookings.removeWhere((b) => b.id == id);
         _bookings.add(booking);
         notifyListeners();
         return booking;
@@ -1062,7 +1119,7 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
     } catch (e) {
       debugPrint('Error fetching booking $id: $e');
     }
-    return null;
+    return local;
   }
 
   @override
@@ -1276,20 +1333,26 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
       if (booking.rejectionReason != null) {
         updateData['rejection_reason'] = booking.rejectionReason;
       }
+      // Milestone timestamps come from DateTime.now() (local, UTC+6 here);
+      // serialize as UTC or Postgres reads them 6 hours in the future.
       if (booking.confirmedAt != null) {
-        updateData['confirmed_at'] = booking.confirmedAt!.toIso8601String();
+        updateData['confirmed_at'] =
+            booking.confirmedAt!.toUtc().toIso8601String();
       }
       if (booking.actualCheckIn != null) {
-        updateData['actual_check_in'] = booking.actualCheckIn!.toIso8601String();
+        updateData['actual_check_in'] =
+            booking.actualCheckIn!.toUtc().toIso8601String();
       }
       if (booking.completedAt != null) {
-        updateData['completed_at'] = booking.completedAt!.toIso8601String();
+        updateData['completed_at'] =
+            booking.completedAt!.toUtc().toIso8601String();
       }
       if (booking.cancelledBy != null) {
         updateData['cancelled_by'] = booking.cancelledBy;
       }
       if (booking.cancelledAt != null) {
-        updateData['cancelled_at'] = booking.cancelledAt!.toIso8601String();
+        updateData['cancelled_at'] =
+            booking.cancelledAt!.toUtc().toIso8601String();
       }
 
       debugPrint('[DEBUG-booking] Full update data: $updateData');
@@ -1505,7 +1568,11 @@ class SupabaseMusafirRepository extends ChangeNotifier with SafeNotifier
 
   @override
   Future<void> resetBookingsPagination(String userId) async {
-    _bookings = [];
+    // Only drop this tenant's own bookings. The cache also holds bookings
+    // for listings the user HOSTS (loaded by _refreshBookings); wiping those
+    // here made accepted reservations vanish from the host's Reservations
+    // tab whenever the guest-mode Trips tab (re)loaded its pages.
+    _bookings.removeWhere((b) => b.userId == userId);
     _bookingsCursor = null;
     _hasMoreBookings = true;
     _isLoadingBookings = false;

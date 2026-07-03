@@ -50,11 +50,16 @@ class TestReviewStore implements ReviewStore {
   @override
   void updateReview(Review review) {
     _reviews[review.id] = review;
-    // Update in lists too
-    final bookingReviews = _byBooking[review.bookingId];
-    if (bookingReviews != null) {
-      final idx = bookingReviews.indexWhere((r) => r.id == review.id);
-      if (idx != -1) bookingReviews[idx] = review;
+    // Update in every index, not just _byBooking — reveal happens via
+    // updateReview, so a stale copy here hides the review from the
+    // revealed-only lookups.
+    for (final list in [
+      _byBooking[review.bookingId],
+      if (review.listingId != null) _byListing[review.listingId!],
+      _byReviewee[review.revieweeId],
+    ]) {
+      final idx = list?.indexWhere((r) => r.id == review.id) ?? -1;
+      if (idx != -1) list![idx] = review;
     }
   }
 

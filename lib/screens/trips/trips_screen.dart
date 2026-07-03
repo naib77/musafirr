@@ -3,14 +3,17 @@ import 'package:flutter/material.dart';
 import '../../models/booking.dart';
 import '../../models/booking_categorizer.dart';
 import '../../models/booking_status.dart';
-import '../../models/guest_review_ratings.dart';
 import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
+import '../../services/booking/booking_lifecycle_service.dart'
+    show InvalidBookingStateException;
+import '../../services/booking/booking_messaging_coordinator.dart';
 import '../../services/booking/booking_rules.dart';
 import '../../state/auth_state.dart';
 import '../../state/messaging_state.dart';
 import '../../state/notification_state.dart';
 import '../../widgets/app_page_header.dart';
+import '../../widgets/booking_filter_bar.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/notification_bell.dart';
 import '../messaging/chat_screen.dart';
@@ -23,7 +26,7 @@ class TripsScreen extends StatefulWidget {
     required this.authState,
     this.messagingState,
     this.notificationState,
-    this.onOpenInbox,
+    this.bookingMessagingCoordinator,
     this.onOpenNotifications,
     this.onNavigateToExplore,
     this.onTabTapped,
@@ -33,7 +36,10 @@ class TripsScreen extends StatefulWidget {
   final AuthStateNotifier authState;
   final MessagingStateNotifier? messagingState;
   final NotificationStateNotifier? notificationState;
-  final VoidCallback? onOpenInbox;
+
+  /// When provided, guest cancellations go through the coordinator so the
+  /// host receives the cancellation message in the conversation.
+  final BookingMessagingCoordinator? bookingMessagingCoordinator;
   final VoidCallback? onOpenNotifications;
   final VoidCallback? onNavigateToExplore;
   /// Called when the bottom navigation tab is tapped while already on this screen
@@ -46,6 +52,10 @@ class TripsScreen extends StatefulWidget {
 class _TripsScreenState extends State<TripsScreen> {
   int _selectedIndex = 0;
   final _bookingRules = BookingRules();
+
+  // List controls (shared across tabs): date sort direction + status filter.
+  bool _sortDescending = false;
+  BookingStatus? _statusFilter;
 
   // Scroll controllers for each tab (for pagination)
   late final ScrollController _upcomingScrollController;
@@ -145,7 +155,6 @@ class _TripsScreenState extends State<TripsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final unreadMessageCount = widget.messagingState?.totalUnreadCount ?? 0;
 
     return Scaffold(
       body: Column(
@@ -154,13 +163,6 @@ class _TripsScreenState extends State<TripsScreen> {
             title: 'My Trips',
             subtitle: 'Upcoming and past stays',
             actions: [
-              if (widget.messagingState != null && widget.onOpenInbox != null)
-                HeaderActionButton(
-                  icon: Icons.chat_bubble_outline,
-                  badgeCount: unreadMessageCount,
-                  onTap: widget.onOpenInbox,
-                  tooltip: 'Messages',
-                ),
               if (widget.notificationState != null &&
                   widget.onOpenNotifications != null)
                 AnimatedNotificationBell(
@@ -192,26 +194,62 @@ class _TripsScreenState extends State<TripsScreen> {
             _TabData('Past', counts?['past'] ?? categorizer.past.length),
           ];
 
+          // The current tab's raw bucket, then derive filter options and
+          // apply the user's status filter + date sort.
+          final rawList = switch (_selectedIndex) {
+            0 => categorizer.upcoming,
+            1 => categorizer.current,
+            _ => categorizer.past,
+          };
+          final available = distinctStatuses(rawList);
+          // If the active filter isn't valid for this tab, ignore it.
+          final effectiveStatus =
+              (_statusFilter != null && available.contains(_statusFilter))
+                  ? _statusFilter
+                  : null;
+          final processed = applyBookingFilterSort(
+            rawList,
+            statusFilter: effectiveStatus,
+            sortDescending: _sortDescending,
+          );
+          final tabType = switch (_selectedIndex) {
+            0 => _TabType.upcoming,
+            1 => _TabType.current,
+            _ => _TabType.past,
+          };
+
           return Column(
             children: [
               // Modern 3-tab segmented control with badges
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                 child: _SegmentedControlWithBadges(
                   selectedIndex: _selectedIndex,
                   tabs: tabs,
                   onChanged: (index) => setState(() => _selectedIndex = index),
                 ),
               ),
+              // Sort + status filter controls
+              BookingFilterBar(
+                sortDescending: _sortDescending,
+                statusFilter: effectiveStatus,
+                availableStatuses: available,
+                onSortChanged: (desc) =>
+                    setState(() => _sortDescending = desc),
+                onStatusChanged: (status) =>
+                    setState(() => _statusFilter = status),
+              ),
               // Content
               Expanded(
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 300),
-                  child: _buildTabContent(
+                  child: _buildBookingsList(
                     context,
                     theme,
-                    categorizer,
-                    user.id,
+                    processed,
+                    tabType: tabType,
+                    userId: user.id,
+                    key: ValueKey('tab-$_selectedIndex'),
                   ),
                 ),
               ),
@@ -223,45 +261,6 @@ class _TripsScreenState extends State<TripsScreen> {
         ],
       ),
     );
-  }
-
-  Widget _buildTabContent(
-    BuildContext context,
-    ThemeData theme,
-    BookingCategorizer categorizer,
-    String userId,
-  ) {
-    switch (_selectedIndex) {
-      case 0:
-        return _buildBookingsList(
-          context,
-          theme,
-          categorizer.upcoming,
-          tabType: _TabType.upcoming,
-          userId: userId,
-          key: const ValueKey('upcoming'),
-        );
-      case 1:
-        return _buildBookingsList(
-          context,
-          theme,
-          categorizer.current,
-          tabType: _TabType.current,
-          userId: userId,
-          key: const ValueKey('current'),
-        );
-      case 2:
-        return _buildBookingsList(
-          context,
-          theme,
-          categorizer.past,
-          tabType: _TabType.past,
-          userId: userId,
-          key: const ValueKey('past'),
-        );
-      default:
-        return const SizedBox.shrink();
-    }
   }
 
   Widget _buildLoginPrompt(BuildContext context, ThemeData theme) {
@@ -384,10 +383,8 @@ class _TripsScreenState extends State<TripsScreen> {
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   final booking = bookings[index];
-                  // Show message button for confirmed/active bookings
-                  final showMessageButton = widget.messagingState != null &&
-                      (booking.status == BookingStatus.confirmed ||
-                          booking.status == BookingStatus.active);
+                  // Messaging is always available — even after the stay ends.
+                  final showMessageButton = widget.messagingState != null;
 
                   return Padding(
                     padding: EdgeInsets.only(top: index > 0 ? 16 : 0),
@@ -518,10 +515,8 @@ class _TripsScreenState extends State<TripsScreen> {
   }
 
   void _showBookingDetails(BuildContext context, Booking booking) {
-    // Show message button for confirmed/active bookings
-    final showMessageButton = widget.messagingState != null &&
-        (booking.status == BookingStatus.confirmed ||
-            booking.status == BookingStatus.active);
+    // Messaging is always available — even after the stay ends.
+    final showMessageButton = widget.messagingState != null;
 
     showModalBottomSheet(
       context: context,
@@ -532,6 +527,7 @@ class _TripsScreenState extends State<TripsScreen> {
         repository: widget.repository,
         authState: widget.authState,
         bookingRules: _bookingRules,
+        bookingMessagingCoordinator: widget.bookingMessagingCoordinator,
         onNavigateToExplore: widget.onNavigateToExplore,
         onMessageHost: showMessageButton
             ? () => _openChatForBooking(booking)
@@ -1375,6 +1371,7 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
     required this.repository,
     required this.authState,
     required this.bookingRules,
+    this.bookingMessagingCoordinator,
     this.onNavigateToExplore,
     this.onMessageHost,
   });
@@ -1383,6 +1380,10 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
   final MusafirRepository repository;
   final AuthStateNotifier authState;
   final BookingRules bookingRules;
+
+  /// When provided, cancelling routes through the coordinator so the host
+  /// receives the cancellation message in the conversation.
+  final BookingMessagingCoordinator? bookingMessagingCoordinator;
   final VoidCallback? onNavigateToExplore;
   final VoidCallback? onMessageHost;
 
@@ -1790,31 +1791,46 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
       MaterialPageRoute(
         builder: (context) => GuestReviewScreen(
           booking: booking,
-          onSubmit: (GuestReviewRatings ratings, String comment) {
-            final listing = repository.listings.firstWhere(
-              (l) => l.id == booking.listingId,
-              orElse: () => repository.listings.first,
-            );
+          onSubmit: (GuestReviewRatings ratings, String comment) async {
+            final hostId =
+                await repository.fetchHostIdForListing(booking.listingId);
+            if (!context.mounted) return false;
+            if (hostId == null || hostId.isEmpty) {
+              ModernBanner.showError(
+                context,
+                'Could not submit review. Please try again later.',
+              );
+              return false;
+            }
 
             final review = Review.guestReview(
               id: DateTime.now().millisecondsSinceEpoch.toString(),
               bookingId: booking.id,
               listingId: booking.listingId,
               reviewerId: user.id,
-              reviewerName: user.name ?? 'Guest',
+              reviewerName: user.name,
               reviewerAvatarUrl: user.avatarUrl,
-              hostId: listing.hostId ?? '',
+              hostId: hostId,
               ratings: ratings,
               comment: comment,
             );
 
-            repository.saveReview(review);
+            final saved = await repository.saveReview(review);
+            if (!context.mounted) return saved;
+            if (!saved) {
+              ModernBanner.showError(
+                context,
+                'Could not submit review. Please check your connection and try again.',
+              );
+              return false;
+            }
 
             Navigator.pop(context);
             ModernBanner.showSuccess(
               context,
               'Thank you for your review!',
             );
+            return true;
           },
         ),
       ),
@@ -1836,15 +1852,8 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
           ),
           FilledButton(
             onPressed: () {
-              final updated = booking.copyWith(
-                status: BookingStatus.cancelled,
-                cancelledAt: DateTime.now(),
-                cancelledBy: authState.currentUser?.id,
-              );
-              repository.updateBooking(updated);
               Navigator.pop(dialogContext);
-              Navigator.pop(context);
-              ModernBanner.showSuccess(context, 'Booking cancelled');
+              _performCancel(context);
             },
             style: FilledButton.styleFrom(
               backgroundColor: Colors.red,
@@ -1854,6 +1863,47 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// Cancel via the coordinator so the host gets the cancellation message in
+  /// the conversation; falls back to a plain status update when absent.
+  /// Runs while the sheet is still mounted so the result banner can show,
+  /// then closes the sheet.
+  Future<void> _performCancel(BuildContext context) async {
+    final coordinator = bookingMessagingCoordinator;
+    final userId = authState.currentUser?.id;
+
+    if (coordinator != null && userId != null) {
+      try {
+        final listing = repository.getListingById(booking.listingId);
+        await coordinator.cancelBookingWithNotification(
+          bookingId: booking.id,
+          cancelledBy: userId,
+          isHost: false,
+          hostId: listing?.hostId ?? '',
+        );
+        if (!context.mounted) return;
+        ModernBanner.showSuccess(context, 'Booking cancelled');
+        Navigator.pop(context);
+      } on InvalidBookingStateException catch (e) {
+        if (context.mounted) ModernBanner.showError(context, e.message);
+      } catch (_) {
+        if (context.mounted) {
+          ModernBanner.showError(context, 'Could not cancel. Please try again.');
+        }
+      }
+      return;
+    }
+
+    final updated = booking.copyWith(
+      status: BookingStatus.cancelled,
+      cancelledAt: DateTime.now(),
+      cancelledBy: userId,
+    );
+    repository.updateBooking(updated);
+    if (!context.mounted) return;
+    ModernBanner.showSuccess(context, 'Booking cancelled');
+    Navigator.pop(context);
   }
 
   String _formatFullDate(DateTime date) {

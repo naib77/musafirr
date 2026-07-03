@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/theme/app_colors.dart';
 import '../models/booking_status.dart';
 import '../repositories/musafir_repository.dart';
 import '../services/booking/booking_messaging_coordinator.dart';
@@ -102,19 +103,11 @@ class _MainShellState extends State<MainShell> {
           bookingLifecycleService: widget.bookingLifecycleService!,
           authState: widget.authState,
           messagingState: widget.messagingState,
+          bookingMessagingCoordinator: widget.bookingMessagingCoordinator,
           // After a host accepts a booking, land them on the shell's live
           // Reservations tab (index 1) rather than a standalone screen.
           onViewReservations: () => setState(() => _hostTabIndex = 1),
         ),
-      ),
-    );
-  }
-
-  void _openInbox() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => InboxScreen(messagingState: widget.messagingState),
       ),
     );
   }
@@ -186,12 +179,32 @@ class _MainShellState extends State<MainShell> {
     );
   }
 
+  /// Airbnb-style tab bar shell: hairline top border and capped text
+  /// scaling so five labels always fit on one line, even with large
+  /// system fonts.
+  Widget _navBarShell(Widget bar) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(
+          top: BorderSide(color: AppColors.outline, width: 0.5),
+        ),
+      ),
+      child: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.1,
+        child: bar,
+      ),
+    );
+  }
+
   // ============================================================
   // GUEST MODE
   // ============================================================
 
   Widget _buildGuestNavigationBar() {
-    return NavigationBar(
+    final unreadMessageCount = widget.messagingState?.totalUnreadCount ?? 0;
+
+    return _navBarShell(NavigationBar(
       selectedIndex: _guestTabIndex,
       onDestinationSelected: (index) {
         // If tapping the same tab (Trips = 2), trigger refresh
@@ -200,34 +213,38 @@ class _MainShellState extends State<MainShell> {
         }
         setState(() => _guestTabIndex = index);
       },
-      destinations: const [
-        NavigationDestination(
+      destinations: [
+        const NavigationDestination(
           icon: Icon(Icons.search_outlined),
           selectedIcon: Icon(Icons.search),
           label: 'Explore',
         ),
-        NavigationDestination(
+        const NavigationDestination(
           icon: Icon(Icons.favorite_outline),
           selectedIcon: Icon(Icons.favorite),
           label: 'Wishlists',
         ),
-        NavigationDestination(
+        const NavigationDestination(
           icon: Icon(Icons.luggage_outlined),
           selectedIcon: Icon(Icons.luggage),
           label: 'Trips',
         ),
         NavigationDestination(
+          icon: _MessagesNavIcon(count: unreadMessageCount, selected: false),
+          selectedIcon:
+              _MessagesNavIcon(count: unreadMessageCount, selected: true),
+          label: 'Messages',
+        ),
+        const NavigationDestination(
           icon: Icon(Icons.person_outline),
           selectedIcon: Icon(Icons.person),
           label: 'Profile',
         ),
       ],
-    );
+    ));
   }
 
   Widget _buildGuestContent() {
-    final unreadMessageCount = widget.messagingState?.totalUnreadCount ?? 0;
-
     return IndexedStack(
       key: const ValueKey('guest'),
       index: _guestTabIndex,
@@ -240,14 +257,13 @@ class _MainShellState extends State<MainShell> {
           searchState: widget.searchState,
           notificationState: widget.notificationState,
           bookingLifecycleService: widget.bookingLifecycleService,
+          bookingMessagingCoordinator: widget.bookingMessagingCoordinator,
           messagingState: widget.messagingState,
-          onOpenInbox: _openInbox,
         ),
         // Wishlists - slim header instead of full AppBar
         Column(
           children: [
-            _buildSlimHeader('Wishlists', unreadMessageCount,
-                subtitle: 'Your saved places'),
+            _buildSlimHeader('Wishlists', subtitle: 'Your saved places'),
             Expanded(
               child: WishlistsScreen(
                 repository: widget.repository,
@@ -263,15 +279,26 @@ class _MainShellState extends State<MainShell> {
           authState: widget.authState,
           messagingState: widget.messagingState,
           notificationState: widget.notificationState,
-          onOpenInbox: _openInbox,
+          bookingMessagingCoordinator: widget.bookingMessagingCoordinator,
           onOpenNotifications: _openNotificationCenter,
           onNavigateToExplore: () => setState(() => _guestTabIndex = 0),
+        ),
+        // Messages - slim header instead of full AppBar
+        Column(
+          children: [
+            _buildSlimHeader('Messages', subtitle: 'Chats with your hosts'),
+            Expanded(
+              child: InboxScreen(
+                messagingState: widget.messagingState,
+                embedded: true,
+              ),
+            ),
+          ],
         ),
         // Profile - slim header instead of full AppBar
         Column(
           children: [
-            _buildSlimHeader('Profile', unreadMessageCount,
-                subtitle: 'Account and settings'),
+            _buildSlimHeader('Profile', subtitle: 'Account and settings'),
             Expanded(
               child: ProfileScreen(
                 authState: widget.authState,
@@ -290,7 +317,9 @@ class _MainShellState extends State<MainShell> {
   // ============================================================
 
   Widget _buildHostNavigationBar() {
-    return NavigationBar(
+    final unreadMessageCount = widget.messagingState?.totalUnreadCount ?? 0;
+
+    return _navBarShell(NavigationBar(
       selectedIndex: _hostTabIndex,
       onDestinationSelected: (index) {
         setState(() => _hostTabIndex = index);
@@ -317,18 +346,22 @@ class _MainShellState extends State<MainShell> {
           selectedIcon: Icon(Icons.account_balance_wallet),
           label: 'Earnings',
         ),
+        NavigationDestination(
+          icon: _MessagesNavIcon(count: unreadMessageCount, selected: false),
+          selectedIcon:
+              _MessagesNavIcon(count: unreadMessageCount, selected: true),
+          label: 'Messages',
+        ),
         const NavigationDestination(
           icon: Icon(Icons.person_outline),
           selectedIcon: Icon(Icons.person),
           label: 'Profile',
         ),
       ],
-    );
+    ));
   }
 
   Widget _buildHostContent() {
-    final unreadMessageCount = widget.messagingState?.totalUnreadCount ?? 0;
-
     return IndexedStack(
       key: const ValueKey('host'),
       index: _hostTabIndex,
@@ -336,16 +369,14 @@ class _MainShellState extends State<MainShell> {
         // Dashboard - slim header instead of full AppBar
         Column(
           children: [
-            _buildSlimHeader('Dashboard', unreadMessageCount,
-                subtitle: 'Your hosting at a glance',
-                showLeaderboard: true),
+            _buildSlimHeader('Dashboard',
+                subtitle: 'Your hosting at a glance', showLeaderboard: true),
             Expanded(
               child: HostDashboardScreen(
                 repository: widget.repository,
                 authState: widget.authState,
                 messagingState: widget.messagingState,
-                onOpenReservations: () =>
-                    setState(() => _hostTabIndex = 1),
+                onOpenReservations: () => setState(() => _hostTabIndex = 1),
               ),
             ),
           ],
@@ -357,14 +388,12 @@ class _MainShellState extends State<MainShell> {
           messagingState: widget.messagingState,
           bookingMessagingCoordinator: widget.bookingMessagingCoordinator,
           notificationState: widget.notificationState,
-          onOpenInbox: _openInbox,
           onOpenNotifications: _openNotificationCenter,
         ),
         // Earnings - slim header instead of full AppBar
         Column(
           children: [
-            _buildSlimHeader('Earnings', unreadMessageCount,
-                subtitle: 'Track your income'),
+            _buildSlimHeader('Earnings', subtitle: 'Track your income'),
             Expanded(
               child: EarningsScreen(
                 repository: widget.repository,
@@ -373,11 +402,22 @@ class _MainShellState extends State<MainShell> {
             ),
           ],
         ),
+        // Messages - slim header instead of full AppBar
+        Column(
+          children: [
+            _buildSlimHeader('Messages', subtitle: 'Chats with your guests'),
+            Expanded(
+              child: InboxScreen(
+                messagingState: widget.messagingState,
+                embedded: true,
+              ),
+            ),
+          ],
+        ),
         // Profile (shared) - slim header instead of full AppBar
         Column(
           children: [
-            _buildSlimHeader('Profile', unreadMessageCount,
-                subtitle: 'Account and settings'),
+            _buildSlimHeader('Profile', subtitle: 'Account and settings'),
             Expanded(
               child: ProfileScreen(
                 authState: widget.authState,
@@ -398,9 +438,11 @@ class _MainShellState extends State<MainShell> {
   /// The unified page header shown at the top of every primary tab. Sits
   /// directly below the Guest/Host switcher (which is the single top-inset
   /// consumer, so this adds no SafeArea of its own).
+  ///
+  /// Messages has its own bottom-navigation tab (with unread badge), so the
+  /// header carries no chat shortcut.
   Widget _buildSlimHeader(
-    String title,
-    int unreadMessageCount, {
+    String title, {
     String? subtitle,
     bool showLeaderboard = false,
   }) {
@@ -408,15 +450,7 @@ class _MainShellState extends State<MainShell> {
       title: title,
       subtitle: subtitle,
       actions: [
-        if (showLeaderboard)
-          _LeaderboardHeaderButton(onTap: _openLeaderboard),
-        if (widget.messagingState != null)
-          HeaderActionButton(
-            icon: Icons.chat_bubble_outline,
-            badgeCount: unreadMessageCount,
-            onTap: _openInbox,
-            tooltip: 'Messages',
-          ),
+        if (showLeaderboard) _LeaderboardHeaderButton(onTap: _openLeaderboard),
         if (widget.notificationState != null)
           AnimatedNotificationBell(
             notificationState: widget.notificationState!,
@@ -435,6 +469,27 @@ class _MainShellState extends State<MainShell> {
           repository: widget.repository,
           currentUserId: widget.authState.currentUser?.id,
         ),
+      ),
+    );
+  }
+}
+
+/// Messages destination icon with an unread-count badge, Airbnb-style.
+class _MessagesNavIcon extends StatelessWidget {
+  const _MessagesNavIcon({required this.count, required this.selected});
+
+  final int count;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    // Airbnb-style unread indicator: a small red dot, no count.
+    return Badge(
+      isLabelVisible: count > 0,
+      smallSize: 8,
+      backgroundColor: AppColors.error,
+      child: Icon(
+        selected ? Icons.chat_bubble : Icons.chat_bubble_outline,
       ),
     );
   }

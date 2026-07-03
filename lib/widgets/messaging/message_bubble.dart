@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/message.dart';
 
@@ -27,6 +28,11 @@ class MessageBubble extends StatelessWidget {
   final VoidCallback? onReply;
   final VoidCallback? onDelete;
   final VoidCallback? onCopy;
+
+  /// Booking cards draw their own surface, border, and shadow — the chat
+  /// bubble around them goes transparent.
+  bool get _isStandaloneCard =>
+      message.contentType == MessageContentType.bookingCard;
 
   @override
   Widget build(BuildContext context) {
@@ -77,22 +83,29 @@ class MessageBubble extends StatelessWidget {
                   maxWidth: MediaQuery.of(context).size.width * 0.75,
                 ),
                 decoration: BoxDecoration(
-                  color: isMe
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.surfaceContainerHighest,
+                  // Booking cards render as standalone cards, not inside a
+                  // colored bubble — a white card in a teal frame reads as
+                  // dated, and the card carries its own border and shadow.
+                  color: _isStandaloneCard
+                      ? Colors.transparent
+                      : isMe
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.only(
                     topLeft: const Radius.circular(16),
                     topRight: const Radius.circular(16),
                     bottomLeft: Radius.circular(isMe ? 16 : 4),
                     bottomRight: Radius.circular(isMe ? 4 : 16),
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
+                  boxShadow: _isStandaloneCard
+                      ? null
+                      : [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.only(
@@ -168,7 +181,9 @@ class MessageBubble extends StatelessWidget {
 
   Widget _buildFooter(BuildContext context) {
     final theme = Theme.of(context);
-    final textColor = isMe
+    // On a standalone card the bubble is transparent, so the timestamp sits
+    // on the scaffold background — never use onPrimary there.
+    final textColor = isMe && !_isStandaloneCard
         ? theme.colorScheme.onPrimary.withValues(alpha: 0.7)
         : theme.colorScheme.onSurfaceVariant;
 
@@ -234,7 +249,8 @@ class MessageBubble extends StatelessWidget {
                 },
               ),
 
-            if (message.contentType == MessageContentType.text && onCopy != null)
+            if (message.contentType == MessageContentType.text &&
+                onCopy != null)
               ListTile(
                 leading: const Icon(Icons.copy),
                 title: const Text('Copy'),
@@ -317,7 +333,8 @@ class _DeletedMessageBubble extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            color: theme.colorScheme.surfaceContainerHighest
+                .withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: theme.colorScheme.outlineVariant,
@@ -531,131 +548,146 @@ class _LocationContent extends StatelessWidget {
   final Message message;
   final bool isMe;
 
+  /// Opens the shared coordinates in the maps app / Google Maps.
+  Future<void> _openInMaps() async {
+    final metadata = message.metadata as LocationMetadata?;
+    if (metadata == null) return;
+
+    final uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1'
+      '&query=${metadata.latitude},${metadata.longitude}',
+    );
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final metadata = message.metadata as LocationMetadata?;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Map preview
-        ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            width: 240,
-            height: 120,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest,
-            ),
-            child: Stack(
-              children: [
-                // Static map image or placeholder
-                if (metadata?.staticMapUrl != null)
-                  Image.network(
-                    metadata!.staticMapUrl!,
-                    width: 240,
-                    height: 120,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _buildPlaceholder(theme),
-                  )
-                else
-                  _buildPlaceholder(theme),
+    return GestureDetector(
+      onTap: _openInMaps,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Map preview
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: 240,
+              height: 120,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest,
+              ),
+              child: Stack(
+                children: [
+                  // Static map image or placeholder
+                  if (metadata?.staticMapUrl != null)
+                    Image.network(
+                      metadata!.staticMapUrl!,
+                      width: 240,
+                      height: 120,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildPlaceholder(theme),
+                    )
+                  else
+                    _buildPlaceholder(theme),
 
-                // Location pin overlay
-                Center(
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.2),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Icon(
-                      Icons.location_on,
-                      color: theme.colorScheme.onPrimary,
-                      size: 20,
+                  // Location pin overlay
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.2),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        Icons.location_on,
+                        color: theme.colorScheme.onPrimary,
+                        size: 20,
+                      ),
                     ),
                   ),
-                ),
 
-                // Tap hint
-                Positioned(
-                  bottom: 8,
-                  right: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.open_in_new,
-                          size: 12,
-                          color: Colors.white,
-                        ),
-                        SizedBox(width: 4),
-                        Text(
-                          'Open in Maps',
-                          style: TextStyle(
-                            fontSize: 10,
+                  // Tap hint
+                  Positioned(
+                    bottom: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.open_in_new,
+                            size: 12,
                             color: Colors.white,
                           ),
-                        ),
-                      ],
+                          SizedBox(width: 4),
+                          Text(
+                            'Open in Maps',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
+                ],
+              ),
+            ),
+          ),
+
+          // Location name/address
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (metadata?.placeName != null) ...[
+                  Text(
+                    metadata!.placeName!,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: isMe
+                          ? theme.colorScheme.onPrimary
+                          : theme.colorScheme.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                ],
+                if (metadata?.address != null)
+                  Text(
+                    metadata!.address!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: isMe
+                          ? theme.colorScheme.onPrimary.withValues(alpha: 0.8)
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
               ],
             ),
           ),
-        ),
-
-        // Location name/address
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (metadata?.placeName != null) ...[
-                Text(
-                  metadata!.placeName!,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: isMe
-                        ? theme.colorScheme.onPrimary
-                        : theme.colorScheme.onSurface,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-              ],
-              if (metadata?.address != null)
-                Text(
-                  metadata!.address!,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: isMe
-                        ? theme.colorScheme.onPrimary.withValues(alpha: 0.8)
-                        : theme.colorScheme.onSurfaceVariant,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-            ],
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -692,120 +724,166 @@ class _BookingCardContent extends StatelessWidget {
       return const Text('Booking details unavailable');
     }
 
-    return Container(
-      width: 260,
+    final card = Container(
+      width: 250,
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: theme.colorScheme.outlineVariant,
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Image
-          if (metadata.listingImageUrl != null)
-            ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(11)),
-              child: Image.network(
-                metadata.listingImageUrl!,
-                width: 260,
-                height: 100,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  width: 260,
-                  height: 100,
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  child: const Icon(Icons.home),
-                ),
+          // Photo with the status pill floating on top.
+          Stack(
+            children: [
+              if (metadata.listingImageUrl != null)
+                Image.network(
+                  metadata.listingImageUrl!,
+                  width: 250,
+                  height: 120,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _imagePlaceholder(theme),
+                )
+              else
+                _imagePlaceholder(theme),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: _BookingStatusBadge(status: metadata.status),
               ),
-            )
-          else
-            Container(
-              width: 260,
-              height: 80,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer,
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(11)),
-              ),
-              child: Icon(
-                Icons.home,
-                size: 32,
-                color: theme.colorScheme.onPrimaryContainer,
-              ),
-            ),
+            ],
+          ),
 
-          // Details
           Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   metadata.listingName,
                   style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
+                    height: 1.25,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
 
-                // Dates
+                // Dates + real stay length ("Jul 3 · 10:00 AM – 12:00 PM · 2 hours")
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Icon(
-                      Icons.calendar_today,
-                      size: 14,
+                      Icons.calendar_today_outlined,
+                      size: 13,
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                     const SizedBox(width: 6),
-                    Text(
-                      metadata.dateRange,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '(${metadata.nights} ${metadata.nights == 1 ? 'night' : 'nights'})',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                    Expanded(
+                      child: Text(
+                        '${metadata.dateRange} · ${metadata.displayDuration}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          height: 1.3,
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 12),
 
-                // Price
+                Container(
+                  height: 1,
+                  color:
+                      theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+                ),
+                const SizedBox(height: 10),
+
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Icon(
-                      Icons.payments,
-                      size: 14,
-                      color: theme.colorScheme.onSurfaceVariant,
+                    Text(
+                      'Total',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                    const SizedBox(width: 6),
                     Text(
                       '${metadata.currency == 'BDT' ? '৳' : '\$'}${metadata.totalPrice.toStringAsFixed(0)}',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-
-                // Status badge
-                _BookingStatusBadge(status: metadata.status),
               ],
             ),
           ),
         ],
       ),
+    );
+
+    // Message text below the card. Older welcome messages carried the whole
+    // rendered template here, so hiding it loses the host's welcome.
+    final caption = message.content.trim();
+    return _withCaption(theme, card, caption);
+  }
+
+  Widget _imagePlaceholder(ThemeData theme) {
+    return Container(
+      width: 250,
+      height: 120,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            theme.colorScheme.primaryContainer,
+            theme.colorScheme.primaryContainer.withValues(alpha: 0.6),
+          ],
+        ),
+      ),
+      child: Icon(
+        Icons.home_rounded,
+        size: 36,
+        color: theme.colorScheme.onPrimaryContainer.withValues(alpha: 0.7),
+      ),
+    );
+  }
+
+  Widget _withCaption(ThemeData theme, Widget card, String caption) {
+    if (caption.isEmpty) return card;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        card,
+        const SizedBox(height: 6),
+        SizedBox(
+          width: 250,
+          child: Text(
+            caption,
+            // The bubble behind a card is transparent, so caption text sits
+            // on the scaffold background.
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -843,24 +921,32 @@ class _BookingStatusBadge extends StatelessWidget {
         icon = Icons.info;
     }
 
+    // Solid pill readable on top of the listing photo.
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        color: color.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: color),
+          Icon(icon, size: 12, color: Colors.white),
           const SizedBox(width: 4),
           Text(
             status[0].toUpperCase() + status.substring(1).toLowerCase(),
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: color,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              letterSpacing: 0.2,
             ),
           ),
         ],

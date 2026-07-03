@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/notification_preferences.dart';
+import '../../services/review/review_prompt_config.dart';
 import '../../state/notification_state.dart';
 import '../../widgets/modern_banner.dart';
 
@@ -22,6 +23,8 @@ class _NotificationSettingsScreenState
     extends State<NotificationSettingsScreen> {
   late NotificationPreferences _preferences;
   bool _hasChanges = false;
+  ReviewReminderFrequency _reviewReminderFrequency =
+      ReviewPromptConfig.defaultFrequency;
 
   @override
   void initState() {
@@ -30,6 +33,15 @@ class _NotificationSettingsScreenState
         NotificationPreferences.defaultFor(
           widget.notificationState.currentUserId ?? 'unknown',
         );
+    ReviewPromptConfig.getFrequency().then((frequency) {
+      if (mounted) setState(() => _reviewReminderFrequency = frequency);
+    });
+  }
+
+  void _setReviewReminderFrequency(ReviewReminderFrequency frequency) {
+    setState(() => _reviewReminderFrequency = frequency);
+    // Device-local setting; saved immediately, no Save button needed.
+    ReviewPromptConfig.setFrequency(frequency);
   }
 
   void _updatePreferences(NotificationPreferences newPrefs) {
@@ -80,6 +92,38 @@ class _NotificationSettingsScreenState
               color: _preferences.globalEnabled
                   ? theme.colorScheme.primary
                   : theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+
+          const Divider(),
+
+          // Review reminders (in-app prompt, stored on this device)
+          _SectionHeader(title: 'Review Reminders'),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              'How often Musafir may remind you to review completed stays '
+              'when you open the app.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          RadioGroup<ReviewReminderFrequency>(
+            groupValue: _reviewReminderFrequency,
+            onChanged: (value) {
+              if (value != null) _setReviewReminderFrequency(value);
+            },
+            child: Column(
+              children: [
+                for (final frequency in ReviewReminderFrequency.values)
+                  RadioListTile<ReviewReminderFrequency>(
+                    value: frequency,
+                    title: Text(frequency.label),
+                    subtitle: Text(frequency.description),
+                    dense: true,
+                  ),
+              ],
             ),
           ),
 

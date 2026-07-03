@@ -8,11 +8,14 @@ import '../../models/booking_status.dart';
 import '../../models/listing.dart';
 import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart' show MusafirRepository, BookingUpdateError;
+import '../../services/booking/booking_lifecycle_service.dart'
+    show InvalidBookingStateException;
 import '../../services/booking/booking_messaging_coordinator.dart';
 import '../../state/auth_state.dart';
 import '../../state/messaging_state.dart';
 import '../../state/notification_state.dart';
 import '../../widgets/app_page_header.dart';
+import '../../widgets/booking_filter_bar.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/notification_bell.dart';
 import '../../widgets/price_display.dart';
@@ -44,7 +47,6 @@ class HostReservationsScreen extends StatefulWidget {
     this.initialTabIndex = 0,
     this.highlightBookingId,
     this.notificationState,
-    this.onOpenInbox,
     this.onOpenNotifications,
     this.showBackButton = false,
   });
@@ -53,10 +55,9 @@ class HostReservationsScreen extends StatefulWidget {
   final AuthStateNotifier authState;
   final MessagingStateNotifier? messagingState;
 
-  /// Wiring for the unified [AppPageHeader] action chips (messages + bell), so
-  /// this tab matches the other host tabs. Optional — actions hide when null.
+  /// Wiring for the unified [AppPageHeader] notification bell, so this tab
+  /// matches the other host tabs. Optional — the action hides when null.
   final NotificationStateNotifier? notificationState;
-  final VoidCallback? onOpenInbox;
   final VoidCallback? onOpenNotifications;
 
   /// When provided, accepting a booking also creates the guest conversation and
@@ -85,6 +86,10 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
   late TabController _tabController;
   StreamSubscription? _errorSubscription;
 
+  // List controls (shared across tabs): date sort direction + status filter.
+  bool _sortDescending = false;
+  BookingStatus? _statusFilter;
+
   @override
   void initState() {
     super.initState();
@@ -93,9 +98,19 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
       vsync: this,
       initialIndex: widget.initialTabIndex.clamp(0, 2),
     );
+    // Rebuild when the tab changes so the filter bar reflects the active tab's
+    // available statuses.
+    _tabController.addListener(() {
+      if (mounted) setState(() {});
+    });
 
     // Subscribe to booking update errors
     _errorSubscription = widget.repository.bookingUpdateErrors.listen(_onBookingUpdateError);
+
+    // Re-pull everything so reservations never depend on a stale in-memory
+    // cache (e.g. after the guest Trips tab repaginated the bookings list).
+    // Fire-and-forget: the ListenableBuilder repaints when data lands.
+    widget.repository.refresh();
 
     // Show highlight effect if a booking ID was provided
     if (widget.highlightBookingId != null) {
@@ -143,8 +158,6 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
     final theme = Theme.of(context);
     final user = widget.authState.currentUser;
 
-    final unreadMessageCount = widget.messagingState?.totalUnreadCount ?? 0;
-
     return Scaffold(
       body: Column(
         children: [
@@ -155,13 +168,6 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
                 ? () => Navigator.of(context).maybePop()
                 : null,
             actions: [
-              if (widget.messagingState != null && widget.onOpenInbox != null)
-                HeaderActionButton(
-                  icon: Icons.chat_bubble_outline,
-                  badgeCount: unreadMessageCount,
-                  onTap: widget.onOpenInbox,
-                  tooltip: 'Messages',
-                ),
               if (widget.notificationState != null &&
                   widget.onOpenNotifications != null)
                 AnimatedNotificationBell(
@@ -203,33 +209,67 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
           // and the host dashboard, so a booking can't land in different tabs
           // depending on which screen opened it.
           final categorizer = BookingCategorizer(hostBookings);
-          final upcomingBookings = categorizer.upcoming;
-          final currentBookings = categorizer.current;
-          final pastBookings = categorizer.past;
+          final rawLists = [
+            categorizer.upcoming,
+            categorizer.current,
+            categorizer.past,
+          ];
 
-          return TabBarView(
-            controller: _tabController,
+          // Per-tab effective status (ignore a filter not valid for that tab).
+          BookingStatus? effFor(List<Booking> list) =>
+              (_statusFilter != null &&
+                      distinctStatuses(list).contains(_statusFilter))
+                  ? _statusFilter
+                  : null;
+
+          List<Booking> processFor(List<Booking> list) =>
+              applyBookingFilterSort(
+                list,
+                statusFilter: effFor(list),
+                sortDescending: _sortDescending,
+              );
+
+          // The filter bar reflects the currently visible tab.
+          final activeRaw = rawLists[_tabController.index.clamp(0, 2)];
+
+          return Column(
             children: [
-              _buildBookingsList(
-                context,
-                theme,
-                upcomingBookings,
-                emptyMessage: 'No upcoming reservations',
-                emptySubtitle: 'New bookings will appear here',
+              BookingFilterBar(
+                sortDescending: _sortDescending,
+                statusFilter: effFor(activeRaw),
+                availableStatuses: distinctStatuses(activeRaw),
+                onSortChanged: (desc) =>
+                    setState(() => _sortDescending = desc),
+                onStatusChanged: (status) =>
+                    setState(() => _statusFilter = status),
               ),
-              _buildBookingsList(
-                context,
-                theme,
-                currentBookings,
-                emptyMessage: 'No current guests',
-                emptySubtitle: 'Active stays will appear here',
-              ),
-              _buildBookingsList(
-                context,
-                theme,
-                pastBookings,
-                emptyMessage: 'No past reservations',
-                emptySubtitle: 'Completed bookings will appear here',
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildBookingsList(
+                      context,
+                      theme,
+                      processFor(rawLists[0]),
+                      emptyMessage: 'No upcoming reservations',
+                      emptySubtitle: 'New bookings will appear here',
+                    ),
+                    _buildBookingsList(
+                      context,
+                      theme,
+                      processFor(rawLists[1]),
+                      emptyMessage: 'No current guests',
+                      emptySubtitle: 'Active stays will appear here',
+                    ),
+                    _buildBookingsList(
+                      context,
+                      theme,
+                      processFor(rawLists[2]),
+                      emptyMessage: 'No past reservations',
+                      emptySubtitle: 'Completed bookings will appear here',
+                    ),
+                  ],
+                ),
               ),
             ],
           );
@@ -643,13 +683,10 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
   Future<void> _acceptBooking(Booking booking, String? message) async {
     final coordinator = widget.bookingMessagingCoordinator;
     if (coordinator != null) {
-      final listing = widget.repository.getListingById(booking.listingId);
-      final hostId =
-          listing?.hostId ?? widget.authState.currentUser?.id ?? '';
       try {
         await coordinator.acceptBookingWithConversation(
           bookingId: booking.id,
-          hostId: hostId,
+          hostId: _hostIdForBooking(booking),
           message: message,
         );
         if (mounted) _showSuccessBanner('Booking accepted!');
@@ -736,20 +773,42 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
           ),
           FilledButton(
             onPressed: () {
-              final updated = booking.copyWith(
-                status: BookingStatus.active,
-                actualCheckIn: DateTime.now(),
-              );
-              widget.repository.updateBooking(updated);
               Navigator.pop(dialogContext);
               Navigator.pop(context);
-              _showSuccessBanner('Guest checked in!');
+              _performCheckIn(booking);
             },
             child: const Text('Confirm'),
           ),
         ],
       ),
     );
+  }
+
+  /// Check in via the coordinator so the conversation gets the check-in
+  /// message; falls back to a plain status update when messaging is absent.
+  Future<void> _performCheckIn(Booking booking) async {
+    final coordinator = widget.bookingMessagingCoordinator;
+    if (coordinator != null) {
+      try {
+        await coordinator.checkInGuestWithNotification(
+          bookingId: booking.id,
+          hostId: _hostIdForBooking(booking),
+        );
+        if (mounted) _showSuccessBanner('Guest checked in!');
+      } on InvalidBookingStateException catch (e) {
+        if (mounted) _showErrorBanner(e.message);
+      } catch (_) {
+        if (mounted) _showErrorBanner('Could not check in. Please try again.');
+      }
+      return;
+    }
+
+    final updated = booking.copyWith(
+      status: BookingStatus.active,
+      actualCheckIn: DateTime.now(),
+    );
+    widget.repository.updateBooking(updated);
+    if (mounted) _showSuccessBanner('Guest checked in!');
   }
 
   void _completeService(BuildContext context, Booking booking) {
@@ -767,20 +826,47 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
           ),
           FilledButton(
             onPressed: () {
-              final updated = booking.copyWith(
-                status: BookingStatus.completed,
-                completedAt: DateTime.now(),
-              );
-              widget.repository.updateBooking(updated);
               Navigator.pop(dialogContext);
               Navigator.pop(context);
-              _showSuccessBanner('Service completed! Don\'t forget to leave a review.');
+              _performComplete(booking);
             },
             child: const Text('Complete'),
           ),
         ],
       ),
     );
+  }
+
+  /// Complete via the coordinator so the conversation gets the thank-you
+  /// message; falls back to a plain status update when messaging is absent.
+  Future<void> _performComplete(Booking booking) async {
+    final coordinator = widget.bookingMessagingCoordinator;
+    if (coordinator != null) {
+      try {
+        await coordinator.completeServiceWithNotification(
+          bookingId: booking.id,
+          hostId: _hostIdForBooking(booking),
+        );
+        if (mounted) {
+          _showSuccessBanner(
+              'Service completed! Don\'t forget to leave a review.');
+        }
+      } on InvalidBookingStateException catch (e) {
+        if (mounted) _showErrorBanner(e.message);
+      } catch (_) {
+        if (mounted) _showErrorBanner('Could not complete. Please try again.');
+      }
+      return;
+    }
+
+    final updated = booking.copyWith(
+      status: BookingStatus.completed,
+      completedAt: DateTime.now(),
+    );
+    widget.repository.updateBooking(updated);
+    if (mounted) {
+      _showSuccessBanner('Service completed! Don\'t forget to leave a review.');
+    }
   }
 
   void _cancelBooking(BuildContext context, Booking booking) {
@@ -798,16 +884,9 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
           ),
           FilledButton(
             onPressed: () {
-              final user = widget.authState.currentUser;
-              final updated = booking.copyWith(
-                status: BookingStatus.cancelled,
-                cancelledBy: user?.id,
-                cancelledAt: DateTime.now(),
-              );
-              widget.repository.updateBooking(updated);
               Navigator.pop(dialogContext);
               Navigator.pop(context);
-              _showSuccessBanner('Booking cancelled');
+              _performCancel(booking);
             },
             style: FilledButton.styleFrom(
               backgroundColor: Colors.red,
@@ -817,6 +896,44 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
         ],
       ),
     );
+  }
+
+  /// Cancel via the coordinator so the guest gets the cancellation message;
+  /// falls back to a plain status update when messaging is absent.
+  Future<void> _performCancel(Booking booking) async {
+    final coordinator = widget.bookingMessagingCoordinator;
+    final user = widget.authState.currentUser;
+    if (coordinator != null && user != null) {
+      try {
+        await coordinator.cancelBookingWithNotification(
+          bookingId: booking.id,
+          cancelledBy: user.id,
+          isHost: true,
+          hostId: _hostIdForBooking(booking),
+        );
+        if (mounted) _showSuccessBanner('Booking cancelled');
+      } on InvalidBookingStateException catch (e) {
+        if (mounted) _showErrorBanner(e.message);
+      } catch (_) {
+        if (mounted) _showErrorBanner('Could not cancel. Please try again.');
+      }
+      return;
+    }
+
+    final updated = booking.copyWith(
+      status: BookingStatus.cancelled,
+      cancelledBy: user?.id,
+      cancelledAt: DateTime.now(),
+    );
+    widget.repository.updateBooking(updated);
+    if (mounted) _showSuccessBanner('Booking cancelled');
+  }
+
+  /// The host id used for conversation lookups: the listing owner, falling
+  /// back to the signed-in user (this screen is host-only).
+  String _hostIdForBooking(Booking booking) {
+    final listing = widget.repository.getListingById(booking.listingId);
+    return listing?.hostId ?? widget.authState.currentUser?.id ?? '';
   }
 
   void _navigateToReview(BuildContext context, Booking booking) {
@@ -839,22 +956,30 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
       MaterialPageRoute(
         builder: (context) => HostReviewScreen(
           booking: booking,
-          onSubmit: (double rating, String? comment) {
+          onSubmit: (double rating, String? comment) async {
             final review = Review.hostReview(
               id: DateTime.now().millisecondsSinceEpoch.toString(),
               bookingId: booking.id,
               reviewerId: user.id,
-              reviewerName: user.name ?? 'Host',
+              reviewerName: user.name,
               reviewerAvatarUrl: user.avatarUrl,
               guestId: booking.userId ?? '',
               rating: rating,
               comment: comment,
             );
 
-            widget.repository.saveReview(review);
+            final saved = await widget.repository.saveReview(review);
+            if (!context.mounted) return saved;
+            if (!saved) {
+              _showErrorBanner(
+                'Could not submit review. Please check your connection and try again.',
+              );
+              return false;
+            }
 
             Navigator.pop(context);
             _showSuccessBanner('Thank you for your review!');
+            return true;
           },
         ),
       ),

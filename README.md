@@ -76,7 +76,6 @@ flutter run
 
 flutter run -d chrome
 ```
-
 ### Verify Setup
 
 ```bash

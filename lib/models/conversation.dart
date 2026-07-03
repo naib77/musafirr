@@ -124,7 +124,8 @@ class Conversation {
     if (diff.inHours < 24) return '${diff.inHours}h';
     if (diff.inDays < 7) return '${diff.inDays}d';
 
-    return '${lastMessageAt!.day}/${lastMessageAt!.month}';
+    final local = lastMessageAt!.toLocal();
+    return '${local.day}/${local.month}';
   }
 
   /// Check if the current user is participant one

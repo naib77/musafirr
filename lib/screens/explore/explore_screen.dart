@@ -6,8 +6,10 @@ import '../../models/search_filters.dart';
 import '../../repositories/musafir_repository.dart';
 import '../leaderboard/host_leaderboard_screen.dart';
 import '../../services/booking/booking_lifecycle_service.dart';
+import '../../services/booking/booking_messaging_coordinator.dart';
 import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
+import '../../state/messaging_state.dart';
 import '../../state/notification_state.dart';
 import '../../state/search_state.dart';
 import '../../widgets/animations/fade_slide_in.dart';
@@ -26,8 +28,8 @@ class ExploreScreen extends StatefulWidget {
     required this.searchState,
     this.notificationState,
     this.bookingLifecycleService,
+    this.bookingMessagingCoordinator,
     this.messagingState,
-    this.onOpenInbox,
   });
 
   final MusafirRepository repository;
@@ -36,8 +38,8 @@ class ExploreScreen extends StatefulWidget {
   final SearchStateNotifier searchState;
   final NotificationStateNotifier? notificationState;
   final BookingLifecycleService? bookingLifecycleService;
-  final dynamic messagingState;
-  final VoidCallback? onOpenInbox;
+  final BookingMessagingCoordinator? bookingMessagingCoordinator;
+  final MessagingStateNotifier? messagingState;
 
   @override
   State<ExploreScreen> createState() => _ExploreScreenState();
@@ -108,6 +110,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
           repository: widget.repository,
           authState: widget.authState,
           favoritesState: widget.favoritesState,
+          messagingState: widget.messagingState,
         ),
       ),
     );
@@ -142,6 +145,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
           repository: widget.repository,
           bookingLifecycleService: widget.bookingLifecycleService!,
           authState: widget.authState,
+          messagingState: widget.messagingState,
+          bookingMessagingCoordinator: widget.bookingMessagingCoordinator,
         ),
       ),
     );
@@ -280,23 +285,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       ),
                     ),
                   ),
-                  // Messages icon
-                  if (widget.messagingState != null && widget.onOpenInbox != null) ...[
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: Badge(
-                        isLabelVisible: (widget.messagingState?.totalUnreadCount ?? 0) > 0,
-                        label: Text(
-                          (widget.messagingState?.totalUnreadCount ?? 0) > 99
-                              ? '99+'
-                              : '${widget.messagingState?.totalUnreadCount ?? 0}',
-                        ),
-                        child: const Icon(Icons.chat_bubble_outline),
-                      ),
-                      onPressed: widget.onOpenInbox,
-                      tooltip: 'Messages',
-                    ),
-                  ],
                   // Notification bell
                   if (widget.notificationState != null) ...[
                     const SizedBox(width: 4),
@@ -390,7 +378,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                               crossAxisCount: 2,
                               mainAxisSpacing: 16,
                               crossAxisSpacing: 12,
-                              childAspectRatio: 0.58,
+                              // ~square photo like Airbnb (the photo takes
+                              // 5/7 of the cell height in ListingCardModern).
+                              childAspectRatio: 0.72,
                             ),
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {

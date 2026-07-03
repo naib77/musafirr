@@ -15,6 +15,9 @@ import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
+import '../../state/messaging_state.dart';
+import '../messaging/chat_screen.dart';
+import 'listing_gallery_screen.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/price_breakdown_card.dart';
 import '../../widgets/price_display.dart';
@@ -28,12 +31,16 @@ class ListingDetailScreen extends StatefulWidget {
     required this.repository,
     required this.authState,
     required this.favoritesState,
+    this.messagingState,
   });
 
   final Listing listing;
   final MusafirRepository repository;
   final AuthStateNotifier authState;
   final FavoritesStateNotifier favoritesState;
+
+  /// Enables the pre-booking "Message host" action when provided.
+  final MessagingStateNotifier? messagingState;
 
   @override
   State<ListingDetailScreen> createState() => _ListingDetailScreenState();
@@ -46,6 +53,57 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   bool get _isOwnListing {
     final currentUserId = widget.authState.currentUser?.id;
     return currentUserId != null && widget.listing.hostId == currentUserId;
+  }
+
+  /// Pre-booking inquiry is offered when messaging is available, the host is
+  /// known, and the viewer isn't the host themselves.
+  bool get _canContactHost {
+    final hostId = widget.listing.hostId;
+    return widget.messagingState != null &&
+        hostId != null &&
+        hostId.isNotEmpty &&
+        !_isOwnListing;
+  }
+
+  /// Opens (or creates) the general conversation with the host — no booking
+  /// required, like Airbnb's pre-booking inquiry.
+  Future<void> _contactHost() async {
+    final messagingState = widget.messagingState;
+    final hostId = widget.listing.hostId;
+    if (messagingState == null || hostId == null || hostId.isEmpty) return;
+
+    if (!widget.authState.isLoggedIn) {
+      ModernBanner.showInfo(context, 'Please log in to message the host.');
+      return;
+    }
+
+    final conversation = await messagingState.startConversation(
+      otherUserId: hostId,
+      listingId: widget.listing.id,
+    );
+
+    if (!mounted) return;
+    if (conversation == null) {
+      ModernBanner.showError(
+        context,
+        'Could not start the conversation. Please try again.',
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          conversationId: conversation.id,
+          messagingState: messagingState,
+          otherParticipantName: widget.listing.ownerName.isNotEmpty
+              ? widget.listing.ownerName
+              : conversation.displayName,
+          otherParticipantAvatarUrl: widget.listing.hostAvatarUrl,
+        ),
+      ),
+    );
   }
 
   @override
@@ -171,7 +229,10 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                         const SizedBox(height: 24),
 
                         // Host info
-                        _HostInfoCard(listing: listing),
+                        _HostInfoCard(
+                          listing: listing,
+                          onContactHost: _canContactHost ? _contactHost : null,
+                        ),
                         const SizedBox(height: 24),
 
                         // Property details
@@ -250,6 +311,19 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     );
   }
 
+  void _openGallery(Listing listing) {
+    if (listing.imageUrls.isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ListingGalleryScreen(
+          images: listing.imageUrls,
+          title: listing.title,
+        ),
+      ),
+    );
+  }
+
   Widget _buildImageHeader(ThemeData theme, Listing listing) {
     return Stack(
       fit: StackFit.expand,
@@ -262,10 +336,14 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                 },
                 itemCount: listing.imageUrls.length,
                 itemBuilder: (context, index) {
-                  return Image.network(
-                    listing.imageUrls[index],
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _buildImagePlaceholder(theme),
+                  return GestureDetector(
+                    onTap: () => _openGallery(listing),
+                    child: Image.network(
+                      listing.imageUrls[index],
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _buildImagePlaceholder(theme),
+                    ),
                   );
                 },
               )
@@ -296,6 +374,40 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
           bottom: 46,
           child: _CategoryBadge(type: listing.type),
         ),
+
+        // "N photos" chip → full gallery (Airbnb-style)
+        if (listing.imageUrls.isNotEmpty)
+          Positioned(
+            right: 16,
+            bottom: 46,
+            child: GestureDetector(
+              onTap: () => _openGallery(listing),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.grid_view_rounded,
+                        size: 12, color: Colors.white),
+                    const SizedBox(width: 5),
+                    Text(
+                      '${listing.imageUrls.length} photos',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
 
         // Animated page indicators
         if (listing.imageUrls.length > 1)
@@ -641,9 +753,12 @@ class _GradientButton extends StatelessWidget {
 }
 
 class _HostInfoCard extends StatelessWidget {
-  const _HostInfoCard({required this.listing});
+  const _HostInfoCard({required this.listing, this.onContactHost});
 
   final Listing listing;
+
+  /// When provided, shows the pre-booking "Message host" action.
+  final VoidCallback? onContactHost;
 
   @override
   Widget build(BuildContext context) {
@@ -655,77 +770,96 @@ class _HostInfoCard extends StatelessWidget {
         color: AppColors.surfaceMuted,
         borderRadius: BorderRadius.circular(18),
       ),
-      child: Row(
+      child: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.all(2),
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: AppColors.brandGradient,
+          _buildHostRow(theme),
+          if (onContactHost != null) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: onContactHost,
+                icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                label: const Text('Message host'),
+              ),
             ),
-            child: CircleAvatar(
-              radius: 26,
-              backgroundColor: theme.colorScheme.surface,
-              backgroundImage: listing.hostAvatarUrl != null
-                  ? NetworkImage(listing.hostAvatarUrl!)
-                  : null,
-              child: listing.hostAvatarUrl == null
-                  ? Text(
-                      listing.ownerName.isNotEmpty
-                          ? listing.ownerName[0].toUpperCase()
-                          : 'H',
-                      style: theme.textTheme.titleLarge,
-                    )
-                  : null,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Hosted by ${listing.ownerName}',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                if (listing.isSuperhost)
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.workspace_premium,
-                        size: 16,
-                        color: AppColors.amber,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Superhost',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: AppColors.amber,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  )
-                else
-                  Text(
-                    'Your host',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          Icon(
-            Icons.verified_rounded,
-            size: 22,
-            color: AppColors.brand.withValues(alpha: 0.9),
-          ),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _buildHostRow(ThemeData theme) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(2),
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: AppColors.brandGradient,
+          ),
+          child: CircleAvatar(
+            radius: 26,
+            backgroundColor: theme.colorScheme.surface,
+            backgroundImage: listing.hostAvatarUrl != null
+                ? NetworkImage(listing.hostAvatarUrl!)
+                : null,
+            child: listing.hostAvatarUrl == null
+                ? Text(
+                    listing.ownerName.isNotEmpty
+                        ? listing.ownerName[0].toUpperCase()
+                        : 'H',
+                    style: theme.textTheme.titleLarge,
+                  )
+                : null,
+          ),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Hosted by ${listing.ownerName}',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+              if (listing.isSuperhost)
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.workspace_premium,
+                      size: 16,
+                      color: AppColors.amber,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Superhost',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AppColors.amber,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                )
+              else
+                Text(
+                  'Your host',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        Icon(
+          Icons.verified_rounded,
+          size: 22,
+          color: AppColors.brand.withValues(alpha: 0.9),
+        ),
+      ],
     );
   }
 }
@@ -1047,8 +1181,7 @@ class _ReviewsSection extends StatelessWidget {
           child: Material(
             color: theme.colorScheme.surface,
             clipBehavior: Clip.antiAlias,
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(24)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
