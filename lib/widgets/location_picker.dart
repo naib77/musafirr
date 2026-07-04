@@ -3,6 +3,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../services/location_service.dart';
 import 'modern_banner.dart';
+import 'web_deferred_mount.dart';
 
 class LocationPickerResult {
   const LocationPickerResult({
@@ -107,7 +108,8 @@ class _LocationPickerState extends State<LocationPicker> {
         CameraUpdate.newLatLngZoom(latLng, 16),
       );
     } else if (mounted) {
-      ModernBanner.showError(context, 'Could not get your location. Please check permissions.');
+      ModernBanner.showError(
+          context, 'Could not get your location. Please check permissions.');
     }
   }
 
@@ -181,21 +183,23 @@ class _LocationPickerState extends State<LocationPicker> {
       body: Stack(
         children: [
           // Map
-          GoogleMap(
-            initialCameraPosition: CameraPosition(
-              target: LatLng(widget.initialLatitude, widget.initialLongitude),
-              zoom: 15,
+          WebDeferredMount(
+            builder: (context) => GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: LatLng(widget.initialLatitude, widget.initialLongitude),
+                zoom: 15,
+              ),
+              onMapCreated: (controller) {
+                _controller = controller;
+                _mapCreated = true;
+              },
+              onCameraMove: _onCameraMove,
+              onCameraIdle: _onCameraIdle,
+              myLocationEnabled: true,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+              mapToolbarEnabled: false,
             ),
-            onMapCreated: (controller) {
-              _controller = controller;
-              _mapCreated = true;
-            },
-            onCameraMove: _onCameraMove,
-            onCameraIdle: _onCameraIdle,
-            myLocationEnabled: true,
-            myLocationButtonEnabled: false,
-            zoomControlsEnabled: false,
-            mapToolbarEnabled: false,
           ),
 
           // Center pin (Uber style)

@@ -30,7 +30,7 @@ class CreateListingScreen extends StatefulWidget {
 class _CreateListingScreenState extends State<CreateListingScreen> {
   final PageController _pageController = PageController();
   int _currentStep = 0;
-  final int _totalSteps = 6;
+  final int _totalSteps = 8;
 
   // Form data
   ListingType _propertyType = ListingType.room;
@@ -55,6 +55,29 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   bool _dailyEnabled = true;
   bool _monthlyEnabled = true;
 
+  // Per-plan min/max booking duration (min defaults to 1, max blank = no cap).
+  final _minHoursController = TextEditingController(text: '1');
+  final _maxHoursController = TextEditingController();
+  final _minNightsController = TextEditingController(text: '1');
+  final _maxNightsController = TextEditingController();
+  final _minMonthsController = TextEditingController(text: '1');
+  final _maxMonthsController = TextEditingController();
+
+  // House rules
+  final _checkInTimeController = TextEditingController(text: '2:00 PM');
+  final _checkOutTimeController = TextEditingController(text: '11:00 AM');
+  bool _smokingAllowed = false;
+  bool _petsAllowed = false;
+  bool _partiesAllowed = false;
+  final _quietHoursController = TextEditingController();
+  final _additionalRulesController = TextEditingController();
+
+  // Check-in & access (private — host-only, delivered via pre-check-in message)
+  final _directionsController = TextEditingController();
+  final _wifiNameController = TextEditingController();
+  final _wifiPasswordController = TextEditingController();
+  final _accessCodeController = TextEditingController();
+
   // Image data
   List<SelectedImage> _selectedImages = [];
   bool _isUploadingImages = false;
@@ -72,6 +95,20 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
     _hourlyPriceController.dispose();
     _dailyPriceController.dispose();
     _monthlyPriceController.dispose();
+    _minHoursController.dispose();
+    _maxHoursController.dispose();
+    _minNightsController.dispose();
+    _maxNightsController.dispose();
+    _minMonthsController.dispose();
+    _maxMonthsController.dispose();
+    _checkInTimeController.dispose();
+    _checkOutTimeController.dispose();
+    _quietHoursController.dispose();
+    _additionalRulesController.dispose();
+    _directionsController.dispose();
+    _wifiNameController.dispose();
+    _wifiPasswordController.dispose();
+    _accessCodeController.dispose();
     super.dispose();
   }
 
@@ -106,7 +143,11 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         return _maxGuests > 0 && _bedrooms > 0 && _beds > 0 && _bathrooms > 0;
       case 4: // Pricing
         return _pricingError() == null;
-      case 5: // Photos
+      case 5: // House rules — all optional
+        return true;
+      case 6: // Check-in & access — all optional
+        return true;
+      case 7: // Photos
         return _selectedImages.isNotEmpty && !_isUploadingImages;
       default:
         return false;
@@ -232,6 +273,35 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         reviewCount: 0,
         isSuperhost: false,
         available: true,
+        bookingLimits: BookingLimits(
+          minHours:
+              _hourlyEnabled ? int.tryParse(_minHoursController.text) : null,
+          maxHours:
+              _hourlyEnabled ? int.tryParse(_maxHoursController.text) : null,
+          minNights:
+              _dailyEnabled ? int.tryParse(_minNightsController.text) : null,
+          maxNights:
+              _dailyEnabled ? int.tryParse(_maxNightsController.text) : null,
+          minMonths:
+              _monthlyEnabled ? int.tryParse(_minMonthsController.text) : null,
+          maxMonths:
+              _monthlyEnabled ? int.tryParse(_maxMonthsController.text) : null,
+        ),
+        houseRules: HouseRules(
+          checkInTime: _emptyToNull(_checkInTimeController.text),
+          checkOutTime: _emptyToNull(_checkOutTimeController.text),
+          smokingAllowed: _smokingAllowed,
+          petsAllowed: _petsAllowed,
+          partiesAllowed: _partiesAllowed,
+          quietHours: _emptyToNull(_quietHoursController.text),
+          additionalRules: _emptyToNull(_additionalRulesController.text),
+        ),
+        checkInDetails: CheckInDetails(
+          directions: _emptyToNull(_directionsController.text),
+          wifiName: _emptyToNull(_wifiNameController.text),
+          wifiPassword: _emptyToNull(_wifiPasswordController.text),
+          accessCode: _emptyToNull(_accessCodeController.text),
+        ),
       );
 
       // Add to repository — await so a failed insert surfaces below instead
@@ -345,6 +415,30 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                   onMonthlyToggled: (v) => setState(() => _monthlyEnabled = v),
                   onChanged: () => setState(() {}),
                   errorText: _pricingError(),
+                  minHoursController: _minHoursController,
+                  maxHoursController: _maxHoursController,
+                  minNightsController: _minNightsController,
+                  maxNightsController: _maxNightsController,
+                  minMonthsController: _minMonthsController,
+                  maxMonthsController: _maxMonthsController,
+                ),
+                _HouseRulesStep(
+                  checkInTimeController: _checkInTimeController,
+                  checkOutTimeController: _checkOutTimeController,
+                  quietHoursController: _quietHoursController,
+                  additionalRulesController: _additionalRulesController,
+                  smokingAllowed: _smokingAllowed,
+                  petsAllowed: _petsAllowed,
+                  partiesAllowed: _partiesAllowed,
+                  onSmokingToggled: (v) => setState(() => _smokingAllowed = v),
+                  onPetsToggled: (v) => setState(() => _petsAllowed = v),
+                  onPartiesToggled: (v) => setState(() => _partiesAllowed = v),
+                ),
+                _CheckInAccessStep(
+                  directionsController: _directionsController,
+                  wifiNameController: _wifiNameController,
+                  wifiPasswordController: _wifiPasswordController,
+                  accessCodeController: _accessCodeController,
                 ),
                 _PhotosStep(
                   images: _selectedImages,
@@ -789,20 +883,39 @@ class _DetailsStep extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: FacilityCatalog.ownerSelectable.map((facility) {
-              final selected = selectedAmenities.contains(facility.name);
-              return FilterChip(
-                selected: selected,
-                label: Text(facility.name),
-                avatar: Icon(facility.icon, size: 18),
-                onSelected: (_) => onAmenityToggled(facility.name),
-              );
-            }).toList(),
+          const SizedBox(height: 4),
+          Text(
+            'What does your place offer?',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
+          const SizedBox(height: 8),
+          // Amenities grouped by category (Essentials / Features / Power / Safety).
+          for (final group in FacilityCatalog.groups) ...[
+            const SizedBox(height: 12),
+            Text(
+              group.title,
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: group.facilities.map((facility) {
+                final selected = selectedAmenities.contains(facility.name);
+                return FilterChip(
+                  selected: selected,
+                  label: Text(facility.name),
+                  avatar: Icon(facility.icon, size: 18),
+                  onSelected: (_) => onAmenityToggled(facility.name),
+                );
+              }).toList(),
+            ),
+          ],
         ],
       ),
     );
@@ -873,6 +986,12 @@ class _PricingStep extends StatelessWidget {
     required this.onMonthlyToggled,
     required this.onChanged,
     required this.errorText,
+    required this.minHoursController,
+    required this.maxHoursController,
+    required this.minNightsController,
+    required this.maxNightsController,
+    required this.minMonthsController,
+    required this.maxMonthsController,
   });
 
   final TextEditingController hourlyPriceController;
@@ -886,6 +1005,12 @@ class _PricingStep extends StatelessWidget {
   final ValueChanged<bool> onMonthlyToggled;
   final VoidCallback onChanged;
   final String? errorText;
+  final TextEditingController minHoursController;
+  final TextEditingController maxHoursController;
+  final TextEditingController minNightsController;
+  final TextEditingController maxNightsController;
+  final TextEditingController minMonthsController;
+  final TextEditingController maxMonthsController;
 
   @override
   Widget build(BuildContext context) {
@@ -922,6 +1047,9 @@ class _PricingStep extends StatelessWidget {
             enabled: hourlyEnabled,
             onToggled: onHourlyToggled,
             onChanged: onChanged,
+            minController: minHoursController,
+            maxController: maxHoursController,
+            unitLabel: 'hours',
           ),
           const SizedBox(height: 20),
 
@@ -935,6 +1063,9 @@ class _PricingStep extends StatelessWidget {
             enabled: dailyEnabled,
             onToggled: onDailyToggled,
             onChanged: onChanged,
+            minController: minNightsController,
+            maxController: maxNightsController,
+            unitLabel: 'nights',
           ),
           const SizedBox(height: 20),
 
@@ -948,6 +1079,9 @@ class _PricingStep extends StatelessWidget {
             enabled: monthlyEnabled,
             onToggled: onMonthlyToggled,
             onChanged: onChanged,
+            minController: minMonthsController,
+            maxController: maxMonthsController,
+            unitLabel: 'months',
           ),
 
           if (errorText != null) ...[
@@ -1126,6 +1260,205 @@ class _PhotosStep extends StatelessWidget {
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Trims a text field and returns null when empty, so blank optional fields
+/// are stored as NULL rather than ''.
+String? _emptyToNull(String value) {
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? null : trimmed;
+}
+
+// Step 6: House rules
+class _HouseRulesStep extends StatelessWidget {
+  const _HouseRulesStep({
+    required this.checkInTimeController,
+    required this.checkOutTimeController,
+    required this.quietHoursController,
+    required this.additionalRulesController,
+    required this.smokingAllowed,
+    required this.petsAllowed,
+    required this.partiesAllowed,
+    required this.onSmokingToggled,
+    required this.onPetsToggled,
+    required this.onPartiesToggled,
+  });
+
+  final TextEditingController checkInTimeController;
+  final TextEditingController checkOutTimeController;
+  final TextEditingController quietHoursController;
+  final TextEditingController additionalRulesController;
+  final bool smokingAllowed;
+  final bool petsAllowed;
+  final bool partiesAllowed;
+  final ValueChanged<bool> onSmokingToggled;
+  final ValueChanged<bool> onPetsToggled;
+  final ValueChanged<bool> onPartiesToggled;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'House rules',
+            style: theme.textTheme.headlineSmall
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Set expectations for guests. All optional — leave blank to skip.',
+            style: theme.textTheme.bodyLarge
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              Expanded(
+                child: AppTextField(
+                  controller: checkInTimeController,
+                  label: 'Check-in time',
+                  hint: 'e.g. 2:00 PM',
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: AppTextField(
+                  controller: checkOutTimeController,
+                  label: 'Check-out time',
+                  hint: 'e.g. 11:00 AM',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Smoking allowed'),
+            value: smokingAllowed,
+            onChanged: onSmokingToggled,
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Pets allowed'),
+            value: petsAllowed,
+            onChanged: onPetsToggled,
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Parties / events allowed'),
+            value: partiesAllowed,
+            onChanged: onPartiesToggled,
+          ),
+          const SizedBox(height: 12),
+          AppTextField(
+            controller: quietHoursController,
+            label: 'Quiet hours (optional)',
+            hint: 'e.g. 10:00 PM – 7:00 AM',
+          ),
+          const SizedBox(height: 16),
+          AppTextField(
+            controller: additionalRulesController,
+            label: 'Additional rules (optional)',
+            hint: 'Anything else guests should know',
+            maxLines: 4,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Step 7: Check-in & access (private — host-only)
+class _CheckInAccessStep extends StatelessWidget {
+  const _CheckInAccessStep({
+    required this.directionsController,
+    required this.wifiNameController,
+    required this.wifiPasswordController,
+    required this.accessCodeController,
+  });
+
+  final TextEditingController directionsController;
+  final TextEditingController wifiNameController;
+  final TextEditingController wifiPasswordController;
+  final TextEditingController accessCodeController;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Check-in & access',
+            style: theme.textTheme.headlineSmall
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'These details are private. They are shared with a guest only after '
+            'their booking is confirmed, in their check-in message.',
+            style: theme.textTheme.bodyLarge
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.lock_outline,
+                    size: 18, color: theme.colorScheme.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Never shown publicly on your listing.',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          AppTextField(
+            controller: directionsController,
+            label: 'Directions to the place (optional)',
+            hint: 'Landmarks, floor, which gate to use…',
+            maxLines: 4,
+          ),
+          const SizedBox(height: 16),
+          AppTextField(
+            controller: wifiNameController,
+            label: 'Wi-Fi network name (optional)',
+            hint: 'e.g. Musafir_5G',
+          ),
+          const SizedBox(height: 16),
+          AppTextField(
+            controller: wifiPasswordController,
+            label: 'Wi-Fi password (optional)',
+            hint: 'Shared only with confirmed guests',
+          ),
+          const SizedBox(height: 16),
+          AppTextField(
+            controller: accessCodeController,
+            label: 'Door / access code (optional)',
+            hint: 'e.g. 1234# or lockbox code',
           ),
         ],
       ),

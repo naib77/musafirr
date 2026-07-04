@@ -400,6 +400,27 @@ class SupabaseMusafirRepository extends ChangeNotifier
       rating: (json['rating'] as num?)?.toDouble(),
       reviewCount: json['review_count'] as int? ?? 0,
       isSuperhost: json['is_superhost'] as bool? ?? false,
+      bookingLimits: BookingLimits(
+        minHours: json['min_hours'] as int?,
+        maxHours: json['max_hours'] as int?,
+        minNights: json['min_nights'] as int?,
+        maxNights: json['max_nights'] as int?,
+        minMonths: json['min_months'] as int?,
+        maxMonths: json['max_months'] as int?,
+      ),
+      houseRules: HouseRules(
+        checkInTime: json['check_in_time'] as String?,
+        checkOutTime: json['check_out_time'] as String?,
+        smokingAllowed: json['smoking_allowed'] as bool? ?? false,
+        petsAllowed: json['pets_allowed'] as bool? ?? false,
+        partiesAllowed: json['parties_allowed'] as bool? ?? false,
+        quietHours: json['quiet_hours'] as String?,
+        additionalRules: json['additional_rules'] as String?,
+      ),
+      // Sensitive check-in details are NOT embedded in the listings query —
+      // that coupling would break the whole (guest-facing) explore feed if the
+      // table/relationship isn't present. Hosts load them on demand via
+      // fetchCheckInDetails() when editing.
     );
   }
 
@@ -424,7 +445,64 @@ class SupabaseMusafirRepository extends ChangeNotifier
       'bedrooms': listing.bedrooms,
       'beds': listing.beds,
       'bathrooms': listing.bathrooms,
+      // Per-plan booking limits.
+      'min_hours': listing.bookingLimits.minHours,
+      'max_hours': listing.bookingLimits.maxHours,
+      'min_nights': listing.bookingLimits.minNights,
+      'max_nights': listing.bookingLimits.maxNights,
+      'min_months': listing.bookingLimits.minMonths,
+      'max_months': listing.bookingLimits.maxMonths,
+      // House rules (public).
+      'check_in_time': listing.houseRules.checkInTime,
+      'check_out_time': listing.houseRules.checkOutTime,
+      'smoking_allowed': listing.houseRules.smokingAllowed,
+      'pets_allowed': listing.houseRules.petsAllowed,
+      'parties_allowed': listing.houseRules.partiesAllowed,
+      'quiet_hours': listing.houseRules.quietHours,
+      'additional_rules': listing.houseRules.additionalRules,
     };
+  }
+
+  @override
+  Future<CheckInDetails?> fetchCheckInDetails(String listingId) async {
+    try {
+      final row = await _client
+          .from('listing_checkin_details')
+          .select()
+          .eq('listing_id', listingId)
+          .maybeSingle();
+      if (row == null) return null;
+      return CheckInDetails(
+        directions: row['directions'] as String?,
+        wifiName: row['wifi_name'] as String?,
+        wifiPassword: row['wifi_password'] as String?,
+        accessCode: row['access_code'] as String?,
+      );
+    } catch (e) {
+      debugPrint('Error fetching check-in details: $e');
+      return null;
+    }
+  }
+
+  /// Upsert the host-only check-in access details for a listing. A null/empty
+  /// [details] clears the row.
+  Future<void> _saveCheckInDetails(
+      String listingId, CheckInDetails? details) async {
+    if (details == null || details.isEmpty) {
+      await _client
+          .from('listing_checkin_details')
+          .delete()
+          .eq('listing_id', listingId);
+      return;
+    }
+    await _client.from('listing_checkin_details').upsert({
+      'listing_id': listingId,
+      'directions': details.directions,
+      'wifi_name': details.wifiName,
+      'wifi_password': details.wifiPassword,
+      'access_code': details.accessCode,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    });
   }
 
   ListingType _listingTypeFromString(String? value) {
@@ -993,6 +1071,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
       final realId = inserted['id'] as String;
 
       await _saveListingFacilities(realId, listing.facilities);
+      await _saveCheckInDetails(realId, listing.checkInDetails);
 
       // Drop the temp-id copy; _refreshListings brings in the canonical row.
       _listings.removeWhere((l) => l.id == listing.id);
@@ -1021,6 +1100,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
           .update(_listingToJson(listing))
           .eq('id', listing.id);
       await _saveListingFacilities(listing.id, listing.facilities);
+      await _saveCheckInDetails(listing.id, listing.checkInDetails);
     } catch (e) {
       // Roll back to the previous value on failure.
       final i = _listings.indexWhere((l) => l.id == listing.id);

@@ -87,6 +87,11 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   Future<void> updateListing(Listing listing);
   Future<void> deleteListing(String listingId);
 
+  /// Loads the host-only check-in access details for a listing (or null if
+  /// none / not the owner). Kept separate from the main listing fetch so the
+  /// guest-facing explore feed never depends on this private table.
+  Future<CheckInDetails?> fetchCheckInDetails(String listingId);
+
   // Review methods (legacy - for simple listing reviews)
   List<Review> getReviewsForListing(String listingId);
   void addReview(Review review);

@@ -33,6 +33,13 @@ class Listing {
     this.rating,
     this.reviewCount = 0,
     this.isSuperhost = false,
+    // Per-plan min/max booking duration.
+    this.bookingLimits = const BookingLimits(),
+    // House rules (shown publicly on the listing page).
+    this.houseRules = const HouseRules(),
+    // Sensitive check-in access details. Null unless loaded for the host who
+    // owns the listing; never exposed to guests via the listing row.
+    this.checkInDetails,
     // Currency
     this.currency = Currency.BDT,
   });
@@ -73,6 +80,17 @@ class Listing {
   final double? rating;
   final int reviewCount;
   final bool isSuperhost;
+
+  /// Per-plan minimum/maximum booking duration.
+  final BookingLimits bookingLimits;
+
+  /// Publicly-visible house rules (check-in/out times, smoking/pets/parties…).
+  final HouseRules houseRules;
+
+  /// Sensitive check-in access (directions, Wi-Fi, door code). Only populated
+  /// when the listing is loaded for its owner; guests receive these via the
+  /// pre-check-in message, never directly.
+  final CheckInDetails? checkInDetails;
 
   // Currency for all prices
   final Currency currency;
@@ -164,6 +182,9 @@ class Listing {
     double? rating,
     int? reviewCount,
     bool? isSuperhost,
+    BookingLimits? bookingLimits,
+    HouseRules? houseRules,
+    CheckInDetails? checkInDetails,
     Currency? currency,
   }) {
     return Listing(
@@ -193,6 +214,9 @@ class Listing {
       rating: rating ?? this.rating,
       reviewCount: reviewCount ?? this.reviewCount,
       isSuperhost: isSuperhost ?? this.isSuperhost,
+      bookingLimits: bookingLimits ?? this.bookingLimits,
+      houseRules: houseRules ?? this.houseRules,
+      checkInDetails: checkInDetails ?? this.checkInDetails,
       currency: currency ?? this.currency,
     );
   }
@@ -234,7 +258,138 @@ class Listing {
       rating: rating,
       reviewCount: reviewCount,
       isSuperhost: isSuperhost,
+      bookingLimits: bookingLimits,
+      houseRules: houseRules,
+      checkInDetails: checkInDetails,
       currency: currency,
     );
   }
+}
+
+/// Per-plan minimum/maximum booking duration. Units are hours (hourly plan),
+/// nights (daily plan), and months (monthly plan). A null minimum means 1;
+/// a null maximum means no cap.
+class BookingLimits {
+  const BookingLimits({
+    this.minHours,
+    this.maxHours,
+    this.minNights,
+    this.maxNights,
+    this.minMonths,
+    this.maxMonths,
+  });
+
+  final int? minHours;
+  final int? maxHours;
+  final int? minNights;
+  final int? maxNights;
+  final int? minMonths;
+  final int? maxMonths;
+
+  /// Minimum units for [plan] (defaults to 1 when unset).
+  int minFor(DurationType plan) => switch (plan) {
+        DurationType.hourly => minHours ?? 1,
+        DurationType.daily => minNights ?? 1,
+        DurationType.monthly => minMonths ?? 1,
+      };
+
+  /// Maximum units for [plan], or null for no cap.
+  int? maxFor(DurationType plan) => switch (plan) {
+        DurationType.hourly => maxHours,
+        DurationType.daily => maxNights,
+        DurationType.monthly => maxMonths,
+      };
+
+  BookingLimits copyWith({
+    int? minHours,
+    int? maxHours,
+    int? minNights,
+    int? maxNights,
+    int? minMonths,
+    int? maxMonths,
+  }) {
+    return BookingLimits(
+      minHours: minHours ?? this.minHours,
+      maxHours: maxHours ?? this.maxHours,
+      minNights: minNights ?? this.minNights,
+      maxNights: maxNights ?? this.maxNights,
+      minMonths: minMonths ?? this.minMonths,
+      maxMonths: maxMonths ?? this.maxMonths,
+    );
+  }
+}
+
+/// Publicly-visible house rules for a listing.
+class HouseRules {
+  const HouseRules({
+    this.checkInTime,
+    this.checkOutTime,
+    this.smokingAllowed = false,
+    this.petsAllowed = false,
+    this.partiesAllowed = false,
+    this.quietHours,
+    this.additionalRules,
+  });
+
+  /// Free-text time labels (e.g. "2:00 PM", "11:00 AM") — kept as strings so
+  /// the host isn't forced into a rigid picker and they render straight into
+  /// messages.
+  final String? checkInTime;
+  final String? checkOutTime;
+  final bool smokingAllowed;
+  final bool petsAllowed;
+  final bool partiesAllowed;
+  final String? quietHours;
+  final String? additionalRules;
+
+  bool get hasAny =>
+      (checkInTime?.isNotEmpty ?? false) ||
+      (checkOutTime?.isNotEmpty ?? false) ||
+      smokingAllowed ||
+      petsAllowed ||
+      partiesAllowed ||
+      (quietHours?.isNotEmpty ?? false) ||
+      (additionalRules?.isNotEmpty ?? false);
+
+  HouseRules copyWith({
+    String? checkInTime,
+    String? checkOutTime,
+    bool? smokingAllowed,
+    bool? petsAllowed,
+    bool? partiesAllowed,
+    String? quietHours,
+    String? additionalRules,
+  }) {
+    return HouseRules(
+      checkInTime: checkInTime ?? this.checkInTime,
+      checkOutTime: checkOutTime ?? this.checkOutTime,
+      smokingAllowed: smokingAllowed ?? this.smokingAllowed,
+      petsAllowed: petsAllowed ?? this.petsAllowed,
+      partiesAllowed: partiesAllowed ?? this.partiesAllowed,
+      quietHours: quietHours ?? this.quietHours,
+      additionalRules: additionalRules ?? this.additionalRules,
+    );
+  }
+}
+
+/// Sensitive check-in access details. Host-only; delivered to guests via the
+/// pre-check-in message, never exposed on the public listing row.
+class CheckInDetails {
+  const CheckInDetails({
+    this.directions,
+    this.wifiName,
+    this.wifiPassword,
+    this.accessCode,
+  });
+
+  final String? directions;
+  final String? wifiName;
+  final String? wifiPassword;
+  final String? accessCode;
+
+  bool get isEmpty =>
+      (directions?.isEmpty ?? true) &&
+      (wifiName?.isEmpty ?? true) &&
+      (wifiPassword?.isEmpty ?? true) &&
+      (accessCode?.isEmpty ?? true);
 }

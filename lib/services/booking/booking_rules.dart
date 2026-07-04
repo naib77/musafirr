@@ -57,12 +57,20 @@ class BookingRules {
   }
 
   /// Returns true if host can mark service as complete.
-  /// Only active (checked-in) bookings whose checkout has been reached can be
-  /// completed. Completing mid-stay would free the remaining nights in the
-  /// overlap constraint and let the room be double-booked while occupied.
+  ///
+  /// Requires the booking to be active (checked in). For multi-day stays,
+  /// checkout must also have been reached — completing mid-stay would free the
+  /// remaining nights in the overlap constraint and allow a double-booking
+  /// while the room is still occupied. Hourly / sub-day stays are exempt: the
+  /// freed window is tiny, so a host can mark an hourly booking complete as
+  /// soon as the guest leaves.
   bool canComplete(Booking booking, {DateTime? now}) {
     if (booking.status != BookingStatus.active) {
       return false;
+    }
+    final span = booking.effectiveCheckOut.difference(booking.effectiveCheckIn);
+    if (span.inHours < 24) {
+      return true;
     }
     final currentTime = now ?? DateTime.now();
     return !currentTime.isBefore(booking.effectiveCheckOut);

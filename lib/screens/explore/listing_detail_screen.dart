@@ -21,6 +21,7 @@ import 'listing_gallery_screen.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/price_breakdown_card.dart';
 import '../../widgets/price_display.dart';
+import '../../widgets/web_deferred_mount.dart';
 import '../../widgets/success_sheet.dart';
 import 'navigation_screen.dart';
 
@@ -260,6 +261,12 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                         // Amenities
                         _AmenitiesGrid(listing: listing),
                         const SizedBox(height: 28),
+
+                        // House rules
+                        if (listing.houseRules.hasAny) ...[
+                          _HouseRulesSection(rules: listing.houseRules),
+                          const SizedBox(height: 28),
+                        ],
 
                         // Reviews
                         if (reviews.isNotEmpty)
@@ -964,23 +971,25 @@ class _LocationSectionState extends State<_LocationSection> {
             border: Border.all(color: theme.colorScheme.outlineVariant),
           ),
           clipBehavior: Clip.antiAlias,
-          child: GoogleMap(
-            initialCameraPosition: CameraPosition(
-              target: _location,
-              zoom: 15,
+          child: WebDeferredMount(
+            builder: (context) => GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: _location,
+                zoom: 15,
+              ),
+              markers: _markers,
+              onMapCreated: (controller) {
+                _mapController = controller;
+                _mapCreated = true;
+              },
+              zoomControlsEnabled: false,
+              mapToolbarEnabled: false,
+              myLocationButtonEnabled: false,
+              scrollGesturesEnabled: true,
+              zoomGesturesEnabled: true,
+              rotateGesturesEnabled: false,
+              tiltGesturesEnabled: false,
             ),
-            markers: _markers,
-            onMapCreated: (controller) {
-              _mapController = controller;
-              _mapCreated = true;
-            },
-            zoomControlsEnabled: false,
-            mapToolbarEnabled: false,
-            myLocationButtonEnabled: false,
-            scrollGesturesEnabled: true,
-            zoomGesturesEnabled: true,
-            rotateGesturesEnabled: false,
-            tiltGesturesEnabled: false,
           ),
         ),
         const SizedBox(height: 12),
@@ -1124,6 +1133,63 @@ class _AmenitiesGrid extends StatelessWidget {
               _AmenityChip(icon: facility.icon, label: facility.name),
           ],
         ),
+      ],
+    );
+  }
+}
+
+class _HouseRulesSection extends StatelessWidget {
+  const _HouseRulesSection({required this.rules});
+
+  final HouseRules rules;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    Widget row(IconData icon, String text) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, size: 20, color: AppColors.brand),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(text, style: theme.textTheme.bodyMedium),
+              ),
+            ],
+          ),
+        );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionTitle('House rules'),
+        const SizedBox(height: 16),
+        if (rules.checkInTime != null)
+          row(Icons.login, 'Check-in: ${rules.checkInTime}'),
+        if (rules.checkOutTime != null)
+          row(Icons.logout, 'Check-out: ${rules.checkOutTime}'),
+        if (rules.quietHours != null && rules.quietHours!.isNotEmpty)
+          row(Icons.bedtime_outlined, 'Quiet hours: ${rules.quietHours}'),
+        row(
+          rules.smokingAllowed ? Icons.smoking_rooms : Icons.smoke_free,
+          rules.smokingAllowed ? 'Smoking allowed' : 'No smoking',
+        ),
+        row(
+          rules.petsAllowed ? Icons.pets : Icons.pets_outlined,
+          rules.petsAllowed ? 'Pets allowed' : 'No pets',
+        ),
+        row(
+          rules.partiesAllowed
+              ? Icons.celebration
+              : Icons.do_not_disturb_on_outlined,
+          rules.partiesAllowed
+              ? 'Parties/events allowed'
+              : 'No parties or events',
+        ),
+        if (rules.additionalRules != null && rules.additionalRules!.isNotEmpty)
+          row(Icons.info_outline, rules.additionalRules!),
       ],
     );
   }
@@ -1578,6 +1644,26 @@ class _BookingSheetState extends State<_BookingSheet> {
     // time-of-day, so a slot earlier today would otherwise be bookable.
     if (!_checkIn.isAfter(DateTime.now())) {
       _showWarningBanner('Please choose a start time in the future');
+      return;
+    }
+
+    // Enforce the host's per-plan min/max booking duration.
+    final limits = widget.listing.bookingLimits;
+    final unit = switch (_durationType) {
+      DurationType.hourly => 'hour',
+      DurationType.daily => 'night',
+      DurationType.monthly => 'month',
+    };
+    final minUnits = limits.minFor(_durationType);
+    final maxUnits = limits.maxFor(_durationType);
+    if (_duration < minUnits) {
+      _showWarningBanner(
+          'Minimum booking is $minUnits $unit${minUnits == 1 ? '' : 's'}');
+      return;
+    }
+    if (maxUnits != null && _duration > maxUnits) {
+      _showWarningBanner(
+          'Maximum booking is $maxUnits $unit${maxUnits == 1 ? '' : 's'}');
       return;
     }
 

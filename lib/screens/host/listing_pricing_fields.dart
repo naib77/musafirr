@@ -63,6 +63,9 @@ class PlanPriceRow extends StatelessWidget {
     required this.enabled,
     required this.onToggled,
     required this.onChanged,
+    this.minController,
+    this.maxController,
+    this.unitLabel,
   });
 
   final TextEditingController controller;
@@ -73,6 +76,12 @@ class PlanPriceRow extends StatelessWidget {
   final bool enabled;
   final ValueChanged<bool> onToggled;
   final VoidCallback onChanged;
+
+  /// When provided, shows Min / Max booking-duration fields for this plan.
+  /// [unitLabel] is the duration unit (e.g. 'hours', 'nights', 'months').
+  final TextEditingController? minController;
+  final TextEditingController? maxController;
+  final String? unitLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -126,6 +135,38 @@ class PlanPriceRow extends StatelessWidget {
           enabled ? helperText : 'Not offered',
           style: theme.textTheme.bodySmall?.copyWith(color: mutedColor),
         ),
+        if (minController != null && maxController != null) ...[
+          const SizedBox(height: 12),
+          Opacity(
+            opacity: enabled ? 1.0 : 0.4,
+            child: IgnorePointer(
+              ignoring: !enabled,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: AppTextField(
+                      controller: minController!,
+                      label: 'Min ${unitLabel ?? ''}'.trim(),
+                      hint: '1',
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) => onChanged(),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: AppTextField(
+                      controller: maxController!,
+                      label: 'Max ${unitLabel ?? ''}'.trim(),
+                      hint: 'No limit',
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) => onChanged(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }

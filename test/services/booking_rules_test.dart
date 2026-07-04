@@ -146,7 +146,9 @@ void main() {
       expect(rules.canComplete(booking, now: now), isTrue);
     });
 
-    test('returns false for active booking before checkout (mid-stay)', () {
+    test(
+        'returns false for multi-day active booking before checkout (mid-stay)',
+        () {
       final now = DateTime.now();
       final booking = createBooking(
         status: BookingStatus.active,
@@ -154,6 +156,17 @@ void main() {
         endAt: now.add(const Duration(days: 5)),
       );
       expect(rules.canComplete(booking, now: now), isFalse);
+    });
+
+    test('returns true for an hourly booking not yet at checkout', () {
+      final now = DateTime.now();
+      final booking = createBooking(
+        status: BookingStatus.active,
+        startAt: now.subtract(const Duration(minutes: 20)),
+        endAt: now.add(const Duration(minutes: 40)),
+      );
+      // Sub-day stay: host can complete as soon as the guest leaves.
+      expect(rules.canComplete(booking, now: now), isTrue);
     });
 
     test('returns false for confirmed booking (not checked in)', () {

@@ -6,6 +6,7 @@ import '../models/listing_type.dart';
 import '../models/rental_plan.dart';
 import '../services/location_service.dart';
 import 'modern_banner.dart';
+import 'web_deferred_mount.dart';
 
 class MusafirMap extends StatefulWidget {
   const MusafirMap({
@@ -93,7 +94,8 @@ class _MusafirMapState extends State<MusafirMap> {
       );
       widget.onTap?.call(position.latitude, position.longitude);
     } else if (mounted) {
-      ModernBanner.showError(context, 'Could not get your location. Please check permissions.');
+      ModernBanner.showError(
+          context, 'Could not get your location. Please check permissions.');
     }
   }
 
@@ -137,22 +139,24 @@ class _MusafirMapState extends State<MusafirMap> {
         height: widget.height,
         child: Stack(
           children: [
-            GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: LatLng(widget.centerLat, widget.centerLng),
-                zoom: 14,
+            WebDeferredMount(
+              builder: (context) => GoogleMap(
+                initialCameraPosition: CameraPosition(
+                  target: LatLng(widget.centerLat, widget.centerLng),
+                  zoom: 14,
+                ),
+                onMapCreated: (controller) {
+                  _controller = controller;
+                  _mapCreated = true;
+                },
+                onTap: _onMapTap,
+                onCameraMove: _onCameraMove,
+                markers: _markers,
+                myLocationEnabled: true,
+                myLocationButtonEnabled: false,
+                zoomControlsEnabled: false,
+                mapToolbarEnabled: false,
               ),
-              onMapCreated: (controller) {
-                _controller = controller;
-                _mapCreated = true;
-              },
-              onTap: _onMapTap,
-              onCameraMove: _onCameraMove,
-              markers: _markers,
-              myLocationEnabled: true,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              mapToolbarEnabled: false,
             ),
             if (widget.showMyLocationButton)
               Positioned(

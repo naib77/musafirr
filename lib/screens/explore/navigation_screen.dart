@@ -8,6 +8,7 @@ import '../../models/listing.dart';
 import '../../services/directions_service.dart';
 import '../../services/location_service.dart';
 import '../../widgets/modern_banner.dart';
+import '../../widgets/web_deferred_mount.dart';
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({
@@ -97,7 +98,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
       if (position == null) {
         setState(() {
-          _error = 'Could not get your location. Please enable location services.';
+          _error =
+              'Could not get your location. Please enable location services.';
           _isLoading = false;
         });
         return;
@@ -181,7 +183,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
     final origin = _currentLocation != null
         ? '${_currentLocation!.latitude},${_currentLocation!.longitude}'
         : '';
-    final destination = '${_destinationLocation.latitude},${_destinationLocation.longitude}';
+    final destination =
+        '${_destinationLocation.latitude},${_destinationLocation.longitude}';
 
     final url = Uri.parse(
       'https://www.google.com/maps/dir/?api=1'
@@ -227,26 +230,28 @@ class _NavigationScreenState extends State<NavigationScreen> {
       body: Stack(
         children: [
           // Map
-          GoogleMap(
-            initialCameraPosition: CameraPosition(
-              target: _destinationLocation,
-              zoom: 14,
+          WebDeferredMount(
+            builder: (context) => GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: _destinationLocation,
+                zoom: 14,
+              ),
+              markers: _markers,
+              polylines: _polylines,
+              onMapCreated: (controller) {
+                _mapController = controller;
+                _mapCreated = true;
+                if (_directions != null) {
+                  controller.animateCamera(
+                    CameraUpdate.newLatLngBounds(_directions!.bounds, 80),
+                  );
+                }
+              },
+              myLocationEnabled: true,
+              myLocationButtonEnabled: true,
+              zoomControlsEnabled: true,
+              mapToolbarEnabled: false,
             ),
-            markers: _markers,
-            polylines: _polylines,
-            onMapCreated: (controller) {
-              _mapController = controller;
-              _mapCreated = true;
-              if (_directions != null) {
-                controller.animateCamera(
-                  CameraUpdate.newLatLngBounds(_directions!.bounds, 80),
-                );
-              }
-            },
-            myLocationEnabled: true,
-            myLocationButtonEnabled: true,
-            zoomControlsEnabled: true,
-            mapToolbarEnabled: false,
           ),
 
           // Loading overlay
@@ -422,14 +427,17 @@ class _NavigationScreenState extends State<NavigationScreen> {
                                   children: [
                                     Text(
                                       widget.listing.title,
-                                      style: theme.textTheme.titleSmall?.copyWith(
+                                      style:
+                                          theme.textTheme.titleSmall?.copyWith(
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
                                     Text(
                                       widget.listing.address,
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: theme.colorScheme.onSurfaceVariant,
+                                      style:
+                                          theme.textTheme.bodySmall?.copyWith(
+                                        color:
+                                            theme.colorScheme.onSurfaceVariant,
                                       ),
                                     ),
                                   ],

@@ -53,6 +53,29 @@ class _EditListingScreenState extends State<EditListingScreen> {
   late bool _dailyEnabled;
   late bool _monthlyEnabled;
 
+  // Per-plan min/max booking duration.
+  late final TextEditingController _minHoursController;
+  late final TextEditingController _maxHoursController;
+  late final TextEditingController _minNightsController;
+  late final TextEditingController _maxNightsController;
+  late final TextEditingController _minMonthsController;
+  late final TextEditingController _maxMonthsController;
+
+  // House rules
+  late final TextEditingController _checkInTimeController;
+  late final TextEditingController _checkOutTimeController;
+  late final TextEditingController _quietHoursController;
+  late final TextEditingController _additionalRulesController;
+  late bool _smokingAllowed;
+  late bool _petsAllowed;
+  late bool _partiesAllowed;
+
+  // Check-in & access (private)
+  late final TextEditingController _directionsController;
+  late final TextEditingController _wifiNameController;
+  late final TextEditingController _wifiPasswordController;
+  late final TextEditingController _accessCodeController;
+
   late List<SelectedImage> _images;
   late List<String> _originalImageUrls;
 
@@ -88,6 +111,40 @@ class _EditListingScreenState extends State<EditListingScreen> {
     _dailyEnabled = l.dailyRate != null;
     _monthlyEnabled = l.monthlyRate != null;
 
+    final limits = l.bookingLimits;
+    String limitText(int? v) => v?.toString() ?? '';
+    _minHoursController =
+        TextEditingController(text: limitText(limits.minHours));
+    _maxHoursController =
+        TextEditingController(text: limitText(limits.maxHours));
+    _minNightsController =
+        TextEditingController(text: limitText(limits.minNights));
+    _maxNightsController =
+        TextEditingController(text: limitText(limits.maxNights));
+    _minMonthsController =
+        TextEditingController(text: limitText(limits.minMonths));
+    _maxMonthsController =
+        TextEditingController(text: limitText(limits.maxMonths));
+
+    final rules = l.houseRules;
+    _checkInTimeController =
+        TextEditingController(text: rules.checkInTime ?? '');
+    _checkOutTimeController =
+        TextEditingController(text: rules.checkOutTime ?? '');
+    _quietHoursController = TextEditingController(text: rules.quietHours ?? '');
+    _additionalRulesController =
+        TextEditingController(text: rules.additionalRules ?? '');
+    _smokingAllowed = rules.smokingAllowed;
+    _petsAllowed = rules.petsAllowed;
+    _partiesAllowed = rules.partiesAllowed;
+
+    _directionsController = TextEditingController();
+    _wifiNameController = TextEditingController();
+    _wifiPasswordController = TextEditingController();
+    _accessCodeController = TextEditingController();
+    // Check-in details live in a separate host-only table; load them async.
+    _loadCheckInDetails();
+
     _originalImageUrls = List<String>.from(l.imageUrls);
     _images = l.imageUrls
         .map((url) => SelectedImage(
@@ -106,6 +163,20 @@ class _EditListingScreenState extends State<EditListingScreen> {
     _hourlyPriceController.dispose();
     _dailyPriceController.dispose();
     _monthlyPriceController.dispose();
+    _minHoursController.dispose();
+    _maxHoursController.dispose();
+    _minNightsController.dispose();
+    _maxNightsController.dispose();
+    _minMonthsController.dispose();
+    _maxMonthsController.dispose();
+    _checkInTimeController.dispose();
+    _checkOutTimeController.dispose();
+    _quietHoursController.dispose();
+    _additionalRulesController.dispose();
+    _directionsController.dispose();
+    _wifiNameController.dispose();
+    _wifiPasswordController.dispose();
+    _accessCodeController.dispose();
     super.dispose();
   }
 
@@ -116,6 +187,23 @@ class _EditListingScreenState extends State<EditListingScreen> {
     final i = url.indexOf(marker);
     if (i == -1) return null;
     return url.substring(i + marker.length);
+  }
+
+  Future<void> _loadCheckInDetails() async {
+    final access =
+        await widget.repository.fetchCheckInDetails(widget.listing.id);
+    if (access == null || !mounted) return;
+    setState(() {
+      _directionsController.text = access.directions ?? '';
+      _wifiNameController.text = access.wifiName ?? '';
+      _wifiPasswordController.text = access.wifiPassword ?? '';
+      _accessCodeController.text = access.accessCode ?? '';
+    });
+  }
+
+  String? _nullIfEmpty(String value) {
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
   }
 
   String? _pricingError() => validatePlanRates(
@@ -225,6 +313,41 @@ class _EditListingScreenState extends State<EditListingScreen> {
         isSuperhost: l.isSuperhost,
         currency: l.currency,
         available: l.available,
+        bookingLimits: BookingLimits(
+          minHours: hourlyRate != null
+              ? int.tryParse(_minHoursController.text)
+              : null,
+          maxHours: hourlyRate != null
+              ? int.tryParse(_maxHoursController.text)
+              : null,
+          minNights: dailyRate != null
+              ? int.tryParse(_minNightsController.text)
+              : null,
+          maxNights: dailyRate != null
+              ? int.tryParse(_maxNightsController.text)
+              : null,
+          minMonths: monthlyRate != null
+              ? int.tryParse(_minMonthsController.text)
+              : null,
+          maxMonths: monthlyRate != null
+              ? int.tryParse(_maxMonthsController.text)
+              : null,
+        ),
+        houseRules: HouseRules(
+          checkInTime: _nullIfEmpty(_checkInTimeController.text),
+          checkOutTime: _nullIfEmpty(_checkOutTimeController.text),
+          smokingAllowed: _smokingAllowed,
+          petsAllowed: _petsAllowed,
+          partiesAllowed: _partiesAllowed,
+          quietHours: _nullIfEmpty(_quietHoursController.text),
+          additionalRules: _nullIfEmpty(_additionalRulesController.text),
+        ),
+        checkInDetails: CheckInDetails(
+          directions: _nullIfEmpty(_directionsController.text),
+          wifiName: _nullIfEmpty(_wifiNameController.text),
+          wifiPassword: _nullIfEmpty(_wifiPasswordController.text),
+          accessCode: _nullIfEmpty(_accessCodeController.text),
+        ),
       );
 
       await widget.repository.updateListing(updated);
@@ -383,26 +506,36 @@ class _EditListingScreenState extends State<EditListingScreen> {
               style: theme.textTheme.titleMedium
                   ?.copyWith(fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: FacilityCatalog.ownerSelectable.map((facility) {
-                final selected = _selectedAmenities.contains(facility.name);
-                return FilterChip(
-                  selected: selected,
-                  label: Text(facility.name),
-                  avatar: Icon(facility.icon, size: 18),
-                  onSelected: (_) => setState(() {
-                    if (selected) {
-                      _selectedAmenities.remove(facility.name);
-                    } else {
-                      _selectedAmenities.add(facility.name);
-                    }
-                  }),
-                );
-              }).toList(),
-            ),
+            for (final group in FacilityCatalog.groups) ...[
+              const SizedBox(height: 12),
+              Text(
+                group.title,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: group.facilities.map((facility) {
+                  final selected = _selectedAmenities.contains(facility.name);
+                  return FilterChip(
+                    selected: selected,
+                    label: Text(facility.name),
+                    avatar: Icon(facility.icon, size: 18),
+                    onSelected: (_) => setState(() {
+                      if (selected) {
+                        _selectedAmenities.remove(facility.name);
+                      } else {
+                        _selectedAmenities.add(facility.name);
+                      }
+                    }),
+                  );
+                }).toList(),
+              ),
+            ],
 
             _sectionDivider(),
 
@@ -424,6 +557,9 @@ class _EditListingScreenState extends State<EditListingScreen> {
               enabled: _hourlyEnabled,
               onToggled: (v) => setState(() => _hourlyEnabled = v),
               onChanged: () => setState(() {}),
+              minController: _minHoursController,
+              maxController: _maxHoursController,
+              unitLabel: 'hours',
             ),
             const SizedBox(height: 20),
             PlanPriceRow(
@@ -435,6 +571,9 @@ class _EditListingScreenState extends State<EditListingScreen> {
               enabled: _dailyEnabled,
               onToggled: (v) => setState(() => _dailyEnabled = v),
               onChanged: () => setState(() {}),
+              minController: _minNightsController,
+              maxController: _maxNightsController,
+              unitLabel: 'nights',
             ),
             const SizedBox(height: 20),
             PlanPriceRow(
@@ -446,6 +585,9 @@ class _EditListingScreenState extends State<EditListingScreen> {
               enabled: _monthlyEnabled,
               onToggled: (v) => setState(() => _monthlyEnabled = v),
               onChanged: () => setState(() {}),
+              minController: _minMonthsController,
+              maxController: _maxMonthsController,
+              unitLabel: 'months',
             ),
             if (pricingError != null) ...[
               const SizedBox(height: 16),
@@ -466,6 +608,98 @@ class _EditListingScreenState extends State<EditListingScreen> {
                 ],
               ),
             ],
+
+            _sectionDivider(),
+
+            // ---------- House rules ----------
+            _sectionTitle(theme, 'House rules'),
+            Row(
+              children: [
+                Expanded(
+                  child: AppTextField(
+                    controller: _checkInTimeController,
+                    label: 'Check-in time',
+                    hint: 'e.g. 2:00 PM',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: AppTextField(
+                    controller: _checkOutTimeController,
+                    label: 'Check-out time',
+                    hint: 'e.g. 11:00 AM',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Smoking allowed'),
+              value: _smokingAllowed,
+              onChanged: (v) => setState(() => _smokingAllowed = v),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Pets allowed'),
+              value: _petsAllowed,
+              onChanged: (v) => setState(() => _petsAllowed = v),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Parties / events allowed'),
+              value: _partiesAllowed,
+              onChanged: (v) => setState(() => _partiesAllowed = v),
+            ),
+            const SizedBox(height: 12),
+            AppTextField(
+              controller: _quietHoursController,
+              label: 'Quiet hours (optional)',
+              hint: 'e.g. 10:00 PM – 7:00 AM',
+            ),
+            const SizedBox(height: 16),
+            AppTextField(
+              controller: _additionalRulesController,
+              label: 'Additional rules (optional)',
+              hint: 'Anything else guests should know',
+              maxLines: 4,
+            ),
+
+            _sectionDivider(),
+
+            // ---------- Check-in & access (private) ----------
+            _sectionTitle(theme, 'Check-in & access'),
+            Text(
+              'Private — shared with a guest only after their booking is '
+              'confirmed. Never shown publicly.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            AppTextField(
+              controller: _directionsController,
+              label: 'Directions (optional)',
+              hint: 'Landmarks, floor, which gate to use…',
+              maxLines: 4,
+            ),
+            const SizedBox(height: 16),
+            AppTextField(
+              controller: _wifiNameController,
+              label: 'Wi-Fi network name (optional)',
+              hint: 'e.g. Musafir_5G',
+            ),
+            const SizedBox(height: 16),
+            AppTextField(
+              controller: _wifiPasswordController,
+              label: 'Wi-Fi password (optional)',
+              hint: 'Shared only with confirmed guests',
+            ),
+            const SizedBox(height: 16),
+            AppTextField(
+              controller: _accessCodeController,
+              label: 'Door / access code (optional)',
+              hint: 'e.g. 1234# or lockbox code',
+            ),
 
             _sectionDivider(),
 

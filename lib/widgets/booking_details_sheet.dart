@@ -67,9 +67,20 @@ class BookingDetailsSheet extends StatelessWidget {
       checkOut = DateTime.tryParse(checkOutStr);
     }
 
-    int? numberOfNights;
+    // Duration label: hourly bookings span less than a day, so show hours
+    // ("2 hours") rather than "0 nights"; otherwise show nights.
+    String? durationLabel;
+    bool durationIsHourly = false;
     if (checkIn != null && checkOut != null) {
-      numberOfNights = checkOut.difference(checkIn).inDays;
+      final span = checkOut.difference(checkIn);
+      if (span.inHours < 24) {
+        final hours = span.inHours < 1 ? 1 : span.inHours;
+        durationLabel = '$hours ${hours == 1 ? 'hour' : 'hours'}';
+        durationIsHourly = true;
+      } else {
+        final nights = span.inDays;
+        durationLabel = '$nights ${nights == 1 ? 'night' : 'nights'}';
+      }
     }
 
     final isStale =
@@ -165,14 +176,15 @@ class BookingDetailsSheet extends StatelessWidget {
                           value: _formatFullDate(checkOut),
                         ),
                       ],
-                      if (numberOfNights != null) ...[
+                      if (durationLabel != null) ...[
                         const SizedBox(height: 12),
                         _buildDetailRow(
                           theme,
-                          icon: Icons.nightlight_round,
+                          icon: durationIsHourly
+                              ? Icons.access_time
+                              : Icons.nightlight_round,
                           label: 'Duration',
-                          value:
-                              '$numberOfNights ${numberOfNights == 1 ? 'night' : 'nights'}',
+                          value: durationLabel,
                         ),
                       ],
                       const SizedBox(height: 12),
@@ -180,7 +192,8 @@ class BookingDetailsSheet extends StatelessWidget {
                         theme,
                         icon: Icons.group,
                         label: 'Guests',
-                        value: '$guestCount ${guestCount == 1 ? 'guest' : 'guests'}',
+                        value:
+                            '$guestCount ${guestCount == 1 ? 'guest' : 'guests'}',
                       ),
                       if (totalAmount != null) ...[
                         const SizedBox(height: 12),
