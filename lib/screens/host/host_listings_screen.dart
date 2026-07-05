@@ -6,6 +6,7 @@ import '../../models/rental_plan.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../services/app_settings_service.dart';
 import '../../services/image_upload_service.dart';
+import '../../services/verification/identity_gate.dart';
 import '../../state/auth_state.dart';
 import '../../widgets/modern_banner.dart';
 import 'address_proof_screen.dart';
@@ -109,8 +110,20 @@ class HostListingsScreen extends StatelessWidget {
   Future<void> _createListing(BuildContext context) async {
     final userId = authState.currentUser?.id;
 
-    // When configured, a host must have a proof-of-address document on file
+    // One-time identity gate: a host must have an identity document on file
     // before publishing a listing. Upload is enough to unlock (no approval).
+    if (userId != null) {
+      final verified = await IdentityGate.ensure(
+        context,
+        userId,
+        reason: 'to publish a listing',
+      );
+      if (!verified) return;
+    }
+
+    // When configured, a host must also have a proof-of-address document on
+    // file before publishing a listing. Upload is enough to unlock (no approval).
+    if (!context.mounted) return;
     if (userId != null &&
         await AppSettingsService.instance.ensureRequireListingAddressProof()) {
       final hasProof =

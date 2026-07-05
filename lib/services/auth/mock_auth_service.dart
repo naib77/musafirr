@@ -237,8 +237,8 @@ class MockAuthService implements AuthService {
       phone: '+880 $normalizedPhone',
       role: UserRole.tenant,
       createdAt: DateTime.now(),
-      nid: nid,
-      nidVerified: true,
+      nid: nid.isEmpty ? null : nid,
+      nidVerified: false,
       phoneVerified: true,
       registrationMethod: RegistrationMethod.phone,
     );

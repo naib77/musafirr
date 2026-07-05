@@ -13,6 +13,7 @@ import '../../models/listing_type.dart';
 import '../../models/rental_plan.dart';
 import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
+import '../../services/verification/identity_gate.dart';
 import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
 import '../../state/messaging_state.dart';
@@ -126,6 +127,19 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
         );
         return;
       }
+    }
+
+    // One-time identity gate before the first booking. Upload is enough to
+    // unlock (no admin approval); an already-verified user isn't prompted.
+    final userId = widget.authState.currentUser?.id;
+    if (userId != null) {
+      if (!mounted) return;
+      final verified = await IdentityGate.ensure(
+        context,
+        userId,
+        reason: 'to confirm your booking',
+      );
+      if (!verified) return;
     }
 
     if (!mounted) return;

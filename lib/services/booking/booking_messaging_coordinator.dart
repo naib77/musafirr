@@ -31,11 +31,18 @@ class BookingMessagingCoordinator {
   BookingMessagingCoordinator({
     required BookingLifecycleService lifecycleService,
     required BookingConversationService conversationService,
+    Future<void> Function(String bookingId)? onBookingAccepted,
   })  : _lifecycleService = lifecycleService,
-        _conversationService = conversationService;
+        _conversationService = conversationService,
+        _onBookingAccepted = onBookingAccepted;
 
   final BookingLifecycleService _lifecycleService;
   final BookingConversationService _conversationService;
+
+  /// Fired right after a booking is accepted and its welcome messages are sent.
+  /// Used to deliver the map location (and, for imminent bookings, the check-in
+  /// details) server-side. Optional so unit tests can omit it.
+  final Future<void> Function(String bookingId)? _onBookingAccepted;
 
   /// Accept a booking and create a conversation with the guest.
   ///
@@ -59,6 +66,17 @@ class BookingMessagingCoordinator {
       hostId: hostId,
       hostMessage: message,
     );
+
+    // Deliver the map now (and check-in details when the stay is imminent).
+    // Best-effort: a failure here must not undo the accept or the welcome
+    // messages that already went out.
+    if (_onBookingAccepted != null) {
+      try {
+        await _onBookingAccepted(booking.id);
+      } catch (_) {
+        // Swallow — the cron still delivers the check-in package as a fallback.
+      }
+    }
 
     return BookingWithConversation(
       booking: booking,
@@ -136,6 +154,7 @@ class BookingMessagingCoordinator {
         conversationId: conversation.id,
         cancelledByUserId: cancelledBy,
         cancelledByHost: isHost,
+        hostId: hostId,
       );
     }
 

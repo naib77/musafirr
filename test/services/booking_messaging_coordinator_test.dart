@@ -122,6 +122,7 @@ class RecordingConversationRepository implements ConversationRepository {
 /// Template provider fake: returns stored overrides, else the default.
 class FakeTemplateProvider implements MessageTemplateProvider {
   final Map<MessageTemplateTrigger, MessageTemplate> overrides = {};
+  MessageLanguage language = MessageLanguage.en;
 
   @override
   Future<MessageTemplate> templateFor(
@@ -130,6 +131,9 @@ class FakeTemplateProvider implements MessageTemplateProvider {
   ) async {
     return overrides[trigger] ?? MessageTemplate.defaultFor(hostId, trigger);
   }
+
+  @override
+  Future<MessageLanguage> languageFor(String hostId) async => language;
 }
 
 /// Messaging service fake that records every sent message.
@@ -235,6 +239,32 @@ void main() {
   }
 
   group('acceptBookingWithConversation', () {
+    test('fires the accept hook with the booking id (delivers map on accept)',
+        () async {
+      final accepted = <String>[];
+      final coordinatorWithHook = BookingMessagingCoordinator(
+        lifecycleService: BookingLifecycleService(
+          store: store,
+          rules: BookingRules(),
+        ),
+        conversationService: BookingConversationService(
+          conversationRepository: conversations,
+          messagingService: messages,
+          templateProvider: templates,
+        ),
+        onBookingAccepted: (bookingId) async => accepted.add(bookingId),
+      );
+      final booking = createBooking(status: BookingStatus.pending);
+      store.add(booking);
+
+      await coordinatorWithHook.acceptBookingWithConversation(
+        bookingId: booking.id,
+        hostId: hostId,
+      );
+
+      expect(accepted, [booking.id]);
+    });
+
     test(
         'sends three separate messages, Airbnb-style: the reservation card, '
         'the rendered welcome template, and the host note', () async {

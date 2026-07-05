@@ -7,6 +7,7 @@ import '../../models/conversation_participant.dart';
 import '../../models/message.dart';
 import '../../models/message_template.dart';
 import '../../repositories/conversation_repository.dart';
+import 'booking_system_messages.dart';
 import 'message_template_provider.dart';
 import 'messaging_service.dart';
 
@@ -134,6 +135,7 @@ class BookingConversationService {
 
     final conversation = convResult.data!;
 
+    final language = await _templates.languageFor(hostId);
     final template = await _templates.templateFor(
       hostId,
       MessageTemplateTrigger.bookingConfirmed,
@@ -146,7 +148,10 @@ class BookingConversationService {
       await _sendMessageFromUser(
         conversationId: conversation.id,
         senderId: hostId,
-        text: 'Reservation confirmed · ${booking.listingTitle ?? 'your stay'}',
+        text: BookingSystemMessages.reservationConfirmed(
+          booking.listingTitle ?? 'your stay',
+          language,
+        ),
         metadata: BookingCardMetadata(
           bookingId: booking.id,
           listingName: booking.listingTitle ?? 'Booking',
@@ -160,7 +165,12 @@ class BookingConversationService {
         ),
       );
 
-      final rendered = await _render(template.content, booking, conversation);
+      final rendered = await _render(
+        MessageTemplate.resolveContent(template, language),
+        booking,
+        conversation,
+        language: language,
+      );
       await _sendMessageFromUser(
         conversationId: conversation.id,
         senderId: hostId,
@@ -190,7 +200,8 @@ class BookingConversationService {
     required String conversationId,
     required String hostId,
   }) async {
-    final message = 'Guest has checked in. Enjoy your stay! 🏠';
+    final language = await _templates.languageFor(hostId);
+    final message = BookingSystemMessages.checkedIn(language);
 
     await _sendMessageFromUser(
       conversationId: conversationId,
@@ -211,13 +222,19 @@ class BookingConversationService {
     required Conversation conversation,
     required String hostId,
   }) async {
+    final language = await _templates.languageFor(hostId);
     final template = await _templates.templateFor(
       hostId,
       MessageTemplateTrigger.checkOut,
     );
     if (!template.enabled) return;
 
-    final rendered = await _render(template.content, booking, conversation);
+    final rendered = await _render(
+      MessageTemplate.resolveContent(template, language),
+      booking,
+      conversation,
+      language: language,
+    );
     await _sendMessageFromUser(
       conversationId: conversation.id,
       senderId: hostId,
@@ -236,10 +253,15 @@ class BookingConversationService {
     required String conversationId,
     required String cancelledByUserId,
     required bool cancelledByHost,
+    required String hostId,
   }) async {
-    final cancelledBy = cancelledByHost ? 'I (host)' : 'I';
-    final message = '$cancelledBy have cancelled this booking. '
-        'If you have any questions, feel free to message.';
+    // The message language always follows the host's preference, even when the
+    // guest is the one cancelling.
+    final language = await _templates.languageFor(hostId);
+    final message = BookingSystemMessages.cancelled(
+      cancelledByHost: cancelledByHost,
+      language: language,
+    );
 
     await _sendMessageFromUser(
       conversationId: conversationId,
@@ -295,8 +317,9 @@ class BookingConversationService {
   Future<String> _render(
     String templateContent,
     Booking booking,
-    Conversation conversation,
-  ) async {
+    Conversation conversation, {
+    MessageLanguage language = MessageLanguage.en,
+  }) async {
     var hostName = 'Your host';
     final guestId = booking.userId;
     if (guestId != null) {
@@ -309,7 +332,7 @@ class BookingConversationService {
     }
 
     return TemplateContext.fromBooking(booking, hostName: hostName)
-        .render(templateContent);
+        .render(templateContent, language: language);
   }
 
   Future<void> _sendMessageFromUser({

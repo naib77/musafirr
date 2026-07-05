@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/theme/app_theme.dart';
 import 'models/notification.dart';
@@ -64,10 +65,17 @@ class _MusafirAppState extends State<MusafirApp> {
       templateProvider: SupabaseMessageTemplateRepository.instance,
     );
 
-    // Initialize booking-messaging coordinator
+    // Initialize booking-messaging coordinator. On accept, ask the server to
+    // send the map now (and check-in details for imminent/hourly bookings).
     bookingMessagingCoordinator = BookingMessagingCoordinator(
       lifecycleService: bookingLifecycleService,
       conversationService: bookingConversationService,
+      onBookingAccepted: (bookingId) async {
+        await Supabase.instance.client.rpc(
+          'send_booking_accept_messages',
+          params: {'p_booking_id': bookingId},
+        );
+      },
     );
 
     // Initialize notification state with appropriate service

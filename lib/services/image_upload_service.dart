@@ -528,6 +528,26 @@ class ImageUploadService {
     }
   }
 
+  // ============== Identity verification (guest + host) ==============
+
+  /// Whether the user has any identity document on file. Presence of a row in
+  /// `owner_documents` is what unlocks the gated actions (adding a listing,
+  /// booking) — upload is enough, no admin approval required.
+  Future<bool> hasIdentityDocument(String userId) async {
+    try {
+      final row = await _client
+          .from('owner_documents')
+          .select('user_id')
+          .eq('user_id', userId)
+          .limit(1)
+          .maybeSingle();
+      return row != null;
+    } catch (e) {
+      debugPrint('[ImageUploadService] hasIdentityDocument failed: $e');
+      return false;
+    }
+  }
+
   // ============== Helpers ==============
 
   /// Delete a file from storage

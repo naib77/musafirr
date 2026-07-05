@@ -344,8 +344,11 @@ class SupabaseAuthService implements AuthService {
           'id': response.user!.id,
           'full_name': name,
           'mobile': formattedPhone,
-          'nid': nid,
-          'nid_verified': true,
+          'nid': nid.isEmpty ? null : nid,
+          // Identity is no longer collected at signup; it becomes a one-time
+          // gate before hosting/booking. Only an admin marking the account
+          // verified should flip nid_verified.
+          'nid_verified': false,
           'phone_verified': true,
           'role': UserRole.tenant.name,
           'registration_method': RegistrationMethod.phone.name,
@@ -363,8 +366,8 @@ class SupabaseAuthService implements AuthService {
         phone: formattedPhone,
         role: UserRole.tenant,
         createdAt: DateTime.tryParse(response.user!.createdAt),
-        nid: nid,
-        nidVerified: true,
+        nid: nid.isEmpty ? null : nid,
+        nidVerified: false,
         phoneVerified: true,
         registrationMethod: RegistrationMethod.phone,
       );

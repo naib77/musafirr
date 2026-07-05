@@ -9,7 +9,7 @@ import '../host/become_host_screen.dart';
 import '../host/host_dashboard_screen.dart';
 import '../host/scheduled_messages_screen.dart';
 import '../notifications/notification_settings_screen.dart';
-import '../verification/nid_verification_screen.dart';
+import '../verification/identity_verification_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
@@ -152,7 +152,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _SettingsItem(
                       icon: Icons.verified_user_outlined,
                       title: 'Identity verification',
-                      subtitle: 'Verify your identity with NID',
+                      subtitle: 'Verify your identity to host or book',
                       onTap: () => _navigateToVerification(context, user.id),
                     ),
                     _SettingsItem(
@@ -326,12 +326,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => NidVerificationScreen(
-          userId: userId,
-          onVerificationSubmitted: () {
-            // Optionally refresh user data
-          },
-        ),
+        builder: (context) => IdentityVerificationScreen(userId: userId),
       ),
     );
   }

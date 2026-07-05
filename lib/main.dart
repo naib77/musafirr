@@ -1,6 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
@@ -12,6 +13,9 @@ import 'services/notifications/push_notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Locale data for Bangla date formatting in automated guest messages.
+  await initializeDateFormatting('bn', null);
 
   // Initialize Firebase (skip on web for now)
   if (!kIsWeb) {

@@ -19,6 +19,7 @@ class ScheduledMessagesScreen extends StatefulWidget {
 class _ScheduledMessagesScreenState extends State<ScheduledMessagesScreen> {
   final _repository = SupabaseMessageTemplateRepository.instance;
   List<MessageTemplate>? _templates;
+  MessageLanguage _language = MessageLanguage.en;
 
   @override
   void initState() {
@@ -28,7 +29,24 @@ class _ScheduledMessagesScreenState extends State<ScheduledMessagesScreen> {
 
   Future<void> _load() async {
     final templates = await _repository.templatesFor(widget.hostId);
-    if (mounted) setState(() => _templates = templates);
+    final language = await _repository.languageFor(widget.hostId);
+    if (mounted) {
+      setState(() {
+        _templates = templates;
+        _language = language;
+      });
+    }
+  }
+
+  Future<void> _setLanguage(MessageLanguage language) async {
+    if (language == _language) return;
+    final previous = _language;
+    setState(() => _language = language);
+    final saved = await _repository.setLanguage(widget.hostId, language);
+    if (!saved && mounted) {
+      setState(() => _language = previous);
+      ModernBanner.showError(context, 'Could not save. Please try again.');
+    }
   }
 
   Future<void> _toggle(MessageTemplate template, bool enabled) async {
@@ -50,7 +68,8 @@ class _ScheduledMessagesScreenState extends State<ScheduledMessagesScreen> {
     final result = await Navigator.push<MessageTemplate>(
       context,
       MaterialPageRoute(
-        builder: (context) => _TemplateEditorScreen(template: template),
+        builder: (context) =>
+            _TemplateEditorScreen(template: template, language: _language),
       ),
     );
     if (result == null) return;
@@ -92,9 +111,40 @@ class _ScheduledMessagesScreenState extends State<ScheduledMessagesScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+
+                // Language: applied automatically to every automated message
+                // sent to guests.
+                Text('Language', style: theme.textTheme.titleSmall),
+                const SizedBox(height: 8),
+                SegmentedButton<MessageLanguage>(
+                  segments: const [
+                    ButtonSegment(
+                      value: MessageLanguage.en,
+                      label: Text('English'),
+                    ),
+                    ButtonSegment(
+                      value: MessageLanguage.bn,
+                      label: Text('বাংলা'),
+                    ),
+                  ],
+                  selected: {_language},
+                  onSelectionChanged: (selection) =>
+                      _setLanguage(selection.first),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Guests receive these messages in the selected language. '
+                  'Messages you edit yourself are sent exactly as written.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 20),
+
                 for (final template in templates) ...[
                   _TemplateCard(
                     template: template,
+                    language: _language,
                     onToggle: (enabled) => _toggle(template, enabled),
                     onEdit: () => _edit(template),
                   ),
@@ -109,11 +159,13 @@ class _ScheduledMessagesScreenState extends State<ScheduledMessagesScreen> {
 class _TemplateCard extends StatelessWidget {
   const _TemplateCard({
     required this.template,
+    required this.language,
     required this.onToggle,
     required this.onEdit,
   });
 
   final MessageTemplate template;
+  final MessageLanguage language;
   final ValueChanged<bool> onToggle;
   final VoidCallback onEdit;
 
@@ -177,7 +229,7 @@ class _TemplateCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    template.content,
+                    MessageTemplate.resolveContent(template, language),
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall,
@@ -195,9 +247,10 @@ class _TemplateCard extends StatelessWidget {
 /// Full-screen editor for one template: content with variable chips, and the
 /// lead-days picker for the pre-check-in message.
 class _TemplateEditorScreen extends StatefulWidget {
-  const _TemplateEditorScreen({required this.template});
+  const _TemplateEditorScreen({required this.template, required this.language});
 
   final MessageTemplate template;
+  final MessageLanguage language;
 
   @override
   State<_TemplateEditorScreen> createState() => _TemplateEditorScreenState();
@@ -210,7 +263,12 @@ class _TemplateEditorScreenState extends State<_TemplateEditorScreen> {
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: widget.template.content);
+    // Seed with what the guest would actually receive in the chosen language:
+    // an un-customized template shows the language default, a custom one shows
+    // the host's own text.
+    _controller = TextEditingController(
+      text: MessageTemplate.resolveContent(widget.template, widget.language),
+    );
     _leadDays = widget.template.leadDays;
   }
 
@@ -322,8 +380,10 @@ class _TemplateEditorScreenState extends State<_TemplateEditorScreen> {
 
           TextButton.icon(
             onPressed: () {
-              _controller.text =
-                  MessageTemplate.defaultContentFor(widget.template.trigger);
+              _controller.text = MessageTemplate.defaultContentFor(
+                widget.template.trigger,
+                language: widget.language,
+              );
             },
             icon: const Icon(Icons.restore),
             label: const Text('Reset to default'),

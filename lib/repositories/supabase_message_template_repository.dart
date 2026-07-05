@@ -64,6 +64,35 @@ class SupabaseMessageTemplateRepository implements MessageTemplateProvider {
     ];
   }
 
+  @override
+  Future<MessageLanguage> languageFor(String hostId) async {
+    try {
+      final row = await _client
+          .from('profiles')
+          .select('message_language')
+          .eq('id', hostId)
+          .maybeSingle();
+      return MessageLanguage.fromString(row?['message_language'] as String?);
+    } catch (e) {
+      debugPrint('[MessageTemplateRepository] languageFor error: $e');
+      return MessageLanguage.en;
+    }
+  }
+
+  /// Sets the host's automated-message language on their profile.
+  Future<bool> setLanguage(String hostId, MessageLanguage language) async {
+    try {
+      await _client
+          .from('profiles')
+          .update({'message_language': language.toJsonValue()}).eq(
+              'id', hostId);
+      return true;
+    } catch (e) {
+      debugPrint('[MessageTemplateRepository] setLanguage error: $e');
+      return false;
+    }
+  }
+
   /// Saves the host's customization for one trigger.
   Future<bool> save(MessageTemplate template) async {
     try {
