@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import 'package:musafir/models/user.dart';
 import 'package:musafir/models/listing.dart';
+import 'package:musafir/models/search_filters.dart';
 import 'package:musafir/models/booking.dart';
 import 'package:musafir/models/review.dart';
 import 'package:musafir/models/message.dart';
@@ -218,6 +219,14 @@ class MockMusafirRepository implements MusafirRepository {
       _execute('searchListings', () => listings
           .where((l) => l.title.toLowerCase().contains(query.toLowerCase()))
           .toList());
+
+  @override
+  Future<List<Listing>> searchListingsFromDb(
+    SearchFilters filters, {
+    int limit = 50,
+    int offset = 0,
+  }) =>
+      _execute('searchListingsFromDb', () => listings);
 
   @override
   Future<List<Listing>> getNearbyListings(double lat, double lng, double radiusKm) =>

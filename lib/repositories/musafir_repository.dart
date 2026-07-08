@@ -81,6 +81,16 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   // Listing methods
   Listing? getListingById(String id);
   List<Listing> searchListings(SearchFilters filters);
+
+  /// Full-catalog listing search via the server-side `search_listings` RPC.
+  /// Applies every filter in SQL and returns results ranked by rating, then
+  /// review count, then recency. Unlike [searchListings] (which only filters
+  /// listings already paginated into memory) this searches the whole catalog.
+  Future<List<Listing>> searchListingsFromDb(
+    SearchFilters filters, {
+    int limit,
+    int offset,
+  });
   List<Listing> getFeaturedListings({int limit = 10});
   List<Listing> getListingsByHost(String hostId);
   Future<void> addListing(Listing listing);

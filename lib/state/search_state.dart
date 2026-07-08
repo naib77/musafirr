@@ -5,12 +5,22 @@ import '../models/listing.dart';
 import '../models/listing_type.dart';
 import '../models/search_filters.dart';
 
+/// Drives Explore search. Filtering and ranking happen server-side (the
+/// `search_listings` RPC via [attachSearcher]) so search covers the FULL
+/// catalog, not just the listings already paginated into memory. When no filter
+/// is active, [results] is empty and Explore falls back to the default feed.
 class SearchStateNotifier extends ChangeNotifier with SafeNotifier {
   SearchFilters _filters = const SearchFilters();
   List<Listing> _results = [];
-  List<Listing> _allListings = [];
   bool _isSearching = false;
   String? _error;
+
+  /// Full-catalog search backend, injected at startup
+  /// (repository.searchListingsFromDb).
+  Future<List<Listing>> Function(SearchFilters filters)? _searcher;
+
+  /// Guards against out-of-order responses: only the newest search may write.
+  int _searchToken = 0;
 
   SearchFilters get filters => _filters;
   List<Listing> get results => _results;
@@ -18,16 +28,16 @@ class SearchStateNotifier extends ChangeNotifier with SafeNotifier {
   String? get error => _error;
   bool get hasResults => _results.isNotEmpty;
 
-  // Set the source listings (called when repository data changes)
-  void setListings(List<Listing> listings) {
-    _allListings = listings;
-    _applyFilters();
+  /// Wire the server-side searcher. Called once during app startup.
+  void attachSearcher(
+      Future<List<Listing>> Function(SearchFilters filters) searcher) {
+    _searcher = searcher;
   }
 
   // Update filters
   void updateFilters(SearchFilters newFilters) {
     _filters = newFilters;
-    _applyFilters();
+    _runSearch();
   }
 
   // Update location filter
@@ -41,7 +51,7 @@ class SearchStateNotifier extends ChangeNotifier with SafeNotifier {
       latitude: latitude,
       longitude: longitude,
     );
-    _applyFilters();
+    _runSearch();
   }
 
   // Update date range
@@ -51,7 +61,7 @@ class SearchStateNotifier extends ChangeNotifier with SafeNotifier {
       checkOut: checkOut,
       dateMode: SearchDateMode.dateRange,
     );
-    _applyFilters();
+    _runSearch();
   }
 
   // Update single date with time range
@@ -66,25 +76,25 @@ class SearchStateNotifier extends ChangeNotifier with SafeNotifier {
       endTime: endTime,
       dateMode: SearchDateMode.singleDateWithTime,
     );
-    _applyFilters();
+    _runSearch();
   }
 
   // Update date mode
   void updateDateMode(SearchDateMode mode) {
     _filters = _filters.copyWith(dateMode: mode);
-    _applyFilters();
+    _runSearch();
   }
 
   // Clear time selection
   void clearTime() {
     _filters = _filters.copyWith(clearTime: true);
-    _applyFilters();
+    _runSearch();
   }
 
   // Update guest count
   void updateGuestCount(int count) {
     _filters = _filters.copyWith(guestCount: count.clamp(1, 16));
-    _applyFilters();
+    _runSearch();
   }
 
   // Update price range
@@ -93,13 +103,13 @@ class SearchStateNotifier extends ChangeNotifier with SafeNotifier {
       minPrice: minPrice,
       maxPrice: maxPrice,
     );
-    _applyFilters();
+    _runSearch();
   }
 
   // Update property types
   void updatePropertyTypes(List<ListingType> types) {
     _filters = _filters.copyWith(propertyTypes: types);
-    _applyFilters();
+    _runSearch();
   }
 
   // Toggle property type
@@ -111,13 +121,13 @@ class SearchStateNotifier extends ChangeNotifier with SafeNotifier {
       types.add(type);
     }
     _filters = _filters.copyWith(propertyTypes: types);
-    _applyFilters();
+    _runSearch();
   }
 
   // Update amenities
   void updateAmenities(List<String> amenities) {
     _filters = _filters.copyWith(amenities: amenities);
-    _applyFilters();
+    _runSearch();
   }
 
   // Toggle amenity
@@ -129,109 +139,71 @@ class SearchStateNotifier extends ChangeNotifier with SafeNotifier {
       amenities.add(amenity);
     }
     _filters = _filters.copyWith(amenities: amenities);
-    _applyFilters();
+    _runSearch();
   }
 
   // Clear all filters
   void clearFilters() {
     _filters = const SearchFilters();
-    _applyFilters();
+    // No filters → drop results so Explore shows the default ranked feed.
+    _searchToken++;
+    _results = [];
+    _error = null;
+    _isSearching = false;
+    notifyListeners();
   }
 
   // Clear specific filter categories
   void clearLocation() {
     _filters = _filters.copyWith(clearLocation: true);
-    _applyFilters();
+    _runSearch();
   }
 
   void clearDates() {
     _filters = _filters.copyWith(clearDates: true);
-    _applyFilters();
+    _runSearch();
   }
 
   void clearPriceRange() {
     _filters = _filters.copyWith(clearPriceRange: true);
-    _applyFilters();
+    _runSearch();
   }
 
-  // Perform search with simulated delay
-  Future<void> search() async {
+  /// Re-run the current search. Public entry point kept for callers that want
+  /// to explicitly (re)trigger it.
+  Future<void> search() => _runSearch();
+
+  Future<void> _runSearch() async {
+    final searcher = _searcher;
+    // Nothing to filter by, or no backend wired → clear results; Explore then
+    // shows the default feed.
+    if (!_filters.hasActiveFilters || searcher == null) {
+      _searchToken++;
+      _results = [];
+      _error = null;
+      _isSearching = false;
+      notifyListeners();
+      return;
+    }
+
+    final token = ++_searchToken;
     _isSearching = true;
     _error = null;
     notifyListeners();
 
-    // Simulate network delay
-    await Future.delayed(const Duration(milliseconds: 300));
+    try {
+      final results = await searcher(_filters);
+      if (token != _searchToken) return; // a newer search superseded this one
+      _results = results;
+      _error = null;
+    } catch (e) {
+      if (token != _searchToken) return;
+      _results = [];
+      _error = e.toString();
+    }
 
-    _applyFilters();
-
+    if (token != _searchToken) return;
     _isSearching = false;
-    notifyListeners();
-  }
-
-  // Apply filters to listings
-  void _applyFilters() {
-    _results = _allListings.where((listing) {
-      // Filter by availability (listing hidden, or host is away)
-      if (!listing.available) return false;
-      if (!listing.hostAvailable) return false;
-
-      // Filter by property type
-      if (_filters.propertyTypes.isNotEmpty &&
-          !_filters.propertyTypes.contains(listing.type)) {
-        return false;
-      }
-
-      // Filter by guest count
-      if (listing.maxGuests < _filters.guestCount) {
-        return false;
-      }
-
-      // Filter by price range
-      final price = listing.displayPrice;
-      if (_filters.minPrice != null && price < _filters.minPrice!) {
-        return false;
-      }
-      if (_filters.maxPrice != null && price > _filters.maxPrice!) {
-        return false;
-      }
-
-      // Filter by amenities
-      if (_filters.amenities.isNotEmpty) {
-        final listingAmenities = listing.amenityNames;
-        for (final amenity in _filters.amenities) {
-          if (!listingAmenities.contains(amenity)) {
-            return false;
-          }
-        }
-      }
-
-      // Filter by location (simple text match for now)
-      if (_filters.location != null && _filters.location!.isNotEmpty) {
-        final searchLower = _filters.location!.toLowerCase();
-        final matchesCity =
-            listing.city?.toLowerCase().contains(searchLower) ?? false;
-        final matchesAddress =
-            listing.address.toLowerCase().contains(searchLower);
-        final matchesTitle = listing.title.toLowerCase().contains(searchLower);
-        if (!matchesCity && !matchesAddress && !matchesTitle) {
-          return false;
-        }
-      }
-
-      return true;
-    }).toList();
-
-    // Sort by rating (highest first), then by review count
-    _results.sort((a, b) {
-      final ratingA = a.rating ?? 0;
-      final ratingB = b.rating ?? 0;
-      if (ratingA != ratingB) {
-        return ratingB.compareTo(ratingA);
-      }
-      return b.reviewCount.compareTo(a.reviewCount);
-    });
-
     notifyListeners();
   }
 }

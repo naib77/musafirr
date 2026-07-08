@@ -134,12 +134,13 @@ class _MusafirAppState extends State<MusafirApp> {
   }
 
   Future<void> _initializeSearchState() async {
-    searchState.setListings(repository.listings);
+    // Explore search runs server-side over the full catalog.
+    searchState.attachSearcher(repository.searchListingsFromDb);
   }
 
   void _onRepositoryChange() {
-    // SafeNotifier on searchState handles any build-phase notification.
-    searchState.setListings(repository.listings);
+    // Search results are a server-side snapshot; the default feed updates
+    // itself via the repository's own listeners, so nothing to sync here.
   }
 
   @override

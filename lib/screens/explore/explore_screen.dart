@@ -73,7 +73,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   Future<void> _loadMoreListings() async {
-    if (widget.repository.isLoadingListings ||
+    // Search results come from a single server-side query, not the feed
+    // paginator — don't load feed pages behind an active search.
+    if (_searchActive ||
+        widget.repository.isLoadingListings ||
         !widget.repository.hasMoreListings) {
       return;
     }
@@ -84,13 +87,19 @@ class _ExploreScreenState extends State<ExploreScreen> {
     await widget.repository.resetListingsPagination();
   }
 
+  /// Whether a server-side search is currently driving the results.
+  bool get _searchActive => widget.searchState.filters.hasActiveFilters;
+
   List<Listing> get _filteredListings {
-    var listings = widget.searchState.results;
-    if (listings.isEmpty) {
-      listings = widget.repository.listings
-          .where((l) => l.available && l.hostAvailable)
-          .toList();
-    }
+    // When a search is active, show its server-side results (already ranked and
+    // filtered to available + host_available) — even if empty, so a no-match
+    // search shows the empty state instead of falling back to the whole feed.
+    // Otherwise show the default ranked feed.
+    var listings = _searchActive
+        ? widget.searchState.results
+        : widget.repository.listings
+            .where((l) => l.available && l.hostAvailable)
+            .toList();
     if (_selectedType != null) {
       listings = listings.where((l) => l.type == _selectedType).toList();
     }
@@ -310,7 +319,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 ]),
                 builder: (context, _) {
                   final listings = _filteredListings;
-                  final isLoading = widget.repository.isLoadingListings;
+                  final isLoading = _searchActive
+                      ? widget.searchState.isSearching
+                      : widget.repository.isLoadingListings;
 
                   // Show loading indicator when loading and no listings yet
                   if (listings.isEmpty && isLoading) {

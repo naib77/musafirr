@@ -56,7 +56,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
 
   // Pagination state - Listings
   static const int _pageSize = 10;
-  DateTime? _listingsCursor;
+  int _listingsOffset = 0;
   bool _hasMoreListings = true;
   bool _isLoadingListings = false;
 
@@ -101,7 +101,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
     _reviews = [];
     _users.clear();
     _cachedBookingCounts = null;
-    _listingsCursor = null;
+    _listingsOffset = 0;
     _hasMoreListings = true;
     _isLoadingListings = false;
     _bookingsCursor = null;
@@ -270,7 +270,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
     // being present regardless of where they rank in the explore feed.
     final ownId = _client.auth.currentUser?.id;
     _listings.removeWhere((l) => ownId == null || l.hostId != ownId);
-    _listingsCursor = null;
+    _listingsOffset = 0;
     _hasMoreListings = true;
     _isLoadingListings = false;
     notifyListeners();
@@ -287,71 +287,22 @@ class SupabaseMusafirRepository extends ChangeNotifier
     notifyListeners();
 
     try {
-      // Build query with cursor pagination
-      // Note: filters must come before order/limit
-      var query = _client
-          .from('listings')
-          .select('*, listing_facilities(facility_id, facilities(name))')
-          .eq('is_active', true);
+      // The default feed is an unfiltered search: server-side ranked (rating,
+      // reviews, recency), host_available enforced in SQL, offset-paginated.
+      final newListings = await searchListingsFromDb(
+        const SearchFilters(),
+        limit: _pageSize,
+        offset: _listingsOffset,
+      );
+      _listingsOffset += newListings.length;
 
-      // Apply cursor if we have one (fetch items older than cursor)
-      if (_listingsCursor != null) {
-        query = query.lt('created_at', _listingsCursor!.toIso8601String());
-      }
+      // Add to accumulated list (skip ids already cached, e.g. the user's own
+      // listings loaded by _loadOwnListings).
+      final existingIds = _listings.map((l) => l.id).toSet();
+      _listings.addAll(newListings.where((l) => !existingIds.contains(l.id)));
 
-      final listingsResponse =
-          await query.order('created_at', ascending: false).limit(_pageSize);
-
-      final newListings = <Listing>[];
-
-      if ((listingsResponse as List).isEmpty) {
+      if (newListings.length < _pageSize) {
         _hasMoreListings = false;
-      } else {
-        // Fetch rating data for these listings
-        final listingIds =
-            listingsResponse.map((e) => e['id'] as String).toList();
-        final ratingsResponse = await _client
-            .from('listing_ratings')
-            .select('listing_id, review_count, average_rating')
-            .inFilter('listing_id', listingIds);
-
-        // Create ratings map
-        final ratingsMap = <String, Map<String, dynamic>>{};
-        for (final row in ratingsResponse as List) {
-          final listingId = row['listing_id'] as String;
-          ratingsMap[listingId] = row as Map<String, dynamic>;
-        }
-
-        // Parse listings and merge with ratings
-        for (final e in listingsResponse) {
-          final json = e;
-          final listingId = json['id'] as String;
-          final ratingData = ratingsMap[listingId];
-
-          if (ratingData != null) {
-            json['rating'] = ratingData['average_rating'];
-            json['review_count'] = ratingData['review_count'];
-          }
-
-          newListings.add(_listingFromJson(json));
-        }
-
-        // Update cursor to the oldest item's created_at
-        final lastItem = listingsResponse.last;
-        final createdAtStr = lastItem['created_at'] as String?;
-        if (createdAtStr != null) {
-          _listingsCursor = DateTime.parse(createdAtStr);
-        }
-
-        // Add to accumulated list (skip ids already cached, e.g. the user's
-        // own listings loaded by _loadOwnListings)
-        final existingIds = _listings.map((l) => l.id).toSet();
-        _listings.addAll(newListings.where((l) => !existingIds.contains(l.id)));
-
-        // Check if we got fewer items than page size (means no more)
-        if (listingsResponse.length < _pageSize) {
-          _hasMoreListings = false;
-        }
       }
 
       _isLoadingListings = false;
@@ -361,6 +312,40 @@ class SupabaseMusafirRepository extends ChangeNotifier
       debugPrint('Error fetching listings page: $e');
       _isLoadingListings = false;
       notifyListeners();
+      return [];
+    }
+  }
+
+  /// Full-catalog listing search via the `search_listings` RPC. Every filter is
+  /// applied server-side and results are ranked (rating desc, reviews desc,
+  /// newest). Used both for the default feed (empty filters) and Explore search.
+  @override
+  Future<List<Listing>> searchListingsFromDb(
+    SearchFilters filters, {
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    try {
+      final location = filters.location?.trim();
+      final rows = await _client.rpc('search_listings', params: {
+        'p_property_types': filters.propertyTypes.isEmpty
+            ? null
+            : filters.propertyTypes.map((t) => t.name).toList(),
+        'p_guest_count': filters.guestCount,
+        'p_min_price': filters.minPrice,
+        'p_max_price': filters.maxPrice,
+        'p_amenities':
+            filters.amenities.isEmpty ? null : filters.amenities,
+        'p_location': (location == null || location.isEmpty) ? null : location,
+        'p_limit': limit,
+        'p_offset': offset,
+      });
+
+      return (rows as List)
+          .map((e) => _listingFromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('Error searching listings: $e');
       return [];
     }
   }
