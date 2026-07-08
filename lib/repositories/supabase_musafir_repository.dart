@@ -901,8 +901,12 @@ class SupabaseMusafirRepository extends ChangeNotifier
 
   Future<void> _fetchUserById(String id) async {
     try {
-      final response =
-          await _client.from('profiles').select().eq('id', id).maybeSingle();
+      // Cross-user lookup → public_profiles view (no PII; see migration 061).
+      final response = await _client
+          .from('public_profiles')
+          .select()
+          .eq('id', id)
+          .maybeSingle();
 
       if (response != null) {
         _users[id] = _userFromJson(response);
@@ -1107,6 +1111,30 @@ class SupabaseMusafirRepository extends ChangeNotifier
       if (i != -1) _listings[i] = previous;
       notifyListeners();
       debugPrint('Error updating listing: $e');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> setListingAvailability(String listingId, bool available) async {
+    final index = _listings.indexWhere((l) => l.id == listingId);
+    if (index == -1) return;
+
+    final previous = _listings[index];
+    if (previous.available == available) return;
+    _listings[index] = previous.copyWith(available: available);
+    notifyListeners();
+
+    try {
+      await _client
+          .from('listings')
+          .update({'is_active': available}).eq('id', listingId);
+    } catch (e) {
+      // Roll back to the previous value on failure.
+      final i = _listings.indexWhere((l) => l.id == listingId);
+      if (i != -1) _listings[i] = previous;
+      notifyListeners();
+      debugPrint('Error updating listing availability: $e');
       rethrow;
     }
   }
@@ -1351,7 +1379,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
     if (cached != null) return cached.hostAvailable;
     try {
       final row = await _client
-          .from('profiles')
+          .from('public_profiles')
           .select('is_available')
           .eq('id', hostId)
           .maybeSingle();

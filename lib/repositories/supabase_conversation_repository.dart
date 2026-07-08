@@ -217,10 +217,12 @@ class SupabaseConversationRepository implements ConversationRepository {
           listingType != null) {
         final updateData = <String, dynamic>{};
         if (listingTitle != null) updateData['listing_title'] = listingTitle;
-        if (bookingStart != null)
+        if (bookingStart != null) {
           updateData['booking_start'] = bookingStart.toIso8601String();
-        if (bookingEnd != null)
+        }
+        if (bookingEnd != null) {
           updateData['booking_end'] = bookingEnd.toIso8601String();
+        }
         if (listingType != null) updateData['listing_type'] = listingType;
 
         await _client
@@ -369,12 +371,15 @@ class SupabaseConversationRepository implements ConversationRepository {
               // Update the conversation in the database
               final updateData = <String, dynamic>{};
               if (listingType != null) updateData['listing_type'] = listingType;
-              if (bookingData['starts_at'] != null)
+              if (bookingData['starts_at'] != null) {
                 updateData['booking_start'] = bookingData['starts_at'];
-              if (bookingData['ends_at'] != null)
+              }
+              if (bookingData['ends_at'] != null) {
                 updateData['booking_end'] = bookingData['ends_at'];
-              if (listingTitle != null)
+              }
+              if (listingTitle != null) {
                 updateData['listing_title'] = listingTitle;
+              }
 
               if (updateData.isNotEmpty) {
                 await _client
@@ -501,8 +506,9 @@ class SupabaseConversationRepository implements ConversationRepository {
     }
 
     try {
+      // Other conversation members → public_profiles view (no PII; migration 061).
       final response = await _client
-          .from('profiles')
+          .from('public_profiles')
           .select()
           .eq('id', userId)
           .maybeSingle();

@@ -227,10 +227,12 @@ class SupabaseMessagingService implements MessagingService {
 
         final updateData = <String, dynamic>{};
         if (listingType != null) updateData['listing_type'] = listingType;
-        if (bookingResponse['starts_at'] != null)
+        if (bookingResponse['starts_at'] != null) {
           updateData['booking_start'] = bookingResponse['starts_at'];
-        if (bookingResponse['ends_at'] != null)
+        }
+        if (bookingResponse['ends_at'] != null) {
           updateData['booking_end'] = bookingResponse['ends_at'];
+        }
         if (listingTitle != null) updateData['listing_title'] = listingTitle;
 
         if (updateData.isNotEmpty) {
@@ -815,8 +817,9 @@ class SupabaseMessagingService implements MessagingService {
     }
 
     try {
+      // Other users (message senders) → public_profiles view (no PII; migration 061).
       final response = await _client
-          .from('profiles')
+          .from('public_profiles')
           .select()
           .eq('id', userId)
           .maybeSingle();

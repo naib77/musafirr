@@ -87,6 +87,12 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   Future<void> updateListing(Listing listing);
   Future<void> deleteListing(String listingId);
 
+  /// Flips only a listing's visibility (`is_active`). Unlike [updateListing]
+  /// this never touches the facilities or check-in-details tables, so the
+  /// Hide/Show toggle can't wipe check-in details (which aren't loaded into the
+  /// in-memory listing) or get rolled back by an unrelated secondary write.
+  Future<void> setListingAvailability(String listingId, bool available);
+
   /// Loads the host-only check-in access details for a listing (or null if
   /// none / not the owner). Kept separate from the main listing fetch so the
   /// guest-facing explore feed never depends on this private table.

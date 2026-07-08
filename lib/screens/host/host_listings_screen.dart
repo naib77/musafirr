@@ -44,7 +44,9 @@ class HostListingsScreen extends StatelessWidget {
           }
 
           return ListView.separated(
-            padding: const EdgeInsets.all(16),
+            // Extra bottom padding so the last card's action row (Edit/Delete)
+            // clears the "Add Listing" FAB that floats over the list.
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
             itemCount: hostListings.length,
             separatorBuilder: (_, __) => const SizedBox(height: 12),
             itemBuilder: (context, index) {
@@ -53,7 +55,8 @@ class HostListingsScreen extends StatelessWidget {
                 listing: listing,
                 onEdit: () => _editListing(context, listing),
                 onDelete: () => _confirmDelete(context, listing),
-                onToggleAvailability: () => _toggleAvailability(listing),
+                onToggleAvailability: () =>
+                    _toggleAvailability(context, listing),
                 repository: repository,
               );
             },
@@ -204,9 +207,21 @@ class HostListingsScreen extends StatelessWidget {
     );
   }
 
-  void _toggleAvailability(Listing listing) {
-    final updated = listing.copyWith(available: !listing.available);
-    repository.updateListing(updated);
+  Future<void> _toggleAvailability(
+      BuildContext context, Listing listing) async {
+    try {
+      await repository.setListingAvailability(
+        listing.id,
+        !listing.available,
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ModernBanner.showError(
+          context,
+          e.toString().replaceFirst('Exception: ', ''),
+        );
+      }
+    }
   }
 }
 

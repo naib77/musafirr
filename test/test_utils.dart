@@ -206,6 +206,14 @@ class MockMusafirRepository implements MusafirRepository {
       });
 
   @override
+  Future<void> setListingAvailability(String id, bool available) =>
+      _execute('setListingAvailability', () {
+        listings = listings
+            .map((l) => l.id == id ? l.copyWith(available: available) : l)
+            .toList();
+      });
+
+  @override
   Future<List<Listing>> searchListings(String query) =>
       _execute('searchListings', () => listings
           .where((l) => l.title.toLowerCase().contains(query.toLowerCase()))

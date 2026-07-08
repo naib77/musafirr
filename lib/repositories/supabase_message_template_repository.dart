@@ -67,8 +67,9 @@ class SupabaseMessageTemplateRepository implements MessageTemplateProvider {
   @override
   Future<MessageLanguage> languageFor(String hostId) async {
     try {
+      // hostId may not be the caller → public_profiles view (migration 061).
       final row = await _client
-          .from('profiles')
+          .from('public_profiles')
           .select('message_language')
           .eq('id', hostId)
           .maybeSingle();

@@ -173,13 +173,16 @@ class OtpService {
     if (!OtpConfig.persistToDatabase) return null;
 
     try {
-      final response = await _client.from('otp_attempts').insert({
-        'phone': phoneNumber,
-        'otp_hash': _processOtpForStorage(otp),
-        'expires_at': expiresAt.toUtc().toIso8601String(),
-      }).select('id').single();
+      // Written via a SECURITY DEFINER RPC: the otp_attempts table is not
+      // client-accessible (the OTP hash must never be readable — see migration
+      // 060). The RPC inserts and returns the new row id.
+      final id = await _client.rpc('otp_log_send', params: {
+        'p_phone': phoneNumber,
+        'p_otp_hash': _processOtpForStorage(otp),
+        'p_expires_at': expiresAt.toUtc().toIso8601String(),
+      });
 
-      return response['id'] as String?;
+      return id as String?;
     } catch (e) {
       debugPrint('[OTP Service] Failed to persist OTP to database: $e');
       return null;
@@ -191,9 +194,10 @@ class OtpService {
     if (dbId == null || !OtpConfig.persistToDatabase) return;
 
     try {
-      await _client.from('otp_attempts').update({
-        'attempts': attempts,
-      }).eq('id', dbId);
+      await _client.rpc('otp_log_attempts', params: {
+        'p_id': dbId,
+        'p_attempts': attempts,
+      });
     } catch (e) {
       debugPrint('[OTP Service] Failed to update attempts in database: $e');
     }
@@ -204,10 +208,7 @@ class OtpService {
     if (dbId == null || !OtpConfig.persistToDatabase) return;
 
     try {
-      await _client.from('otp_attempts').update({
-        'verified_at': DateTime.now().toUtc().toIso8601String(),
-        'is_used': true,
-      }).eq('id', dbId);
+      await _client.rpc('otp_log_verified', params: {'p_id': dbId});
     } catch (e) {
       debugPrint('[OTP Service] Failed to mark OTP as verified: $e');
     }
