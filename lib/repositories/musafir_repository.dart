@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../models/booking.dart';
+import '../models/booking_contacts.dart';
 import '../models/booking_duration.dart';
 import '../models/leaderboard_entry.dart';
 import '../models/listing.dart';
@@ -107,6 +108,12 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   /// none / not the owner). Kept separate from the main listing fetch so the
   /// guest-facing explore feed never depends on this private table.
   Future<CheckInDetails?> fetchCheckInDetails(String listingId);
+
+  /// Contact phone numbers for both parties of a confirmed booking (the guest's
+  /// and host's login numbers). Returns null if the booking isn't confirmed yet
+  /// or the caller isn't a participant. Backed by the `get_booking_contacts`
+  /// SECURITY DEFINER RPC, which enforces those rules.
+  Future<BookingContacts?> fetchBookingContacts(String bookingId);
 
   // Review methods (legacy - for simple listing reviews)
   List<Review> getReviewsForListing(String listingId);

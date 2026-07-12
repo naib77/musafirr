@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_colors.dart';
+import 'app_network_image.dart';
 import '../models/listing.dart';
 import '../models/listing_type.dart';
 import '../models/rental_plan.dart';
@@ -85,14 +86,13 @@ class _ListingCardModernState extends State<ListingCardModern>
                   fit: StackFit.expand,
                   children: [
                     if (listing.primaryImage != null)
-                      Image.network(
-                        listing.primaryImage!,
+                      AppNetworkImage(
+                        url: listing.primaryImage!,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _buildPlaceholder(theme),
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return _buildShimmer(theme);
-                        },
+                        // Grid thumbnail — decode small to keep scrolling smooth.
+                        decodeWidth: 250,
+                        placeholder: _buildShimmer(theme),
+                        errorWidget: _buildPlaceholder(theme),
                       )
                     else
                       _buildPlaceholder(theme),

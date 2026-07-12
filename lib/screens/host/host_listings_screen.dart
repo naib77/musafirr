@@ -209,6 +209,32 @@ class HostListingsScreen extends StatelessWidget {
 
   Future<void> _toggleAvailability(
       BuildContext context, Listing listing) async {
+    final hiding = listing.available;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(hiding ? 'Hide listing?' : 'Show listing?'),
+        content: Text(
+          hiding
+              ? 'Guests won\'t be able to find or book "${listing.title}" '
+                  'until you show it again.'
+              : '"${listing.title}" will be visible to guests and available '
+                  'to book.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(hiding ? 'Hide' : 'Show'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
     try {
       await repository.setListingAvailability(
         listing.id,

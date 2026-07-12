@@ -142,7 +142,36 @@ class _ImagePickerGridState extends State<ImagePickerGrid> {
     ModernBanner.showWarning(context, 'Maximum ${widget.maxImages} images allowed');
   }
 
-  void _removeImage(int index) {
+  Future<void> _removeImage(int index) async {
+    if (index < 0 || index >= widget.images.length) return;
+    final isCover = index == 0;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove photo?'),
+        content: Text(
+          isCover
+              ? 'This is your cover photo. Removing it will make the next '
+                  'photo the cover.'
+              : 'This photo will be removed from your listing.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
     final newImages = [...widget.images];
     newImages.removeAt(index);
     widget.onImagesChanged(newImages);
@@ -155,6 +184,40 @@ class _ImagePickerGridState extends State<ImagePickerGrid> {
     if (newIndex > oldIndex) newIndex--;
     final item = newImages.removeAt(oldIndex);
     newImages.insert(newIndex, item);
+    widget.onImagesChanged(newImages);
+  }
+
+  /// Promotes the image at [index] to the front so it becomes the cover.
+  /// The cover is always the first photo, and the parent screens persist
+  /// `image_urls` in this list's order, so moving it to index 0 is all that's
+  /// needed for it to save as the cover.
+  Future<void> _setCover(int index) async {
+    if (!widget.enabled || index <= 0 || index >= widget.images.length) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Set as cover?'),
+        content: const Text(
+          'This photo will become the cover — the first image guests see for '
+          'your listing.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Set cover'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final newImages = [...widget.images];
+    final item = newImages.removeAt(index);
+    newImages.insert(0, item);
     widget.onImagesChanged(newImages);
   }
 
@@ -188,7 +251,8 @@ class _ImagePickerGridState extends State<ImagePickerGrid> {
 
         // Help text
         Text(
-          'Drag to reorder. First photo will be the cover image.',
+          'The first photo is the cover. Tap the star on any photo to make '
+          'it the cover.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -211,6 +275,7 @@ class _ImagePickerGridState extends State<ImagePickerGrid> {
                 index: index,
                 isFirst: index == 0,
                 onRemove: widget.enabled ? () => _removeImage(index) : null,
+                onSetCover: widget.enabled ? () => _setCover(index) : null,
                 size: _calculateTileSize(context),
               );
             }),
@@ -244,6 +309,7 @@ class _ImageTile extends StatelessWidget {
     required this.index,
     required this.isFirst,
     required this.onRemove,
+    required this.onSetCover,
     required this.size,
   });
 
@@ -251,6 +317,7 @@ class _ImageTile extends StatelessWidget {
   final int index;
   final bool isFirst;
   final VoidCallback? onRemove;
+  final VoidCallback? onSetCover;
   final double size;
 
   @override
@@ -269,7 +336,8 @@ class _ImageTile extends StatelessWidget {
             child: _buildImage(),
           ),
 
-          // Cover badge
+          // Cover badge on the first photo; a tappable "Set cover" chip on the
+          // rest (hidden while uploading / on error).
           if (isFirst)
             Positioned(
               top: 4,
@@ -280,11 +348,51 @@ class _ImageTile extends StatelessWidget {
                   color: theme.colorScheme.primary,
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: Text(
-                  'Cover',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onPrimary,
-                    fontWeight: FontWeight.bold,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.star_rounded,
+                        size: 12, color: theme.colorScheme.onPrimary),
+                    const SizedBox(width: 3),
+                    Text(
+                      'Cover',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onPrimary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else if (onSetCover != null && !image.isUploading && !image.hasError)
+            Positioned(
+              bottom: 4,
+              left: 4,
+              child: GestureDetector(
+                onTap: onSetCover,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.star_border_rounded,
+                          size: 12, color: Colors.white),
+                      SizedBox(width: 3),
+                      Text(
+                        'Set cover',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

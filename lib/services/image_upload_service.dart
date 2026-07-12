@@ -7,6 +7,8 @@ import 'package:mime/mime.dart';
 import 'package:path/path.dart' as p;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'image_compression_service.dart';
+
 /// Storage bucket names
 class StorageBuckets {
   static const String listingImages = 'listing-images';
@@ -144,18 +146,24 @@ class ImageUploadService {
 
   // ============== Upload to Supabase ==============
 
-  /// Upload an XFile to a bucket
+  /// Upload an XFile to a bucket.
+  ///
+  /// When [compressionProfile] is provided the image is re-encoded/resized
+  /// before upload (see [ImageCompressionService]); the stored file's extension
+  /// is rewritten to match the resulting format. Pass null for files that must
+  /// keep full fidelity (e.g. verification documents).
   Future<UploadResult> uploadXFile({
     required XFile file,
     required String bucket,
     required String path,
+    ImageCompressionProfile? compressionProfile,
     UploadProgressCallback? onProgress,
   }) async {
     try {
-      final bytes = await file.readAsBytes();
+      var bytes = await file.readAsBytes();
 
       // Try multiple sources for MIME type (web often has blob URLs without extensions)
-      final mimeType = file.mimeType ??
+      var mimeType = file.mimeType ??
           lookupMimeType(file.path) ??
           lookupMimeType(file.name) ??
           _detectMimeTypeFromBytes(bytes) ??
@@ -163,10 +171,26 @@ class ImageUploadService {
 
       debugPrint('[ImageUploadService] Detected MIME type: $mimeType for ${file.name}');
 
+      var uploadPath = path;
+      if (compressionProfile != null) {
+        final before = bytes.length;
+        final compressed = await ImageCompressionService.instance.compress(
+          bytes,
+          profile: compressionProfile,
+          sourceMime: mimeType,
+        );
+        bytes = compressed.bytes;
+        mimeType = compressed.mimeType;
+        // Keep the stored extension consistent with the actual bytes.
+        uploadPath = _pathWithExtensionForMime(path, mimeType);
+        debugPrint(
+            '[ImageUploadService] Compressed ${(before / 1024).round()}KB -> ${(bytes.length / 1024).round()}KB ($mimeType)');
+      }
+
       return _uploadBytes(
         bytes: bytes,
         bucket: bucket,
-        path: path,
+        path: uploadPath,
         mimeType: mimeType,
         onProgress: onProgress,
       );
@@ -174,6 +198,22 @@ class ImageUploadService {
       debugPrint('[ImageUploadService] Error uploading XFile: $e');
       return UploadResult.failure('Failed to read file: $e');
     }
+  }
+
+  /// Replaces the extension of [path] with the canonical one for [mimeType]
+  /// (so a JPEG re-encoded to WebP is stored as `.webp`).
+  String _pathWithExtensionForMime(String path, String mimeType) {
+    final ext = switch (mimeType) {
+      'image/webp' => 'webp',
+      'image/jpeg' => 'jpg',
+      'image/png' => 'png',
+      _ => null,
+    };
+    if (ext == null) return path;
+    final dir = p.dirname(path);
+    final base = p.basenameWithoutExtension(path);
+    final newName = '$base.$ext';
+    return dir == '.' ? newName : '$dir/$newName';
   }
 
   /// Detect MIME type from file bytes (magic numbers)
@@ -297,6 +337,7 @@ class ImageUploadService {
       file: image,
       bucket: StorageBuckets.listingImages,
       path: path,
+      compressionProfile: ImageCompressionProfile.listing,
       onProgress: onProgress,
     );
   }
@@ -343,14 +384,15 @@ class ImageUploadService {
       file: image,
       bucket: StorageBuckets.avatars,
       path: path,
+      compressionProfile: ImageCompressionProfile.avatar,
       onProgress: onProgress,
     );
   }
 
   /// Delete user avatar
   Future<bool> deleteAvatar(String userId) async {
-    // Try common extensions
-    for (final ext in ['jpg', 'jpeg', 'png']) {
+    // Try common extensions (webp is now the compressed default).
+    for (final ext in ['webp', 'jpg', 'jpeg', 'png']) {
       final deleted = await _deleteFile(StorageBuckets.avatars, '$userId.$ext');
       if (deleted) return true;
     }

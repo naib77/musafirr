@@ -25,6 +25,14 @@ class Listing {
     this.description,
     this.city,
     this.country,
+    // Structured (Airbnb-style) address parts. `address` remains the composed
+    // display string; these hold the individual components for editing.
+    this.flatFloor,
+    this.houseNo,
+    this.street,
+    this.area,
+    this.postalCode,
+    this.landmark,
     this.imageUrls = const [],
     this.maxGuests = 2,
     this.bedrooms = 1,
@@ -72,6 +80,16 @@ class Listing {
   final String? description;
   final String? city;
   final String? country;
+
+  /// Structured address components (Bangladesh convention). [address] is the
+  /// composed display string built from these; use [composeAddress] to build it.
+  final String? flatFloor;
+  final String? houseNo;
+  final String? street;
+  final String? area;
+  final String? postalCode;
+  final String? landmark;
+
   final List<String> imageUrls;
   final int maxGuests;
   final int bedrooms;
@@ -155,6 +173,34 @@ class Listing {
   // Primary image for cards
   String? get primaryImage => imageUrls.isNotEmpty ? imageUrls.first : null;
 
+  /// Builds a single human-readable address line from the structured parts
+  /// (Bangladesh order: house, flat/floor, road, area — city/postal appended).
+  /// Empty parts are skipped. Used to keep [address] as a display string.
+  static String composeAddress({
+    String? houseNo,
+    String? flatFloor,
+    String? street,
+    String? area,
+    String? city,
+    String? postalCode,
+  }) {
+    final parts = <String>[
+      if (houseNo != null && houseNo.trim().isNotEmpty) houseNo.trim(),
+      if (flatFloor != null && flatFloor.trim().isNotEmpty) flatFloor.trim(),
+      if (street != null && street.trim().isNotEmpty) street.trim(),
+      if (area != null && area.trim().isNotEmpty) area.trim(),
+    ];
+    var line = parts.join(', ');
+    final cityPostal = [
+      if (city != null && city.trim().isNotEmpty) city.trim(),
+      if (postalCode != null && postalCode.trim().isNotEmpty) postalCode.trim(),
+    ].join(' ');
+    if (cityPostal.isNotEmpty) {
+      line = line.isEmpty ? cityPostal : '$line, $cityPostal';
+    }
+    return line;
+  }
+
   Listing copyWith({
     String? id,
     String? ownerName,
@@ -174,6 +220,12 @@ class Listing {
     String? description,
     String? city,
     String? country,
+    String? flatFloor,
+    String? houseNo,
+    String? street,
+    String? area,
+    String? postalCode,
+    String? landmark,
     List<String>? imageUrls,
     int? maxGuests,
     int? bedrooms,
@@ -206,6 +258,12 @@ class Listing {
       description: description ?? this.description,
       city: city ?? this.city,
       country: country ?? this.country,
+      flatFloor: flatFloor ?? this.flatFloor,
+      houseNo: houseNo ?? this.houseNo,
+      street: street ?? this.street,
+      area: area ?? this.area,
+      postalCode: postalCode ?? this.postalCode,
+      landmark: landmark ?? this.landmark,
       imageUrls: imageUrls ?? this.imageUrls,
       maxGuests: maxGuests ?? this.maxGuests,
       bedrooms: bedrooms ?? this.bedrooms,
@@ -250,6 +308,12 @@ class Listing {
       description: description,
       city: city,
       country: country,
+      flatFloor: flatFloor,
+      houseNo: houseNo,
+      street: street,
+      area: area,
+      postalCode: postalCode,
+      landmark: landmark,
       imageUrls: imageUrls,
       maxGuests: maxGuests,
       bedrooms: bedrooms,

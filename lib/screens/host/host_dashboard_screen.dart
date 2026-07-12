@@ -466,10 +466,17 @@ class _AvailabilityCard extends StatelessWidget {
               ],
             ),
           ),
-          Switch(
-            value: available,
-            activeTrackColor: AppColors.success,
-            onChanged: onChanged,
+          // Wrap in a transparent Material so the Switch always has a Material
+          // ancestor, no matter how this card is embedded (e.g. pushed as a
+          // standalone route without a Scaffold). Prevents the
+          // "No Material widget found" crash.
+          Material(
+            color: Colors.transparent,
+            child: Switch(
+              value: available,
+              activeTrackColor: AppColors.success,
+              onChanged: onChanged,
+            ),
           ),
         ],
       ),

@@ -122,6 +122,17 @@ class _MainShellState extends State<MainShell> {
         if (widget.messagingState != null) widget.messagingState!,
       ]),
       builder: (context, _) {
+        // The saved guest/host mode loads asynchronously. Until it resolves,
+        // rendering would default to guest and then snap to host — a visible
+        // flash on every reload for hosts. Hold on a neutral splash frame
+        // while logged in until the mode is known. (Logged-out users are
+        // always guest, so no need to wait.)
+        if (_isLoggedIn && !_appModeState.isLoaded) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
         final scaffold = Scaffold(
           body: Column(
             children: [

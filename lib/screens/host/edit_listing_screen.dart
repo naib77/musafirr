@@ -34,8 +34,14 @@ class EditListingScreen extends StatefulWidget {
 class _EditListingScreenState extends State<EditListingScreen> {
   late final TextEditingController _titleController;
   late final TextEditingController _descriptionController;
-  late final TextEditingController _addressController;
+  // Structured (Airbnb-style) address parts.
+  late final TextEditingController _flatFloorController;
+  late final TextEditingController _houseNoController;
+  late final TextEditingController _streetController;
+  late final TextEditingController _areaController;
   late final TextEditingController _cityController;
+  late final TextEditingController _postalCodeController;
+  late final TextEditingController _landmarkController;
   late final TextEditingController _hourlyPriceController;
   late final TextEditingController _dailyPriceController;
   late final TextEditingController _monthlyPriceController;
@@ -81,14 +87,41 @@ class _EditListingScreenState extends State<EditListingScreen> {
 
   bool _isSaving = false;
 
+  // Tracks whether the host has made any change that isn't saved yet, so a
+  // back-navigation can warn before discarding. [_trackChanges] gates it off
+  // during programmatic seeding (check-in load) and save teardown.
+  bool _dirty = false;
+  bool _trackChanges = true;
+
+  // Every field edit in this form flows through setState (directly for toggles/
+  // counters/photos, and via the text-controller listeners added in initState),
+  // so marking dirty here catches them all — including future fields.
+  @override
+  void setState(VoidCallback fn) {
+    if (_trackChanges) _dirty = true;
+    super.setState(fn);
+  }
+
+  void _markDirty() {
+    if (_trackChanges) _dirty = true;
+  }
+
   @override
   void initState() {
     super.initState();
     final l = widget.listing;
     _titleController = TextEditingController(text: l.title);
     _descriptionController = TextEditingController(text: l.description ?? '');
-    _addressController = TextEditingController(text: l.address);
+    _flatFloorController = TextEditingController(text: l.flatFloor ?? '');
+    _houseNoController = TextEditingController(text: l.houseNo ?? '');
+    // Fall back to the legacy single-line address for street on older listings
+    // that predate the structured fields, so nothing looks empty on edit.
+    _streetController = TextEditingController(
+        text: l.street ?? (l.houseNo == null ? l.address : ''));
+    _areaController = TextEditingController(text: l.area ?? '');
     _cityController = TextEditingController(text: l.city ?? '');
+    _postalCodeController = TextEditingController(text: l.postalCode ?? '');
+    _landmarkController = TextEditingController(text: l.landmark ?? '');
     // Seed each rate field with its current value, or a sensible default the
     // host sees only after re-enabling a plan that wasn't offered.
     _hourlyPriceController =
@@ -152,14 +185,53 @@ class _EditListingScreenState extends State<EditListingScreen> {
               storagePath: _storagePathFromUrl(url),
             ))
         .toList();
+
+    // Mark the form dirty on any text edit — including the check-in/WiFi/rules
+    // fields that have no onChanged handler. Added after seeding so the initial
+    // values don't count as edits.
+    for (final c in [
+      _titleController,
+      _descriptionController,
+      _flatFloorController,
+      _houseNoController,
+      _streetController,
+      _areaController,
+      _cityController,
+      _postalCodeController,
+      _landmarkController,
+      _hourlyPriceController,
+      _dailyPriceController,
+      _monthlyPriceController,
+      _minHoursController,
+      _maxHoursController,
+      _minNightsController,
+      _maxNightsController,
+      _minMonthsController,
+      _maxMonthsController,
+      _checkInTimeController,
+      _checkOutTimeController,
+      _quietHoursController,
+      _additionalRulesController,
+      _directionsController,
+      _wifiNameController,
+      _wifiPasswordController,
+      _accessCodeController,
+    ]) {
+      c.addListener(_markDirty);
+    }
   }
 
   @override
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
-    _addressController.dispose();
+    _flatFloorController.dispose();
+    _houseNoController.dispose();
+    _streetController.dispose();
+    _areaController.dispose();
     _cityController.dispose();
+    _postalCodeController.dispose();
+    _landmarkController.dispose();
     _hourlyPriceController.dispose();
     _dailyPriceController.dispose();
     _monthlyPriceController.dispose();
@@ -193,12 +265,15 @@ class _EditListingScreenState extends State<EditListingScreen> {
     final access =
         await widget.repository.fetchCheckInDetails(widget.listing.id);
     if (access == null || !mounted) return;
+    // Seeding, not a user edit — don't let it flip the dirty flag.
+    _trackChanges = false;
     setState(() {
       _directionsController.text = access.directions ?? '';
       _wifiNameController.text = access.wifiName ?? '';
       _wifiPasswordController.text = access.wifiPassword ?? '';
       _accessCodeController.text = access.accessCode ?? '';
     });
+    _trackChanges = true;
   }
 
   String? _nullIfEmpty(String value) {
@@ -217,6 +292,9 @@ class _EditListingScreenState extends State<EditListingScreen> {
 
   String? _formError() {
     if (_titleController.text.trim().isEmpty) return 'Add a listing title.';
+    if (_streetController.text.trim().isEmpty) return 'Add the road / street.';
+    if (_areaController.text.trim().isEmpty) return 'Add the area / locality.';
+    if (_cityController.text.trim().isEmpty) return 'Add the city.';
     if (_images.isEmpty) return 'Add at least one photo.';
     return _pricingError();
   }
@@ -291,8 +369,21 @@ class _EditListingScreenState extends State<EditListingScreen> {
         hostAvatarUrl: l.hostAvatarUrl,
         title: _titleController.text.trim(),
         description: desc.isEmpty ? null : desc,
-        address: _addressController.text.trim(),
+        address: Listing.composeAddress(
+          houseNo: _houseNoController.text,
+          flatFloor: _flatFloorController.text,
+          street: _streetController.text,
+          area: _areaController.text,
+          city: _cityController.text,
+          postalCode: _postalCodeController.text,
+        ),
         city: _cityController.text.trim(),
+        flatFloor: _nullIfEmpty(_flatFloorController.text),
+        houseNo: _nullIfEmpty(_houseNoController.text),
+        street: _nullIfEmpty(_streetController.text),
+        area: _nullIfEmpty(_areaController.text),
+        postalCode: _nullIfEmpty(_postalCodeController.text),
+        landmark: _nullIfEmpty(_landmarkController.text),
         country: l.country,
         type: _propertyType,
         latitude: _latitude,
@@ -363,6 +454,10 @@ class _EditListingScreenState extends State<EditListingScreen> {
       }
 
       if (mounted) {
+        // Changes are persisted — allow leaving without the discard prompt,
+        // and ignore the _isSaving teardown setState in `finally`.
+        _trackChanges = false;
+        _dirty = false;
         Navigator.pop(context);
         ModernBanner.showSuccess(context, 'Listing updated');
       }
@@ -380,6 +475,50 @@ class _EditListingScreenState extends State<EditListingScreen> {
     final theme = Theme.of(context);
     final pricingError = _pricingError();
 
+    return PopScope(
+      // Intercept every back attempt; we decide whether to pop after checking
+      // for unsaved changes.
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final navigator = Navigator.of(context);
+        if (!_dirty || await _confirmDiscard()) {
+          navigator.pop();
+        }
+      },
+      child: _buildScaffold(theme, pricingError),
+    );
+  }
+
+  /// Confirms leaving with unsaved edits. Returns true to discard and leave.
+  Future<bool> _confirmDiscard() async {
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Discard changes?'),
+        content: const Text(
+          "You've made changes that haven't been saved. If you leave now, "
+          'they will be lost.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep editing'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    return leave ?? false;
+  }
+
+  Widget _buildScaffold(ThemeData theme, String? pricingError) {
     return Scaffold(
       appBar: AppBar(title: const Text('Edit listing')),
       body: SingleChildScrollView(
@@ -424,16 +563,51 @@ class _EditListingScreenState extends State<EditListingScreen> {
             // ---------- Location ----------
             _sectionTitle(theme, 'Location'),
             AppTextField(
-              controller: _addressController,
-              label: 'Street address',
-              hint: 'e.g., Road 27, House 5',
+              controller: _houseNoController,
+              label: 'House / Building no.',
+              hint: 'e.g., House 12',
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 16),
+            AppTextField(
+              controller: _flatFloorController,
+              label: 'Flat / Floor (optional)',
+              hint: 'e.g., B-4, 3rd floor',
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 16),
+            AppTextField(
+              controller: _streetController,
+              label: 'Road / Street',
+              hint: 'e.g., Road 27',
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 16),
+            AppTextField(
+              controller: _areaController,
+              label: 'Area / Locality',
+              hint: 'e.g., Banani',
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 16),
             AppTextField(
               controller: _cityController,
-              label: 'City / Area',
-              hint: 'e.g., Gulshan, Dhaka',
+              label: 'City',
+              hint: 'e.g., Dhaka',
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 16),
+            AppTextField(
+              controller: _postalCodeController,
+              label: 'Postal code (optional)',
+              hint: 'e.g., 1213',
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 16),
+            AppTextField(
+              controller: _landmarkController,
+              label: 'Landmark (optional)',
+              hint: 'e.g., Near Banani Bridge',
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
@@ -448,8 +622,11 @@ class _EditListingScreenState extends State<EditListingScreen> {
                   setState(() {
                     _latitude = result.latitude;
                     _longitude = result.longitude;
-                    if (result.address != null && result.address!.isNotEmpty) {
-                      _addressController.text = result.address!;
+                    // Seed Road/Street from the geocoded address only if empty.
+                    if (result.address != null &&
+                        result.address!.isNotEmpty &&
+                        _streetController.text.trim().isEmpty) {
+                      _streetController.text = result.address!;
                     }
                   });
                 }

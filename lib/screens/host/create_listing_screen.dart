@@ -36,8 +36,14 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   ListingType _propertyType = ListingType.room;
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final _addressController = TextEditingController(text: 'Dhaka, Bangladesh');
+  // Structured (Airbnb-style) address parts.
+  final _flatFloorController = TextEditingController();
+  final _houseNoController = TextEditingController();
+  final _streetController = TextEditingController();
+  final _areaController = TextEditingController();
   final _cityController = TextEditingController(text: 'Dhaka');
+  final _postalCodeController = TextEditingController();
+  final _landmarkController = TextEditingController();
   double _latitude = 23.7806;
   double _longitude = 90.4070;
   int _maxGuests = 2;
@@ -90,8 +96,13 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
     _pageController.dispose();
     _titleController.dispose();
     _descriptionController.dispose();
-    _addressController.dispose();
+    _flatFloorController.dispose();
+    _houseNoController.dispose();
+    _streetController.dispose();
+    _areaController.dispose();
     _cityController.dispose();
+    _postalCodeController.dispose();
+    _landmarkController.dispose();
     _hourlyPriceController.dispose();
     _dailyPriceController.dispose();
     _monthlyPriceController.dispose();
@@ -137,7 +148,8 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
       case 1: // Basics
         return _titleController.text.trim().isNotEmpty;
       case 2: // Location
-        return _addressController.text.trim().isNotEmpty &&
+        return _streetController.text.trim().isNotEmpty &&
+            _areaController.text.trim().isNotEmpty &&
             _cityController.text.trim().isNotEmpty;
       case 3: // Details
         return _maxGuests > 0 && _bedrooms > 0 && _beds > 0 && _bathrooms > 0;
@@ -252,9 +264,22 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         description: _descriptionController.text.trim().isEmpty
             ? null
             : _descriptionController.text.trim(),
-        address: _addressController.text.trim(),
+        address: Listing.composeAddress(
+          houseNo: _houseNoController.text,
+          flatFloor: _flatFloorController.text,
+          street: _streetController.text,
+          area: _areaController.text,
+          city: _cityController.text,
+          postalCode: _postalCodeController.text,
+        ),
         city: _cityController.text.trim(),
         country: 'Bangladesh',
+        flatFloor: _emptyToNull(_flatFloorController.text),
+        houseNo: _emptyToNull(_houseNoController.text),
+        street: _emptyToNull(_streetController.text),
+        area: _emptyToNull(_areaController.text),
+        postalCode: _emptyToNull(_postalCodeController.text),
+        landmark: _emptyToNull(_landmarkController.text),
         type: _propertyType,
         latitude: _latitude,
         longitude: _longitude,
@@ -368,16 +393,24 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                   onChanged: () => setState(() {}),
                 ),
                 _LocationStep(
-                  addressController: _addressController,
+                  flatFloorController: _flatFloorController,
+                  houseNoController: _houseNoController,
+                  streetController: _streetController,
+                  areaController: _areaController,
                   cityController: _cityController,
+                  postalCodeController: _postalCodeController,
+                  landmarkController: _landmarkController,
                   latitude: _latitude,
                   longitude: _longitude,
                   onLocationChanged: (lat, lng, address) {
                     setState(() {
                       _latitude = lat;
                       _longitude = lng;
-                      if (address != null) {
-                        _addressController.text = address;
+                      // Seed Road/Street from the reverse-geocoded address only
+                      // if the host hasn't typed one — a helpful starting point.
+                      if (address != null &&
+                          _streetController.text.trim().isEmpty) {
+                        _streetController.text = address;
                       }
                     });
                   },
@@ -712,16 +745,26 @@ class _BasicsStep extends StatelessWidget {
 // Step 3: Location
 class _LocationStep extends StatelessWidget {
   const _LocationStep({
-    required this.addressController,
+    required this.flatFloorController,
+    required this.houseNoController,
+    required this.streetController,
+    required this.areaController,
     required this.cityController,
+    required this.postalCodeController,
+    required this.landmarkController,
     required this.latitude,
     required this.longitude,
     required this.onLocationChanged,
     required this.onChanged,
   });
 
-  final TextEditingController addressController;
+  final TextEditingController flatFloorController;
+  final TextEditingController houseNoController;
+  final TextEditingController streetController;
+  final TextEditingController areaController;
   final TextEditingController cityController;
+  final TextEditingController postalCodeController;
+  final TextEditingController landmarkController;
   final double latitude;
   final double longitude;
   final void Function(double lat, double lng, String? address)
@@ -745,23 +788,58 @@ class _LocationStep extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Your address is only shared with guests after they book.',
+            'Your exact address is only shared with guests after they book.',
             style: theme.textTheme.bodyLarge?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 32),
           AppTextField(
-            controller: addressController,
-            label: 'Street address',
-            hint: 'e.g., Road 27, House 5',
+            controller: houseNoController,
+            label: 'House / Building no.',
+            hint: 'e.g., House 12',
+            onChanged: (_) => onChanged(),
+          ),
+          const SizedBox(height: 16),
+          AppTextField(
+            controller: flatFloorController,
+            label: 'Flat / Floor (optional)',
+            hint: 'e.g., B-4, 3rd floor',
+            onChanged: (_) => onChanged(),
+          ),
+          const SizedBox(height: 16),
+          AppTextField(
+            controller: streetController,
+            label: 'Road / Street',
+            hint: 'e.g., Road 27',
+            onChanged: (_) => onChanged(),
+          ),
+          const SizedBox(height: 16),
+          AppTextField(
+            controller: areaController,
+            label: 'Area / Locality',
+            hint: 'e.g., Banani',
             onChanged: (_) => onChanged(),
           ),
           const SizedBox(height: 16),
           AppTextField(
             controller: cityController,
-            label: 'City / Area',
-            hint: 'e.g., Gulshan, Dhaka',
+            label: 'City',
+            hint: 'e.g., Dhaka',
+            onChanged: (_) => onChanged(),
+          ),
+          const SizedBox(height: 16),
+          AppTextField(
+            controller: postalCodeController,
+            label: 'Postal code (optional)',
+            hint: 'e.g., 1213',
+            onChanged: (_) => onChanged(),
+          ),
+          const SizedBox(height: 16),
+          AppTextField(
+            controller: landmarkController,
+            label: 'Landmark (optional)',
+            hint: 'e.g., Near Banani Bridge',
             onChanged: (_) => onChanged(),
           ),
           const SizedBox(height: 16),

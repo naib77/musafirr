@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../widgets/app_network_image.dart';
+
 /// Airbnb-style "photo tour": a white, scrollable gallery of every listing
 /// photo — one full-width shot, then a pair, repeating. Tapping a photo opens
 /// the full-screen zoomable viewer at that image.
@@ -115,12 +117,13 @@ class _GalleryImage extends StatelessWidget {
       onTap: onTap,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
-        child: Image.network(
-          url,
+        child: AppNetworkImage(
+          url: url,
           height: height,
           width: double.infinity,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
+          decodeWidth: 500,
+          errorWidget: Container(
             height: height,
             color: theme.colorScheme.surfaceContainerHighest,
             child: Icon(
@@ -128,13 +131,10 @@ class _GalleryImage extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          loadingBuilder: (context, child, progress) {
-            if (progress == null) return child;
-            return Container(
-              height: height,
-              color: theme.colorScheme.surfaceContainerHighest,
-            );
-          },
+          placeholder: Container(
+            height: height,
+            color: theme.colorScheme.surfaceContainerHighest,
+          ),
         ),
       ),
     );
@@ -284,23 +284,22 @@ class _ZoomablePhotoState extends State<_ZoomablePhoto> {
         maxScale: 5,
         onInteractionEnd: (_) => _notifyZoom(),
         child: Center(
-          child: Image.network(
-            widget.url,
+          // Full-screen zoomable view — decode at native resolution (no
+          // decodeWidth) so pinch-to-zoom stays sharp.
+          child: AppNetworkImage(
+            url: widget.url,
             fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) => const Icon(
+            errorWidget: const Icon(
               Icons.broken_image_outlined,
               color: Colors.white54,
               size: 48,
             ),
-            loadingBuilder: (context, child, progress) {
-              if (progress == null) return child;
-              return const Center(
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white54,
-                ),
-              );
-            },
+            placeholder: const Center(
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white54,
+              ),
+            ),
           ),
         ),
       ),

@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/currency/money.dart';
 import '../../core/theme/app_colors.dart';
+import '../../widgets/app_network_image.dart';
 import '../../models/booking.dart';
 import '../../models/booking_conflict_exception.dart';
 import '../../models/listing.dart';
@@ -359,11 +360,10 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                 itemBuilder: (context, index) {
                   return GestureDetector(
                     onTap: () => _openGallery(listing),
-                    child: Image.network(
-                      listing.imageUrls[index],
+                    child: AppNetworkImage(
+                      url: listing.imageUrls[index],
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _buildImagePlaceholder(theme),
+                      errorWidget: _buildImagePlaceholder(theme),
                     ),
                   );
                 },
@@ -1791,10 +1791,11 @@ class _BookingSheetState extends State<_BookingSheet> {
                         width: 54,
                         height: 54,
                         child: widget.listing.primaryImage != null
-                            ? Image.network(
-                                widget.listing.primaryImage!,
+                            ? AppNetworkImage(
+                                url: widget.listing.primaryImage!,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Container(
+                                decodeWidth: 54,
+                                errorWidget: Container(
                                   color: AppColors.surfaceMuted,
                                   child: const Icon(Icons.home_outlined),
                                 ),

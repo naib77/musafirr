@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../core/state/safe_notifier.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -45,10 +46,8 @@ class AppModeStateNotifier extends ChangeNotifier with SafeNotifier {
 
   Future<AppMode?> _getFromLocalStorage() async {
     try {
-      // Using web/mobile local storage pattern
-      // This is a simplified version - in production you'd use shared_preferences
-      final storage = _LocalStorage();
-      final value = await storage.read(_storageKey);
+      final prefs = await SharedPreferences.getInstance();
+      final value = prefs.getString(_storageKey);
       if (value == 'host') return AppMode.host;
       if (value == 'guest') return AppMode.guest;
       return null;
@@ -59,8 +58,9 @@ class AppModeStateNotifier extends ChangeNotifier with SafeNotifier {
 
   Future<void> _saveToLocalStorage(AppMode mode) async {
     try {
-      final storage = _LocalStorage();
-      await storage.write(_storageKey, mode == AppMode.host ? 'host' : 'guest');
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+          _storageKey, mode == AppMode.host ? 'host' : 'guest');
     } catch (e) {
       // Ignore storage errors
     }
@@ -85,19 +85,5 @@ class AppModeStateNotifier extends ChangeNotifier with SafeNotifier {
   void reset() {
     _mode = AppMode.guest;
     notifyListeners();
-  }
-}
-
-/// Simple local storage abstraction
-/// In a real app, this would use shared_preferences package
-class _LocalStorage {
-  static final Map<String, String> _cache = {};
-
-  Future<String?> read(String key) async {
-    return _cache[key];
-  }
-
-  Future<void> write(String key, String value) async {
-    _cache[key] = value;
   }
 }

@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' show RealtimeChannel;
 import '../data/facility_catalog.dart';
 import '../models/booking.dart';
 import '../models/booking_conflict_exception.dart';
+import '../models/booking_contacts.dart';
 import '../models/booking_duration.dart';
 import '../models/booking_status.dart';
 import '../models/facility.dart';
@@ -377,6 +378,12 @@ class SupabaseMusafirRepository extends ChangeNotifier
       description: json['description'] as String?,
       city: json['city'] as String?,
       country: json['country'] as String?,
+      flatFloor: json['flat_floor'] as String?,
+      houseNo: json['house_no'] as String?,
+      street: json['street'] as String?,
+      area: json['area'] as String?,
+      postalCode: json['postal_code'] as String?,
+      landmark: json['landmark'] as String?,
       imageUrls: (json['image_urls'] as List?)?.cast<String>() ?? [],
       maxGuests: json['max_guests'] as int? ?? 2,
       bedrooms: json['bedrooms'] as int? ?? 1,
@@ -425,6 +432,12 @@ class SupabaseMusafirRepository extends ChangeNotifier
       'description': listing.description,
       'city': listing.city,
       'country': listing.country,
+      'flat_floor': listing.flatFloor,
+      'house_no': listing.houseNo,
+      'street': listing.street,
+      'area': listing.area,
+      'postal_code': listing.postalCode,
+      'landmark': listing.landmark,
       'image_urls': listing.imageUrls,
       'max_guests': listing.maxGuests,
       'bedrooms': listing.bedrooms,
@@ -465,6 +478,29 @@ class SupabaseMusafirRepository extends ChangeNotifier
       );
     } catch (e) {
       debugPrint('Error fetching check-in details: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<BookingContacts?> fetchBookingContacts(String bookingId) async {
+    try {
+      final rows = await _client.rpc(
+        'get_booking_contacts',
+        params: {'p_booking_id': bookingId},
+      );
+      if (rows is List && rows.isNotEmpty) {
+        final r = rows.first as Map<String, dynamic>;
+        return BookingContacts(
+          guestName: r['guest_name'] as String?,
+          guestPhone: r['guest_phone'] as String?,
+          hostName: r['host_name'] as String?,
+          hostPhone: r['host_phone'] as String?,
+        );
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error fetching booking contacts: $e');
       return null;
     }
   }

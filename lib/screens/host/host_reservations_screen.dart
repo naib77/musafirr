@@ -16,6 +16,7 @@ import '../../state/auth_state.dart';
 import '../../state/messaging_state.dart';
 import '../../state/notification_state.dart';
 import '../../widgets/app_page_header.dart';
+import '../../widgets/booking_contact_card.dart';
 import '../../widgets/booking_filter_bar.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/notification_bell.dart';
@@ -422,6 +423,14 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
                     ),
                   ),
                 ],
+              ),
+
+              // Guest phone (shared once the booking is confirmed). Renders
+              // nothing for pending/declined bookings.
+              BookingContactCard(
+                repository: widget.repository,
+                bookingId: booking.id,
+                viewerIsHost: true,
               ),
               const Divider(height: 32),
 

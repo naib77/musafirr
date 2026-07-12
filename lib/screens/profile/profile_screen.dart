@@ -350,9 +350,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => HostDashboardScreen(
-          repository: repository,
-          authState: authState,
+        // HostDashboardScreen has no Scaffold of its own — it's built to be
+        // embedded in the main shell (which supplies the Scaffold + header).
+        // Pushed standalone it needs its own Scaffold, otherwise its Switch
+        // finds no Material ancestor and the body has no bounded constraints.
+        builder: (context) => Scaffold(
+          appBar: AppBar(title: const Text('Host Dashboard')),
+          body: HostDashboardScreen(
+            repository: repository,
+            authState: authState,
+          ),
         ),
       ),
     );
