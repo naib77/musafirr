@@ -10,6 +10,7 @@ class OtpInputField extends StatefulWidget {
     this.onChanged,
     this.enabled = true,
     this.autofocus = true,
+    this.initialValue,
   });
 
   final int length;
@@ -17,6 +18,10 @@ class OtpInputField extends StatefulWidget {
   final void Function(String)? onChanged;
   final bool enabled;
   final bool autofocus;
+
+  /// Pre-fills the digit boxes (e.g. an auto-read SMS code). Only the first
+  /// [length] digits are used.
+  final String? initialValue;
 
   @override
   State<OtpInputField> createState() => _OtpInputFieldState();
@@ -37,6 +42,12 @@ class _OtpInputFieldState extends State<OtpInputField> {
       widget.length,
       (_) => FocusNode(),
     );
+
+    // Seed with an auto-read/pre-filled code, if provided.
+    final seed = widget.initialValue ?? '';
+    for (var i = 0; i < widget.length && i < seed.length; i++) {
+      _controllers[i].text = seed[i];
+    }
 
     // Auto-focus first field
     if (widget.autofocus) {

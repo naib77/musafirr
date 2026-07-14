@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:sms_autofill/sms_autofill.dart';
 
 import '../../state/otp_state.dart';
 import '../../widgets/modern_banner.dart';
@@ -17,9 +19,43 @@ class OtpVerificationScreen extends StatefulWidget {
   State<OtpVerificationScreen> createState() => _OtpVerificationScreenState();
 }
 
-class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
+class _OtpVerificationScreenState extends State<OtpVerificationScreen>
+    with CodeAutoFill {
   String _currentOtp = '';
   int _otpFieldKey = 0; // Used to reset the OTP field
+  bool _autoReadStarted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Android SMS Retriever: auto-read the incoming OTP. No SMS permission
+    // needed; a no-op on web/iOS (manual entry still works everywhere).
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      _autoReadStarted = true;
+      listenForCode();
+    }
+  }
+
+  /// Called by [CodeAutoFill] when the OTP SMS is auto-detected.
+  @override
+  void codeUpdated() {
+    final detected = code ?? '';
+    if (detected.length != 4 || !mounted) return;
+    setState(() {
+      _currentOtp = detected;
+      _otpFieldKey++; // reseed OtpInputField with the detected code
+    });
+    _handleVerifyOtp(detected);
+  }
+
+  @override
+  void dispose() {
+    if (_autoReadStarted) {
+      cancel();
+      SmsAutoFill().unregisterListener();
+    }
+    super.dispose();
+  }
 
   Future<void> _handleVerifyOtp(String otp) async {
     if (otp.length != 4) return;
@@ -131,6 +167,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                     key: ValueKey('otp_field_$_otpFieldKey'),
                     length: 4,
                     enabled: !widget.otpState.isLoading,
+                    initialValue: _currentOtp,
                     onChanged: (value) => setState(() => _currentOtp = value),
                     onCompleted: _handleVerifyOtp,
                   ),

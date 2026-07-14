@@ -50,6 +50,11 @@ serve(async (req) => {
     if (!phone) {
       return jsonResponse(400, { success: false, error: "Missing phone" });
     }
+    // Android SMS Retriever API needs the app's 11-char signature hash appended
+    // to the message so the app can auto-read the code. The client sends it;
+    // sanitize to the expected charset and drop anything unexpected.
+    const rawSig = String(body?.appSignature ?? "").trim();
+    const appSignature = /^[A-Za-z0-9+/=]{11}$/.test(rawSig) ? rawSig : "";
 
     // QA numbers on the master allowlist skip real SMS entirely — verify-otp
     // accepts the master code for them without a stored OTP.
@@ -94,6 +99,10 @@ serve(async (req) => {
     // ---- generate + store -------------------------------------------------
     const otp = generateOtp();
     const otpHash = await hashOtp(otp);
+    // SMS Retriever wants the hash on its own trailing line.
+    const smsText = appSignature
+      ? `${otpMessage(otp)}\n${appSignature}`
+      : otpMessage(otp);
     const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000)
       .toISOString();
 
@@ -115,7 +124,7 @@ serve(async (req) => {
         api_token: apiToken,
         sid,
         msisdn: toMsisdn(phone),
-        sms: otpMessage(otp),
+        sms: smsText,
         csms_id: generateCsmsId(),
       }),
     });

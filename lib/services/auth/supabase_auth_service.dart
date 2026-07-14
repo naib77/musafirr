@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:sms_autofill/sms_autofill.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase show User;
 
@@ -231,12 +232,27 @@ class SupabaseAuthService implements AuthService {
     final normalized = _otpService.normalizePhoneNumber(phoneNumber);
     debugPrint('[SupabaseAuthService] sendOtp -> send-otp fn: $normalized');
 
+    // On Android, fetch the app's SMS-Retriever signature so the server can
+    // append it and the OTP screen can auto-read the code. Best-effort only.
+    String? appSignature;
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        appSignature = await SmsAutoFill().getAppSignature;
+      } catch (e) {
+        debugPrint('[SupabaseAuthService] getAppSignature failed: $e');
+      }
+    }
+
     // OTP generation + delivery happen entirely server-side (send-otp Edge
     // Function). The client never sees or stores the code.
     try {
       final response = await _client.functions.invoke(
         'send-otp',
-        body: {'phone': normalized},
+        body: {
+          'phone': normalized,
+          if (appSignature != null && appSignature.isNotEmpty)
+            'appSignature': appSignature,
+        },
       );
       final data = response.data;
       if (data is Map && data['success'] == true) {
