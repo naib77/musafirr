@@ -271,26 +271,96 @@ For testing release builds without a real SMS provider:
 flutter build apk --release \
   --dart-define=MASTER_OTP_ENABLED=true \
   --dart-define=MASTER_OTP=1234
-```
 
-```bash
-flutter build apk --release \
-    --dart-define=MASTER_OTP_ENABLED=true \
-    --dart-define=MASTER_OTP=1234 \
-    --dart-define=GOOGLE_MAPS_API_KEY=YOUR_API_KEY_HERE
-    
-flutter build apk --release \
+  flutter build apk --release \
     --dart-define=MASTER_OTP_ENABLED=true \
     --dart-define=MASTER_OTP=1234 \
     --dart-define=GOOGLE_MAPS_API_KEY=AIzaSyBw1uyOoZ2tS8-NS_83ov8rE3OusmmDWRM \
     --build-name=1.0.1 \
     --build-number=1 \
   && mv build/app/outputs/flutter-apk/app-release.apk \
-        build/app/outputs/flutter-apk/app-release-v1.0.4.apk
+        build/app/outputs/flutter-apk/app-release-v1.0.6.apk
+```
 
-    
-npx supabase secrets set FCM_SERVER_KEY=AAAAvY_mLR8:APA91bEd_LXkSiW1QmBhDNPwYvwm7-lLXmSu7Q7N40_qrRr6YcTKYZzikat-Mh7THwob8xSeW88LlFm8MhnCuIxsSfprzqyMgCK6yB3OrTJ8i5UWyQz5mFitn_J2HwF68pBsdEAZ2HMO
+```bash
+# ── TESTER build — master OTP 1234 enabled. QA ONLY. Never give to real users. ──
+flutter build apk --release --split-per-abi \
+    --dart-define=MASTER_OTP_ENABLED=true \
+    --dart-define=MASTER_OTP=1234 \
+    --dart-define=GOOGLE_MAPS_API_KEY=AIzaSyBw1uyOoZ2tS8-NS_83ov8rE3OusmmDWRM \
+    --build-name=1.0.1 --build-number=1
+```
 
+```bash
+# ── PRODUCTION build — NO master OTP. This is what real users get. ──
+# No GenNet token needed here: OTP SMS goes through the `send-otp` Edge
+# Function, which holds the token server-side (see "SMS provider" below).
+flutter build apk --release --split-per-abi \
+    --dart-define=GOOGLE_MAPS_API_KEY=AIzaSyBw1uyOoZ2tS8-NS_83ov8rE3OusmmDWRM \
+    --build-name=1.0.1 --build-number=1
+```
+
+### Phone auth & SMS (server-side)
+
+Phone OTP is **fully server-side** via two Supabase Edge Functions — the client
+never generates, sees, or verifies the code, and no SMS credential is compiled
+into the APK:
+
+- **`send-otp`** — generates + hashes the OTP, stores it in `otp_attempts`,
+  rate-limits per phone, and sends the SMS via GenNet's v3 API
+  (`https://isms.gennet.com.bd/api/v3/send-sms`) using the server-held token.
+- **`verify-otp`** — checks the stored hash, ensures the auth user exists
+  (rotating its password to a random value), and returns a single-use
+  magic-link `token_hash` that the client exchanges for a real session via
+  `auth.verifyOTP`. This replaced the old deterministic phone→password sign-in
+  (an account-takeover bypass); see migration `067`.
+
+Deploy both and set the secrets **once** (server-side, never in git):
+
+```bash
+supabase functions deploy send-otp
+supabase functions deploy verify-otp
+supabase secrets set \
+  GENNET_API_TOKEN='<your-gennet-api-token>' \
+  GENNET_SID='IOBYTESNONMASK'
+# optional:
+#   GENNET_BASE_URL='https://isms.gennet.com.bd/api/v3/send-sms'
+#   OTP_MAX_PER_HOUR='5'                     # per-phone rate limit (0 disables)
+```
+
+**Test logins (master OTP, allowlisted numbers only).** Set both secrets to let
+listed dev numbers log in with a fixed code and no SMS; everyone else needs a
+real OTP. Leave them unset in production → no bypass exists at all.
+
+```bash
+supabase secrets set MASTER_OTP='1234' MASTER_OTP_PHONES='01673293542,01XXXXXXXXX'
+```
+
+Local `flutter run` (debug) hits the same live functions, so add your dev number
+to `MASTER_OTP_PHONES` to log in without real SMS. (The client `SmsProvider`
+gateway in [lib/config/sms_config.dart](lib/config/sms_config.dart) is now only
+a fallback for the no-Supabase / mock mode.)
+
+`--split-per-abi` produces one APK per CPU (~22 MB each) instead of one fat
+62 MB APK, in `build/app/outputs/flutter-apk/`:
+
+| File | Distribute? |
+|------|-------------|
+| `app-arm64-v8a-release.apk`   | ✅ **Yes — ~all modern phones** |
+| `app-armeabi-v7a-release.apk` | Only for old 32-bit devices |
+| `app-x86_64-release.apk`      | Emulators only — ignore |
+
+Hand out the **arm64-v8a** file. Rename it for a release, e.g.:
+
+```bash
+mv build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+   build/app/outputs/flutter-apk/musafir-v1.0.6-arm64.apk
+```
+
+Push notifications (Supabase Edge Function secret — run once, not part of the build):
+
+```bash
+npx supabase secrets set FCM_SERVER_KEY=<your-fcm-server-key>
 ```
 
 
@@ -465,6 +535,9 @@ Build-time configuration via `--dart-define`:
 | `MASTER_OTP_ENABLED` | `false` | Enable master OTP bypass |
 | `MASTER_OTP` | _(empty)_ | Master OTP code |
 | `OTP_PERSIST_TO_DB` | `true` | Store OTPs in database |
+| `GENNET_API_TOKEN` | _(empty)_ | GenNet iSMS API token (empty → console fallback, no SMS) |
+| `GENNET_SID` | _(empty)_ | GenNet brand/masking SID, e.g. `IOBYTESNONMASK` |
+| `GENNET_BASE_URL` | `https://isms.gennet.com.bd/api/v3/send-sms` | GenNet send-SMS endpoint |
 
 Example:
 

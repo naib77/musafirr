@@ -228,76 +228,93 @@ class SupabaseAuthService implements AuthService {
 
   @override
   Future<OtpResult> sendOtp(String phoneNumber) async {
-    debugPrint('[SupabaseAuthService] sendOtp: $phoneNumber');
+    final normalized = _otpService.normalizePhoneNumber(phoneNumber);
+    debugPrint('[SupabaseAuthService] sendOtp -> send-otp fn: $normalized');
 
-    // Use existing SMS gateway via OtpService (not Supabase phone provider)
-    final result = await _otpService.sendOtp(phoneNumber);
-
-    if (result.success) {
-      return OtpResult.success();
+    // OTP generation + delivery happen entirely server-side (send-otp Edge
+    // Function). The client never sees or stores the code.
+    try {
+      final response = await _client.functions.invoke(
+        'send-otp',
+        body: {'phone': normalized},
+      );
+      final data = response.data;
+      if (data is Map && data['success'] == true) {
+        return OtpResult.success();
+      }
+      final error =
+          (data is Map ? data['error']?.toString() : null) ?? 'Failed to send OTP';
+      return OtpResult.failure(error);
+    } on FunctionException catch (e) {
+      return OtpResult.failure(_functionError(e, 'Failed to send OTP'));
+    } catch (e) {
+      debugPrint('[SupabaseAuthService] sendOtp error: $e');
+      return OtpResult.failure('Failed to send OTP: $e');
     }
-    return OtpResult.failure(result.errorMessage ?? 'Failed to send OTP');
   }
 
   @override
   Future<OtpResult> verifyOtp(String phoneNumber, String otp) async {
-    debugPrint('[SupabaseAuthService] verifyOtp: $phoneNumber');
+    final normalized = _otpService.normalizePhoneNumber(phoneNumber);
+    debugPrint('[SupabaseAuthService] verifyOtp -> verify-otp fn: $normalized');
 
-    // Verify OTP using existing OtpService
-    final result = await _otpService.verifyOtp(phoneNumber, otp);
-
-    if (!result.success) {
-      return OtpResult.failure(
-        result.errorMessage ?? 'Invalid OTP',
-        attemptsRemaining: result.attemptsRemaining,
-      );
-    }
-
-    // OTP verified - store the verified phone for signup completion
-    _verifiedPhone = _otpService.normalizePhoneNumber(phoneNumber);
-    debugPrint('[SupabaseAuthService] Phone verified: $_verifiedPhone');
-
-    // Check if user already exists by attempting to sign in
-    // (We can't query profiles directly due to RLS - user isn't authenticated yet)
-    bool isExistingUser = false;
-    final phoneEmail = _phoneToEmail(_verifiedPhone!);
-    final phonePassword = _phoneToPassword(_verifiedPhone!);
-
-    debugPrint('[SupabaseAuthService] Attempting sign-in to check if user exists: $phoneEmail');
-
+    // Verification is authoritative on the server (verify-otp Edge Function).
+    // On success it returns a single-use magic-link token_hash, which we
+    // exchange for a real session — no phone-derived password is ever used.
     try {
-      final response = await _auth.signInWithPassword(
-        email: phoneEmail,
-        password: phonePassword,
+      final response = await _client.functions.invoke(
+        'verify-otp',
+        body: {'phone': normalized, 'otp': otp},
       );
-
-      if (response.user != null) {
-        isExistingUser = true;
-        debugPrint('[SupabaseAuthService] Existing user found and signed in: ${response.user!.id}');
-
-        // Now we're authenticated, fetch the profile
-        final profile = await _client
-            .from('profiles')
-            .select()
-            .eq('id', response.user!.id)
-            .maybeSingle();
-
-        final user = _mapToUser(response.user!, profile);
-        _userCache[user.id] = user;
-        _setCurrentUser(user);
+      final data = response.data;
+      if (data is! Map || data['success'] != true) {
+        return OtpResult.failure(
+          (data is Map ? data['error']?.toString() : null) ?? 'Invalid code',
+          attemptsRemaining:
+              data is Map ? (data['attemptsRemaining'] as num?)?.toInt() : null,
+        );
       }
+
+      final tokenHash = data['tokenHash']?.toString();
+      if (tokenHash == null || tokenHash.isEmpty) {
+        return OtpResult.failure('Could not establish session');
+      }
+
+      final authResponse = await _auth.verifyOTP(
+        type: OtpType.magiclink,
+        tokenHash: tokenHash,
+      );
+      if (authResponse.user == null) {
+        return OtpResult.failure('Could not establish session');
+      }
+
+      _verifiedPhone = normalized;
+      await _loadUserProfile(authResponse.user!);
+
+      final isExistingUser = data['isExistingUser'] == true;
+      debugPrint('[SupabaseAuthService] verified; isExistingUser=$isExistingUser');
+      return OtpResult.success(isExistingUser: isExistingUser);
+    } on FunctionException catch (e) {
+      final details = e.details;
+      return OtpResult.failure(
+        _functionError(e, 'Verification failed'),
+        attemptsRemaining:
+            details is Map ? (details['attemptsRemaining'] as num?)?.toInt() : null,
+      );
     } on AuthException catch (e) {
-      // "Invalid login credentials" means user doesn't exist - this is expected for new users
-      debugPrint('[SupabaseAuthService] Sign-in attempt result: ${e.message}');
-      if (!e.message.contains('Invalid login credentials')) {
-        debugPrint('[SupabaseAuthService] Unexpected auth error: ${e.message}');
-      }
-      // isExistingUser remains false - new user
+      debugPrint('[SupabaseAuthService] verifyOtp auth error: ${e.message}');
+      return OtpResult.failure(e.message);
     } catch (e) {
-      debugPrint('[SupabaseAuthService] Error checking existing user: $e');
+      debugPrint('[SupabaseAuthService] verifyOtp error: $e');
+      return OtpResult.failure('Verification failed: $e');
     }
+  }
 
-    return OtpResult.success(isExistingUser: isExistingUser);
+  /// Pull a human-readable error out of a FunctionException's JSON body.
+  String _functionError(FunctionException e, String fallback) {
+    final details = e.details;
+    final msg = details is Map ? details['error']?.toString() : null;
+    return (msg != null && msg.isNotEmpty) ? msg : '$fallback (${e.status})';
   }
 
   @override
@@ -315,57 +332,40 @@ class SupabaseAuthService implements AuthService {
       return AuthResult.failure('Phone number not verified');
     }
 
+    // verify-otp already created the auth user and minted our session, so we
+    // just fill in the profile — no signUp (and no phone-derived password).
+    final authUser = _auth.currentUser;
+    if (authUser == null) {
+      return AuthResult.failure('Session not established. Please verify again.');
+    }
+
     try {
       final formattedPhone = _formatPhoneForDisplay(phone);
 
-      // Internal email for Supabase Auth only (user never sees this)
-      // Real email (or null) is stored in profiles table
-      final authEmail = _phoneToEmail(normalizedPhone);
-      final authPassword = _phoneToPassword(normalizedPhone);
-
-      // Create Supabase auth user
-      final response = await _auth.signUp(
-        email: authEmail,
-        password: authPassword,
-        data: {
-          'full_name': name,
-          'mobile': formattedPhone,
-        },
-      );
-
-      if (response.user == null) {
-        return AuthResult.failure('Failed to create account');
-      }
-
-      // Update profile with real user details (real email or null here)
       debugPrint('[SupabaseAuthService] Upserting profile with mobile: $formattedPhone');
-      try {
-        await _client.from('profiles').upsert({
-          'id': response.user!.id,
-          'full_name': name,
-          'mobile': formattedPhone,
-          'nid': nid.isEmpty ? null : nid,
-          // Identity is no longer collected at signup; it becomes a one-time
-          // gate before hosting/booking. Only an admin marking the account
-          // verified should flip nid_verified.
-          'nid_verified': false,
-          'phone_verified': true,
-          'role': UserRole.tenant.name,
-          'registration_method': RegistrationMethod.phone.name,
-        });
-        debugPrint('[SupabaseAuthService] Profile upsert successful');
-      } catch (upsertError) {
-        debugPrint('[SupabaseAuthService] Profile upsert FAILED: $upsertError');
-        // Profile may have been created by trigger, continue anyway
-      }
+      await _client.from('profiles').upsert({
+        'id': authUser.id,
+        'full_name': name,
+        'mobile': formattedPhone,
+        'nid': nid.isEmpty ? null : nid,
+        // Identity is no longer collected at signup; it becomes a one-time
+        // gate before hosting/booking. Only an admin marking the account
+        // verified should flip nid_verified.
+        'nid_verified': false,
+        'phone_verified': true,
+        'signup_completed': true,
+        'role': UserRole.tenant.name,
+        'registration_method': RegistrationMethod.phone.name,
+      });
+      debugPrint('[SupabaseAuthService] Profile upsert successful');
 
       final user = User(
-        id: response.user!.id,
+        id: authUser.id,
         name: name,
         email: email, // Real email or null (NOT the internal auth email)
         phone: formattedPhone,
         role: UserRole.tenant,
-        createdAt: DateTime.tryParse(response.user!.createdAt),
+        createdAt: DateTime.tryParse(authUser.createdAt),
         nid: nid.isEmpty ? null : nid,
         nidVerified: false,
         phoneVerified: true,
@@ -377,12 +377,6 @@ class SupabaseAuthService implements AuthService {
       _verifiedPhone = null;
 
       return AuthResult.success(user, isNewUser: true);
-    } on AuthException catch (e) {
-      debugPrint('[SupabaseAuthService] Complete signup error: ${e.message}');
-      if (e.message.contains('already registered')) {
-        return AuthResult.failure('An account with this phone already exists');
-      }
-      return AuthResult.failure(e.message);
     } catch (e) {
       debugPrint('[SupabaseAuthService] Complete signup error: $e');
       return AuthResult.failure('Failed to complete signup: $e');
@@ -393,44 +387,13 @@ class SupabaseAuthService implements AuthService {
   Future<AuthResult> loginWithPhone(String phone) async {
     debugPrint('[SupabaseAuthService] loginWithPhone: $phone');
 
-    // If already logged in via verifyOtp, just return current user
+    // Sessions are established by verifyOtp (server-minted, single-use token).
+    // There is deliberately no password-based phone login — that was the
+    // deterministic-credential bypass this refactor removed.
     if (_auth.currentUser != null && _currentUser != null) {
       return AuthResult.success(_currentUser!);
     }
-
-    // Otherwise, try to sign in with phone-derived credentials
-    final normalizedPhone = _otpService.normalizePhoneNumber(phone);
-    final phoneEmail = _phoneToEmail(normalizedPhone);
-    final phonePassword = _phoneToPassword(normalizedPhone);
-
-    try {
-      final response = await _auth.signInWithPassword(
-        email: phoneEmail,
-        password: phonePassword,
-      );
-
-      if (response.user == null) {
-        return AuthResult.failure('Login failed');
-      }
-
-      final profile = await _client
-          .from('profiles')
-          .select()
-          .eq('id', response.user!.id)
-          .maybeSingle();
-
-      final user = _mapToUser(response.user!, profile);
-      _userCache[user.id] = user;
-      _setCurrentUser(user);
-
-      return AuthResult.success(user);
-    } on AuthException catch (e) {
-      debugPrint('[SupabaseAuthService] Phone login error: ${e.message}');
-      return AuthResult.failure('No account found with this phone number');
-    } catch (e) {
-      debugPrint('[SupabaseAuthService] Phone login error: $e');
-      return AuthResult.failure('Login failed: $e');
-    }
+    return AuthResult.failure('Please sign in with a verification code');
   }
 
   @override
@@ -530,23 +493,6 @@ class SupabaseAuthService implements AuthService {
       if (u.phone == null) return false;
       return _normalizePhone(u.phone!) == normalized;
     }).firstOrNull;
-  }
-
-  /// Convert phone number to email for Supabase auth
-  /// Uses a deterministic format: phone.01712345678@musafir.app
-  /// Note: .local TLD is rejected by Supabase, must use valid-looking domain
-  String _phoneToEmail(String normalizedPhone) {
-    return 'phone.$normalizedPhone@musafir.app';
-  }
-
-  /// Generate a deterministic password from phone number
-  /// This is secure because:
-  /// 1. User must verify OTP to get here
-  /// 2. The password pattern is not guessable from phone alone
-  String _phoneToPassword(String normalizedPhone) {
-    // Create a password that's deterministic but not trivially guessable
-    final reversed = normalizedPhone.split('').reversed.join();
-    return 'Ph0n3_${reversed}_M$normalizedPhone';
   }
 
   /// Format phone number for display (+880 format)

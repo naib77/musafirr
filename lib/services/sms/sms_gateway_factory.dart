@@ -2,6 +2,7 @@ import '../../config/sms_config.dart';
 import 'alpha_sms_gateway.dart';
 import 'bulk_sms_bd_gateway.dart';
 import 'console_sms_gateway.dart';
+import 'gennet_sms_gateway.dart';
 import 'sms_gateway.dart';
 import 'zaman_it_sms_gateway.dart';
 
@@ -27,6 +28,11 @@ class SmsGatewayFactory {
         return AlphaSmsGateway();
       case SmsProvider.zamanIt:
         return ZamanItSmsGateway();
+      case SmsProvider.gennet:
+        final gennet = GennetSmsGateway();
+        // Fall back to console when the GENNET_* dart-defines are absent
+        // (e.g. plain debug runs), so the OTP is still printed for testing.
+        return gennet.isConfigured ? gennet : ConsoleSmsGateway();
     }
   }
 
