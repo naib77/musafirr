@@ -22,6 +22,7 @@ import {
   hashOtp,
   jsonResponse,
   masterOtpAllowlist,
+  masterOtpAllPhones,
   normalizePhone,
   OTP_TTL_MINUTES,
   otpMessage,
@@ -56,10 +57,14 @@ serve(async (req) => {
     const rawSig = String(body?.appSignature ?? "").trim();
     const appSignature = /^[A-Za-z0-9+/=]{11}$/.test(rawSig) ? rawSig : "";
 
-    // QA numbers on the master allowlist skip real SMS entirely — verify-otp
-    // accepts the master code for them without a stored OTP.
-    if (Deno.env.get("MASTER_OTP") && masterOtpAllowlist().has(phone)) {
-      console.log(`[send-otp] master allowlist hit for ${phone}; skipping SMS`);
+    // QA numbers covered by the master OTP skip real SMS entirely — verify-otp
+    // accepts the master code for them without a stored OTP. This is either the
+    // "*" wildcard (all phones) or the explicit MASTER_OTP_PHONES allowlist.
+    if (
+      Deno.env.get("MASTER_OTP") &&
+      (masterOtpAllPhones() || masterOtpAllowlist().has(phone))
+    ) {
+      console.log(`[send-otp] master OTP covers ${phone}; skipping SMS`);
       return jsonResponse(200, { success: true });
     }
 

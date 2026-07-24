@@ -267,7 +267,15 @@ When building with `flutter build apk --release`:
 
 For testing release builds without a real SMS provider:
 
+
 ```bash
+
+supabase secrets set MASTER_OTP='1234' MASTER_OTP_PHONES='01673293543'
+
+npx supabase secrets set MASTER_OTP='1234' MASTER_OTP_PHONES='1673293542' --project-ref bojkmonskqlhuakxhzcb
+
+
+
 flutter build apk --release \
   --dart-define=MASTER_OTP_ENABLED=true \
   --dart-define=MASTER_OTP=1234
@@ -328,13 +336,26 @@ supabase secrets set \
 #   OTP_MAX_PER_HOUR='5'                     # per-phone rate limit (0 disables)
 ```
 
-**Test logins (master OTP, allowlisted numbers only).** Set both secrets to let
-listed dev numbers log in with a fixed code and no SMS; everyone else needs a
-real OTP. Leave them unset in production → no bypass exists at all.
+**Test logins (master OTP).** Set both secrets to let numbers log in with a
+fixed code and no SMS; leave them unset in production → no bypass exists at all.
+This is decided purely from server config — no APK rebuild needed, and it takes
+effect the moment the secrets change.
 
 ```bash
+# Only these numbers accept the master code; everyone else needs a real OTP.
 supabase secrets set MASTER_OTP='1234' MASTER_OTP_PHONES='01673293542,01XXXXXXXXX'
+
+# ALL phone numbers accept the master code (full test/demo build — no real SMS
+# is sent to anyone). Use the "*" wildcard for MASTER_OTP_PHONES.
+supabase secrets set MASTER_OTP='1234' MASTER_OTP_PHONES='*'
+
+# Turn it fully off (production): remove both secrets.
+supabase secrets unset MASTER_OTP MASTER_OTP_PHONES
 ```
+
+> ⚠️ `MASTER_OTP_PHONES='*'` means **anyone** can log into **any** number with
+> the master code. Only use it for a throwaway test/demo deployment, never for a
+> build handed to real users.
 
 Local `flutter run` (debug) hits the same live functions, so add your dev number
 to `MASTER_OTP_PHONES` to log in without real SMS. (The client `SmsProvider`
@@ -488,6 +509,157 @@ Copy and paste each migration file content into Supabase Dashboard > SQL Editor.
 ## Building & Deployment
 
 ### Android APK
+
+#### ⭐ Build my APK — step by step (production, for real users)
+
+This is the current, recommended way to build the APK you hand out to users.
+OTP SMS goes through the `send-otp` Edge Function (token held server-side), so
+**no GenNet token is compiled into the APK** and master OTP stays off.
+
+```bash
+cd /Users/naib/workspaces/personal/projects/musafirr
+
+# 1. Get dependencies (safe to run every time)
+flutter pub get
+
+# 2. Build one APK per CPU architecture (smaller downloads)
+#    Bump --build-name / --build-number for each release.
+flutter build apk --release --split-per-abi \
+    --dart-define=GOOGLE_MAPS_API_KEY=AIzaSyBw1uyOoZ2tS8-NS_83ov8rE3OusmmDWRM \
+    --build-name=1.0.6 --build-number=6
+
+# 3. Grab the arm64 APK (works on ~all modern phones) and rename it
+mv build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+   build/app/outputs/flutter-apk/musafir-v1.0.6-arm64.apk
+```
+
+Result: `build/app/outputs/flutter-apk/musafir-v1.0.6-arm64.apk` — this is the
+file you send to users / upload.
+
+**Which file to hand out** (from `--split-per-abi`):
+
+| File | Distribute? |
+|------|-------------|
+| `app-arm64-v8a-release.apk`   | ✅ **Yes — ~all modern phones** |
+| `app-armeabi-v7a-release.apk` | Only for old 32-bit devices |
+| `app-x86_64-release.apk`      | Emulators only — ignore |
+
+**Prerequisites, once per machine / once per release:**
+- Edge Functions deployed and secrets set (only if not already done — see
+  [Phone auth & SMS (server-side)](#phone-auth--sms-server-side)):
+  ```bash
+  supabase functions deploy send-otp
+  supabase functions deploy verify-otp
+  supabase secrets set GENNET_API_TOKEN='<your-gennet-api-token>' GENNET_SID='IOBYTESNONMASK'
+  ```
+- Make sure `MASTER_OTP` is **unset** on the server for a true production build
+  (`supabase secrets unset MASTER_OTP MASTER_OTP_PHONES`), otherwise the listed
+  numbers can still log in with the fixed code.
+
+> ⚠️ **Existing users must reinstall.** The move to server-side OTP rotated every
+> phone user's password, so APKs built before that change can no longer log those
+> users in. Distribute a freshly-built APK and have users update.
+
+**Install the built APK on a connected device:**
+
+```bash
+adb install -r build/app/outputs/flutter-apk/musafir-v1.0.6-arm64.apk
+# or, to build + install the debug build in one step over USB:
+flutter install
+```
+
+---
+
+#### 🏪 Publish to the Google Play Store — step by step
+
+The APK section above is for **direct/sideload** distribution. The Play Store
+needs a **signed App Bundle (`.aab`)**, not an APK. Do these once, then repeat
+steps 6–9 for every release.
+
+**One-time setup**
+
+1. **Create a Play Console account** — https://play.google.com/console (one-time
+   US$25 fee). Create the app: name "Musafir", default language, app (not game),
+   free/paid.
+
+2. **Generate your upload keystore** (do this once, keep it forever — losing it
+   means you can't ship updates):
+   ```bash
+   keytool -genkey -v -keystore ~/musafir-upload.jks \
+       -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+   ```
+   Store `~/musafir-upload.jks` and its passwords somewhere safe (password
+   manager + a backup). **Never commit it.**
+
+3. **Create `android/key.properties`** (already git-ignored — see
+   `android/.gitignore`):
+   ```properties
+   storePassword=<password from step 2>
+   keyPassword=<password from step 2>
+   keyAlias=upload
+   storeFile=/Users/naib/musafir-upload.jks
+   ```
+   The Gradle config ([android/app/build.gradle.kts](android/app/build.gradle.kts))
+   reads this automatically; with it present, release builds are signed with your
+   upload key.
+
+4. **Add a real app icon** (the project still uses the default Flutter icon). Add
+   `flutter_launcher_icons` to `pubspec.yaml`, point it at a 1024×1024 PNG, then
+   `dart run flutter_launcher_icons`. Play requires a proper icon.
+
+5. **Prepare store listing assets** (in Play Console → Grow → Store presence):
+   - App icon 512×512, feature graphic 1024×500
+   - At least 2 phone screenshots
+   - Short + full description
+   - **Privacy policy URL** (required — the app uses location, camera, and photo
+     access). Host a simple policy page and paste the URL.
+   - **Data safety form** — declare: location (fine/coarse), camera, photos/media,
+     and that data is sent to your Supabase backend.
+   - Content rating questionnaire + target audience.
+
+**Every release**
+
+6. **Server prerequisites** (same as the APK build — deploy functions, set
+   secrets, and make sure `MASTER_OTP` is **unset** for production). See
+   [Phone auth & SMS (server-side)](#phone-auth--sms-server-side).
+
+7. **Bump the version** in `pubspec.yaml` (`version: 1.0.6+6`) — the build number
+   after `+` **must increase on every upload** or Play rejects it. (You can also
+   pass `--build-name`/`--build-number` on the command line instead.)
+
+8. **Build the signed App Bundle:**
+   ```bash
+   cd /Users/naib/workspaces/personal/projects/musafirr
+   flutter pub get
+   flutter build appbundle --release \
+       --dart-define=GOOGLE_MAPS_API_KEY=AIzaSyBw1uyOoZ2tS8-NS_83ov8rE3OusmmDWRM
+   ```
+   Output: `build/app/outputs/bundle/release/app-release.aab`
+
+   Verify it is **not** debug-signed (the SHA should not be the Android debug key):
+   ```bash
+   # key.properties must exist, or this bundle is unshippable
+   test -f android/key.properties && echo "signed with upload key ✓" || echo "MISSING key.properties — do NOT upload"
+   ```
+
+9. **Upload to Play Console** → Release → pick a track (start with **Internal
+   testing** → then **Production**) → **Create new release** → upload the `.aab`.
+   - First upload: accept **Play App Signing** (Google manages the app signing key;
+     your keystore stays the *upload* key). This is the default and recommended.
+   - Add release notes → Review → **Start rollout**.
+
+> ⚠️ **Google Maps API key:** once Play App Signing is on, add the **app-signing
+> SHA-1** (Play Console → Setup → App integrity) to your Maps API key restrictions
+> in Google Cloud Console, or the map will render blank in the store build.
+
+> ⚠️ **Existing sideloaded users:** the Play build is signed with a different key
+> than any APK you handed out directly, so users must uninstall the sideloaded app
+> before installing the Play version (Android blocks same-package different-signer
+> updates).
+
+---
+
+#### Other build variants
 
 ```bash
 # Debug (development, OTP in console)

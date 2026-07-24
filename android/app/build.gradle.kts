@@ -21,6 +21,20 @@ val googleMapsApiKey =
         ?: (project.findProperty("GOOGLE_MAPS_API_KEY") as String?)
         ?: ""
 
+// Release signing. Reads android/key.properties (git-ignored). When that file is
+// absent (e.g. a dev machine without the upload keystore) the release build falls
+// back to debug signing so `flutter run --release` still works — but such a build
+// CANNOT be uploaded to Play. Only a machine with key.properties produces a
+// store-uploadable, upload-key-signed build.
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+val hasReleaseKeystore = keystorePropertiesFile.exists()
+if (hasReleaseKeystore) {
+    keystorePropertiesFile.reader(Charsets.UTF_8).use { reader ->
+        keystoreProperties.load(reader)
+    }
+}
+
 android {
     namespace = "co.iobytes.musafir"
     compileSdk = flutter.compileSdkVersion
@@ -48,11 +62,27 @@ android {
         manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = googleMapsApiKey
     }
 
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = keystoreProperties.getProperty("storeFile")?.let { file(it) }
+                storePassword = keystoreProperties.getProperty("storePassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Use the real upload key when key.properties is present; otherwise
+            // fall back to debug so `flutter run --release` still works locally.
+            // A debug-signed build must NEVER be uploaded to Play.
+            signingConfig = if (hasReleaseKeystore) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }

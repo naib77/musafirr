@@ -82,17 +82,25 @@ export function masterOtpAllowlist(): Set<string> {
   const set = new Set<string>();
   for (const part of raw.split(/[,\s]+/)) {
     const p = part.trim();
-    if (p) set.add(normalizePhone(p));
+    if (p && p !== "*") set.add(normalizePhone(p));
   }
   return set;
 }
 
-/// True when `otp` is the configured master code AND `normalizedPhone` is on the
-/// allowlist. Returns false unless both MASTER_OTP and MASTER_OTP_PHONES secrets
-/// are set — so production (secrets unset) has no bypass at all.
+/// True when MASTER_OTP_PHONES is the wildcard "*", meaning the master code is
+/// accepted for EVERY phone number (test/demo builds — no real SMS is sent).
+export function masterOtpAllPhones(): boolean {
+  return (Deno.env.get("MASTER_OTP_PHONES") ?? "").trim() === "*";
+}
+
+/// True when `otp` is the configured master code AND the master OTP applies to
+/// `normalizedPhone` — i.e. MASTER_OTP_PHONES is "*" (all phones) or the phone is
+/// on the allowlist. Returns false unless both MASTER_OTP and MASTER_OTP_PHONES
+/// secrets are set — so production (secrets unset) has no bypass at all.
 export function isMasterOtp(normalizedPhone: string, otp: string): boolean {
   const master = Deno.env.get("MASTER_OTP") ?? "";
   if (!master || otp !== master) return false;
+  if (masterOtpAllPhones()) return true;
   return masterOtpAllowlist().has(normalizedPhone);
 }
 
