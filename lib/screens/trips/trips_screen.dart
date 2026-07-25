@@ -401,7 +401,7 @@ class _TripsScreenState extends State<TripsScreen> {
                   final showMessageButton = widget.messagingState != null;
 
                   return Padding(
-                    padding: EdgeInsets.only(top: index > 0 ? 16 : 0),
+                    padding: EdgeInsets.only(top: index > 0 ? 10 : 0),
                     child: _EnhancedBookingCard(
                       booking: booking,
                       onTap: () => _showBookingDetails(context, booking),
@@ -653,51 +653,86 @@ class _EnhancedBookingCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    final hint = _hint();
+    final showMessage = onMessageHost != null &&
+        (booking.status == BookingStatus.confirmed ||
+            booking.status == BookingStatus.active);
+
     return Card(
       clipBehavior: Clip.antiAlias,
-      elevation: 2,
-      shadowColor: theme.colorScheme.shadow.withValues(alpha: 0.2),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
+        ),
+      ),
       child: InkWell(
         onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Image with status overlay
-            _buildImageSection(theme),
-            // Content
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Contextual state banner - THE KEY UX IMPROVEMENT
-                  _buildContextualBanner(context, theme),
-                  const SizedBox(height: 12),
-                  // Title
-                  Text(
-                    booking.listingTitle ?? 'Booking',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  // Location
-                  if (booking.listingCity != null)
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _thumbnail(theme),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(
-                          Icons.location_on_outlined,
-                          size: 16,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 4),
                         Expanded(
                           child: Text(
-                            booking.listingCity!,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+                            booking.listingTitle ?? 'Booking',
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        _StatusChip(status: booking.status),
+                      ],
+                    ),
+                    if (booking.listingCity != null) ...[
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          Icon(Icons.location_on_outlined,
+                              size: 13,
+                              color: theme.colorScheme.onSurfaceVariant),
+                          const SizedBox(width: 2),
+                          Expanded(
+                            child: Text(
+                              booking.listingCity!,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Icon(Icons.calendar_today_rounded,
+                            size: 13,
+                            color: theme.colorScheme.onSurfaceVariant),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: Text(
+                            '${_formatDate(booking.effectiveCheckIn)} → '
+                            '${_formatDate(booking.effectiveCheckOut)}  ·  '
+                            '${booking.durationLabel}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w600,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -705,281 +740,168 @@ class _EnhancedBookingCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                  const SizedBox(height: 12),
-                  // Dates and duration
-                  _buildDatesRow(theme),
-                ],
+                    if (hint != null) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(hint.icon, size: 13, color: hint.color),
+                          const SizedBox(width: 5),
+                          Expanded(
+                            child: Text(
+                              hint.text,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: hint.color,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (showMessage) ...[
+                      const SizedBox(height: 8),
+                      _CompactMessageButton(onTap: onMessageHost!),
+                    ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildImageSection(ThemeData theme) {
-    return Stack(
-      children: [
-        AspectRatio(
-          aspectRatio: 2.2,
-          child: booking.listingImageUrl != null
-              ? Image.network(
-                  booking.listingImageUrl!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildPlaceholder(theme),
-                )
-              : _buildPlaceholder(theme),
-        ),
-        // Status badge overlay
-        Positioned(
-          top: 12,
-          left: 12,
-          child: _StatusBadge(status: booking.status),
-        ),
-        // Review badge if needed
-        if (showReviewBadge)
-          Positioned(
-            top: 12,
-            right: 12,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.amber.shade600, Colors.orange.shade600],
-                ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.amber.withValues(alpha: 0.4),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.star_rounded, size: 14, color: Colors.white),
-                  SizedBox(width: 4),
-                  Text(
-                    'Review',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  /// THE DEEP MODULE: Contextual banner based on booking state
-  /// This surfaces the right information at the right time
-  Widget _buildContextualBanner(BuildContext context, ThemeData theme) {
-    final now = DateTime.now();
-
-    // PENDING: Show expiration countdown
-    if (booking.status == BookingStatus.pending) {
-      return _PendingExpirationBanner(
-        booking: booking,
-        bookingRules: bookingRules,
-      );
-    }
-
-    // CONFIRMED: Show check-in readiness + Message Host button
-    if (booking.status == BookingStatus.confirmed) {
-      final canCheckIn = bookingRules.canCheckIn(booking, now: now);
-      final daysUntilCheckIn = booking.effectiveCheckIn.difference(now).inDays;
-
-      Widget infoBanner;
-      if (canCheckIn) {
-        infoBanner = _InfoBanner(
-          icon: Icons.login_rounded,
-          text: 'Ready to check in today!',
-          color: Colors.green,
-        );
-      } else if (daysUntilCheckIn <= 3) {
-        infoBanner = _InfoBanner(
-          icon: Icons.event_available_rounded,
-          text:
-              'Check-in in $daysUntilCheckIn day${daysUntilCheckIn == 1 ? '' : 's'}',
-          color: Colors.blue,
-        );
-      } else {
-        infoBanner = _InfoBanner(
-          icon: Icons.check_circle_outline_rounded,
-          text: 'Confirmed - ${_formatDate(booking.effectiveCheckIn)}',
-          color: Colors.green,
-        );
-      }
-
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          infoBanner,
-          if (onMessageHost != null) ...[
-            const SizedBox(height: 8),
-            _MessageHostButton(onTap: onMessageHost!),
-          ],
-        ],
-      );
-    }
-
-    // ACTIVE: Show stay progress + Message Host button
-    if (booking.status == BookingStatus.active) {
-      final totalDays = booking.numberOfNights;
-      final daysStayed = now.difference(booking.effectiveCheckIn).inDays + 1;
-      final daysLeft = booking.effectiveCheckOut.difference(now).inDays;
-
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _InfoBanner(
-            icon: Icons.hotel_rounded,
-            text:
-                'Day $daysStayed of $totalDays • ${daysLeft > 0 ? '$daysLeft days left' : 'Checkout today'}',
-            color: Colors.teal,
-            showProgress: true,
-            progress: daysStayed / totalDays,
-          ),
-          if (onMessageHost != null) ...[
-            const SizedBox(height: 8),
-            _MessageHostButton(onTap: onMessageHost!),
-          ],
-        ],
-      );
-    }
-
-    // COMPLETED: Show review deadline
-    if (booking.status == BookingStatus.completed && showReviewBadge) {
-      final completedAt = booking.completedAt ?? booking.effectiveCheckOut;
-      final reviewDeadline = completedAt.add(BookingRules.reviewWindowDuration);
-      final daysLeft = reviewDeadline.difference(now).inDays;
-
-      if (daysLeft > 0) {
-        return _InfoBanner(
-          icon: Icons.rate_review_rounded,
-          text: '$daysLeft days left to leave a review',
-          color: Colors.amber.shade700,
-        );
-      } else {
-        return _InfoBanner(
-          icon: Icons.warning_amber_rounded,
-          text: 'Last day to leave a review!',
-          color: Colors.red,
-        );
-      }
-    }
-
-    // REJECTED: Show rebooking prompt
-    if (booking.status == BookingStatus.rejected) {
-      return _InfoBanner(
-        icon: Icons.search_rounded,
-        text: 'Declined - Tap to find similar stays',
-        color: Colors.red.shade700,
-      );
-    }
-
-    // CANCELLED
-    if (booking.status == BookingStatus.cancelled) {
-      final cancelledByGuest = booking.cancelledBy == booking.userId;
-      return _InfoBanner(
-        icon: Icons.cancel_outlined,
-        text: cancelledByGuest
-            ? 'You cancelled this booking'
-            : 'Cancelled by host',
-        color: Colors.grey,
-      );
-    }
-
-    return const SizedBox.shrink();
-  }
-
-  Widget _buildDatesRow(ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'CHECK-IN',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  _formatDate(booking.effectiveCheckIn),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              booking.durationLabel,
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.onPrimaryContainer,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  'CHECK-OUT',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  _formatDate(booking.effectiveCheckOut),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+  Widget _thumbnail(ThemeData theme) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        width: 84,
+        height: 84,
+        child: booking.listingImageUrl != null
+            ? Image.network(
+                booking.listingImageUrl!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _placeholder(theme),
+              )
+            : _placeholder(theme),
       ),
     );
   }
 
-  Widget _buildPlaceholder(ThemeData theme) {
+  Widget _placeholder(ThemeData theme) {
     return Container(
       color: theme.colorScheme.surfaceContainerHighest,
-      child: Center(
-        child: Icon(
-          Icons.home_outlined,
-          size: 48,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
+      child: Icon(
+        Icons.home_outlined,
+        size: 28,
+        color: theme.colorScheme.onSurfaceVariant,
       ),
     );
+  }
+
+  /// Single-line contextual hint derived from booking state — the compact
+  /// replacement for the old full-width banner. Null when the status chip
+  /// already says everything (e.g. a completed + reviewed stay).
+  ({IconData icon, String text, Color color})? _hint() {
+    final now = DateTime.now();
+    switch (booking.status) {
+      case BookingStatus.pending:
+        final createdAt = booking.createdAt;
+        if (createdAt == null) {
+          return (
+            icon: Icons.schedule_rounded,
+            text: 'Awaiting host response',
+            color: Colors.orange.shade800,
+          );
+        }
+        final remaining =
+            createdAt.add(BookingRules.expirationDuration).difference(now);
+        final String t;
+        if (remaining.isNegative) {
+          t = 'expired';
+        } else if (remaining.inHours >= 1) {
+          t = '${remaining.inHours}h ${remaining.inMinutes % 60}m left';
+        } else if (remaining.inMinutes >= 1) {
+          t = '${remaining.inMinutes}m left';
+        } else {
+          t = 'expiring soon';
+        }
+        return (
+          icon: Icons.hourglass_top_rounded,
+          text: 'Awaiting host · $t',
+          color:
+              remaining.inHours < 6 ? Colors.red.shade700 : Colors.orange.shade800,
+        );
+      case BookingStatus.confirmed:
+        final canCheckIn = bookingRules.canCheckIn(booking, now: now);
+        final days = booking.effectiveCheckIn.difference(now).inDays;
+        if (canCheckIn) {
+          return (
+            icon: Icons.login_rounded,
+            text: 'Ready to check in today',
+            color: Colors.green.shade700,
+          );
+        }
+        if (days <= 3) {
+          return (
+            icon: Icons.event_available_rounded,
+            text: 'Check-in in $days day${days == 1 ? '' : 's'}',
+            color: Colors.blue.shade700,
+          );
+        }
+        return (
+          icon: Icons.check_circle_outline_rounded,
+          text: 'Confirmed for ${_formatDate(booking.effectiveCheckIn)}',
+          color: Colors.green.shade700,
+        );
+      case BookingStatus.active:
+        final total = booking.numberOfNights;
+        final stayed = now.difference(booking.effectiveCheckIn).inDays + 1;
+        final left = booking.effectiveCheckOut.difference(now).inDays;
+        return (
+          icon: Icons.hotel_rounded,
+          text: 'Day $stayed of $total · '
+              '${left > 0 ? '$left day${left == 1 ? '' : 's'} left' : 'checkout today'}',
+          color: Colors.teal.shade700,
+        );
+      case BookingStatus.completed:
+        if (showReviewBadge) {
+          final completedAt = booking.completedAt ?? booking.effectiveCheckOut;
+          final daysLeft = completedAt
+              .add(BookingRules.reviewWindowDuration)
+              .difference(now)
+              .inDays;
+          return daysLeft > 0
+              ? (
+                  icon: Icons.rate_review_rounded,
+                  text: '$daysLeft day${daysLeft == 1 ? '' : 's'} left to review',
+                  color: Colors.amber.shade800,
+                )
+              : (
+                  icon: Icons.rate_review_rounded,
+                  text: 'Last day to leave a review',
+                  color: Colors.red.shade700,
+                );
+        }
+        return null;
+      case BookingStatus.rejected:
+        return (
+          icon: Icons.search_rounded,
+          text: 'Declined · tap to find similar',
+          color: Colors.red.shade700,
+        );
+      case BookingStatus.cancelled:
+        final byGuest = booking.cancelledBy == booking.userId;
+        return (
+          icon: Icons.cancel_outlined,
+          text: byGuest ? 'You cancelled this booking' : 'Cancelled by host',
+          color: Colors.grey.shade600,
+        );
+    }
   }
 
   String _formatDate(DateTime date) {
@@ -1002,49 +924,46 @@ class _EnhancedBookingCard extends StatelessWidget {
 }
 
 // =============================================================================
-// STATUS BADGE - Modern status indicator
+// COMPACT STATUS CHIP + MESSAGE BUTTON
 // =============================================================================
 
-class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.status});
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.status});
 
   final BookingStatus status;
 
   @override
   Widget build(BuildContext context) {
-    final (color, icon) = switch (status) {
-      BookingStatus.pending => (Colors.orange, Icons.schedule_rounded),
-      BookingStatus.confirmed => (Colors.green, Icons.check_circle_rounded),
-      BookingStatus.rejected => (Colors.red.shade700, Icons.cancel_rounded),
-      BookingStatus.active => (Colors.teal, Icons.hotel_rounded),
-      BookingStatus.completed => (Colors.blue, Icons.task_alt_rounded),
-      BookingStatus.cancelled => (Colors.red, Icons.cancel_outlined),
+    final color = switch (status) {
+      BookingStatus.pending => Colors.orange.shade700,
+      BookingStatus.confirmed => Colors.green.shade600,
+      BookingStatus.rejected => Colors.red.shade700,
+      BookingStatus.active => Colors.teal.shade600,
+      BookingStatus.completed => Colors.blue.shade600,
+      BookingStatus.cancelled => Colors.grey.shade600,
     };
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: 0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: Colors.white),
-          const SizedBox(width: 4),
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 5),
           Text(
             status.title,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: color,
             ),
           ),
         ],
@@ -1053,79 +972,14 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
-// =============================================================================
-// CONTEXTUAL BANNERS
-// =============================================================================
-
-class _InfoBanner extends StatelessWidget {
-  const _InfoBanner({
-    required this.icon,
-    required this.text,
-    required this.color,
-    this.showProgress = false,
-    this.progress = 0.0,
-  });
-
-  final IconData icon;
-  final String text;
-  final Color color;
-  final bool showProgress;
-  final double progress;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 18, color: color),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  text,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: color,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (showProgress) ...[
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: progress.clamp(0.0, 1.0),
-                backgroundColor: color.withValues(alpha: 0.2),
-                valueColor: AlwaysStoppedAnimation(color),
-                minHeight: 6,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _MessageHostButton extends StatelessWidget {
-  const _MessageHostButton({required this.onTap});
+class _CompactMessageButton extends StatelessWidget {
+  const _CompactMessageButton({required this.onTap});
 
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return Material(
       color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
       borderRadius: BorderRadius.circular(8),
@@ -1133,20 +987,17 @@ class _MessageHostButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.chat_bubble_outline,
-                size: 16,
-                color: theme.colorScheme.primary,
-              ),
+              Icon(Icons.chat_bubble_outline,
+                  size: 14, color: theme.colorScheme.primary),
               const SizedBox(width: 6),
               Text(
-                'Message Host',
+                'Message host',
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: theme.colorScheme.primary,
                 ),
@@ -1154,107 +1005,6 @@ class _MessageHostButton extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _PendingExpirationBanner extends StatelessWidget {
-  const _PendingExpirationBanner({
-    required this.booking,
-    required this.bookingRules,
-  });
-
-  final Booking booking;
-  final BookingRules bookingRules;
-
-  @override
-  Widget build(BuildContext context) {
-    final createdAt = booking.createdAt;
-    if (createdAt == null) {
-      return _InfoBanner(
-        icon: Icons.schedule_rounded,
-        text: 'Awaiting host response',
-        color: Colors.orange,
-      );
-    }
-
-    final expiresAt = createdAt.add(BookingRules.expirationDuration);
-    final now = DateTime.now();
-    final remaining = expiresAt.difference(now);
-
-    String timeText;
-    if (remaining.isNegative) {
-      timeText = 'Expired';
-    } else if (remaining.inHours >= 1) {
-      timeText = '${remaining.inHours}h ${remaining.inMinutes % 60}m left';
-    } else if (remaining.inMinutes >= 1) {
-      timeText = '${remaining.inMinutes}m left';
-    } else {
-      timeText = 'Less than a minute';
-    }
-
-    final progress = 1.0 - (remaining.inMinutes / (24 * 60));
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.orange.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.orange.withValues(alpha: 0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.hourglass_top_rounded,
-                  size: 18, color: Colors.orange),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Awaiting host response',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.orange.shade800,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: remaining.inHours < 6
-                      ? Colors.red.withValues(alpha: 0.2)
-                      : Colors.orange.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  timeText,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: remaining.inHours < 6
-                        ? Colors.red.shade700
-                        : Colors.orange.shade800,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: progress.clamp(0.0, 1.0),
-              backgroundColor: Colors.orange.withValues(alpha: 0.2),
-              valueColor: AlwaysStoppedAnimation(
-                remaining.inHours < 6 ? Colors.red : Colors.orange,
-              ),
-              minHeight: 6,
-            ),
-          ),
-        ],
       ),
     );
   }

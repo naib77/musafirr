@@ -50,6 +50,9 @@ class Listing {
     this.checkInDetails,
     // Currency
     this.currency = Currency.BDT,
+    // When the listing was created (server timestamp). Used to surface
+    // "Newly available" stays. Null for locally-built/mock listings.
+    this.createdAt,
   });
 
   final String id;
@@ -98,6 +101,9 @@ class Listing {
   final double? rating;
   final int reviewCount;
   final bool isSuperhost;
+
+  /// Server creation timestamp; null for locally-built/mock listings.
+  final DateTime? createdAt;
 
   /// Per-plan minimum/maximum booking duration.
   final BookingLimits bookingLimits;
@@ -238,6 +244,7 @@ class Listing {
     HouseRules? houseRules,
     CheckInDetails? checkInDetails,
     Currency? currency,
+    DateTime? createdAt,
   }) {
     return Listing(
       id: id ?? this.id,
@@ -276,6 +283,7 @@ class Listing {
       houseRules: houseRules ?? this.houseRules,
       checkInDetails: checkInDetails ?? this.checkInDetails,
       currency: currency ?? this.currency,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 
@@ -326,6 +334,7 @@ class Listing {
       houseRules: houseRules,
       checkInDetails: checkInDetails,
       currency: currency,
+      createdAt: createdAt,
     );
   }
 }

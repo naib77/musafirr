@@ -9,20 +9,27 @@ import '../../widgets/modern_banner.dart';
 
 /// An identity document the user can upload for verification.
 class _IdDocType {
-  const _IdDocType(this.key, this.label, this.icon);
+  const _IdDocType(this.key, this.label, this.icon, this.numberLabel);
 
   final String key;
   final String label;
   final IconData icon;
+
+  /// Label for the ID-number field on step 1, e.g. "NID number".
+  final String numberLabel;
 }
 
 const List<_IdDocType> _idDocTypes = [
-  _IdDocType('nid', 'National ID (NID)', Icons.credit_card_rounded),
-  _IdDocType('passport', 'Passport', Icons.flight_takeoff_rounded),
+  _IdDocType('nid', 'National ID (NID)', Icons.credit_card_rounded,
+      'NID number'),
+  _IdDocType('passport', 'Passport', Icons.flight_takeoff_rounded,
+      'Passport number'),
   _IdDocType('driving_license', 'Driving License',
-      Icons.directions_car_filled_rounded),
-  _IdDocType('student_id', 'Student / Admission', Icons.school_rounded),
-  _IdDocType('office_id', 'Office / Employee ID', Icons.badge_rounded),
+      Icons.directions_car_filled_rounded, 'License number'),
+  _IdDocType('student_id', 'Student / Admission', Icons.school_rounded,
+      'Student / Admission ID'),
+  _IdDocType('office_id', 'Office / Employee ID', Icons.badge_rounded,
+      'Employee ID'),
 ];
 
 /// Standalone screen that captures and uploads an identity document. Used both
@@ -49,17 +56,46 @@ class IdentityVerificationScreen extends StatefulWidget {
 
 class _IdentityVerificationScreenState
     extends State<IdentityVerificationScreen> {
-  // Chosen document + captured images. Front is mandatory, back optional.
+  // Two-step wizard: 0 = document type + number, 1 = selfie + document scans.
   // Bytes are cached so previews render the same on mobile and web.
+  int _step = 0;
   String _selectedTypeKey = 'nid';
+  final _idNumberController = TextEditingController();
+  final _detailsFormKey = GlobalKey<FormState>();
   XFile? _idFront;
   Uint8List? _idFrontPreview;
   XFile? _idBack;
   Uint8List? _idBackPreview;
+  XFile? _selfie;
+  Uint8List? _selfiePreview;
   bool _isSubmitting = false;
 
   _IdDocType get _currentType =>
       _idDocTypes.firstWhere((t) => t.key == _selectedTypeKey);
+
+  /// NID must have both sides scanned; for every other document the back is
+  /// optional.
+  bool get _backRequired => _selectedTypeKey == 'nid';
+
+  /// Validates the ID number field. A Bangladesh NID is exactly 10 or 17
+  /// digits; other document numbers only need to be non-empty.
+  String? _validateIdNumber(String? value) {
+    final v = (value ?? '').trim();
+    if (v.isEmpty) return 'Please enter your ${_currentType.numberLabel}';
+    if (_selectedTypeKey == 'nid') {
+      final digits = v.replaceAll(RegExp(r'\D'), '');
+      if (digits.length != 10 && digits.length != 17) {
+        return 'A Bangladesh NID number is 10 or 17 digits';
+      }
+    }
+    return null;
+  }
+
+  @override
+  void dispose() {
+    _idNumberController.dispose();
+    super.dispose();
+  }
 
   /// Switching document type clears any captured images so the two slots always
   /// belong to the same document.
@@ -121,11 +157,47 @@ class _IdentityVerificationScreenState
     });
   }
 
+  /// Selfie is taken with the front camera only (no gallery) — it must be a
+  /// live face photo for verification.
+  Future<void> _captureSelfie() async {
+    final image = await ImageUploadService.instance.pickSelfieFromCamera();
+    if (image == null) return;
+    final bytes = await image.readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      _selfie = image;
+      _selfiePreview = bytes;
+    });
+  }
+
+  /// Advances from step 1 (type + number) to step 2 (selfie + scans) once the
+  /// ID number is filled in.
+  void _goToDocuments() {
+    if (_detailsFormKey.currentState?.validate() != true) return;
+    FocusScope.of(context).unfocus();
+    setState(() => _step = 1);
+  }
+
   Future<void> _submit() async {
+    // Selfie first, then the ID document — matching the on-screen order.
+    if (_selfie == null) {
+      ModernBanner.showError(
+        context,
+        'Please take a selfie so we can match it to your document',
+      );
+      return;
+    }
     if (_idFront == null) {
       ModernBanner.showError(
         context,
         'Please scan the front of your ${_currentType.label}',
+      );
+      return;
+    }
+    if (_backRequired && _idBack == null) {
+      ModernBanner.showError(
+        context,
+        'Please scan the back of your ${_currentType.label} too',
       );
       return;
     }
@@ -136,6 +208,12 @@ class _IdentityVerificationScreenState
     await service.setIdDocumentType(
       userId: widget.userId,
       idType: _selectedTypeKey,
+      idNumber: _idNumberController.text.trim(),
+    );
+
+    final selfie = await service.uploadSelfieImage(
+      image: _selfie!,
+      userId: widget.userId,
     );
 
     final front = await service.uploadIdentityImage(
@@ -155,27 +233,41 @@ class _IdentityVerificationScreenState
       );
     }
 
-    if (!mounted) return;
-    setState(() => _isSubmitting = false);
-
-    // The front image must land for the upload to count. A failed (optional)
-    // back is a soft warning, not a blocker.
-    if (!front.success) {
+    // Required uploads: selfie, front, and — for NID — the back too.
+    final backFailedRequired = _backRequired && (back == null || !back.success);
+    if (!selfie.success || !front.success || backFailedRequired) {
+      if (!mounted) return;
+      setState(() => _isSubmitting = false);
       ModernBanner.showError(
         context,
-        front.errorMessage ?? "Couldn't upload your document. Please try again.",
+        (!selfie.success
+                ? selfie.errorMessage
+                : !front.success
+                    ? front.errorMessage
+                    : back?.errorMessage) ??
+            "Couldn't upload your documents. Please try again.",
       );
       return;
     }
 
-    if (back != null && !back.success) {
+    // Everything required landed — enter the admin review queue.
+    await service.markVerificationPending(widget.userId);
+
+    if (!mounted) return;
+    setState(() => _isSubmitting = false);
+
+    if (!_backRequired && back != null && !back.success) {
       ModernBanner.showWarning(
         context,
-        'Front uploaded. The back side didn\'t upload — you can add it later '
+        'Submitted. The back side didn\'t upload — you can add it later '
         'from your profile.',
       );
+    } else {
+      ModernBanner.showSuccess(
+        context,
+        'Submitted for review — an admin will approve your identity shortly',
+      );
     }
-    ModernBanner.showSuccess(context, 'Identity document uploaded');
     Navigator.pop(context, true);
   }
 
@@ -184,134 +276,239 @@ class _IdentityVerificationScreenState
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Verify identity')),
+      appBar: AppBar(
+        title: Text(_step == 0 ? 'Verify identity' : 'Selfie & document'),
+        // On step 2, the back arrow returns to step 1 rather than leaving the
+        // flow, so captured details aren't lost.
+        leading: _step == 1
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed:
+                    _isSubmitting ? null : () => setState(() => _step = 0),
+              )
+            : null,
+      ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: _step == 0 ? _buildDetailsStep(theme) : _buildDocumentsStep(theme),
+      ),
+    );
+  }
+
+  /// Step 1 — choose the document type and enter its number.
+  Widget _buildDetailsStep(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Form(
+        key: _detailsFormKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Verify your identity',
+              style: theme.textTheme.headlineSmall
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              widget.reason != null
+                  ? 'A one-time step ${widget.reason}. Step 1 of 2 — choose your '
+                      'document and enter its number.'
+                  : 'Step 1 of 2 — choose your document and enter its number.',
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 24),
+
+            Text(
+              'Document type',
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final type in _idDocTypes)
+                  ChoiceChip(
+                    selected: type.key == _selectedTypeKey,
+                    onSelected: (_) => _selectType(type.key),
+                    avatar: Icon(
+                      type.icon,
+                      size: 18,
+                      color: type.key == _selectedTypeKey
+                          ? Colors.white
+                          : AppColors.brand,
+                    ),
+                    label: Text(type.label),
+                    selectedColor: AppColors.brand,
+                    labelStyle: TextStyle(
+                      color: type.key == _selectedTypeKey
+                          ? Colors.white
+                          : theme.colorScheme.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 24),
+
+            TextFormField(
+              controller: _idNumberController,
+              textInputAction: TextInputAction.done,
+              keyboardType: _selectedTypeKey == 'nid'
+                  ? TextInputType.number
+                  : TextInputType.text,
+              decoration: InputDecoration(
+                labelText: _currentType.numberLabel,
+                hintText: _selectedTypeKey == 'nid'
+                    ? 'Enter your 10- or 17-digit NID number'
+                    : 'Enter your ${_currentType.numberLabel}',
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.tag_rounded),
+              ),
+              validator: _validateIdNumber,
+              onFieldSubmitted: (_) => _goToDocuments(),
+            ),
+            const SizedBox(height: 32),
+
+            FilledButton(
+              onPressed: _goToDocuments,
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              child: const Text('Next'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Step 2 — take a selfie, then scan the document.
+  Widget _buildDocumentsStep(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Selfie & document',
+            style: theme.textTheme.headlineSmall
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Step 2 of 2 — take a selfie, then scan your ${_currentType.label}.',
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 24),
+
+          // 1. Selfie first — a live front-camera photo, matched to the
+          // document by the admin reviewer.
+          Text(
+            '1. Take a selfie',
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'A clear photo of your face, so we can match it to your document.',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 12),
+          _DocCaptureCard(
+            label: 'Selfie',
+            icon: Icons.face_retouching_natural_rounded,
+            preview: _selfiePreview,
+            onTap: _captureSelfie,
+          ),
+          const SizedBox(height: 24),
+
+          // 2. Document scan.
+          Text(
+            '2. Scan your ${_currentType.label}',
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _backRequired
+                ? 'Both the front and back are required.'
+                : 'The front is required; the back is optional.',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 12),
+          Row(
             children: [
-              Text(
-                'Verify your identity',
-                style: theme.textTheme.headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                widget.reason != null
-                    ? 'A one-time step ${widget.reason}. Choose a document and '
-                        'photograph it — you won\'t be asked again.'
-                    : 'Choose a document and photograph it to build trust in '
-                        'our community.',
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              ),
-              const SizedBox(height: 24),
-
-              // Document type selector
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final type in _idDocTypes)
-                    ChoiceChip(
-                      selected: type.key == _selectedTypeKey,
-                      onSelected: (_) => _selectType(type.key),
-                      avatar: Icon(
-                        type.icon,
-                        size: 18,
-                        color: type.key == _selectedTypeKey
-                            ? Colors.white
-                            : AppColors.brand,
-                      ),
-                      label: Text(type.label),
-                      selectedColor: AppColors.brand,
-                      labelStyle: TextStyle(
-                        color: type.key == _selectedTypeKey
-                            ? Colors.white
-                            : theme.colorScheme.onSurface,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 20),
-
-              Text(
-                'Scan your ${_currentType.label}',
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _DocCaptureCard(
-                      label: 'Front side',
-                      preview: _idFrontPreview,
-                      onTap: () => _captureSide(isFront: true),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _DocCaptureCard(
-                      label: 'Back side',
-                      optional: true,
-                      preview: _idBackPreview,
-                      onTap: () => _captureSide(isFront: false),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.verified_user_outlined,
-                      size: 20,
-                      color: theme.colorScheme.onPrimaryContainer,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Your document is stored securely and used only for '
-                        'identity verification.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onPrimaryContainer,
-                        ),
-                      ),
-                    ),
-                  ],
+              Expanded(
+                child: _DocCaptureCard(
+                  label: 'Front side',
+                  preview: _idFrontPreview,
+                  onTap: () => _captureSide(isFront: true),
                 ),
               ),
-              const SizedBox(height: 32),
-
-              FilledButton(
-                onPressed: _isSubmitting ? null : _submit,
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _DocCaptureCard(
+                  label: 'Back side',
+                  optional: !_backRequired,
+                  preview: _idBackPreview,
+                  onTap: () => _captureSide(isFront: false),
                 ),
-                child: _isSubmitting
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text('Submit'),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 24),
+
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.verified_user_outlined,
+                  size: 20,
+                  color: theme.colorScheme.onPrimaryContainer,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Your document is stored securely and used only for '
+                    'identity verification.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 32),
+
+          FilledButton(
+            onPressed: _isSubmitting ? null : _submit,
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+            child: _isSubmitting
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text('Submit'),
+          ),
+        ],
       ),
     );
   }
@@ -325,12 +522,14 @@ class _DocCaptureCard extends StatelessWidget {
     required this.preview,
     required this.onTap,
     this.optional = false,
+    this.icon = Icons.add_a_photo_outlined,
   });
 
   final String label;
   final Uint8List? preview;
   final VoidCallback onTap;
   final bool optional;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -401,7 +600,7 @@ class _DocCaptureCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      Icons.add_a_photo_outlined,
+                      icon,
                       size: 26,
                       color: AppColors.brand,
                     ),

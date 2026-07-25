@@ -20,6 +20,7 @@ class StorageBuckets {
 class DocumentType {
   static const String nidFront = 'nid_front';
   static const String nidBack = 'nid_back';
+  static const String selfie = 'selfie';
 }
 
 /// Result of a file upload operation
@@ -103,6 +104,22 @@ class ImageUploadService {
       );
     } catch (e) {
       debugPrint('[ImageUploadService] Error picking image from camera: $e');
+      return null;
+    }
+  }
+
+  /// Take a selfie with the front-facing camera. Used for identity
+  /// verification, where a live face photo (not a gallery pick) is required.
+  Future<XFile?> pickSelfieFromCamera() async {
+    try {
+      return await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.front,
+        maxWidth: maxImageWidth.toDouble(),
+        imageQuality: imageQuality,
+      );
+    } catch (e) {
+      debugPrint('[ImageUploadService] Error taking selfie: $e');
       return null;
     }
   }
@@ -503,17 +520,124 @@ class ImageUploadService {
     return result;
   }
 
-  /// Records which identity document the user uploaded on their profile.
-  /// Best-effort: signup still succeeds (and images still upload) even if the
-  /// `id_document_type` column hasn't been migrated yet.
-  Future<void> setIdDocumentType({
+  /// Upload the identity-verification selfie (front camera) to the private
+  /// `documents` bucket and record it in `owner_documents` under the `selfie`
+  /// slot, so it sits alongside the ID document for admin review.
+  Future<UploadResult> uploadSelfieImage({
+    required XFile image,
     required String userId,
-    required String idType,
+    UploadProgressCallback? onProgress,
   }) async {
+    final ext = p.extension(image.name).toLowerCase().replaceAll('.', '');
+    final safeExt = ext.isEmpty ? 'jpg' : ext;
+    final path =
+        '$userId/selfie_${DateTime.now().millisecondsSinceEpoch}.$safeExt';
+
+    final result = await uploadXFile(
+      file: image,
+      bucket: StorageBuckets.documents,
+      path: path,
+      onProgress: onProgress,
+    );
+
+    if (!result.success) return result;
+
+    try {
+      await _client.from('owner_documents').upsert(
+        {
+          'user_id': userId,
+          'document_type': DocumentType.selfie,
+          'file_path': result.storagePath,
+          'file_name': image.name,
+          'mime_type':
+              image.mimeType ?? lookupMimeType(image.path) ?? 'image/jpeg',
+        },
+        onConflict: 'user_id,document_type',
+      );
+    } catch (e) {
+      debugPrint('[ImageUploadService] owner_documents (selfie) record failed: $e');
+    }
+
+    return result;
+  }
+
+  /// Moves the user into the admin review queue by setting their
+  /// `verification_status` to `pending`. Called once all documents (ID + selfie)
+  /// have been submitted. Idempotent.
+  Future<void> markVerificationPending(String userId) async {
     try {
       await _client
           .from('profiles')
-          .update({'id_document_type': idType}).eq('id', userId);
+          .update({'verification_status': 'pending'}).eq('id', userId);
+    } catch (e) {
+      debugPrint('[ImageUploadService] markVerificationPending failed: $e');
+    }
+  }
+
+  /// The user's identity verification status: `none` | `pending` | `verified` |
+  /// `rejected`. Falls back to `none` on any error.
+  Future<String> identityVerificationStatus(String userId) async {
+    try {
+      final row = await _client
+          .from('profiles')
+          .select('verification_status')
+          .eq('id', userId)
+          .maybeSingle();
+      return (row?['verification_status'] as String?) ?? 'none';
+    } catch (e) {
+      debugPrint('[ImageUploadService] identityVerificationStatus failed: $e');
+      return 'none';
+    }
+  }
+
+  /// The most recent rejection reason on any of the user's documents, if the
+  /// verification was rejected. Null when none is recorded.
+  Future<String?> latestRejectionReason(String userId) async {
+    try {
+      final rows = await _client
+          .from('owner_documents')
+          .select('rejection_reason')
+          .eq('user_id', userId)
+          .not('rejection_reason', 'is', null)
+          .order('uploaded_at', ascending: false)
+          .limit(1);
+      if (rows.isNotEmpty) {
+        return rows.first['rejection_reason'] as String?;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[ImageUploadService] latestRejectionReason failed: $e');
+      return null;
+    }
+  }
+
+  /// A short-lived signed URL for a private `documents` file (used by admin
+  /// review to preview documents the bucket won't serve publicly).
+  Future<String?> signedDocumentUrl(String filePath, {int expiresIn = 3600}) async {
+    try {
+      return await _storage
+          .from(StorageBuckets.documents)
+          .createSignedUrl(filePath, expiresIn);
+    } catch (e) {
+      debugPrint('[ImageUploadService] signedDocumentUrl failed: $e');
+      return null;
+    }
+  }
+
+  /// Records which identity document the user chose and its number on their
+  /// profile ([idType] → `id_document_type`, [idNumber] → `nid`). Best-effort:
+  /// signup still succeeds (and images still upload) even if this write fails.
+  Future<void> setIdDocumentType({
+    required String userId,
+    required String idType,
+    String? idNumber,
+  }) async {
+    try {
+      final data = <String, dynamic>{'id_document_type': idType};
+      if (idNumber != null && idNumber.isNotEmpty) {
+        data['nid'] = idNumber;
+      }
+      await _client.from('profiles').update(data).eq('id', userId);
     } catch (e) {
       debugPrint('[ImageUploadService] setIdDocumentType failed: $e');
     }

@@ -32,13 +32,13 @@ Future<void> _pumpGate(
 }
 
 void main() {
-  late Future<bool> Function(String) original;
-  setUp(() => original = IdentityGate.hasDocument);
-  tearDown(() => IdentityGate.hasDocument = original);
+  late Future<String> Function(String) original;
+  setUp(() => original = IdentityGate.statusOf);
+  tearDown(() => IdentityGate.statusOf = original);
 
-  testWidgets('proceeds without prompting when a document is already on file',
+  testWidgets('proceeds without prompting when the identity is verified',
       (tester) async {
-    IdentityGate.hasDocument = (_) async => true;
+    IdentityGate.statusOf = (_) async => 'verified';
     bool? result;
     await _pumpGate(tester, onResult: (r) => result = r);
 
@@ -49,9 +49,23 @@ void main() {
     expect(find.byType(IdentityVerificationScreen), findsNothing);
   });
 
+  testWidgets('blocks without prompting while verification is pending',
+      (tester) async {
+    IdentityGate.statusOf = (_) async => 'pending';
+    bool? result;
+    await _pumpGate(tester, onResult: (r) => result = r);
+
+    await tester.tap(find.text('go'));
+    await tester.pumpAndSettle();
+
+    // No upload screen — they've already submitted and are awaiting an admin.
+    expect(find.byType(IdentityVerificationScreen), findsNothing);
+    expect(result, isFalse);
+  });
+
   testWidgets('prompts for upload and blocks when the user backs out',
       (tester) async {
-    IdentityGate.hasDocument = (_) async => false;
+    IdentityGate.statusOf = (_) async => 'none';
     bool? result;
     await _pumpGate(tester, onResult: (r) => result = r);
 

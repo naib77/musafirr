@@ -368,6 +368,18 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     );
                   }
 
+                  // Airbnb-style curated rows whenever browsing (no active
+                  // search). `listings` is already filtered by the selected
+                  // category chip, so picking Room/Seat/Full house re-curates
+                  // the same rows within that type. Only an explicit search
+                  // (incl. a city "See all") falls back to the grid.
+                  if (!_searchActive) {
+                    return RefreshIndicator(
+                      onRefresh: _onRefresh,
+                      child: _buildCategoryRows(listings),
+                    );
+                  }
+
                   return RefreshIndicator(
                     onRefresh: _onRefresh,
                     child: CustomScrollView(
@@ -446,6 +458,162 @@ class _ExploreScreenState extends State<ExploreScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  /// Airbnb-style curated rows shown while browsing (no search, no single
+  /// category filter): Popular, Featured, Top rated, Budget-friendly, and
+  /// location-wise sections — each a horizontal, left-to-right scrolling list.
+  Widget _buildCategoryRows(List<Listing> listings) {
+    final sections = <Widget>[];
+
+    void add(String title, List<Listing> items, {VoidCallback? onSeeAll}) {
+      if (items.isEmpty) return;
+      sections.add(
+        _CategorySection(
+          title: title,
+          listings: items.take(12).toList(),
+          favoritesState: widget.favoritesState,
+          onOpen: _openListingDetail,
+          onSeeAll: onSeeAll,
+        ),
+      );
+    }
+
+    // Popular — most reviewed, then highest rated.
+    final popular = [...listings]..sort((a, b) {
+        final byReviews = b.reviewCount.compareTo(a.reviewCount);
+        if (byReviews != 0) return byReviews;
+        return (b.rating ?? 0).compareTo(a.rating ?? 0);
+      });
+    add(
+      'Popular',
+      popular.where((l) => l.reviewCount > 0 || (l.rating ?? 0) > 0).toList(),
+    );
+
+    // Budget-friendly — cheapest first (surfaced right after Popular).
+    final budget = listings.where((l) => l.displayPrice > 0).toList()
+      ..sort((a, b) => a.displayPrice.compareTo(b.displayPrice));
+    add('Budget-friendly stays', budget);
+
+    // Newly available — most recently created first.
+    final newest = listings.where((l) => l.createdAt != null).toList()
+      ..sort((a, b) => b.createdAt!.compareTo(a.createdAt!));
+    add('Newly available', newest);
+
+    // Featured stays — superhosts.
+    add('Featured stays', listings.where((l) => l.isSuperhost).toList());
+
+    // Top rated.
+    final topRated = listings.where((l) => (l.rating ?? 0) > 0).toList()
+      ..sort((a, b) => (b.rating ?? 0).compareTo(a.rating ?? 0));
+    add('Top rated', topRated);
+
+    // Location-wise — the busiest cities, "Stays in {city}". "See all" runs a
+    // location search so the grid shows every stay there.
+    final byCity = <String, List<Listing>>{};
+    for (final l in listings) {
+      final c = l.city?.trim();
+      if (c == null || c.isEmpty) continue;
+      (byCity[c] ??= []).add(l);
+    }
+    final cities = byCity.keys.toList()
+      ..sort((a, b) => byCity[b]!.length.compareTo(byCity[a]!.length));
+    for (final city in cities.take(3)) {
+      if (byCity[city]!.length < 2) continue;
+      add(
+        'Stays in $city',
+        byCity[city]!,
+        onSeeAll: () {
+          widget.searchState.updateLocation(location: city);
+          setState(() {});
+        },
+      );
+    }
+
+    // Fallback so the screen is never blank when nothing matched a curation.
+    if (sections.isEmpty) add('All stays', listings);
+
+    return ListView(
+      controller: _scrollController,
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(top: 8, bottom: 24),
+      children: sections,
+    );
+  }
+}
+
+/// A single Airbnb-style category: a heading with a "See all" action and a
+/// horizontal, left-to-right scrolling list of listing cards.
+class _CategorySection extends StatelessWidget {
+  const _CategorySection({
+    required this.title,
+    required this.listings,
+    required this.favoritesState,
+    required this.onOpen,
+    required this.onSeeAll,
+  });
+
+  final String title;
+  final List<Listing> listings;
+  final FavoritesStateNotifier favoritesState;
+  final void Function(Listing) onOpen;
+  final VoidCallback? onSeeAll;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              if (onSeeAll != null)
+                TextButton(
+                  onPressed: onSeeAll,
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('See all'),
+                ),
+            ],
+          ),
+        ),
+        // Height is width / 0.72 (186 / 0.72 ≈ 258), matching the grid's
+        // childAspectRatio so ListingCardModern's Expanded rows lay out cleanly.
+        SizedBox(
+          height: 258,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: listings.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (context, index) {
+              final listing = listings[index];
+              return SizedBox(
+                width: 186,
+                child: ListingCardModern(
+                  listing: listing,
+                  isFavorite: favoritesState.isFavorite(listing.id),
+                  onTap: () => onOpen(listing),
+                  onFavoriteTap: () => favoritesState.toggleFavorite(listing.id),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

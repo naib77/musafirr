@@ -14,6 +14,7 @@ import '../../models/listing_type.dart';
 import '../../models/rental_plan.dart';
 import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
+import '../../services/discount/coupon_service.dart';
 import '../../services/verification/identity_gate.dart';
 import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
@@ -130,8 +131,8 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       }
     }
 
-    // One-time identity gate before the first booking. Upload is enough to
-    // unlock (no admin approval); an already-verified user isn't prompted.
+    // Identity gate before booking: the guest must have an admin-approved
+    // identity (ID document + selfie, verified by an admin) to proceed.
     final userId = widget.authState.currentUser?.id;
     if (userId != null) {
       if (!mounted) return;
@@ -172,7 +173,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
             slivers: [
               // Immersive image header (scrolls away beneath the content sheet)
               SliverAppBar(
-                expandedHeight: 360,
+                expandedHeight: 300,
                 pinned: false,
                 stretch: true,
                 automaticallyImplyLeading: false,
@@ -211,12 +212,17 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                         ),
                         const SizedBox(height: 20),
 
-                        // Title
-                        Text(
-                          listing.title,
-                          style: theme.textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            height: 1.15,
+                        // Title — brand-gradient coloured, compact
+                        ShaderMask(
+                          shaderCallback: (bounds) =>
+                              AppColors.brandGradient.createShader(bounds),
+                          child: Text(
+                            listing.title,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              height: 1.2,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 10),
@@ -242,45 +248,47 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                               _RatingPill(listing: listing),
                           ],
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 16),
 
                         // Host info
                         _HostInfoCard(
                           listing: listing,
                           onContactHost: _canContactHost ? _contactHost : null,
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 16),
 
                         // Property details
                         _PropertyDetails(listing: listing),
-                        const SizedBox(height: 28),
+                        const SizedBox(height: 20),
 
                         // Description
                         if (listing.description != null) ...[
                           const _SectionTitle('About this place'),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 8),
                           Text(
                             listing.description!,
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
-                              height: 1.55,
+                              height: 1.5,
                             ),
                           ),
-                          const SizedBox(height: 28),
+                          const SizedBox(height: 20),
                         ],
 
                         // Location & Navigation
                         _LocationSection(listing: listing),
-                        const SizedBox(height: 28),
+                        const SizedBox(height: 20),
 
-                        // Amenities
-                        _AmenitiesGrid(listing: listing),
-                        const SizedBox(height: 28),
+                        // Amenities — hide the whole section when there are none
+                        if (listing.facilities.isNotEmpty) ...[
+                          _AmenitiesGrid(listing: listing),
+                          const SizedBox(height: 20),
+                        ],
 
                         // House rules
                         if (listing.houseRules.hasAny) ...[
                           _HouseRulesSection(rules: listing.houseRules),
-                          const SizedBox(height: 28),
+                          const SizedBox(height: 20),
                         ],
 
                         // Reviews
@@ -786,22 +794,31 @@ class _HostInfoCard extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppColors.surfaceMuted,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         children: [
           _buildHostRow(theme),
           if (onContactHost != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
                 onPressed: onContactHost,
-                icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                icon: const Icon(Icons.chat_bubble_outline, size: 16),
                 label: const Text('Message host'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(24),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                  textStyle: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ),
           ],
@@ -814,13 +831,13 @@ class _HostInfoCard extends StatelessWidget {
     return Row(
       children: [
         Container(
-          padding: const EdgeInsets.all(2),
+          padding: const EdgeInsets.all(1.5),
           decoration: const BoxDecoration(
             shape: BoxShape.circle,
             gradient: AppColors.brandGradient,
           ),
           child: CircleAvatar(
-            radius: 26,
+            radius: 17,
             backgroundColor: theme.colorScheme.surface,
             backgroundImage: listing.hostAvatarUrl != null
                 ? NetworkImage(listing.hostAvatarUrl!)
@@ -830,35 +847,37 @@ class _HostInfoCard extends StatelessWidget {
                     listing.ownerName.isNotEmpty
                         ? listing.ownerName[0].toUpperCase()
                         : 'H',
-                    style: theme.textTheme.titleLarge,
+                    style: theme.textTheme.titleSmall,
                   )
                 : null,
           ),
         ),
-        const SizedBox(width: 14),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 'Hosted by ${listing.ownerName}',
-                style: theme.textTheme.titleMedium?.copyWith(
+                style: theme.textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w700,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 1),
               if (listing.isSuperhost)
                 Row(
                   children: [
                     const Icon(
                       Icons.workspace_premium,
-                      size: 16,
+                      size: 13,
                       color: AppColors.amber,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       'Superhost',
-                      style: theme.textTheme.bodySmall?.copyWith(
+                      style: theme.textTheme.labelSmall?.copyWith(
                         color: AppColors.amber,
                         fontWeight: FontWeight.w600,
                       ),
@@ -868,7 +887,7 @@ class _HostInfoCard extends StatelessWidget {
               else
                 Text(
                   'Your host',
-                  style: theme.textTheme.bodySmall?.copyWith(
+                  style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
@@ -877,7 +896,7 @@ class _HostInfoCard extends StatelessWidget {
         ),
         Icon(
           Icons.verified_rounded,
-          size: 22,
+          size: 18,
           color: AppColors.brand.withValues(alpha: 0.9),
         ),
       ],
@@ -954,32 +973,32 @@ class _LocationSectionState extends State<_LocationSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const _SectionTitle('Location'),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
 
         // Address
         Row(
           children: [
             Icon(
               Icons.location_on,
-              size: 20,
+              size: 17,
               color: theme.colorScheme.primary,
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             Expanded(
               child: Text(
                 widget.listing.address,
-                style: theme.textTheme.bodyMedium?.copyWith(
+                style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
 
         // Google Map
         Container(
-          height: 200,
+          height: 150,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: theme.colorScheme.outlineVariant),
@@ -1092,36 +1111,33 @@ class _StatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       decoration: BoxDecoration(
         color: AppColors.surfaceMuted,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: Column(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15, color: color),
+            const SizedBox(width: 5),
+            Text(
+              value,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
             ),
-            child: Icon(icon, size: 20, color: color),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w800,
+            const SizedBox(width: 3),
+            Text(
+              label,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
-          ),
-          Text(
-            label,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1455,6 +1471,11 @@ class _BookingSheetState extends State<_BookingSheet> {
   int _guestCount = 1;
   bool _isBooking = false;
 
+  // Coupon
+  final _couponController = TextEditingController();
+  CouponValidation? _coupon;
+  bool _checkingCoupon = false;
+
   // Conflict tracking
   List<Booking> _conflictingBookings = [];
   List<Booking> _userConflictingBookings = [];
@@ -1472,6 +1493,116 @@ class _BookingSheetState extends State<_BookingSheet> {
     _durationType = widget.listing.cheapestPlan ?? DurationType.daily;
   }
 
+  @override
+  void dispose() {
+    _couponController.dispose();
+    super.dispose();
+  }
+
+  // ---- Coupon ------------------------------------------------------------
+  double get _discountAmount =>
+      (_coupon?.valid ?? false) ? _coupon!.discountAmount : 0;
+  Money get _discountMoney => Money(_discountAmount, _totalPriceMoney.currency);
+  Money get _finalPriceMoney => _totalPriceMoney.subtract(_discountMoney);
+
+  /// Validates the typed coupon against the current total (server-authoritative).
+  Future<void> _applyCoupon() async {
+    final code = _couponController.text.trim();
+    if (code.isEmpty) return;
+    if (!_isSelectionComplete) {
+      _showWarningBanner('Choose your dates before applying a coupon');
+      return;
+    }
+    setState(() => _checkingCoupon = true);
+    final result = await CouponService.instance.validate(code, _totalPrice);
+    if (!mounted) return;
+    setState(() {
+      _checkingCoupon = false;
+      _coupon = result.valid ? result : null;
+    });
+    if (result.valid) {
+      ModernBanner.showSuccess(
+        context,
+        'Coupon applied — you saved ${_discountMoney.format()}',
+      );
+    } else {
+      _showErrorBanner(result.message);
+    }
+  }
+
+  void _removeCoupon() {
+    setState(() {
+      _coupon = null;
+      _couponController.clear();
+    });
+  }
+
+  Widget _buildCouponSection(ThemeData theme) {
+    if (_coupon?.valid ?? false) {
+      return Row(
+        children: [
+          const Icon(Icons.local_offer_rounded,
+              size: 18, color: AppColors.success),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${_coupon!.code} applied',
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
+          TextButton(
+            onPressed: _removeCoupon,
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('Remove'),
+          ),
+        ],
+      );
+    }
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _couponController,
+            textCapitalization: TextCapitalization.characters,
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: 'Coupon code',
+              prefixIcon: const Icon(Icons.local_offer_outlined, size: 18),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            onSubmitted: (_) => _applyCoupon(),
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          height: 42,
+          child: FilledButton(
+            onPressed: _checkingCoupon ? null : _applyCoupon,
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
+            child: _checkingCoupon
+                ? const SizedBox(
+                    height: 16,
+                    width: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  )
+                : const Text('Apply'),
+          ),
+        ),
+      ],
+    );
+  }
+
   /// Modern animated error toast (see [ModernBanner]).
   void _showErrorBanner(String message) {
     ModernBanner.showError(context, message);
@@ -1483,6 +1614,9 @@ class _BookingSheetState extends State<_BookingSheet> {
   }
 
   void _checkAvailability() {
+    // The total may have changed → drop any applied coupon so its discount
+    // isn't stale (the guest re-applies against the new amount).
+    _coupon = null;
     if (!_isSelectionComplete) {
       setState(() {
         _conflictingBookings = [];
@@ -1696,6 +1830,28 @@ class _BookingSheetState extends State<_BookingSheet> {
 
     setState(() => _isBooking = true);
 
+    // Re-validate the coupon against the final total right before booking, so a
+    // changed selection can't lock in a stale discount. Server is authoritative.
+    String? couponCode;
+    String? couponId;
+    double discountAmount = 0;
+    if (_coupon?.valid ?? false) {
+      final fresh =
+          await CouponService.instance.validate(_coupon!.code!, _totalPrice);
+      if (!mounted) return;
+      if (!fresh.valid) {
+        setState(() {
+          _coupon = null;
+          _isBooking = false;
+        });
+        _showErrorBanner(fresh.message);
+        return;
+      }
+      couponCode = fresh.code;
+      couponId = fresh.couponId;
+      discountAmount = fresh.discountAmount;
+    }
+
     try {
       await widget.repository.createMarketplaceBooking(
         listingId: widget.listing.id,
@@ -1704,8 +1860,11 @@ class _BookingSheetState extends State<_BookingSheet> {
         checkIn: _checkIn,
         checkOut: _checkOut,
         guestCount: _guestCount,
-        totalPrice: _totalPrice,
+        totalPrice: _totalPrice - discountAmount,
         unitLabel: _pricingUnit,
+        couponCode: couponCode,
+        discountAmount: discountAmount,
+        couponId: couponId,
       );
 
       if (mounted) {
@@ -2048,7 +2207,32 @@ class _BookingSheetState extends State<_BookingSheet> {
                                 unitType: _rateLabel,
                                 total: _totalPriceMoney,
                               ),
+                              const SizedBox(height: 12),
+                              _buildCouponSection(theme),
                               const Divider(height: 24),
+                              if (_discountAmount > 0) ...[
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Coupon${_coupon?.code != null ? ' (${_coupon!.code})' : ''}',
+                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                        color: AppColors.success,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Text(
+                                      '-${_discountMoney.format()}',
+                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                        color: AppColors.success,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                              ],
                               Row(
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
@@ -2061,7 +2245,7 @@ class _BookingSheetState extends State<_BookingSheet> {
                                     ),
                                   ),
                                   Text(
-                                    _totalPriceMoney.format(),
+                                    _finalPriceMoney.format(),
                                     style:
                                         theme.textTheme.titleMedium?.copyWith(
                                       fontWeight: FontWeight.w800,

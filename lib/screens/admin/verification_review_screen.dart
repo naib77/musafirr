@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../services/image_upload_service.dart';
 import '../../widgets/modern_banner.dart';
 
 /// Screen for admin to review pending verification documents
@@ -39,6 +40,8 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
             id,
             full_name,
             mobile,
+            nid,
+            id_document_type,
             verification_status,
             owner_documents(
               id,
@@ -51,8 +54,26 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
           .eq('verification_status', 'pending')
           .order('updated_at', ascending: false);
 
+      final verifications = List<Map<String, dynamic>>.from(response);
+
+      // The `documents` bucket is private — file_path is a storage path, not a
+      // public URL. Resolve a short-lived signed URL for each document so the
+      // previews below can actually load.
+      final uploads = ImageUploadService.instance;
+      for (final v in verifications) {
+        final docs = List<Map<String, dynamic>>.from(v['owner_documents'] ?? []);
+        for (final doc in docs) {
+          final path = doc['file_path'] as String?;
+          if (path != null && path.isNotEmpty) {
+            doc['signed_url'] = await uploads.signedDocumentUrl(path);
+          }
+        }
+        v['owner_documents'] = docs;
+      }
+
+      if (!mounted) return;
       setState(() {
-        _pendingVerifications = List<Map<String, dynamic>>.from(response);
+        _pendingVerifications = verifications;
         _isLoading = false;
       });
     } catch (e) {
@@ -227,6 +248,8 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
           userId: verification['id'],
           userName: verification['full_name'] ?? 'Unknown',
           phone: verification['mobile'] ?? '',
+          idType: verification['id_document_type'] as String?,
+          idNumber: verification['nid'] as String?,
           documents:
               List<Map<String, dynamic>>.from(verification['owner_documents'] ?? []),
           onApprove: () => _approveVerification(verification['id']),
@@ -243,6 +266,8 @@ class _VerificationCard extends StatelessWidget {
     required this.userId,
     required this.userName,
     required this.phone,
+    required this.idType,
+    required this.idNumber,
     required this.documents,
     required this.onApprove,
     required this.onReject,
@@ -251,9 +276,29 @@ class _VerificationCard extends StatelessWidget {
   final String userId;
   final String userName;
   final String phone;
+  final String? idType;
+  final String? idNumber;
   final List<Map<String, dynamic>> documents;
   final VoidCallback onApprove;
   final VoidCallback onReject;
+
+  /// Friendly label for a stored `id_document_type` key.
+  String _docTypeLabel(String? key) {
+    switch (key) {
+      case 'nid':
+        return 'National ID (NID)';
+      case 'passport':
+        return 'Passport';
+      case 'driving_license':
+        return 'Driving License';
+      case 'student_id':
+        return 'Student / Admission';
+      case 'office_id':
+        return 'Office / Employee ID';
+      default:
+        return 'ID document';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -265,6 +310,10 @@ class _VerificationCard extends StatelessWidget {
     );
     final nidBack = documents.firstWhere(
       (d) => d['document_type'] == 'nid_back',
+      orElse: () => {},
+    );
+    final selfie = documents.firstWhere(
+      (d) => d['document_type'] == 'selfie',
       orElse: () => {},
     );
 
@@ -306,20 +355,36 @@ class _VerificationCard extends StatelessWidget {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                if ((idNumber ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '${_docTypeLabel(idType)} · No. $idNumber',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
                       child: _DocumentPreview(
-                        label: 'NID Front',
-                        url: nidFront['file_path'],
+                        label: 'ID Front',
+                        url: nidFront['signed_url'] as String?,
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: _DocumentPreview(
-                        label: 'NID Back',
-                        url: nidBack['file_path'],
+                        label: 'ID Back',
+                        url: nidBack['signed_url'] as String?,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _DocumentPreview(
+                        label: 'Selfie',
+                        url: selfie['signed_url'] as String?,
                       ),
                     ),
                   ],

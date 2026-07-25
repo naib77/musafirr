@@ -113,8 +113,8 @@ class HostListingsScreen extends StatelessWidget {
   Future<void> _createListing(BuildContext context) async {
     final userId = authState.currentUser?.id;
 
-    // One-time identity gate: a host must have an identity document on file
-    // before publishing a listing. Upload is enough to unlock (no approval).
+    // Identity gate: a host must have an admin-approved identity (ID document +
+    // selfie, verified by an admin) before publishing a listing.
     if (userId != null) {
       final verified = await IdentityGate.ensure(
         context,

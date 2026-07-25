@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../state/app_mode_state.dart';
+import 'modern_banner.dart';
 
 /// Uber-like tab switcher for Guest/Host modes
 class GuestHostSwitcher extends StatelessWidget {
@@ -27,7 +28,7 @@ class GuestHostSwitcher extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: Row(
                 children: [
                   // Guest tab
@@ -36,7 +37,7 @@ class GuestHostSwitcher extends StatelessWidget {
                       icon: Icons.luggage,
                       label: 'Guest',
                       isSelected: mode == AppMode.guest,
-                      onTap: () => onModeChanged(AppMode.guest),
+                      onTap: () => _switchTo(context, AppMode.guest),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -47,7 +48,7 @@ class GuestHostSwitcher extends StatelessWidget {
                       label: 'Host',
                       isSelected: mode == AppMode.host,
                       hasNotification: hasHostNotification,
-                      onTap: () => onModeChanged(AppMode.host),
+                      onTap: () => _switchTo(context, AppMode.host),
                     ),
                   ),
                 ],
@@ -86,6 +87,23 @@ class GuestHostSwitcher extends StatelessWidget {
       ),
     );
   }
+
+  /// Switches mode and shows the app's modern floating toast explaining the
+  /// mode you just moved into. No-op if you tap the tab you're already on.
+  void _switchTo(BuildContext context, AppMode target) {
+    if (target == mode) return;
+    onModeChanged(target);
+
+    ModernBanner.showSuccess(
+      context,
+      target == AppMode.host
+          ? 'Switched to Host — manage your listings & bookings.'
+          : 'Switched to Guest — find & book stays.',
+      duration: const Duration(seconds: 2),
+      // Drop the toast just below the Guest/Host tab strip instead of over it.
+      topOffset: 52,
+    );
+  }
 }
 
 class _ModeTab extends StatelessWidget {
@@ -114,7 +132,7 @@ class _ModeTab extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -124,7 +142,7 @@ class _ModeTab extends StatelessWidget {
                 Icon(
                   icon,
                   color: color,
-                  size: 28,
+                  size: 20,
                 ),
                 // Notification dot
                 if (hasNotification && !isSelected)
@@ -146,10 +164,10 @@ class _ModeTab extends StatelessWidget {
                   ),
               ],
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             Text(
               label,
-              style: theme.textTheme.titleMedium?.copyWith(
+              style: theme.textTheme.titleSmall?.copyWith(
                 color: color,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
               ),

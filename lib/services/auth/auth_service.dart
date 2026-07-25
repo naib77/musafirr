@@ -73,16 +73,6 @@ abstract class AuthService {
   /// Stream of authentication state changes
   Stream<User?> get authStateChanges;
 
-  /// Login with email and password
-  Future<AuthResult> loginWithEmail(String email, String password);
-
-  /// Sign up with email and password
-  Future<AuthResult> signupWithEmail({
-    required String name,
-    required String email,
-    required String password,
-  });
-
   /// Send OTP to phone number
   Future<OtpResult> sendOtp(String phoneNumber);
 

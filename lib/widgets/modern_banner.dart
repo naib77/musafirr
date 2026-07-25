@@ -22,8 +22,10 @@ class ModernBanner {
     Duration duration = const Duration(seconds: 3),
     String? actionLabel,
     VoidCallback? onAction,
+    double topOffset = 0,
   }) =>
-      _show(context, message, _ToastType.success, duration, actionLabel, onAction);
+      _show(context, message, _ToastType.success, duration, actionLabel, onAction,
+          topOffset: topOffset);
 
   static void showError(
     BuildContext context,
@@ -67,8 +69,9 @@ class ModernBanner {
     _ToastType type,
     Duration duration,
     String? actionLabel,
-    VoidCallback? onAction,
-  ) {
+    VoidCallback? onAction, {
+    double topOffset = 0,
+  }) {
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) return;
 
@@ -83,6 +86,7 @@ class ModernBanner {
         duration: duration,
         actionLabel: actionLabel,
         onAction: onAction,
+        topOffset: topOffset,
         onDismissed: () {
           if (identical(_current, handle)) _current = null;
           handle.remove();
@@ -116,6 +120,7 @@ class _Toast extends StatefulWidget {
     required this.onDismissed,
     this.actionLabel,
     this.onAction,
+    this.topOffset = 0,
   });
 
   final String message;
@@ -124,6 +129,7 @@ class _Toast extends StatefulWidget {
   final VoidCallback onDismissed;
   final String? actionLabel;
   final VoidCallback? onAction;
+  final double topOffset;
 
   @override
   State<_Toast> createState() => _ToastState();
@@ -187,7 +193,7 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+          padding: EdgeInsets.fromLTRB(12, 8 + widget.topOffset, 12, 0),
           child: FadeTransition(
             opacity: _controller,
             child: SlideTransition(

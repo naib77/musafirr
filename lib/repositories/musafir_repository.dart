@@ -149,6 +149,9 @@ abstract class MusafirRepository implements Listenable, BookingStore {
     required int guestCount,
     required double totalPrice,
     required String unitLabel,
+    String? couponCode,
+    double discountAmount,
+    String? couponId,
   });
   void cancelBooking(String bookingId);
 

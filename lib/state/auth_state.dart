@@ -104,52 +104,6 @@ class AuthStateNotifier extends ChangeNotifier with SafeNotifier {
     notifyListeners();
   }
 
-  Future<bool> login(String email, String password) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
-    final result = await _service.loginWithEmail(email, password);
-
-    _isLoading = false;
-    if (result.success) {
-      _currentUser = result.user;
-      notifyListeners();
-      return true;
-    }
-
-    _error = result.error ?? 'Invalid email or password';
-    notifyListeners();
-    return false;
-  }
-
-  Future<bool> signup({
-    required String name,
-    required String email,
-    required String password,
-  }) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
-    final result = await _service.signupWithEmail(
-      name: name,
-      email: email,
-      password: password,
-    );
-
-    _isLoading = false;
-    if (result.success) {
-      _currentUser = result.user;
-      notifyListeners();
-      return true;
-    }
-
-    _error = result.error ?? 'Signup failed';
-    notifyListeners();
-    return false;
-  }
-
   /// Upgrade current user to host status
   Future<bool> becomeHost() async {
     if (_currentUser == null) return false;

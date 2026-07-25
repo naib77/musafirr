@@ -392,6 +392,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
       rating: (json['rating'] as num?)?.toDouble(),
       reviewCount: json['review_count'] as int? ?? 0,
       isSuperhost: json['is_superhost'] as bool? ?? false,
+      createdAt: DateTime.tryParse(json['created_at'] as String? ?? ''),
       bookingLimits: BookingLimits(
         minHours: json['min_hours'] as int?,
         maxHours: json['max_hours'] as int?,
@@ -1461,6 +1462,11 @@ class SupabaseMusafirRepository extends ChangeNotifier
     required int guestCount,
     required double totalPrice,
     required String unitLabel,
+    // Coupon applied at checkout (already server-validated). [totalPrice] is the
+    // final, discounted amount; [discountAmount] is what the coupon took off.
+    String? couponCode,
+    double discountAmount = 0,
+    String? couponId,
   }) async {
     final listing = getListingById(listingId);
     if (listing == null) {
@@ -1518,37 +1524,72 @@ class SupabaseMusafirRepository extends ChangeNotifier
     _bookings.add(booking);
     notifyListeners();
 
-    // Await the insert so a failure (offline, RLS, overlap constraint) is
-    // surfaced to the caller instead of leaving a phantom local booking that
-    // the host never received. Roll back the optimistic add on failure.
+    // Await the insert so a failure (offline, RLS, overlap constraint, or a
+    // server-side price/coupon rejection) is surfaced to the caller instead of
+    // leaving a phantom local booking that the host never received. Roll back
+    // the optimistic add on failure.
     try {
-      await _insertMarketplaceBooking(booking);
+      final result = await _insertMarketplaceBooking(
+        booking,
+        couponCode: couponCode,
+        discountAmount: discountAmount,
+        couponId: couponId,
+      );
+      // Reconcile the optimistic booking with the server's authoritative id and
+      // price (the server, not the client, decides the money now).
+      final reconciled = booking.copyWith(
+        id: result.id,
+        totalPrice: result.totalPrice,
+      );
+      final i = _bookings.indexWhere((b) => b.id == booking.id);
+      if (i != -1) _bookings[i] = reconciled;
+      notifyListeners();
+      return reconciled;
     } catch (e) {
       _bookings.removeWhere((b) => b.id == booking.id);
       notifyListeners();
       rethrow;
     }
-
-    return booking;
   }
 
-  Future<void> _insertMarketplaceBooking(Booking booking) async {
-    final data = _bookingToJson(
-      listingId: booking.listingId,
-      tenantId: booking.userId ?? '',
-      tenantName: booking.tenantName,
-      startsAt: booking.checkIn ?? booking.startAt,
-      endsAt: booking.checkOut ?? booking.endAt,
-      totalPrice: booking.totalPrice,
-      pricingUnit: booking.unitLabel,
-      guestCount: booking.guestCount,
-      listingTitle: booking.listingTitle,
-      listingImageUrl: booking.listingImageUrl,
-      listingCity: booking.listingCity,
-    );
+  /// Creates the booking through the server-authoritative
+  /// `create_marketplace_booking` RPC. The server recomputes the price from the
+  /// listing's own rates and the reserved interval (the client no longer sets
+  /// `total_price`), validates + applies the coupon, checks conflicts, and
+  /// records the redemption — all in one transaction. Returns the server's
+  /// authoritative id and total so the optimistic booking can be reconciled.
+  ///
+  /// [couponCode] is passed straight to the server, which re-validates it; the
+  /// client-side [couponId]/[discountAmount] are no longer trusted for money.
+  Future<({String id, double totalPrice, double discountAmount})>
+      _insertMarketplaceBooking(
+    Booking booking, {
+    String? couponCode,
+    double discountAmount = 0,
+    String? couponId,
+  }) async {
+    final row = await _client.rpc('create_marketplace_booking', params: {
+      'p_listing_id': booking.listingId,
+      // Serialize as UTC — a naive local (UTC+6) string is read by the
+      // timestamptz column as UTC, shifting every booking 6 hours ahead.
+      'p_starts_at': (booking.checkIn ?? booking.startAt).toUtc().toIso8601String(),
+      'p_ends_at': (booking.checkOut ?? booking.endAt).toUtc().toIso8601String(),
+      'p_pricing_unit': booking.unitLabel,
+      'p_guest_count': booking.guestCount,
+      'p_tenant_name': booking.tenantName,
+      'p_coupon_code': (couponCode != null && couponCode.isNotEmpty)
+          ? couponCode
+          : null,
+      'p_listing_image_url': booking.listingImageUrl,
+    });
 
-    await _client.from('bookings').insert(data);
+    final data = (row as Map).cast<String, dynamic>();
     await _refreshBookings();
+    return (
+      id: data['id'] as String,
+      totalPrice: (data['total_price'] as num?)?.toDouble() ?? booking.totalPrice,
+      discountAmount: (data['discount_amount'] as num?)?.toDouble() ?? 0,
+    );
   }
 
   @override

@@ -9,13 +9,9 @@ class PhoneEntryScreen extends StatefulWidget {
   const PhoneEntryScreen({
     super.key,
     required this.otpState,
-    required this.onEmailSignupTap,
-    this.onEmailLoginTap,
   });
 
   final OtpStateNotifier otpState;
-  final VoidCallback onEmailSignupTap;
-  final VoidCallback? onEmailLoginTap;
 
   @override
   State<PhoneEntryScreen> createState() => _PhoneEntryScreenState();
@@ -140,58 +136,6 @@ class _PhoneEntryScreenState extends State<PhoneEntryScreen> {
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 32),
-
-                // Divider
-                Row(
-                  children: [
-                    const Expanded(child: Divider()),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        'or',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                    const Expanded(child: Divider()),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                // Email login button
-                OutlinedButton.icon(
-                  onPressed: widget.onEmailLoginTap,
-                  icon: const Icon(Icons.email_outlined),
-                  label: const Text('Continue with Email'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // Email signup link — Wrap so it flows to a second line on
-                // narrow screens instead of overflowing.
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text(
-                      "Don't have an account?",
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                    TextButton(
-                      onPressed: widget.onEmailSignupTap,
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        minimumSize: const Size(0, 36),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: const Text('Sign up with Email'),
-                    ),
-                  ],
                 ),
               ],
             ),

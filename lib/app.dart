@@ -4,11 +4,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/theme/app_theme.dart';
 import 'models/notification.dart';
 import 'repositories/supabase_musafir_repository.dart';
-import 'screens/auth/login_screen.dart';
 import 'screens/auth/otp_verification_screen.dart';
 import 'screens/auth/phone_entry_screen.dart';
 import 'screens/auth/profile_completion_screen.dart';
-import 'screens/auth/signup_screen.dart';
 import 'screens/main_shell.dart';
 import 'screens/splash/splash_screen.dart';
 import 'services/booking/booking_lifecycle_service.dart';
@@ -200,8 +198,6 @@ class _MusafirAppState extends State<MusafirApp> {
 
 /// Auth screen type for navigation
 enum AuthScreen {
-  login,
-  emailSignup,
   phoneEntry,
   otpVerification,
   profileCompletion,
@@ -254,34 +250,12 @@ class _AuthNavigatorState extends State<AuthNavigator> {
     });
   }
 
-  void _navigateTo(AuthScreen screen) {
-    setState(() => _currentScreen = screen);
-    if (screen == AuthScreen.login) {
-      _otpState.reset();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     switch (_currentScreen) {
-      case AuthScreen.login:
-        return LoginScreen(
-          authState: widget.authState,
-          onSignupTap: () => _navigateTo(AuthScreen.emailSignup),
-          onPhoneSignupTap: () => _navigateTo(AuthScreen.phoneEntry),
-        );
-
-      case AuthScreen.emailSignup:
-        return SignupScreen(
-          authState: widget.authState,
-          onLoginTap: () => _navigateTo(AuthScreen.login),
-        );
-
       case AuthScreen.phoneEntry:
         return PhoneEntryScreen(
           otpState: _otpState,
-          onEmailSignupTap: () => _navigateTo(AuthScreen.emailSignup),
-          onEmailLoginTap: () => _navigateTo(AuthScreen.login),
         );
 
       case AuthScreen.otpVerification:
