@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/booking.dart';
 import '../../models/booking_categorizer.dart';
@@ -9,6 +11,7 @@ import '../../services/booking/booking_lifecycle_service.dart'
     show InvalidBookingStateException;
 import '../../services/booking/booking_messaging_coordinator.dart';
 import '../../services/booking/booking_rules.dart';
+import '../../services/payment/sslcommerz_service.dart';
 import '../../state/auth_state.dart';
 import '../../state/messaging_state.dart';
 import '../../state/notification_state.dart';
@@ -18,6 +21,7 @@ import '../../widgets/booking_filter_bar.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/notification_bell.dart';
 import '../messaging/chat_screen.dart';
+import '../payment/payment_webview_screen.dart';
 import '../review/guest_review_screen.dart';
 
 class TripsScreen extends StatefulWidget {
@@ -412,6 +416,7 @@ class _TripsScreenState extends State<TripsScreen> {
                       onMessageHost: showMessageButton
                           ? () => _openChatForBooking(booking)
                           : null,
+                      onPay: () => _payForBooking(booking),
                     ),
                   );
                 },
@@ -616,6 +621,103 @@ class _TripsScreenState extends State<TripsScreen> {
       );
     }
   }
+
+  /// Guest payment flow: start an SSLCommerz session, open the hosted gateway
+  /// in a WebView, then confirm settlement (the server validates the payment)
+  /// and refresh the booking list.
+  Future<void> _payForBooking(Booking booking) async {
+    final init = await SslcommerzService.instance.initiate(booking.id);
+    if (!mounted) return;
+    if (!init.success || init.gatewayUrl == null) {
+      ModernBanner.showError(context, init.error ?? 'Could not start payment');
+      return;
+    }
+
+    // Web has no in-app WebView (webview_flutter is Android/iOS only): open the
+    // hosted gateway in a new browser tab, then confirm settlement by polling.
+    // The tab is opened from the button's own onPressed so the browser treats
+    // it as a user gesture (avoids popup blocking after the async init call).
+    if (kIsWeb) {
+      final gatewayUrl = init.gatewayUrl!;
+      final result = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Secure payment'),
+          content: const Text(
+            'Tap "Open payment page" to pay in a new tab. Once you finish there, '
+            'come back and tap "I\'ve paid".',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'cancel'),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => launchUrl(
+                Uri.parse(gatewayUrl),
+                webOnlyWindowName: '_blank',
+              ),
+              child: const Text('Open payment page'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, 'paid'),
+              child: const Text("I've paid"),
+            ),
+          ],
+        ),
+      );
+      if (result == 'paid') await _settlePayment(booking, init.tranId);
+      return;
+    }
+
+    // Mobile: in-app WebView that detects the redirect outcome.
+    final outcome = await Navigator.push<PaymentOutcome>(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => PaymentWebViewScreen(gatewayUrl: init.gatewayUrl!),
+      ),
+    );
+    if (!mounted) return;
+
+    switch (outcome) {
+      case PaymentOutcome.success:
+        await _settlePayment(booking, init.tranId);
+      case PaymentOutcome.failed:
+        ModernBanner.showError(context, 'Payment failed. Please try again.');
+      case PaymentOutcome.cancelled:
+      case null:
+        break;
+    }
+  }
+
+  /// Confirms settlement (the server validates the payment via the Validation
+  /// API) and refreshes the booking list. Shared by the mobile WebView and the
+  /// web new-tab flows. Resolves the precise outcome by polling the payment
+  /// attempt so failures are surfaced, not silently swallowed.
+  Future<void> _settlePayment(Booking booking, String? tranId) async {
+    if (!mounted) return;
+    ModernBanner.showInfo(context, 'Confirming your payment…');
+    final settlement = tranId == null
+        ? PaymentSettlement.pending
+        : await SslcommerzService.instance.awaitSettlement(tranId);
+    final user = widget.authState.currentUser;
+    if (user != null) {
+      await widget.repository.resetBookingsPagination(user.id);
+    }
+    if (!mounted) return;
+    switch (settlement) {
+      case PaymentSettlement.paid:
+        ModernBanner.showSuccess(context, 'Payment successful! 🎉');
+      case PaymentSettlement.failed:
+        ModernBanner.showError(context,
+            'Payment failed or could not be verified. Please try again.');
+      case PaymentSettlement.pending:
+        ModernBanner.showInfo(
+            context, 'Payment received — your booking will update shortly.');
+    }
+  }
 }
 
 enum _TabType { upcoming, current, past }
@@ -639,6 +741,7 @@ class _EnhancedBookingCard extends StatelessWidget {
     this.showReviewBadge = false,
     this.needsReviewBookings = const [],
     this.onMessageHost,
+    this.onPay,
   });
 
   final Booking booking;
@@ -648,6 +751,7 @@ class _EnhancedBookingCard extends StatelessWidget {
   final bool showReviewBadge;
   final List<Booking> needsReviewBookings;
   final VoidCallback? onMessageHost;
+  final VoidCallback? onPay;
 
   @override
   Widget build(BuildContext context) {
@@ -657,6 +761,12 @@ class _EnhancedBookingCard extends StatelessWidget {
     final showMessage = onMessageHost != null &&
         (booking.status == BookingStatus.confirmed ||
             booking.status == BookingStatus.active);
+    // Guest can pay any time after the host accepts and before the stay is
+    // completed — i.e. 'confirmed' or 'active' (checked in) — while unpaid.
+    final showPay = onPay != null &&
+        (booking.status == BookingStatus.confirmed ||
+            booking.status == BookingStatus.active) &&
+        !booking.isPaid;
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -756,6 +866,39 @@ class _EnhancedBookingCard extends StatelessWidget {
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (showPay) ...[
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: onPay,
+                          icon: const Icon(Icons.lock_outline, size: 16),
+                          label: Text('Pay ৳${booking.totalPrice.toStringAsFixed(0)}'),
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                      ),
+                    ] else if (booking.isPaid &&
+                        booking.status != BookingStatus.completed) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(Icons.verified_rounded,
+                              size: 14, color: Colors.green.shade600),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Paid',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.green.shade700,
                             ),
                           ),
                         ],

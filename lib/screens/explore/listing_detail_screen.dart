@@ -1,5 +1,6 @@
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -939,6 +940,34 @@ class _LocationSectionState extends State<_LocationSection> {
     );
   }
 
+  /// Non-interactive map placeholder shown on web (see the crash note at the
+  /// call site). Tapping it opens the location in the external maps app.
+  Widget _webMapFallback(ThemeData theme) {
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: InkWell(
+        onTap: _openInMaps,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.map_outlined,
+                  size: 32, color: theme.colorScheme.primary),
+              const SizedBox(height: 6),
+              Text(
+                'View location on map',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _openInMaps() async {
     final lat = widget.listing.latitude;
     final lng = widget.listing.longitude;
@@ -1004,26 +1033,32 @@ class _LocationSectionState extends State<_LocationSection> {
             border: Border.all(color: theme.colorScheme.outlineVariant),
           ),
           clipBehavior: Clip.antiAlias,
-          child: WebDeferredMount(
-            builder: (context) => GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: _location,
-                zoom: 15,
-              ),
-              markers: _markers,
-              onMapCreated: (controller) {
-                _mapController = controller;
-                _mapCreated = true;
-              },
-              zoomControlsEnabled: false,
-              mapToolbarEnabled: false,
-              myLocationButtonEnabled: false,
-              scrollGesturesEnabled: true,
-              zoomGesturesEnabled: true,
-              rotateGesturesEnabled: false,
-              tiltGesturesEnabled: false,
-            ),
-          ),
+          // On web, google_maps_flutter_web throws on dispose if the map is
+          // torn down before it finishes building (a known plugin bug). A
+          // non-interactive, tappable fallback avoids the crash entirely; the
+          // "View on Map" / "Get Directions" buttons below open the full map.
+          child: kIsWeb
+              ? _webMapFallback(theme)
+              : WebDeferredMount(
+                  builder: (context) => GoogleMap(
+                    initialCameraPosition: CameraPosition(
+                      target: _location,
+                      zoom: 15,
+                    ),
+                    markers: _markers,
+                    onMapCreated: (controller) {
+                      _mapController = controller;
+                      _mapCreated = true;
+                    },
+                    zoomControlsEnabled: false,
+                    mapToolbarEnabled: false,
+                    myLocationButtonEnabled: false,
+                    scrollGesturesEnabled: true,
+                    zoomGesturesEnabled: true,
+                    rotateGesturesEnabled: false,
+                    tiltGesturesEnabled: false,
+                  ),
+                ),
         ),
         const SizedBox(height: 12),
 

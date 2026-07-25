@@ -833,6 +833,12 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
   }
 
   void _completeService(BuildContext context, Booking booking) {
+    // The host can only finish a booking after the guest has paid.
+    if (!booking.isPaid) {
+      _showErrorBanner(
+          'You can complete this booking once the guest has paid.');
+      return;
+    }
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(

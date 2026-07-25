@@ -616,6 +616,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
       cancelledAt: json['cancelled_at'] != null
           ? DateTime.parse(json['cancelled_at'] as String)
           : null,
+      paymentStatus: json['payment_status'] as String? ?? 'unpaid',
     );
   }
 

@@ -24,6 +24,7 @@ import 'state/messaging_state.dart';
 import 'state/notification_state.dart';
 import 'state/otp_state.dart';
 import 'state/search_state.dart';
+import 'widgets/modern_banner.dart';
 
 class MusafirApp extends StatefulWidget {
   const MusafirApp({super.key});
@@ -33,6 +34,10 @@ class MusafirApp extends StatefulWidget {
 }
 
 class _MusafirAppState extends State<MusafirApp> {
+  /// App-wide navigator so background state (e.g. the realtime notification
+  /// handler) can surface an in-app toast without a widget context.
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+
   late final SupabaseMusafirRepository repository;
   final AuthStateNotifier authState = AuthStateNotifier();
   final FavoritesStateNotifier favoritesState = FavoritesStateNotifier();
@@ -94,6 +99,10 @@ class _MusafirAppState extends State<MusafirApp> {
       if (notification.type == NotificationType.newMessage) {
         messagingState.refreshConversations();
       }
+      // Surface an in-app toast for every live notification. This is the only
+      // "popup" on web (OS push is stubbed there) and also shows in the
+      // foreground on mobile. Fires only on realtime inserts, so no startup spam.
+      _showNotificationToast(notification);
     };
 
     // Initialize search state with listings
@@ -131,6 +140,18 @@ class _MusafirAppState extends State<MusafirApp> {
     }
   }
 
+  /// Shows a transient in-app toast for a freshly-arrived realtime
+  /// notification, using the root navigator's overlay so it works from any
+  /// screen (and on web, where OS push is unavailable).
+  void _showNotificationToast(AppNotification notification) {
+    final context = _navigatorKey.currentContext;
+    if (context == null) return;
+    final body = notification.body.trim();
+    final message =
+        body.isEmpty ? notification.title : '${notification.title} · $body';
+    ModernBanner.showInfo(context, message);
+  }
+
   Future<void> _initializeSearchState() async {
     // Explore search runs server-side over the full catalog.
     searchState.attachSearcher(repository.searchListingsFromDb);
@@ -157,6 +178,7 @@ class _MusafirAppState extends State<MusafirApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Musafir',
+      navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
       // The design system is light-only; pinning themeMode (plus
       // forceDarkAllowed=false in the Android styles) stops OEM "force dark"

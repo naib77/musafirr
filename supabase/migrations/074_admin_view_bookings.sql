@@ -1,4 +1,4 @@
--- 072: Let admins read every booking.
+-- 074: Let admins read every booking.
 --
 -- Problem this closes: the `bookings` SELECT policies only covered the tenant
 -- ("Users can view their own bookings", auth.uid() = tenant_id) and the host

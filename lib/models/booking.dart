@@ -36,6 +36,8 @@ class Booking {
     this.completedAt,
     this.cancelledBy,
     this.cancelledAt,
+    // Payment
+    this.paymentStatus = 'unpaid',
   });
 
   final String id;
@@ -85,6 +87,14 @@ class Booking {
 
   /// Timestamp when booking was cancelled
   final DateTime? cancelledAt;
+
+  /// Payment state mirrored from the `payments` table: 'unpaid' | 'paid' |
+  /// 'refunded'. Guests pay after the host accepts; hosts can only complete a
+  /// booking once this is 'paid'.
+  final String paymentStatus;
+
+  /// Whether the guest has paid for this booking.
+  bool get isPaid => paymentStatus == 'paid';
 
   // Money-typed getters for type-safe currency handling
   Money get totalPriceMoney => Money(totalPrice, currency);
@@ -196,6 +206,7 @@ class Booking {
     DateTime? completedAt,
     String? cancelledBy,
     DateTime? cancelledAt,
+    String? paymentStatus,
   }) {
     return Booking(
       id: id ?? this.id,
@@ -226,6 +237,7 @@ class Booking {
       completedAt: completedAt ?? this.completedAt,
       cancelledBy: cancelledBy ?? this.cancelledBy,
       cancelledAt: cancelledAt ?? this.cancelledAt,
+      paymentStatus: paymentStatus ?? this.paymentStatus,
     );
   }
 }
