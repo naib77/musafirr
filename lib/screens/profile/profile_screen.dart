@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../repositories/musafir_repository.dart';
+import '../../services/image_upload_service.dart';
 import '../../state/auth_state.dart';
 import '../../state/notification_state.dart';
 import '../../widgets/avatar_upload.dart';
@@ -30,6 +31,54 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   AuthStateNotifier get authState => widget.authState;
   MusafirRepository get repository => widget.repository;
+
+  /// Live identity verification status ('none'/'pending'/'verified'/'rejected'),
+  /// null until loaded. Kept in sync as the user logs in and after they visit
+  /// the verification screen.
+  String? _verificationStatus;
+  String? _loadedForUserId;
+
+  @override
+  void initState() {
+    super.initState();
+    authState.addListener(_onAuthChanged);
+    _loadVerificationStatus();
+  }
+
+  @override
+  void dispose() {
+    authState.removeListener(_onAuthChanged);
+    super.dispose();
+  }
+
+  void _onAuthChanged() {
+    final id = authState.currentUser?.id;
+    if (id != null && id != _loadedForUserId) _loadVerificationStatus();
+  }
+
+  Future<void> _loadVerificationStatus() async {
+    final user = authState.currentUser;
+    if (user == null) return;
+    _loadedForUserId = user.id;
+    final status =
+        await ImageUploadService.instance.identityVerificationStatus(user.id);
+    if (!mounted) return;
+    setState(() => _verificationStatus = status);
+  }
+
+  /// Subtitle for the Identity verification row, reflecting the current status.
+  String _verificationSubtitle() {
+    switch (_verificationStatus) {
+      case 'verified':
+        return 'Verified';
+      case 'pending':
+        return 'Under review';
+      case 'rejected':
+        return 'Rejected — tap to resubmit';
+      default:
+        return 'Verify your identity to host or book';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -152,7 +201,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _SettingsItem(
                       icon: Icons.verified_user_outlined,
                       title: 'Identity verification',
-                      subtitle: 'Verify your identity to host or book',
+                      subtitle: _verificationSubtitle(),
                       onTap: () => _navigateToVerification(context, user.id),
                     ),
                     _SettingsItem(
@@ -322,13 +371,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _navigateToVerification(BuildContext context, String userId) {
-    Navigator.push(
+  Future<void> _navigateToVerification(
+      BuildContext context, String userId) async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => IdentityVerificationScreen(userId: userId),
       ),
     );
+    // A fresh submission flips the status to 'pending' — reflect it here.
+    _loadVerificationStatus();
   }
 
   void _navigateToBecomeHost(BuildContext context) {

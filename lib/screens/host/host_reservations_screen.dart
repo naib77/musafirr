@@ -697,6 +697,15 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
   /// Accept a booking. Uses the messaging coordinator when available so the
   /// guest conversation + welcome message are created (parity with the old
   /// HostingScreen inline accept); otherwise just updates the booking status.
+  /// Switches the visible reservations tab (0=Upcoming, 1=Active Stays,
+  /// 2=Completed). Public so the shell can drive it after an accept from the
+  /// notification center; also used after in-screen lifecycle actions so the
+  /// host follows the booking to its new tab.
+  void goToTab(int index) {
+    if (!mounted) return;
+    _tabController.animateTo(index.clamp(0, 2));
+  }
+
   Future<void> _acceptBooking(Booking booking, String? message) async {
     final coordinator = widget.bookingMessagingCoordinator;
     if (coordinator != null) {
@@ -706,7 +715,10 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
           hostId: _hostIdForBooking(booking),
           message: message,
         );
-        if (mounted) _showSuccessBanner('Booking accepted!');
+        if (mounted) {
+          _showSuccessBanner('Booking accepted!');
+          goToTab(0); // Upcoming
+        }
       } catch (_) {
         // The welcome-message step captures its own errors in the result, so an
         // exception here means the accept itself failed (e.g. the guest already
@@ -726,7 +738,10 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
       hostMessage: message,
     );
     widget.repository.updateBooking(updated);
-    if (mounted) _showSuccessBanner('Booking accepted!');
+    if (mounted) {
+      _showSuccessBanner('Booking accepted!');
+      goToTab(0); // Upcoming
+    }
   }
 
   void _showRejectDialog(BuildContext context, Booking booking) {
@@ -815,7 +830,10 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
           bookingId: booking.id,
           hostId: _hostIdForBooking(booking),
         );
-        if (mounted) _showSuccessBanner('Guest checked in!');
+        if (mounted) {
+          _showSuccessBanner('Guest checked in!');
+          goToTab(1); // Active Stays
+        }
       } on InvalidBookingStateException catch (e) {
         if (mounted) _showErrorBanner(e.message);
       } catch (_) {
@@ -829,7 +847,10 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
       actualCheckIn: DateTime.now(),
     );
     widget.repository.updateBooking(updated);
-    if (mounted) _showSuccessBanner('Guest checked in!');
+    if (mounted) {
+      _showSuccessBanner('Guest checked in!');
+      goToTab(1); // Active Stays
+    }
   }
 
   void _completeService(BuildContext context, Booking booking) {
@@ -877,6 +898,7 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
         if (mounted) {
           _showSuccessBanner(
               'Service completed! Don\'t forget to leave a review.');
+          goToTab(2); // Completed
         }
       } on InvalidBookingStateException catch (e) {
         if (mounted) _showErrorBanner(e.message);
@@ -893,6 +915,7 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
     widget.repository.updateBooking(updated);
     if (mounted) {
       _showSuccessBanner('Service completed! Don\'t forget to leave a review.');
+      goToTab(2); // Completed
     }
   }
 

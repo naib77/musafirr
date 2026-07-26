@@ -99,6 +99,16 @@ class _MusafirAppState extends State<MusafirApp> {
       if (notification.type == NotificationType.newMessage) {
         messagingState.refreshConversations();
       }
+      // A booking-status change (host accepts/declines, check-in, etc.) isn't
+      // reliably delivered by the bookings realtime channel, so refresh the
+      // booking list off the reliable notification channel — this is what makes
+      // the guest's Trips update the moment the host accepts, no manual pull.
+      if (_isBookingNotification(notification.type)) {
+        final user = authState.currentUser;
+        if (user != null) {
+          repository.resetBookingsPagination(user.id);
+        }
+      }
       // Surface an in-app toast for every live notification. This is the only
       // "popup" on web (OS push is stubbed there) and also shows in the
       // foreground on mobile. Fires only on realtime inserts, so no startup spam.
@@ -137,6 +147,23 @@ class _MusafirAppState extends State<MusafirApp> {
       messagingState.clear();
       repository.clearSession();
       FcmTokenService.instance.cleanupOnLogout();
+    }
+  }
+
+  /// Whether a notification reflects a booking-lifecycle change that should
+  /// refresh the cached bookings (so Trips/Reservations update without a manual
+  /// pull-to-refresh).
+  bool _isBookingNotification(NotificationType type) {
+    switch (type) {
+      case NotificationType.bookingRequest:
+      case NotificationType.bookingConfirmed:
+      case NotificationType.bookingCancelled:
+      case NotificationType.bookingReminder:
+      case NotificationType.checkInReminder:
+      case NotificationType.checkOutReminder:
+        return true;
+      default:
+        return false;
     }
   }
 

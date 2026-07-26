@@ -20,6 +20,7 @@ import '../../services/verification/identity_gate.dart';
 import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
 import '../../state/messaging_state.dart';
+import '../../state/shell_nav_state.dart';
 import '../messaging/chat_screen.dart';
 import 'listing_gallery_screen.dart';
 import '../../widgets/modern_banner.dart';
@@ -1903,10 +1904,13 @@ class _BookingSheetState extends State<_BookingSheet> {
       );
 
       if (mounted) {
+        // Capture the root navigator before popping the booking sheet — this
+        // State's context is disposed by the time the success sheet closes.
+        final rootNav = Navigator.of(context, rootNavigator: true);
         Navigator.pop(context);
         // Celebrate the milestone with a modern confirmation sheet instead of a
         // flat banner — a booking request is a "done!" moment.
-        SuccessSheet.show(
+        await SuccessSheet.show(
           context,
           title: 'Request sent!',
           message:
@@ -1914,6 +1918,10 @@ class _BookingSheetState extends State<_BookingSheet> {
               "You'll be notified as soon as the host confirms.",
           primaryLabel: 'Got it',
         );
+        // Once acknowledged (or auto-dismissed), return to the shell and land
+        // the guest on their Trips list so they can watch for confirmation.
+        rootNav.popUntil((route) => route.isFirst);
+        ShellNavState.instance.openGuestTrips();
       }
     } on BookingConflictException catch (e) {
       if (mounted) {

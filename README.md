@@ -297,6 +297,15 @@ flutter build apk --release --split-per-abi \
     --dart-define=MASTER_OTP=1234 \
     --dart-define=GOOGLE_MAPS_API_KEY=AIzaSyBw1uyOoZ2tS8-NS_83ov8rE3OusmmDWRM \
     --build-name=1.0.1 --build-number=1
+
+
+flutter clean && flutter pub get && \
+flutter build apk --release \
+  --dart-define=GOOGLE_MAPS_API_KEY=AIzaSyBw1uyOoZ2tS8-NS_83ov8rE3OusmmDWRM \
+  --build-name=0.0.1 --build-number=1 && \
+mv build/app/outputs/flutter-apk/app-release.apk \
+   build/app/outputs/flutter-apk/musaafir-beta-v0.0.1.apk
+   
 ```
 
 ```bash

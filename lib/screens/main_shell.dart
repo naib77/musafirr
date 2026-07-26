@@ -12,6 +12,7 @@ import '../state/favorites_state.dart';
 import '../state/messaging_state.dart';
 import '../state/notification_state.dart';
 import '../state/search_state.dart';
+import '../state/shell_nav_state.dart';
 import '../widgets/app_page_header.dart';
 import '../widgets/guest_host_switcher.dart';
 import '../widgets/notification_bell.dart';
@@ -63,10 +64,43 @@ class _MainShellState extends State<MainShell> {
   // GlobalKey to access TripsScreen state for tap-to-refresh
   final GlobalKey<dynamic> _tripsScreenKey = GlobalKey();
 
+  // GlobalKey to drive the host Reservations screen's inner tab from elsewhere.
+  final GlobalKey<dynamic> _hostReservationsKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
     _appModeState = widget.appModeState ?? AppModeStateNotifier();
+    ShellNavState.instance.addListener(_onShellNavRequest);
+  }
+
+  @override
+  void dispose() {
+    ShellNavState.instance.removeListener(_onShellNavRequest);
+    super.dispose();
+  }
+
+  /// Applies a tab-switch requested by a deep screen (booking sheet, notification
+  /// center) and clears it so it fires once.
+  void _onShellNavRequest() {
+    if (!mounted) return;
+    final nav = ShellNavState.instance;
+    final guestTab = nav.guestTab;
+    final hostTab = nav.hostTab;
+    final reservationsTab = nav.reservationsTab;
+    nav.consumed();
+
+    setState(() {
+      if (guestTab != null) _guestTabIndex = guestTab;
+      if (hostTab != null) _hostTabIndex = hostTab;
+    });
+    // The Reservations screen is kept alive in an IndexedStack, so its inner
+    // tab is switched imperatively via its state.
+    if (reservationsTab != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _hostReservationsKey.currentState?.goToTab(reservationsTab);
+      });
+    }
   }
 
   bool get _isLoggedIn => widget.authState.isLoggedIn;
@@ -105,8 +139,9 @@ class _MainShellState extends State<MainShell> {
           messagingState: widget.messagingState,
           bookingMessagingCoordinator: widget.bookingMessagingCoordinator,
           // After a host accepts a booking, land them on the shell's live
-          // Reservations tab (index 1) rather than a standalone screen.
-          onViewReservations: () => setState(() => _hostTabIndex = 1),
+          // Reservations tab, showing the Upcoming inner tab.
+          onViewReservations: () =>
+              ShellNavState.instance.openHostReservations(innerTab: 0),
         ),
       ),
     );
@@ -394,6 +429,7 @@ class _MainShellState extends State<MainShell> {
         ),
         // Reservations — the tabbed Upcoming / Active Stays / Completed view.
         HostReservationsScreen(
+          key: _hostReservationsKey,
           repository: widget.repository,
           authState: widget.authState,
           messagingState: widget.messagingState,

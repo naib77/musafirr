@@ -70,6 +70,28 @@ class _IdentityVerificationScreenState
   Uint8List? _selfiePreview;
   bool _isSubmitting = false;
 
+  // Current server-side verification status, loaded on open. While it's loading
+  // we show a spinner; if it's already 'pending' or 'verified' we show that
+  // state instead of the form so a returning user can't re-submit mid-review.
+  bool _loadingStatus = true;
+  String _status = 'none';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStatus();
+  }
+
+  Future<void> _loadStatus() async {
+    final status = await ImageUploadService.instance
+        .identityVerificationStatus(widget.userId);
+    if (!mounted) return;
+    setState(() {
+      _status = status;
+      _loadingStatus = false;
+    });
+  }
+
   _IdDocType get _currentType =>
       _idDocTypes.firstWhere((t) => t.key == _selectedTypeKey);
 
@@ -275,6 +297,15 @@ class _IdentityVerificationScreenState
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    if (_loadingStatus) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    // Already submitted (pending) or approved (verified): show that state
+    // rather than the submission form — a returning user waits for the admin.
+    if (_status == 'pending' || _status == 'verified') {
+      return _buildStatusView(theme);
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(_step == 0 ? 'Verify identity' : 'Selfie & document'),
@@ -290,6 +321,68 @@ class _IdentityVerificationScreenState
       ),
       body: SafeArea(
         child: _step == 0 ? _buildDetailsStep(theme) : _buildDocumentsStep(theme),
+      ),
+    );
+  }
+
+  /// Shown when the user has already submitted (pending) or been approved
+  /// (verified). Replaces the form so they can't re-submit while under review.
+  Widget _buildStatusView(ThemeData theme) {
+    final verified = _status == 'verified';
+    final accent = verified ? AppColors.success : AppColors.warning;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Identity verification')),
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 88,
+                  height: 88,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: accent.withValues(alpha: 0.12),
+                  ),
+                  child: Icon(
+                    verified
+                        ? Icons.verified_rounded
+                        : Icons.hourglass_top_rounded,
+                    size: 44,
+                    color: accent,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  verified ? 'Identity verified' : 'Under review',
+                  style: theme.textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  verified
+                      ? "Your identity has been approved. You're all set to host and book."
+                      : "You've submitted your identity documents. An admin will "
+                          "review and approve them shortly — you'll be able to host "
+                          'and book once approved.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 28),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Got it'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
