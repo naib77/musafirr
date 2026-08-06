@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/theme/app_colors.dart';
 import '../../models/booking.dart';
 import '../../models/booking_categorizer.dart';
 import '../../models/booking_status.dart';
@@ -806,6 +807,12 @@ class _EnhancedBookingCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         _StatusChip(status: booking.status),
+                        if (booking.isPaid &&
+                            booking.status != BookingStatus.pending &&
+                            booking.status != BookingStatus.cancelled) ...[
+                          const SizedBox(width: 6),
+                          const _PaidBadge(),
+                        ],
                       ],
                     ),
                     if (booking.listingCity != null) ...[
@@ -989,6 +996,15 @@ class _EnhancedBookingCard extends StatelessWidget {
             color: Colors.green.shade700,
           );
         }
+        // Confirmed but checkout already passed without a check-in — awaiting
+        // auto-completion, not an upcoming arrival.
+        if (now.isAfter(booking.effectiveCheckOut)) {
+          return (
+            icon: Icons.hourglass_bottom_rounded,
+            text: 'Stay ended · finalizing',
+            color: Colors.blueGrey.shade600,
+          );
+        }
         if (days <= 3) {
           return (
             icon: Icons.event_available_rounded,
@@ -1003,12 +1019,25 @@ class _EnhancedBookingCard extends StatelessWidget {
         );
       case BookingStatus.active:
         final total = booking.numberOfNights;
-        final stayed = now.difference(booking.effectiveCheckIn).inDays + 1;
         final left = booking.effectiveCheckOut.difference(now).inDays;
+        final checkoutHint =
+            left > 0 ? '$left day${left == 1 ? '' : 's'} left' : 'checkout today';
+        // Hourly / sub-day stays have no "nights" — a "Day X of N" counter is
+        // meaningless (it would read "Day 1 of 0").
+        if (total < 1) {
+          return (
+            icon: Icons.hotel_rounded,
+            text: 'Checked in · $checkoutHint',
+            color: Colors.teal.shade700,
+          );
+        }
+        // Clamp so an active stay lingering past checkout (within the
+        // auto-complete grace) never reads "Day 4 of 3".
+        final stayed =
+            (now.difference(booking.effectiveCheckIn).inDays + 1).clamp(1, total);
         return (
           icon: Icons.hotel_rounded,
-          text: 'Day $stayed of $total · '
-              '${left > 0 ? '$left day${left == 1 ? '' : 's'} left' : 'checkout today'}',
+          text: 'Day $stayed of $total · $checkoutHint',
           color: Colors.teal.shade700,
         );
       case BookingStatus.completed:
@@ -1069,6 +1098,38 @@ class _EnhancedBookingCard extends StatelessWidget {
 // =============================================================================
 // COMPACT STATUS CHIP + MESSAGE BUTTON
 // =============================================================================
+
+/// Small green pill shown next to the status chip once a booking is paid
+/// (online settlement or a host-confirmed cash payment).
+class _PaidBadge extends StatelessWidget {
+  const _PaidBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.success.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle, size: 12, color: AppColors.success),
+          SizedBox(width: 3),
+          Text(
+            'Paid',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: AppColors.success,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _StatusChip extends StatelessWidget {
   const _StatusChip({required this.status});
@@ -1422,6 +1483,16 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
     // CONFIRMED
     if (booking.status == BookingStatus.confirmed) {
       final canCheckIn = bookingRules.canCheckIn(booking, now: now);
+      // Confirmed but the whole stay window has already elapsed without a
+      // check-in — it is awaiting auto-completion, not an upcoming arrival.
+      if (!canCheckIn && now.isAfter(booking.effectiveCheckOut)) {
+        return _DetailsBanner(
+          icon: Icons.hourglass_bottom_rounded,
+          title: 'Stay Window Ended',
+          subtitle: 'Being finalized — this will move to your past trips shortly',
+          color: Colors.blueGrey,
+        );
+      }
       return _DetailsBanner(
         icon: canCheckIn ? Icons.login_rounded : Icons.check_circle_rounded,
         title: canCheckIn ? 'Ready to Check In!' : 'Booking Confirmed',

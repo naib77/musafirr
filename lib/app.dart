@@ -161,6 +161,10 @@ class _MusafirAppState extends State<MusafirApp> {
       case NotificationType.bookingReminder:
       case NotificationType.checkInReminder:
       case NotificationType.checkOutReminder:
+      // A settled payment flips booking.payment_status; refresh so the guest's
+      // Trips shows "paid" and the host's Reservations unlocks "mark complete".
+      case NotificationType.paymentReceived:
+      case NotificationType.paymentFailed:
         return true;
       default:
         return false;

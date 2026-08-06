@@ -25,10 +25,17 @@ const API_BASE = Deno.env.get("SSLCZ_API_BASE") ??
 const VALIDATION_API =
   `${API_BASE}/validator/api/validationserverAPI.php`;
 
-function html(title: string, message: string): Response {
-  // Minimal self-contained page shown briefly inside the WebView.
+function html(title: string, message: string, autoClose = false): Response {
+  // Self-contained page shown after the gateway redirects. On the web new-tab
+  // flow it auto-closes (the tab was opened by the app via window.open, so
+  // window.close() is permitted) and offers a manual "Return to the app"
+  // fallback. Inside the mobile WebView the app pops this screen itself, so the
+  // script is a harmless no-op there.
+  const closeScript = autoClose
+    ? `<script>setTimeout(function(){try{window.close();}catch(e){}},1800);</script>`
+    : "";
   return new Response(
-    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title></head><body style="font-family:sans-serif;text-align:center;padding:48px 24px;color:#111"><h2>${title}</h2><p style="color:#555">${message}</p></body></html>`,
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title></head><body style="font-family:sans-serif;text-align:center;padding:48px 24px;color:#111"><h2>${title}</h2><p style="color:#555">${message}</p><button onclick="try{window.close();}catch(e){}; history.back();" style="margin-top:20px;padding:12px 28px;font-size:16px;border:0;border-radius:10px;background:#0B7285;color:#fff;cursor:pointer">Return to the app</button>${closeScript}</body></html>`,
     { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } },
   );
 }
@@ -80,7 +87,7 @@ serve(async (req: Request) => {
     // Already settled → idempotent no-op.
     if (payment.status === "paid") {
       return redirect
-        ? html("Payment successful", "Your payment is confirmed. Return to the app.")
+        ? html("Payment successful", "Your payment is confirmed.", true)
         : new Response("already paid", { status: 200 });
     }
 
@@ -155,8 +162,55 @@ serve(async (req: Request) => {
     await admin.from("bookings").update({ payment_status: "paid" })
       .eq("id", payment.booking_id);
 
+    // Notify BOTH parties over the reliable notifications channel so their
+    // Trips / Reservations update live — and a push is sent — without a manual
+    // refresh. Best-effort: a failure here must not fail the settlement.
+    try {
+      const { data: bk } = await admin
+        .from("bookings")
+        .select("tenant_id, listing_id")
+        .eq("id", payment.booking_id)
+        .single();
+      if (bk) {
+        let listingTitle = "your booking";
+        let ownerId: string | null = null;
+        if (bk.listing_id) {
+          const { data: lst } = await admin
+            .from("listings")
+            .select("owner_id, title")
+            .eq("id", bk.listing_id)
+            .single();
+          ownerId = lst?.owner_id ?? null;
+          if (lst?.title) listingTitle = lst.title;
+        }
+        const rows: Record<string, unknown>[] = [];
+        if (bk.tenant_id) {
+          rows.push({
+            user_id: bk.tenant_id,
+            type: "paymentReceived",
+            title: "Payment confirmed",
+            body: `Your payment for ${listingTitle} is confirmed.`,
+            action_url: "/trips",
+          });
+        }
+        if (ownerId) {
+          rows.push({
+            user_id: ownerId,
+            type: "paymentReceived",
+            title: "Payment received",
+            body:
+              `Payment received for ${listingTitle}. You can now mark the service complete.`,
+            action_url: "/reservations",
+          });
+        }
+        if (rows.length) await admin.from("notifications").insert(rows);
+      }
+    } catch (e) {
+      console.error("[sslcommerz-ipn] notify failed", e);
+    }
+
     return redirect
-      ? html("Payment successful", "Your payment is confirmed. Return to the app.")
+      ? html("Payment successful", "Your payment is confirmed.", true)
       : new Response("ok", { status: 200 });
   } catch (e) {
     console.error("[sslcommerz-ipn]", e);

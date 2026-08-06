@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../../core/utils/responsive.dart';
 import '../../models/message.dart';
 import '../../services/messaging/message_router.dart';
 import '../../state/messaging_state.dart';
@@ -397,7 +398,9 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: ResponsiveCenter(
+        maxWidth: 900,
+        child: Column(
         children: [
           // Messages list
           Expanded(
@@ -413,6 +416,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 if (messages.isEmpty) {
                   return _EmptyChatState(
                     otherParticipantName: widget.otherParticipantName,
+                    onSelectSuggestion: _sendMessage,
                   );
                 }
 
@@ -451,6 +455,7 @@ class _ChatScreenState extends State<ChatScreen> {
             },
           ),
         ],
+        ),
       ),
     );
   }
@@ -627,9 +632,13 @@ class _DateHeader extends StatelessWidget {
 
 /// Empty state when no messages
 class _EmptyChatState extends StatelessWidget {
-  const _EmptyChatState({required this.otherParticipantName});
+  const _EmptyChatState({
+    required this.otherParticipantName,
+    required this.onSelectSuggestion,
+  });
 
   final String otherParticipantName;
+  final ValueChanged<String> onSelectSuggestion;
 
   @override
   Widget build(BuildContext context) {
@@ -671,9 +680,7 @@ class _EmptyChatState extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             _SuggestedMessages(
-              onSelect: (message) {
-                // This would need to be implemented with a callback
-              },
+              onSelect: onSelectSuggestion,
             ),
           ],
         ),

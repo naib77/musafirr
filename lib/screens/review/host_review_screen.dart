@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/responsive.dart';
 import '../../models/booking.dart';
 
 /// Screen for hosts to submit a review for a guest.
@@ -55,7 +56,9 @@ class _HostReviewScreenState extends State<HostReviewScreen> {
       appBar: AppBar(
         title: const Text('Review Guest'),
       ),
-      body: Form(
+      body: ResponsiveCenter(
+        maxWidth: 640,
+        child: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -179,6 +182,7 @@ class _HostReviewScreenState extends State<HostReviewScreen> {
           ),
           SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
           ],
+        ),
         ),
       ),
     );

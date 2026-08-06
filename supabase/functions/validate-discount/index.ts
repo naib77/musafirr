@@ -6,6 +6,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || ''
 
 interface ValidationRequest {
   code?: string
@@ -67,10 +68,30 @@ serve(async (req: Request) => {
   }
 
   try {
+    // Identify the caller from their JWT and use THAT id — never trust a
+    // user_id supplied in the body (it was an IDOR: a caller could check/apply
+    // another user's eligibility). verify_jwt is on for this function, so a
+    // valid token is guaranteed present, but we still resolve the user id here.
+    const authHeader = req.headers.get('Authorization') || ''
+    const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+    })
+    const {
+      data: { user: authedUser },
+    } = await authClient.auth.getUser()
+    if (!authedUser) {
+      return new Response(JSON.stringify({ valid: false, error: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
     const body: ValidationRequest = await req.json()
+    // Override any client-supplied user_id with the authenticated caller's id.
+    body.user_id = authedUser.id
 
     // Validate required fields
-    if (!body.user_id || !body.booking_amount || !body.nights || !body.check_in_date) {
+    if (!body.booking_amount || !body.nights || !body.check_in_date) {
       return new Response(
         JSON.stringify({
           valid: false,
@@ -93,7 +114,9 @@ serve(async (req: Request) => {
       const { data, error } = await supabase
         .from('discounts')
         .select('*')
-        .ilike('code', body.code)
+        // Escape LIKE wildcards so a code of "%" / "_" can't match arbitrary
+        // rows (LIKE-injection); still case-insensitive for normal codes.
+        .ilike('code', body.code.replace(/([\\%_])/g, '\\$1'))
         .single()
 
       if (error || !data) {

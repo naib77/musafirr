@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/currency/money.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/responsive.dart';
 import '../../widgets/app_network_image.dart';
 import '../../models/booking.dart';
 import '../../models/booking_conflict_exception.dart';
@@ -168,7 +169,9 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
 
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
-      body: Stack(
+      body: ResponsiveCenter(
+        maxWidth: 960,
+        child: Stack(
         children: [
           // Scrollable content
           CustomScrollView(
@@ -339,6 +342,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
               child: _buildBottomBar(theme, listing),
             ),
         ],
+        ),
       ),
     );
   }
@@ -1516,8 +1520,15 @@ class _BookingSheetState extends State<_BookingSheet> {
   List<Booking> _conflictingBookings = [];
   List<Booking> _userConflictingBookings = [];
   bool _isCheckingAvailability = false;
+  // Set from the server-authoritative is_booking_available RPC — the only way
+  // to detect OTHER guests' bookings, which RLS keeps out of the local cache.
+  bool _listingUnavailable = false;
+  // Guards against out-of-order async availability responses when the guest
+  // rapidly changes the selection: only the latest request may apply its result.
+  int _availabilityCheckId = 0;
 
-  bool get _hasListingConflict => _conflictingBookings.isNotEmpty;
+  bool get _hasListingConflict =>
+      _conflictingBookings.isNotEmpty || _listingUnavailable;
   bool get _hasUserConflict => _userConflictingBookings.isNotEmpty;
   bool get _hasConflict => _hasListingConflict || _hasUserConflict;
 
@@ -1649,7 +1660,7 @@ class _BookingSheetState extends State<_BookingSheet> {
     ModernBanner.showWarning(context, message);
   }
 
-  void _checkAvailability() {
+  Future<void> _checkAvailability() async {
     // The total may have changed → drop any applied coupon so its discount
     // isn't stale (the guest re-applies against the new amount).
     _coupon = null;
@@ -1657,33 +1668,59 @@ class _BookingSheetState extends State<_BookingSheet> {
       setState(() {
         _conflictingBookings = [];
         _userConflictingBookings = [];
+        _listingUnavailable = false;
+        _isCheckingAvailability = false;
       });
       return;
     }
 
-    setState(() => _isCheckingAvailability = true);
+    final requestId = ++_availabilityCheckId;
+    final checkIn = _checkIn;
+    final checkOut = _checkOut;
 
-    // Check listing conflicts (same room/seat already booked)
-    final listingConflicts = widget.repository.getConflictingBookings(
-      listingId: widget.listing.id,
-      checkIn: _checkIn,
-      checkOut: _checkOut,
-    );
-
-    // Check user conflicts (user already has a booking during this time)
+    // User conflicts (the guest's OWN bookings ARE in the local cache).
     List<Booking> userConflicts = [];
     final user = widget.authState.currentUser;
     if (user != null) {
       userConflicts = widget.repository.getUserConflictingBookings(
         userId: user.id,
-        checkIn: _checkIn,
-        checkOut: _checkOut,
+        checkIn: checkIn,
+        checkOut: checkOut,
       );
     }
+    // Local listing conflicts only surface the guest's own bookings on this
+    // listing (for the detailed list). Other guests' bookings are invisible to
+    // the cache under RLS — the server check below is what actually detects them.
+    final localListingConflicts = widget.repository.getConflictingBookings(
+      listingId: widget.listing.id,
+      checkIn: checkIn,
+      checkOut: checkOut,
+    );
 
     setState(() {
-      _conflictingBookings = listingConflicts;
+      _conflictingBookings = localListingConflicts;
       _userConflictingBookings = userConflicts;
+      _isCheckingAvailability = true;
+    });
+
+    // Server-authoritative, cross-user availability.
+    bool available;
+    try {
+      available = await widget.repository.isBookingAvailable(
+        listingId: widget.listing.id,
+        checkIn: checkIn,
+        checkOut: checkOut,
+      );
+    } catch (_) {
+      // Transient RPC/network error — don't hard-block on it; the server
+      // re-checks atomically (and the DB constraint enforces) at booking time.
+      available = true;
+    }
+
+    // Drop a stale response if the selection changed while we awaited.
+    if (!mounted || requestId != _availabilityCheckId) return;
+    setState(() {
+      _listingUnavailable = !available;
       _isCheckingAvailability = false;
     });
   }
@@ -1851,8 +1888,9 @@ class _BookingSheetState extends State<_BookingSheet> {
       return;
     }
 
-    // Double-check availability before booking
-    _checkAvailability();
+    // Double-check availability (server-authoritative) right before booking.
+    await _checkAvailability();
+    if (!mounted) return;
     if (_hasConflict) {
       _showErrorBanner('This time slot is no longer available');
       return;
@@ -2184,8 +2222,9 @@ class _BookingSheetState extends State<_BookingSheet> {
                           icon: Icons.warning_amber_rounded,
                           color: AppColors.error,
                           title: 'Time slot not available',
-                          subtitle:
-                              '${_conflictingBookings.length} existing booking${_conflictingBookings.length > 1 ? 's' : ''} conflict with your selection',
+                          subtitle: _conflictingBookings.isNotEmpty
+                              ? '${_conflictingBookings.length} existing booking${_conflictingBookings.length > 1 ? 's' : ''} conflict with your selection'
+                              : 'This time was just booked. Please pick another slot.',
                         ),
                         const SizedBox(height: 8),
                         // Show conflicting bookings

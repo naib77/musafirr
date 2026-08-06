@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/responsive.dart';
 import '../../models/listing.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
@@ -170,7 +171,9 @@ class _ListingsGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: RefreshIndicator(
+      body: ResponsiveCenter(
+        maxWidth: 960,
+        child: RefreshIndicator(
         onRefresh: () async {
           // Trigger repository refresh if available
         },
@@ -191,6 +194,7 @@ class _ListingsGrid extends StatelessWidget {
               onTap: () => onListingTap(listing),
             );
           },
+        ),
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(

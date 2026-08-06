@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/responsive.dart';
 import '../../state/otp_state.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/phone_input_field.dart';
@@ -44,8 +45,10 @@ class _PhoneEntryScreenState extends State<PhoneEntryScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+        child: ResponsiveCenter(
+          maxWidth: Responsive.formMaxWidth,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
           child: Form(
             key: _formKey,
             child: Column(
@@ -139,6 +142,7 @@ class _PhoneEntryScreenState extends State<PhoneEntryScreen> {
                 ),
               ],
             ),
+          ),
           ),
         ),
       ),

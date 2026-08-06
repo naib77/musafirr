@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/responsive.dart';
 import '../../models/listing.dart';
 import '../../models/listing_type.dart';
 import '../../models/search_filters.dart';
@@ -14,6 +15,7 @@ import '../../state/notification_state.dart';
 import '../../state/search_state.dart';
 import '../../widgets/animations/fade_slide_in.dart';
 import '../../widgets/category_scroll.dart';
+import '../../widgets/hover_lift.dart';
 import '../../widgets/listing_card_modern.dart';
 import '../../widgets/notification_bell.dart';
 import '../notifications/notification_center_screen.dart';
@@ -164,14 +166,42 @@ class _ExploreScreenState extends State<ExploreScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final wide = Responsive.isWide(context);
 
     return Scaffold(
       body: SafeArea(
         child: Column(
           children: [
+            // Desktop hero title — gives the landing an identity above the
+            // search field. Hidden on mobile, which keeps its compact layout.
+            if (wide)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 22, 24, 2),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Find your stay',
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Rooms, seats and full houses across Bangladesh',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             // Search bar with notification bell
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+              padding: wide
+                  ? const EdgeInsets.fromLTRB(24, 12, 24, 10)
+                  : const EdgeInsets.fromLTRB(16, 10, 16, 8),
               child: Row(
                 children: [
                   Expanded(
@@ -389,9 +419,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
                         SliverPadding(
                           padding: const EdgeInsets.all(16),
                           sliver: SliverGrid(
+                            // Max-extent so the column count grows with width:
+                            // 2 on phones, 3–4 across the desktop content panel,
+                            // with cards kept a consistent, readable size.
                             gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
+                                const SliverGridDelegateWithMaxCrossAxisExtent(
+                              maxCrossAxisExtent: 300,
                               mainAxisSpacing: 16,
                               crossAxisSpacing: 12,
                               // ~square photo like Airbnb (the photo takes
@@ -406,15 +439,17 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                 return FadeSlideIn(
                                   delay:
                                       Duration(milliseconds: 45 * (index % 6)),
-                                  child: ListingCardModern(
-                                    listing: listing,
-                                    isFavorite: widget.favoritesState
-                                        .isFavorite(listing.id),
-                                    onTap: () => _openListingDetail(listing),
-                                    onFavoriteTap: () {
-                                      widget.favoritesState
-                                          .toggleFavorite(listing.id);
-                                    },
+                                  child: HoverLift(
+                                    child: ListingCardModern(
+                                      listing: listing,
+                                      isFavorite: widget.favoritesState
+                                          .isFavorite(listing.id),
+                                      onTap: () => _openListingDetail(listing),
+                                      onFavoriteTap: () {
+                                        widget.favoritesState
+                                            .toggleFavorite(listing.id);
+                                      },
+                                    ),
                                   ),
                                 );
                               },
@@ -563,19 +598,28 @@ class _CategorySection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final wide = Responsive.isWide(context);
+    // Larger cards on desktop so the carousels feel substantial; the width /
+    // height ratio is kept at ~0.72 to match ListingCardModern's layout.
+    final cardWidth = wide ? 242.0 : 186.0;
+    final rowHeight = wide ? 336.0 : 258.0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+          padding: wide
+              ? const EdgeInsets.fromLTRB(24, 22, 16, 12)
+              : const EdgeInsets.fromLTRB(16, 14, 8, 10),
           child: Row(
             children: [
               Expanded(
                 child: Text(
                   title,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: (wide
+                          ? theme.textTheme.titleLarge
+                          : theme.textTheme.titleMedium)
+                      ?.copyWith(fontWeight: FontWeight.w800),
                 ),
               ),
               if (onSeeAll != null)
@@ -590,24 +634,28 @@ class _CategorySection extends StatelessWidget {
             ],
           ),
         ),
-        // Height is width / 0.72 (186 / 0.72 ≈ 258), matching the grid's
-        // childAspectRatio so ListingCardModern's Expanded rows lay out cleanly.
         SizedBox(
-          height: 258,
+          height: rowHeight,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: EdgeInsets.symmetric(horizontal: wide ? 24 : 16),
             itemCount: listings.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            separatorBuilder: (_, __) => SizedBox(width: wide ? 16 : 12),
             itemBuilder: (context, index) {
               final listing = listings[index];
               return SizedBox(
-                width: 186,
-                child: ListingCardModern(
-                  listing: listing,
-                  isFavorite: favoritesState.isFavorite(listing.id),
-                  onTap: () => onOpen(listing),
-                  onFavoriteTap: () => favoritesState.toggleFavorite(listing.id),
+                width: cardWidth,
+                // Cursor-only hover here (scale would be cropped by the
+                // fixed-height horizontal list); the grid uses a scale lift.
+                child: HoverLift(
+                  scale: 1.0,
+                  child: ListingCardModern(
+                    listing: listing,
+                    isFavorite: favoritesState.isFavorite(listing.id),
+                    onTap: () => onOpen(listing),
+                    onFavoriteTap: () =>
+                        favoritesState.toggleFavorite(listing.id),
+                  ),
                 ),
               );
             },

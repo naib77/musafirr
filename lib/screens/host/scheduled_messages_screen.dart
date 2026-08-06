@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/responsive.dart';
 import '../../models/message_template.dart';
 import '../../repositories/supabase_message_template_repository.dart';
 import '../../widgets/modern_banner.dart';
@@ -97,7 +98,9 @@ class _ScheduledMessagesScreenState extends State<ScheduledMessagesScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Scheduled messages')),
-      body: templates == null
+      body: ResponsiveCenter(
+        maxWidth: 760,
+        child: templates == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.all(16),
@@ -152,6 +155,7 @@ class _ScheduledMessagesScreenState extends State<ScheduledMessagesScreen> {
                 ],
               ],
             ),
+      ),
     );
   }
 }

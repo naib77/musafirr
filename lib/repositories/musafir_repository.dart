@@ -184,6 +184,18 @@ abstract class MusafirRepository implements Listenable, BookingStore {
     required DateTime checkOut,
   });
 
+  /// Authoritative, server-side availability check for a listing/interval.
+  ///
+  /// Unlike [getConflictingBookings] (which only sees the local cache — and due
+  /// to RLS a guest's cache never contains OTHER guests' bookings), this hits
+  /// the `is_booking_available` RPC, which sees every booking. Use it to decide
+  /// whether a slot is genuinely free before letting a guest confirm.
+  Future<bool> isBookingAvailable({
+    required String listingId,
+    required DateTime checkIn,
+    required DateTime checkOut,
+  });
+
   /// Check if user has any active booking during the given time period
   List<Booking> getUserConflictingBookings({
     required String userId,

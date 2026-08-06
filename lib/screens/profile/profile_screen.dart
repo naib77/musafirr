@@ -7,6 +7,7 @@ import '../../state/notification_state.dart';
 import '../../widgets/avatar_upload.dart';
 import '../../widgets/modern_banner.dart';
 import '../host/become_host_screen.dart';
+import '../host/create_listing_screen.dart';
 import '../host/host_dashboard_screen.dart';
 import '../host/scheduled_messages_screen.dart';
 import '../notifications/notification_settings_screen.dart';
@@ -244,7 +245,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       _SettingsItem(
                         icon: Icons.add_home_outlined,
                         title: 'Create New Listing',
-                        onTap: () => _navigateToHostDashboard(context),
+                        onTap: () => _navigateToCreateListing(context),
                       ),
                       _SettingsItem(
                         icon: Icons.schedule_send_outlined,
@@ -412,6 +413,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
             repository: repository,
             authState: authState,
           ),
+        ),
+      ),
+    );
+  }
+
+  void _navigateToCreateListing(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreateListingScreen(
+          repository: repository,
+          authState: authState,
         ),
       ),
     );

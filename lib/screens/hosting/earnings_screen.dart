@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../models/booking.dart';
-import '../../models/booking_status.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
 
@@ -51,26 +50,31 @@ class EarningsScreen extends StatelessWidget {
             .where((b) => hostListingIds.contains(b.listingId))
             .toList();
 
+        // Realized = paid OR completed (see Booking.isEarnedRevenue); pending =
+        // accepted stays still awaiting payment. Payment-driven so a paid,
+        // not-yet-completed booking is realized immediately instead of sitting
+        // in "pending" forever.
         final completed = hostBookings
-            .where((b) => b.status == BookingStatus.completed)
+            .where((b) => b.isEarnedRevenue)
             .toList()
-          ..sort((a, b) => (b.completedAt ?? b.effectiveCheckOut)
-              .compareTo(a.completedAt ?? a.effectiveCheckOut));
+          ..sort((a, b) =>
+              (b.paidAt ?? b.completedAt ?? b.effectiveCheckOut).compareTo(
+                  a.paidAt ?? a.completedAt ?? a.effectiveCheckOut));
 
-        final pending = hostBookings
-            .where((b) =>
-                b.status == BookingStatus.confirmed ||
-                b.status == BookingStatus.active)
-            .toList();
+        final pending =
+            hostBookings.where((b) => b.isPendingPayout).toList();
 
         final now = DateTime.now();
         final thisMonthStart = DateTime(now.year, now.month, 1);
 
         final totalEarnings =
             completed.fold<double>(0, (sum, b) => sum + b.totalPrice);
+        // Attribute earned money to the month it was actually collected
+        // (paid_at). Fall back to completion/checkout for legacy completed
+        // bookings that predate the payment flow (no paid_at).
         final thisMonthEarnings = completed
-            .where((b) =>
-                (b.completedAt ?? b.effectiveCheckOut).isAfter(thisMonthStart))
+            .where((b) => (b.paidAt ?? b.completedAt ?? b.effectiveCheckOut)
+                .isAfter(thisMonthStart))
             .fold<double>(0, (sum, b) => sum + b.totalPrice);
         final pendingPayouts =
             pending.fold<double>(0, (sum, b) => sum + b.totalPrice);

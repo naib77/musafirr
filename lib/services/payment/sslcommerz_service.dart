@@ -64,6 +64,21 @@ class SslcommerzService {
     }
   }
 
+  /// Host-only: confirms a booking was paid in cash. The server RPC verifies the
+  /// caller owns the listing, records an auditable cash payment, flips the
+  /// booking to paid, and notifies the guest. Returns true on success.
+  Future<bool> markCashReceived(String bookingId) async {
+    try {
+      await _client.rpc('mark_cash_payment', params: {
+        'p_booking_id': bookingId,
+      });
+      return true;
+    } catch (e) {
+      debugPrint('[SslcommerzService] markCashReceived failed: $e');
+      return false;
+    }
+  }
+
   /// Polls the payment attempt (by [tranId]) until it settles, covering the lag
   /// between the gateway closing and the server settling the payment. Returns
   /// [PaymentSettlement.paid] / [PaymentSettlement.failed] once known, or

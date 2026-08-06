@@ -6,8 +6,38 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const VERIFY_TOKEN = Deno.env.get('MESSENGER_WEBHOOK_VERIFY_TOKEN') || ''
 const PAGE_ACCESS_TOKEN = Deno.env.get('MESSENGER_PAGE_ACCESS_TOKEN') || ''
+const APP_SECRET = Deno.env.get('MESSENGER_APP_SECRET') || ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+
+/** Verify Meta's `X-Hub-Signature-256` = 'sha256=' + HMAC-SHA256(rawBody, appSecret).
+ *  Without this, anyone can POST forged events to this public endpoint and inject
+ *  messages under a linked user's identity via the service-role key. */
+async function verifyMetaSignature(
+  rawBody: string,
+  signatureHeader: string | null,
+  appSecret: string,
+): Promise<boolean> {
+  if (!appSecret || !signatureHeader) return false
+  const expected = signatureHeader.startsWith('sha256=')
+    ? signatureHeader.slice(7)
+    : signatureHeader
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(appSecret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody))
+  const computed = [...new Uint8Array(sig)]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+  if (computed.length !== expected.length) return false
+  let diff = 0
+  for (let i = 0; i < computed.length; i++) diff |= computed.charCodeAt(i) ^ expected.charCodeAt(i)
+  return diff === 0
+}
 
 interface MessengerAttachment {
   type: string
@@ -95,8 +125,18 @@ serve(async (req: Request) => {
   // Handle POST requests (incoming messages)
   if (req.method === 'POST') {
     try {
-      const payload: WebhookPayload = await req.json()
-      console.log('Messenger Webhook received:', JSON.stringify(payload, null, 2))
+      // Verify the payload actually came from Meta before trusting anything in it.
+      const rawBody = await req.text()
+      const signatureOk = await verifyMetaSignature(
+        rawBody,
+        req.headers.get('x-hub-signature-256'),
+        APP_SECRET,
+      )
+      if (!signatureOk) {
+        console.error('Messenger webhook: invalid signature')
+        return new Response('Invalid signature', { status: 401 })
+      }
+      const payload: WebhookPayload = JSON.parse(rawBody)
 
       if (payload.object !== 'page') {
         return new Response('Invalid object type', { status: 400 })

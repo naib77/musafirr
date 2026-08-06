@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/responsive.dart';
 import '../../models/notification_preferences.dart';
 import '../../services/review/review_prompt_config.dart';
 import '../../state/notification_state.dart';
@@ -74,7 +75,9 @@ class _NotificationSettingsScreenState
             ),
         ],
       ),
-      body: ListView(
+      body: ResponsiveCenter(
+        maxWidth: 640,
+        child: ListView(
         children: [
           // Global toggle
           _SectionHeader(title: 'General'),
@@ -313,6 +316,7 @@ class _NotificationSettingsScreenState
             const SizedBox(height: 32),
           ],
         ],
+        ),
       ),
     );
   }

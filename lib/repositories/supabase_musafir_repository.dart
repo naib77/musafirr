@@ -617,6 +617,9 @@ class SupabaseMusafirRepository extends ChangeNotifier
           ? DateTime.parse(json['cancelled_at'] as String)
           : null,
       paymentStatus: json['payment_status'] as String? ?? 'unpaid',
+      paidAt: json['paid_at'] != null
+          ? DateTime.parse(json['paid_at'] as String)
+          : null,
     );
   }
 
@@ -1454,6 +1457,24 @@ class SupabaseMusafirRepository extends ChangeNotifier
   }
 
   @override
+  @override
+  Future<bool> isBookingAvailable({
+    required String listingId,
+    required DateTime checkIn,
+    required DateTime checkOut,
+  }) async {
+    // Server-authoritative: the RPC sees ALL bookings (SECURITY-independent read
+    // of the whole table), so it detects other guests' bookings that RLS keeps
+    // out of this client's local cache.
+    final available = await _client.rpc('is_booking_available', params: {
+      'p_listing_id': listingId,
+      'p_starts_at': checkIn.toUtc().toIso8601String(),
+      'p_ends_at': checkOut.toUtc().toIso8601String(),
+    });
+    return available == true;
+  }
+
+  @override
   Future<Booking> createMarketplaceBooking({
     required String listingId,
     required String userId,
@@ -1549,6 +1570,25 @@ class SupabaseMusafirRepository extends ChangeNotifier
     } catch (e) {
       _bookings.removeWhere((b) => b.id == booking.id);
       notifyListeners();
+      // Translate the server's conflict (the manual guard AND the
+      // bookings_no_overlap exclusion constraint both raise SQLSTATE 23P01) into
+      // a typed BookingConflictException, so the UI shows a specific "slot was
+      // just taken" message instead of a generic failure. Without this the
+      // server race-loss surfaces as a bare PostgrestException → generic banner.
+      if (e is PostgrestException && e.code == '23P01') {
+        final isUserConflict =
+            e.message.toLowerCase().contains('already have a booking');
+        throw BookingConflictException(
+          isUserConflict
+              ? 'You already have a booking during this time period'
+              : 'This time slot was just booked by someone else',
+          conflictType:
+              isUserConflict ? ConflictType.user : ConflictType.listing,
+          // The conflicting booking belongs to another guest — RLS keeps it out
+          // of this client, so there is nothing to list.
+          conflictingBookings: const [],
+        );
+      }
       rethrow;
     }
   }

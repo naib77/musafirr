@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_colors.dart';
+import '../core/utils/responsive.dart';
 import '../models/booking_status.dart';
 import '../repositories/musafir_repository.dart';
 import '../services/booking/booking_messaging_coordinator.dart';
@@ -168,48 +169,84 @@ class _MainShellState extends State<MainShell> {
           );
         }
 
-        final scaffold = Scaffold(
-          body: Column(
-            children: [
-              // Guest/Host switcher (only when logged in)
-              if (_isLoggedIn)
-                GuestHostSwitcher(
-                  mode: _appModeState.mode,
-                  onModeChanged: (mode) {
-                    _appModeState.setMode(mode);
-                  },
-                  hasHostNotification: _hasHostNotification,
-                ),
-              // Main content.
-              //
-              // When the GuestHostSwitcher is shown it already consumes the top
-              // safe-area inset (status bar). Content below it must NOT consume
-              // that inset again — a sibling lower in the Column still sees the
-              // full MediaQuery.padding.top, so any descendant SafeArea/AppBar
-              // would inject the status-bar height a second time (invisible on
-              // web where the inset is 0, a large gap on Android). Strip the top
-              // inset here so descendants match the slim-header tabs that
-              // already render directly below the switcher. When logged out
-              // there is no switcher, so the inset is left intact for the
-              // child's own SafeArea to handle.
-              Expanded(
-                child: MediaQuery.removePadding(
-                  context: context,
-                  removeTop: _isLoggedIn,
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    child: _appModeState.isGuestMode || !_isLoggedIn
-                        ? _buildGuestContent()
-                        : _buildHostContent(),
+        final isGuest = _appModeState.isGuestMode || !_isLoggedIn;
+
+        // Guest/Host switcher (only when logged in). Shared by both the mobile
+        // (bottom-bar) and desktop (side-rail) framings below.
+        final Widget? switcher = _isLoggedIn
+            ? GuestHostSwitcher(
+                mode: _appModeState.mode,
+                onModeChanged: (mode) => _appModeState.setMode(mode),
+                hasHostNotification: _hasHostNotification,
+              )
+            : null;
+
+        // Main content.
+        //
+        // When the GuestHostSwitcher is shown it already consumes the top
+        // safe-area inset (status bar). Content below it must NOT consume that
+        // inset again — a sibling lower in the Column still sees the full
+        // MediaQuery.padding.top, so any descendant SafeArea/AppBar would inject
+        // the status-bar height a second time (invisible on web where the inset
+        // is 0, a large gap on Android). Strip the top inset here so descendants
+        // match the slim-header tabs that render directly below the switcher.
+        // When logged out there is no switcher, so the inset is left intact for
+        // the child's own SafeArea to handle.
+        final Widget content = MediaQuery.removePadding(
+          context: context,
+          removeTop: _isLoggedIn,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: isGuest ? _buildGuestContent() : _buildHostContent(),
+          ),
+        );
+
+        final Widget scaffold;
+        if (Responsive.isWide(context)) {
+          // ── Desktop framing ──────────────────────────────────────────────
+          // A left navigation rail replaces the stretched bottom bar. Each tab
+          // centers its own content at a readable width over the soft grey page
+          // (see the per-tab ResponsiveCenter wraps in _buildGuestContent /
+          // _buildHostContent), so lists and forms don't stretch edge-to-edge.
+          // Phones/tablets (< 1000px) fall through to the bottom-bar layout
+          // below, unchanged.
+          scaffold = Scaffold(
+            backgroundColor: AppColors.scaffold,
+            body: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                isGuest
+                    ? _buildGuestNavigationRail()
+                    : _buildHostNavigationRail(),
+                Expanded(
+                  child: Column(
+                    children: [
+                      if (switcher != null)
+                        ResponsiveCenter(
+                          maxWidth: Responsive.contentMaxWidth,
+                          child: switcher,
+                        ),
+                      Expanded(child: content),
+                    ],
                   ),
                 ),
-              ),
-            ],
-          ),
-          bottomNavigationBar: _appModeState.isGuestMode || !_isLoggedIn
-              ? _buildGuestNavigationBar()
-              : _buildHostNavigationBar(),
-        );
+              ],
+            ),
+          );
+        } else {
+          // ── Mobile / narrow framing (original) ──────────────────────────
+          scaffold = Scaffold(
+            body: Column(
+              children: [
+                if (switcher != null) switcher,
+                Expanded(child: content),
+              ],
+            ),
+            bottomNavigationBar: isGuest
+                ? _buildGuestNavigationBar()
+                : _buildHostNavigationBar(),
+          );
+        }
 
         // Wrap with review prompt handler if repository supports it
         if (widget.repository is SupabaseMusafirRepository) {
@@ -241,6 +278,165 @@ class _MainShellState extends State<MainShell> {
         child: bar,
       ),
     );
+  }
+
+  // ============================================================
+  // DESKTOP NAVIGATION RAIL (wide screens only)
+  // ============================================================
+
+  /// White rail column with a hairline right border and clamped text scaling —
+  /// the vertical counterpart of [_navBarShell].
+  Widget _navRailShell(Widget rail) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(
+          right: BorderSide(color: AppColors.outline, width: 0.5),
+        ),
+      ),
+      child: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.1,
+        child: rail,
+      ),
+    );
+  }
+
+  /// Brand wordmark shown at the top of the rail — gives the desktop layout a
+  /// proper app identity instead of a floating icon strip.
+  Widget _railBrandHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 22, 20, 14),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.travel_explore_rounded,
+              color: AppColors.brand, size: 26),
+          const SizedBox(width: 8),
+          Text(
+            'Musafir',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: AppColors.ink,
+              letterSpacing: -0.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Brand-tinted selection styling so the active destination pops.
+  NavigationRailThemeData get _railTheme => NavigationRailThemeData(
+        backgroundColor: AppColors.surface,
+        indicatorColor: AppColors.brand.withValues(alpha: 0.12),
+        selectedIconTheme: const IconThemeData(color: AppColors.brand),
+        unselectedIconTheme: const IconThemeData(color: AppColors.inkMuted),
+        selectedLabelTextStyle: const TextStyle(
+          color: AppColors.brand,
+          fontWeight: FontWeight.w600,
+        ),
+        unselectedLabelTextStyle: const TextStyle(color: AppColors.inkMuted),
+      );
+
+  Widget _buildGuestNavigationRail() {
+    final unreadMessageCount = widget.messagingState?.totalUnreadCount ?? 0;
+
+    return _navRailShell(NavigationRailTheme(
+      data: _railTheme,
+      child: NavigationRail(
+        extended: true,
+        minExtendedWidth: 220,
+        leading: _railBrandHeader(),
+        selectedIndex: _guestTabIndex,
+        onDestinationSelected: (index) {
+          // Re-tapping Trips (index 2) refreshes it, matching the bottom bar.
+          if (index == _guestTabIndex && index == 2) {
+            _tripsScreenKey.currentState?.refreshFromTabTap();
+          }
+          setState(() => _guestTabIndex = index);
+        },
+        destinations: [
+          const NavigationRailDestination(
+            icon: Icon(Icons.search_outlined),
+            selectedIcon: Icon(Icons.search),
+            label: Text('Explore'),
+          ),
+          const NavigationRailDestination(
+            icon: Icon(Icons.favorite_outline),
+            selectedIcon: Icon(Icons.favorite),
+            label: Text('Wishlists'),
+          ),
+          const NavigationRailDestination(
+            icon: Icon(Icons.luggage_outlined),
+            selectedIcon: Icon(Icons.luggage),
+            label: Text('Trips'),
+          ),
+          NavigationRailDestination(
+            icon: _MessagesNavIcon(count: unreadMessageCount, selected: false),
+            selectedIcon:
+                _MessagesNavIcon(count: unreadMessageCount, selected: true),
+            label: const Text('Messages'),
+          ),
+          const NavigationRailDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: Text('Profile'),
+          ),
+        ],
+      ),
+    ));
+  }
+
+  Widget _buildHostNavigationRail() {
+    final unreadMessageCount = widget.messagingState?.totalUnreadCount ?? 0;
+
+    return _navRailShell(NavigationRailTheme(
+      data: _railTheme,
+      child: NavigationRail(
+        extended: true,
+        minExtendedWidth: 220,
+        leading: _railBrandHeader(),
+        selectedIndex: _hostTabIndex,
+        onDestinationSelected: (index) {
+          setState(() => _hostTabIndex = index);
+        },
+        destinations: [
+          const NavigationRailDestination(
+            icon: Icon(Icons.dashboard_outlined),
+            selectedIcon: Icon(Icons.dashboard),
+            label: Text('Dashboard'),
+          ),
+          NavigationRailDestination(
+            icon: Badge(
+              isLabelVisible: _hasHostNotification,
+              child: const Icon(Icons.calendar_month_outlined),
+            ),
+            selectedIcon: Badge(
+              isLabelVisible: _hasHostNotification,
+              child: const Icon(Icons.calendar_month),
+            ),
+            label: const Text('Reservations'),
+          ),
+          const NavigationRailDestination(
+            icon: Icon(Icons.account_balance_wallet_outlined),
+            selectedIcon: Icon(Icons.account_balance_wallet),
+            label: Text('Earnings'),
+          ),
+          NavigationRailDestination(
+            icon: _MessagesNavIcon(count: unreadMessageCount, selected: false),
+            selectedIcon:
+                _MessagesNavIcon(count: unreadMessageCount, selected: true),
+            label: const Text('Messages'),
+          ),
+          const NavigationRailDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: Text('Profile'),
+          ),
+        ],
+      ),
+    ));
   }
 
   // ============================================================
@@ -291,69 +487,85 @@ class _MainShellState extends State<MainShell> {
   }
 
   Widget _buildGuestContent() {
+    // Per-tab desktop content widths. ResponsiveCenter only caps when the
+    // screen is wider than the value, so these are no-ops on mobile.
+    const widths = <double>[
+      Responsive.contentMaxWidth, // Explore (needs room for the grid)
+      980, // Wishlists
+      820, // Trips
+      820, // Messages
+      760, // Profile
+    ];
+    final tabs = <Widget>[
+      // Explore
+      ExploreScreen(
+        repository: widget.repository,
+        authState: widget.authState,
+        favoritesState: widget.favoritesState,
+        searchState: widget.searchState,
+        notificationState: widget.notificationState,
+        bookingLifecycleService: widget.bookingLifecycleService,
+        bookingMessagingCoordinator: widget.bookingMessagingCoordinator,
+        messagingState: widget.messagingState,
+      ),
+      // Wishlists - slim header instead of full AppBar
+      Column(
+        children: [
+          _buildSlimHeader('Wishlists', subtitle: 'Your saved places'),
+          Expanded(
+            child: WishlistsScreen(
+              repository: widget.repository,
+              favoritesState: widget.favoritesState,
+              authState: widget.authState,
+              messagingState: widget.messagingState,
+              onNavigateToExplore: () => setState(() => _guestTabIndex = 0),
+            ),
+          ),
+        ],
+      ),
+      // Trips - has its own AppBar with TabBar
+      TripsScreen(
+        key: _tripsScreenKey,
+        repository: widget.repository,
+        authState: widget.authState,
+        messagingState: widget.messagingState,
+        notificationState: widget.notificationState,
+        bookingMessagingCoordinator: widget.bookingMessagingCoordinator,
+        onOpenNotifications: _openNotificationCenter,
+        onNavigateToExplore: () => setState(() => _guestTabIndex = 0),
+      ),
+      // Messages - slim header instead of full AppBar
+      Column(
+        children: [
+          _buildSlimHeader('Messages', subtitle: 'Chats with your hosts'),
+          Expanded(
+            child: InboxScreen(
+              messagingState: widget.messagingState,
+              embedded: true,
+            ),
+          ),
+        ],
+      ),
+      // Profile - slim header instead of full AppBar
+      Column(
+        children: [
+          _buildSlimHeader('Profile', subtitle: 'Account and settings'),
+          Expanded(
+            child: ProfileScreen(
+              authState: widget.authState,
+              repository: widget.repository,
+              notificationState: widget.notificationState,
+            ),
+          ),
+        ],
+      ),
+    ];
     return IndexedStack(
       key: const ValueKey('guest'),
       index: _guestTabIndex,
       children: [
-        // Explore
-        ExploreScreen(
-          repository: widget.repository,
-          authState: widget.authState,
-          favoritesState: widget.favoritesState,
-          searchState: widget.searchState,
-          notificationState: widget.notificationState,
-          bookingLifecycleService: widget.bookingLifecycleService,
-          bookingMessagingCoordinator: widget.bookingMessagingCoordinator,
-          messagingState: widget.messagingState,
-        ),
-        // Wishlists - slim header instead of full AppBar
-        Column(
-          children: [
-            _buildSlimHeader('Wishlists', subtitle: 'Your saved places'),
-            Expanded(
-              child: WishlistsScreen(
-                repository: widget.repository,
-                favoritesState: widget.favoritesState,
-              ),
-            ),
-          ],
-        ),
-        // Trips - has its own AppBar with TabBar
-        TripsScreen(
-          key: _tripsScreenKey,
-          repository: widget.repository,
-          authState: widget.authState,
-          messagingState: widget.messagingState,
-          notificationState: widget.notificationState,
-          bookingMessagingCoordinator: widget.bookingMessagingCoordinator,
-          onOpenNotifications: _openNotificationCenter,
-          onNavigateToExplore: () => setState(() => _guestTabIndex = 0),
-        ),
-        // Messages - slim header instead of full AppBar
-        Column(
-          children: [
-            _buildSlimHeader('Messages', subtitle: 'Chats with your hosts'),
-            Expanded(
-              child: InboxScreen(
-                messagingState: widget.messagingState,
-                embedded: true,
-              ),
-            ),
-          ],
-        ),
-        // Profile - slim header instead of full AppBar
-        Column(
-          children: [
-            _buildSlimHeader('Profile', subtitle: 'Account and settings'),
-            Expanded(
-              child: ProfileScreen(
-                authState: widget.authState,
-                repository: widget.repository,
-                notificationState: widget.notificationState,
-              ),
-            ),
-          ],
-        ),
+        for (var i = 0; i < tabs.length; i++)
+          ResponsiveCenter(maxWidth: widths[i], child: tabs[i]),
       ],
     );
   }
@@ -408,72 +620,84 @@ class _MainShellState extends State<MainShell> {
   }
 
   Widget _buildHostContent() {
+    // Per-tab desktop content widths (no-ops on mobile).
+    const widths = <double>[
+      1000, // Dashboard
+      900, // Reservations
+      860, // Earnings
+      820, // Messages
+      760, // Profile
+    ];
+    final tabs = <Widget>[
+      // Dashboard - slim header instead of full AppBar
+      Column(
+        children: [
+          _buildSlimHeader('Dashboard',
+              subtitle: 'Your hosting at a glance', showLeaderboard: true),
+          Expanded(
+            child: HostDashboardScreen(
+              repository: widget.repository,
+              authState: widget.authState,
+              messagingState: widget.messagingState,
+              onOpenReservations: () => setState(() => _hostTabIndex = 1),
+            ),
+          ),
+        ],
+      ),
+      // Reservations — the tabbed Upcoming / Active Stays / Completed view.
+      HostReservationsScreen(
+        key: _hostReservationsKey,
+        repository: widget.repository,
+        authState: widget.authState,
+        messagingState: widget.messagingState,
+        bookingMessagingCoordinator: widget.bookingMessagingCoordinator,
+        notificationState: widget.notificationState,
+        onOpenNotifications: _openNotificationCenter,
+      ),
+      // Earnings - slim header instead of full AppBar
+      Column(
+        children: [
+          _buildSlimHeader('Earnings', subtitle: 'Track your income'),
+          Expanded(
+            child: EarningsScreen(
+              repository: widget.repository,
+              authState: widget.authState,
+            ),
+          ),
+        ],
+      ),
+      // Messages - slim header instead of full AppBar
+      Column(
+        children: [
+          _buildSlimHeader('Messages', subtitle: 'Chats with your guests'),
+          Expanded(
+            child: InboxScreen(
+              messagingState: widget.messagingState,
+              embedded: true,
+            ),
+          ),
+        ],
+      ),
+      // Profile (shared) - slim header instead of full AppBar
+      Column(
+        children: [
+          _buildSlimHeader('Profile', subtitle: 'Account and settings'),
+          Expanded(
+            child: ProfileScreen(
+              authState: widget.authState,
+              repository: widget.repository,
+              notificationState: widget.notificationState,
+            ),
+          ),
+        ],
+      ),
+    ];
     return IndexedStack(
       key: const ValueKey('host'),
       index: _hostTabIndex,
       children: [
-        // Dashboard - slim header instead of full AppBar
-        Column(
-          children: [
-            _buildSlimHeader('Dashboard',
-                subtitle: 'Your hosting at a glance', showLeaderboard: true),
-            Expanded(
-              child: HostDashboardScreen(
-                repository: widget.repository,
-                authState: widget.authState,
-                messagingState: widget.messagingState,
-                onOpenReservations: () => setState(() => _hostTabIndex = 1),
-              ),
-            ),
-          ],
-        ),
-        // Reservations — the tabbed Upcoming / Active Stays / Completed view.
-        HostReservationsScreen(
-          key: _hostReservationsKey,
-          repository: widget.repository,
-          authState: widget.authState,
-          messagingState: widget.messagingState,
-          bookingMessagingCoordinator: widget.bookingMessagingCoordinator,
-          notificationState: widget.notificationState,
-          onOpenNotifications: _openNotificationCenter,
-        ),
-        // Earnings - slim header instead of full AppBar
-        Column(
-          children: [
-            _buildSlimHeader('Earnings', subtitle: 'Track your income'),
-            Expanded(
-              child: EarningsScreen(
-                repository: widget.repository,
-                authState: widget.authState,
-              ),
-            ),
-          ],
-        ),
-        // Messages - slim header instead of full AppBar
-        Column(
-          children: [
-            _buildSlimHeader('Messages', subtitle: 'Chats with your guests'),
-            Expanded(
-              child: InboxScreen(
-                messagingState: widget.messagingState,
-                embedded: true,
-              ),
-            ),
-          ],
-        ),
-        // Profile (shared) - slim header instead of full AppBar
-        Column(
-          children: [
-            _buildSlimHeader('Profile', subtitle: 'Account and settings'),
-            Expanded(
-              child: ProfileScreen(
-                authState: widget.authState,
-                repository: widget.repository,
-                notificationState: widget.notificationState,
-              ),
-            ),
-          ],
-        ),
+        for (var i = 0; i < tabs.length; i++)
+          ResponsiveCenter(maxWidth: widths[i], child: tabs[i]),
       ],
     );
   }

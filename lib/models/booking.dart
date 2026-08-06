@@ -38,6 +38,7 @@ class Booking {
     this.cancelledAt,
     // Payment
     this.paymentStatus = 'unpaid',
+    this.paidAt,
   });
 
   final String id;
@@ -93,8 +94,32 @@ class Booking {
   /// booking once this is 'paid'.
   final String paymentStatus;
 
+  /// When the guest's payment was collected (payment_status → 'paid'). Null while
+  /// unpaid. Used to attribute realized earnings to the month payment landed.
+  final DateTime? paidAt;
+
   /// Whether the guest has paid for this booking.
   bool get isPaid => paymentStatus == 'paid';
+
+  /// Whether this booking's money counts as **realized host earnings**.
+  ///
+  /// Payment-driven: a stay counts the moment the guest has paid (guests pay
+  /// upfront once the host accepts, so `paid` means the money is collected) OR
+  /// once the stay is marked completed — whichever comes first. Cancelled,
+  /// rejected, and still-pending requests never count. Single source of truth
+  /// shared by the host dashboard and the Earnings tab so the two can't drift.
+  bool get isEarnedRevenue =>
+      status != BookingStatus.cancelled &&
+      status != BookingStatus.rejected &&
+      status != BookingStatus.pending &&
+      (status == BookingStatus.completed || isPaid);
+
+  /// Money committed but not yet collected: an accepted stay (confirmed/active)
+  /// still awaiting the guest's payment (or a host's cash confirmation). Mutually
+  /// exclusive with [isEarnedRevenue].
+  bool get isPendingPayout =>
+      (status == BookingStatus.confirmed || status == BookingStatus.active) &&
+      !isEarnedRevenue;
 
   // Money-typed getters for type-safe currency handling
   Money get totalPriceMoney => Money(totalPrice, currency);
@@ -207,6 +232,7 @@ class Booking {
     String? cancelledBy,
     DateTime? cancelledAt,
     String? paymentStatus,
+    DateTime? paidAt,
   }) {
     return Booking(
       id: id ?? this.id,
@@ -238,6 +264,7 @@ class Booking {
       cancelledBy: cancelledBy ?? this.cancelledBy,
       cancelledAt: cancelledAt ?? this.cancelledAt,
       paymentStatus: paymentStatus ?? this.paymentStatus,
+      paidAt: paidAt ?? this.paidAt,
     );
   }
 }

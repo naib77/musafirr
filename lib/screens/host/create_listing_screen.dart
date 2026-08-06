@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../core/utils/responsive.dart';
 import '../../data/facility_catalog.dart';
 import '../../models/listing.dart';
 import '../../models/listing_type.dart';
@@ -364,7 +365,9 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
           onPressed: () => _showExitConfirmation(context),
         ),
       ),
-      body: Column(
+      body: ResponsiveCenter(
+        maxWidth: 760,
+        child: Column(
         children: [
           // Progress indicator
           LinearProgressIndicator(
@@ -531,6 +534,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
             ),
           ),
         ],
+        ),
       ),
     );
   }

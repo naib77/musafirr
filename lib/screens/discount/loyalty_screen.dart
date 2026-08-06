@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/utils/responsive.dart';
 import '../../models/loyalty_tier.dart';
 import '../../state/loyalty_state.dart';
 import '../../widgets/discount/tier_progress.dart';
@@ -15,18 +16,21 @@ class LoyaltyScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Loyalty Program'),
       ),
-      body: Consumer<LoyaltyStateNotifier>(
-        builder: (context, state, child) {
-          if (state.isLoading && state.userLoyalty == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: ResponsiveCenter(
+        maxWidth: 760,
+        child: Consumer<LoyaltyStateNotifier>(
+          builder: (context, state, child) {
+            if (state.isLoading && state.userLoyalty == null) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          if (state.error != null && state.userLoyalty == null) {
-            return _buildErrorView(context, state);
-          }
+            if (state.error != null && state.userLoyalty == null) {
+              return _buildErrorView(context, state);
+            }
 
-          return _buildContent(context, state);
-        },
+            return _buildContent(context, state);
+          },
+        ),
       ),
     );
   }

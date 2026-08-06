@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/responsive.dart';
 import '../../services/image_upload_service.dart';
 import '../../widgets/modern_banner.dart';
 
@@ -97,7 +98,9 @@ class _AddressProofScreenState extends State<AddressProofScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Verify your address')),
-      body: SafeArea(
+      body: ResponsiveCenter(
+        maxWidth: 640,
+        child: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -195,6 +198,7 @@ class _AddressProofScreenState extends State<AddressProofScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

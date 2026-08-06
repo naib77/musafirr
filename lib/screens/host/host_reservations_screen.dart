@@ -12,6 +12,8 @@ import '../../repositories/musafir_repository.dart'
 import '../../services/booking/booking_lifecycle_service.dart'
     show InvalidBookingStateException;
 import '../../services/booking/booking_messaging_coordinator.dart';
+import '../../services/booking/booking_rules.dart';
+import '../../services/payment/sslcommerz_service.dart';
 import '../../state/auth_state.dart';
 import '../../state/messaging_state.dart';
 import '../../state/notification_state.dart';
@@ -531,16 +533,45 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
   Widget _buildBookingActions(BuildContext context, Booking booking) {
     final theme = Theme.of(context);
     final now = DateTime.now();
-    final canCheckIn = booking.status == BookingStatus.confirmed &&
-        !DateTime(now.year, now.month, now.day).isBefore(DateTime(
-            booking.effectiveCheckIn.year,
-            booking.effectiveCheckIn.month,
-            booking.effectiveCheckIn.day));
+    // Shared rule (not a re-derivation): true only within the actual stay
+    // window — on/after the check-in day AND before checkout has passed.
+    final canCheckIn = BookingRules().canCheckIn(booking, now: now);
+
+    // A pending request whose stay window has already elapsed can no longer be
+    // accepted (accepting would immediately auto-complete a stay that never
+    // happened) — the service throws on it, so hide Accept and explain why.
+    final canAccept = BookingRules().canAccept(booking, now: now);
 
     return switch (booking.status) {
       // Pending: Accept or Reject
       BookingStatus.pending => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (!canAccept) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline,
+                        size: 18, color: Colors.orange.shade800),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'The requested dates have already passed — this '
+                        'request can no longer be accepted, only declined.',
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: Colors.orange.shade900),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             Row(
               children: [
                 Expanded(
@@ -553,13 +584,15 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
                     child: const Text('Decline'),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () => _showAcceptDialog(context, booking),
-                    child: const Text('Accept'),
+                if (canAccept) ...[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => _showAcceptDialog(context, booking),
+                      child: const Text('Accept'),
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ],
@@ -567,6 +600,10 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
       // Confirmed: Check-in (if on/after start date) or Cancel
       BookingStatus.confirmed => Column(
           children: [
+            if (!booking.isPaid) ...[
+              _buildCashReceivedButton(context, booking),
+              const SizedBox(height: 12),
+            ],
             if (canCheckIn)
               SizedBox(
                 width: double.infinity,
@@ -607,6 +644,10 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
       // Active: Service Complete + Message Guest
       BookingStatus.active => Column(
           children: [
+            if (!booking.isPaid) ...[
+              _buildCashReceivedButton(context, booking),
+              const SizedBox(height: 12),
+            ],
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
@@ -850,6 +891,53 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
     if (mounted) {
       _showSuccessBanner('Guest checked in!');
       goToTab(1); // Active Stays
+    }
+  }
+
+  /// Shown on an unpaid booking so the host can confirm a hand-cash payment,
+  /// which unlocks "Service Complete" (SSLCommerz can't process cash).
+  Widget _buildCashReceivedButton(BuildContext context, Booking booking) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: () => _confirmCashReceived(context, booking),
+        icon: const Icon(Icons.payments_outlined),
+        label: const Text('Mark cash received'),
+      ),
+    );
+  }
+
+  Future<void> _confirmCashReceived(BuildContext context, Booking booking) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirm cash payment'),
+        content: const Text(
+          'Only confirm after you have received the full amount from the guest '
+          'in cash. This marks the booking as paid.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final ok = await SslcommerzService.instance.markCashReceived(booking.id);
+    if (!context.mounted) return;
+    if (ok) {
+      Navigator.pop(context); // close the action sheet
+      widget.repository.refresh();
+      _showSuccessBanner('Cash payment confirmed');
+    } else {
+      _showErrorBanner('Could not confirm cash payment. Please try again.');
     }
   }
 

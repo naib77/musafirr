@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/responsive.dart';
 import '../../services/image_upload_service.dart';
 import '../../widgets/modern_banner.dart';
 
@@ -298,7 +299,12 @@ class _IdentityVerificationScreenState
     final theme = Theme.of(context);
 
     if (_loadingStatus) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: ResponsiveCenter(
+          maxWidth: 640,
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
     }
     // Already submitted (pending) or approved (verified): show that state
     // rather than the submission form — a returning user waits for the admin.
@@ -319,8 +325,12 @@ class _IdentityVerificationScreenState
               )
             : null,
       ),
-      body: SafeArea(
-        child: _step == 0 ? _buildDetailsStep(theme) : _buildDocumentsStep(theme),
+      body: ResponsiveCenter(
+        maxWidth: 640,
+        child: SafeArea(
+          child:
+              _step == 0 ? _buildDetailsStep(theme) : _buildDocumentsStep(theme),
+        ),
       ),
     );
   }
@@ -332,7 +342,9 @@ class _IdentityVerificationScreenState
     final accent = verified ? AppColors.success : AppColors.warning;
     return Scaffold(
       appBar: AppBar(title: const Text('Identity verification')),
-      body: SafeArea(
+      body: ResponsiveCenter(
+        maxWidth: 640,
+        child: SafeArea(
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -382,6 +394,7 @@ class _IdentityVerificationScreenState
               ],
             ),
           ),
+        ),
         ),
       ),
     );

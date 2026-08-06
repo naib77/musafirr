@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/responsive.dart';
 import '../../state/auth_state.dart';
 
 class BecomeHostScreen extends StatelessWidget {
@@ -17,7 +18,9 @@ class BecomeHostScreen extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
-      body: SafeArea(
+      body: ResponsiveCenter(
+        maxWidth: 760,
+        child: SafeArea(
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -198,6 +201,7 @@ class BecomeHostScreen extends StatelessWidget {
             ],
           ),
         ),
+      ),
       ),
     );
   }

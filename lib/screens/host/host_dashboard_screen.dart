@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/responsive.dart';
 import '../../core/currency/currency.dart';
 import '../../core/currency/money.dart';
 import '../../core/theme/app_colors.dart';
@@ -79,17 +80,20 @@ class HostDashboardScreen extends StatelessWidget {
           final todayCheckOuts =
               activeBookings.where((b) => isSameDay(b.effectiveCheckOut)).length;
 
-          // Realized earnings only (completed bookings) so this matches the
-          // Earnings tab. Summing all bookings here inflated the figure with
-          // pending/cancelled/rejected money that was never earned.
+          // Realized earnings — paid OR completed bookings (see
+          // Booking.isEarnedRevenue), matching the Earnings tab. Payment-driven
+          // so a paid-but-not-yet-completed booking shows up immediately;
+          // pending/cancelled/rejected money is still excluded.
           final totalEarnings = hostBookings
-              .where((b) => b.status == BookingStatus.completed)
+              .where((b) => b.isEarnedRevenue)
               .fold<Money>(
                 Money.zero(Currency.BDT),
                 (sum, b) => sum.add(b.totalPriceMoney),
               );
 
-          return SingleChildScrollView(
+          return ResponsiveCenter(
+            maxWidth: 960,
+            child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -325,6 +329,7 @@ class HostDashboardScreen extends StatelessWidget {
                   ),
                 ],
               ],
+            ),
             ),
           );
         },

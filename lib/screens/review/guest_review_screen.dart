@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/responsive.dart';
 import '../../models/booking.dart';
 import '../../models/guest_review_ratings.dart';
 
@@ -72,7 +73,9 @@ class _GuestReviewScreenState extends State<GuestReviewScreen> {
       appBar: AppBar(
         title: const Text('Leave a Review'),
       ),
-      body: Form(
+      body: ResponsiveCenter(
+        maxWidth: 640,
+        child: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -237,6 +240,7 @@ class _GuestReviewScreenState extends State<GuestReviewScreen> {
             ),
             SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
           ],
+        ),
         ),
       ),
     );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../core/utils/responsive.dart';
 import '../../data/facility_catalog.dart';
 import '../../models/listing.dart';
 import '../../models/listing_type.dart';
@@ -521,7 +522,9 @@ class _EditListingScreenState extends State<EditListingScreen> {
   Widget _buildScaffold(ThemeData theme, String? pricingError) {
     return Scaffold(
       appBar: AppBar(title: const Text('Edit listing')),
-      body: SingleChildScrollView(
+      body: ResponsiveCenter(
+        maxWidth: 760,
+        child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -888,6 +891,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
             ),
           ],
         ),
+      ),
       ),
       bottomNavigationBar: Container(
         padding: EdgeInsets.fromLTRB(

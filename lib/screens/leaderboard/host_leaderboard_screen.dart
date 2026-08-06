@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/responsive.dart';
 import '../../models/leaderboard_entry.dart';
 import '../../repositories/musafir_repository.dart';
 
@@ -69,41 +70,44 @@ class _HostLeaderboardScreenState extends State<HostLeaderboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.scaffold,
-      body: FutureBuilder<List<LeaderboardEntry>>(
-        future: _future,
-        builder: (context, snapshot) {
-          final loading = snapshot.connectionState == ConnectionState.waiting;
-          final entries = snapshot.data ?? const <LeaderboardEntry>[];
+      body: ResponsiveCenter(
+        maxWidth: 760,
+        child: FutureBuilder<List<LeaderboardEntry>>(
+          future: _future,
+          builder: (context, snapshot) {
+            final loading = snapshot.connectionState == ConnectionState.waiting;
+            final entries = snapshot.data ?? const <LeaderboardEntry>[];
 
-          return RefreshIndicator(
-            onRefresh: _refresh,
-            child: CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                _HeroHeader(onInfo: _showScoringInfo),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                    child: _PeriodSwitcher(
-                        period: _period, onChanged: _selectPeriod),
+            return RefreshIndicator(
+              onRefresh: _refresh,
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  _HeroHeader(onInfo: _showScoringInfo),
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                      child: _PeriodSwitcher(
+                          period: _period, onChanged: _selectPeriod),
+                    ),
                   ),
-                ),
-                if (loading)
-                  const SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else if (entries.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _EmptyState(period: _period),
-                  )
-                else
-                  ..._buildBoard(entries),
-              ],
-            ),
-          );
-        },
+                  if (loading)
+                    const SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (entries.isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: _EmptyState(period: _period),
+                    )
+                  else
+                    ..._buildBoard(entries),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }

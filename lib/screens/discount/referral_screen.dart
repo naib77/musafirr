@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../core/utils/responsive.dart';
 import '../../models/referral.dart';
 import '../../state/referral_state.dart';
 import '../../widgets/discount/referral_card.dart';
@@ -57,24 +58,27 @@ class _ReferralScreenState extends State<ReferralScreen>
           ],
         ),
       ),
-      body: Consumer<ReferralStateNotifier>(
-        builder: (context, state, child) {
-          if (state.isLoading && state.userReferral == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: ResponsiveCenter(
+        maxWidth: 760,
+        child: Consumer<ReferralStateNotifier>(
+          builder: (context, state, child) {
+            if (state.isLoading && state.userReferral == null) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          if (state.error != null && state.userReferral == null) {
-            return _buildErrorView(state);
-          }
+            if (state.error != null && state.userReferral == null) {
+              return _buildErrorView(state);
+            }
 
-          return TabBarView(
-            controller: _tabController,
-            children: [
-              _buildInviteTab(state),
-              _buildReferralsTab(state),
-            ],
-          );
-        },
+            return TabBarView(
+              controller: _tabController,
+              children: [
+                _buildInviteTab(state),
+                _buildReferralsTab(state),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

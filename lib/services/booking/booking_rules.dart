@@ -44,6 +44,14 @@ class BookingRules {
   /// Requires:
   /// - Booking is confirmed
   /// - Current time is on or after the start date
+  /// - The stay's checkout has not already passed
+  ///
+  /// The upper bound matters: without it an elapsed booking (e.g. an hourly
+  /// 9:30–10:30 slot viewed hours later, still `confirmed` because the 24h
+  /// auto-complete grace hasn't elapsed) would keep reading as "ready to check
+  /// in". Once checkout has passed the window is over — the booking is awaiting
+  /// completion, not an arrival — and recording `actualCheckIn` is optional
+  /// bookkeeping anyway, never a gate to completion.
   bool canCheckIn(Booking booking, {DateTime? now}) {
     if (booking.status != BookingStatus.confirmed) {
       return false;
@@ -53,7 +61,11 @@ class BookingRules {
     final startDate = _startOfDay(booking.effectiveCheckIn);
     final today = _startOfDay(currentTime);
 
-    return !today.isBefore(startDate);
+    if (today.isBefore(startDate)) {
+      return false;
+    }
+
+    return currentTime.isBefore(booking.effectiveCheckOut);
   }
 
   /// Returns true if host can mark service as complete.

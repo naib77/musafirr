@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/booking_status.dart';
 import '../../models/notification.dart';
+import '../../core/utils/responsive.dart';
 import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../repositories/supabase_musafir_repository.dart';
@@ -171,37 +172,40 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           ),
         ],
       ),
-      body: ListenableBuilder(
-        listenable: widget.notificationState,
-        builder: (context, _) {
-          if (widget.notificationState.isLoading &&
-              widget.notificationState.notifications.isEmpty) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: ResponsiveCenter(
+        maxWidth: 760,
+        child: ListenableBuilder(
+          listenable: widget.notificationState,
+          builder: (context, _) {
+            if (widget.notificationState.isLoading &&
+                widget.notificationState.notifications.isEmpty) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          if (widget.notificationState.error != null &&
-              widget.notificationState.notifications.isEmpty) {
-            return _buildErrorState(theme);
-          }
+            if (widget.notificationState.error != null &&
+                widget.notificationState.notifications.isEmpty) {
+              return _buildErrorState(theme);
+            }
 
-          return Column(
-            children: [
-              // Modern chip tabs
-              _buildChipTabs(theme, isDark),
-              // Content
-              Expanded(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
-                  child: _buildNotificationList(
-                    _getFilteredNotifications(_selectedTabIndex),
-                    theme,
-                    key: ValueKey(_selectedTabIndex),
+            return Column(
+              children: [
+                // Modern chip tabs
+                _buildChipTabs(theme, isDark),
+                // Content
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: _buildNotificationList(
+                      _getFilteredNotifications(_selectedTabIndex),
+                      theme,
+                      key: ValueKey(_selectedTabIndex),
+                    ),
                   ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }

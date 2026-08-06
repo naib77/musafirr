@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/responsive.dart';
 import '../../models/listing.dart';
 import '../../models/rental_plan.dart';
 import '../../repositories/musafir_repository.dart';
@@ -32,7 +33,9 @@ class HostListingsScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Your Listings'),
       ),
-      body: ListenableBuilder(
+      body: ResponsiveCenter(
+        maxWidth: 960,
+        child: ListenableBuilder(
         listenable: Listenable.merge([repository, authState]),
         builder: (context, _) {
           final hostListings = user != null
@@ -62,6 +65,7 @@ class HostListingsScreen extends StatelessWidget {
             },
           );
         },
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _createListing(context),

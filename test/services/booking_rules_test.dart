@@ -133,6 +133,29 @@ void main() {
       final booking = createBooking(status: BookingStatus.completed);
       expect(rules.canCheckIn(booking), isFalse);
     });
+
+    test('returns false once checkout has passed (elapsed hourly slot)', () {
+      final now = DateTime.now();
+      // 9:30–10:30 slot earlier today; still confirmed (inside the 24h
+      // auto-complete grace) but the whole window is over — must NOT read as
+      // ready to check in.
+      final booking = createBooking(
+        status: BookingStatus.confirmed,
+        startAt: now.subtract(const Duration(hours: 5)),
+        endAt: now.subtract(const Duration(hours: 4)),
+      );
+      expect(rules.canCheckIn(booking, now: now), isFalse);
+    });
+
+    test('returns false for a confirmed stay whose day range fully elapsed', () {
+      final now = DateTime.now();
+      final booking = createBooking(
+        status: BookingStatus.confirmed,
+        startAt: now.subtract(const Duration(days: 3)),
+        endAt: now.subtract(const Duration(days: 1)),
+      );
+      expect(rules.canCheckIn(booking, now: now), isFalse);
+    });
   });
 
   group('BookingRules.canComplete', () {
