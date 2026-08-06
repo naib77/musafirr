@@ -59,23 +59,50 @@ firebase deploy --only hosting
 
 ### Option B — Your own VPS with nginx
 
-Copy `build/web/` to the server (e.g. `/var/www/musafir`), then:
+Copy `build/web/` to the server (e.g. `/var/www/musafir`), then drop this into something like `/etc/nginx/conf.d/musafir.conf`:
 
 ```nginx
 server {
-    listen 80;
-    server_name yourdomain.com;
-    root /var/www/musafir;
-    index index.html;
+   listen 80;
+   server_name yourdomain.com;
 
-    location / {
-        try_files $uri $uri/ /index.html;   # SPA fallback — required or deep links 404
-    }
+   root /var/www/musafir;
+   index index.html;
 
-    # Never cache the entry points, or users get stale builds after a redeploy.
-    location = /index.html                { add_header Cache-Control "no-cache"; }
-    location = /flutter_bootstrap.js      { add_header Cache-Control "no-cache"; }
-    location = /flutter_service_worker.js { add_header Cache-Control "no-cache"; }
+   # Flutter web is a single-page app, so deep links must fall back to index.html.
+   location / {
+      try_files $uri $uri/ /index.html;
+   }
+
+   # Never cache the entry points or the service worker, or users can get stuck on stale builds.
+   location = /index.html {
+      add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+   }
+
+   location = /flutter_bootstrap.js {
+      add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+   }
+
+   location = /flutter_service_worker.js {
+      add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+   }
+
+   location = /manifest.json {
+      add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+   }
+
+   location = /version.json {
+      add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+   }
+
+   # Static build artifacts can be cached normally.
+   location ~* \.(?:js|css|wasm|png|jpg|jpeg|gif|svg|ico|webp)$ {
+      expires 30d;
+      add_header Cache-Control "public, max-age=2592000, immutable";
+   }
+
+   gzip on;
+   gzip_types text/plain text/css application/javascript application/json application/wasm image/svg+xml;
 }
 ```
 
