@@ -3,7 +3,8 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../core/utils/distance_format.dart';
+import '../../core/utils/external_launcher.dart';
 
 import '../../core/currency/money.dart';
 import '../../core/theme/app_colors.dart';
@@ -12,6 +13,7 @@ import '../../widgets/app_network_image.dart';
 import '../../models/booking.dart';
 import '../../models/booking_conflict_exception.dart';
 import '../../models/listing.dart';
+import '../../models/listing_purpose.dart';
 import '../../models/listing_type.dart';
 import '../../models/rental_plan.dart';
 import '../../models/review.dart';
@@ -172,176 +174,220 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       body: ResponsiveCenter(
         maxWidth: 960,
         child: Stack(
-        children: [
-          // Scrollable content
-          CustomScrollView(
-            slivers: [
-              // Immersive image header (scrolls away beneath the content sheet)
-              SliverAppBar(
-                expandedHeight: 300,
-                pinned: false,
-                stretch: true,
-                automaticallyImplyLeading: false,
-                backgroundColor: theme.colorScheme.surface,
-                flexibleSpace: FlexibleSpaceBar(
-                  stretchModes: const [StretchMode.zoomBackground],
-                  background: _buildImageHeader(theme, listing),
+          children: [
+            // Scrollable content
+            CustomScrollView(
+              slivers: [
+                // Immersive image header (scrolls away beneath the content sheet)
+                SliverAppBar(
+                  expandedHeight: 300,
+                  pinned: false,
+                  stretch: true,
+                  automaticallyImplyLeading: false,
+                  backgroundColor: theme.colorScheme.surface,
+                  flexibleSpace: FlexibleSpaceBar(
+                    stretchModes: const [StretchMode.zoomBackground],
+                    background: _buildImageHeader(theme, listing),
+                  ),
                 ),
-              ),
 
-              // Content sheet — overlaps the image with a rounded top for depth
-              SliverToBoxAdapter(
-                child: Transform.translate(
-                  offset: const Offset(0, -28),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(28),
+                // Content sheet — overlaps the image with a rounded top for depth
+                SliverToBoxAdapter(
+                  child: Transform.translate(
+                    offset: const Offset(0, -28),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(28),
+                        ),
                       ),
-                    ),
-                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Drag handle accent
-                        Center(
-                          child: Container(
-                            width: 44,
-                            height: 5,
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.outlineVariant,
-                              borderRadius: BorderRadius.circular(3),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-
-                        // Title — brand-gradient coloured, compact
-                        ShaderMask(
-                          shaderCallback: (bounds) =>
-                              AppColors.brandGradient.createShader(bounds),
-                          child: Text(
-                            listing.title,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w900,
-                              height: 1.2,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-
-                        // Location & rating
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.location_on_outlined,
-                              size: 18,
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                '${listing.city ?? listing.address}, ${listing.country ?? 'Bangladesh'}',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
+                      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Drag handle accent
+                          Center(
+                            child: Container(
+                              width: 44,
+                              height: 5,
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.outlineVariant,
+                                borderRadius: BorderRadius.circular(3),
                               ),
                             ),
-                            if (listing.rating != null)
-                              _RatingPill(listing: listing),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Host info
-                        _HostInfoCard(
-                          listing: listing,
-                          onContactHost: _canContactHost ? _contactHost : null,
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Property details
-                        _PropertyDetails(listing: listing),
-                        const SizedBox(height: 20),
-
-                        // Description
-                        if (listing.description != null) ...[
-                          const _SectionTitle('About this place'),
-                          const SizedBox(height: 8),
-                          Text(
-                            listing.description!,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                              height: 1.5,
-                            ),
                           ),
                           const SizedBox(height: 20),
-                        ],
 
-                        // Location & Navigation
-                        _LocationSection(listing: listing),
-                        const SizedBox(height: 20),
+                          // Title — brand-gradient coloured, compact
+                          ShaderMask(
+                            shaderCallback: (bounds) =>
+                                AppColors.brandGradient.createShader(bounds),
+                            child: Text(
+                              listing.title,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                height: 1.2,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
 
-                        // Amenities — hide the whole section when there are none
-                        if (listing.facilities.isNotEmpty) ...[
-                          _AmenitiesGrid(listing: listing),
+                          // Location & rating
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.location_on_outlined,
+                                size: 18,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  '${listing.city ?? listing.address}, ${listing.country ?? 'Bangladesh'}',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                              if (listing.rating != null)
+                                _RatingPill(listing: listing),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Host info
+                          _HostInfoCard(
+                            listing: listing,
+                            onContactHost:
+                                _canContactHost ? _contactHost : null,
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Property details
+                          _PropertyDetails(listing: listing),
                           const SizedBox(height: 20),
-                        ],
 
-                        // House rules
-                        if (listing.houseRules.hasAny) ...[
-                          _HouseRulesSection(rules: listing.houseRules),
+                          // Good for (purpose tags) + distance from a searched
+                          // landmark, when relevant.
+                          if (listing.purposeTags
+                                  .any((p) => p != ListingPurpose.general) ||
+                              listing.distanceMeters != null) ...[
+                            const _SectionTitle('Good for'),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final p in listing.purposeTags
+                                    .where((p) => p != ListingPurpose.general))
+                                  Chip(
+                                    avatar: Icon(p.icon, size: 16),
+                                    label: Text(p.label),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                              ],
+                            ),
+                            if (listing.distanceMeters != null) ...[
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Icon(Icons.near_me_rounded,
+                                      size: 16,
+                                      color: theme.colorScheme.primary),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '${formatDistanceMeters(listing.distanceMeters!)} from your search',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                            const SizedBox(height: 20),
+                          ],
+
+                          // Description
+                          if (listing.description != null) ...[
+                            const _SectionTitle('About this place'),
+                            const SizedBox(height: 8),
+                            Text(
+                              listing.description!,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                height: 1.5,
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                          ],
+
+                          // Location & Navigation
+                          _LocationSection(listing: listing),
                           const SizedBox(height: 20),
-                        ],
 
-                        // Reviews
-                        if (reviews.isNotEmpty)
-                          _ReviewsSection(reviews: reviews),
-                        SizedBox(height: _isOwnListing ? 24 : 120),
-                      ],
+                          // Amenities — hide the whole section when there are none
+                          if (listing.facilities.isNotEmpty) ...[
+                            _AmenitiesGrid(listing: listing),
+                            const SizedBox(height: 20),
+                          ],
+
+                          // House rules
+                          if (listing.houseRules.hasAny) ...[
+                            _HouseRulesSection(rules: listing.houseRules),
+                            const SizedBox(height: 20),
+                          ],
+
+                          // Reviews
+                          if (reviews.isNotEmpty)
+                            _ReviewsSection(reviews: reviews),
+                          SizedBox(height: _isOwnListing ? 24 : 120),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
-
-          // Fixed frosted-glass controls (stay reachable while scrolling)
-          Positioned(
-            top: topPad + 10,
-            left: 16,
-            child: _CircleGlassButton(
-              icon: Icons.arrow_back,
-              onTap: () => Navigator.pop(context),
+              ],
             ),
-          ),
-          Positioned(
-            top: topPad + 10,
-            right: 16,
-            child: ListenableBuilder(
-              listenable: widget.favoritesState,
-              builder: (context, _) {
-                final isFavorite = widget.favoritesState.isFavorite(listing.id);
-                return _CircleGlassButton(
-                  icon: isFavorite ? Icons.favorite : Icons.favorite_border,
-                  iconColor: isFavorite ? AppColors.coral : null,
-                  onTap: () => widget.favoritesState.toggleFavorite(listing.id),
-                );
-              },
-            ),
-          ),
 
-          // Bottom booking bar (hidden for own listings)
-          if (!_isOwnListing)
+            // Fixed frosted-glass controls (stay reachable while scrolling)
             Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: _buildBottomBar(theme, listing),
+              top: topPad + 10,
+              left: 16,
+              child: _CircleGlassButton(
+                icon: Icons.arrow_back,
+                onTap: () => Navigator.pop(context),
+              ),
             ),
-        ],
+            Positioned(
+              top: topPad + 10,
+              right: 16,
+              child: ListenableBuilder(
+                listenable: widget.favoritesState,
+                builder: (context, _) {
+                  final isFavorite =
+                      widget.favoritesState.isFavorite(listing.id);
+                  return _CircleGlassButton(
+                    icon: isFavorite ? Icons.favorite : Icons.favorite_border,
+                    iconColor: isFavorite ? AppColors.coral : null,
+                    onTap: () =>
+                        widget.favoritesState.toggleFavorite(listing.id),
+                  );
+                },
+              ),
+            ),
+
+            // Bottom booking bar (hidden for own listings)
+            if (!_isOwnListing)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: _buildBottomBar(theme, listing),
+              ),
+          ],
         ),
       ),
     );
@@ -945,44 +991,18 @@ class _LocationSectionState extends State<_LocationSection> {
     );
   }
 
-  /// Non-interactive map placeholder shown on web (see the crash note at the
-  /// call site). Tapping it opens the location in the external maps app.
-  Widget _webMapFallback(ThemeData theme) {
-    return Material(
-      color: theme.colorScheme.surfaceContainerHighest,
-      child: InkWell(
-        onTap: _openInMaps,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.map_outlined,
-                  size: 32, color: theme.colorScheme.primary),
-              const SizedBox(height: 6),
-              Text(
-                'View location on map',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Future<void> _openInMaps() async {
     final lat = widget.listing.latitude;
     final lng = widget.listing.longitude;
 
-    final googleMapsUrl = Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
-    );
+    final googleMapsUrl =
+        'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
 
     try {
-      await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
+      final launched = await openExternalUrl(googleMapsUrl);
+      if (!launched && mounted) {
+        ModernBanner.showError(context, 'Could not open maps');
+      }
     } catch (e) {
       if (mounted) {
         ModernBanner.showError(context, 'Could not open maps');
@@ -1038,46 +1058,48 @@ class _LocationSectionState extends State<_LocationSection> {
             border: Border.all(color: theme.colorScheme.outlineVariant),
           ),
           clipBehavior: Clip.antiAlias,
-          // On web, google_maps_flutter_web throws on dispose if the map is
-          // torn down before it finishes building (a known plugin bug). A
-          // non-interactive, tappable fallback avoids the crash entirely; the
-          // "View on Map" / "Get Directions" buttons below open the full map.
-          child: kIsWeb
-              ? _webMapFallback(theme)
-              : WebDeferredMount(
-                  builder: (context) => GoogleMap(
-                    initialCameraPosition: CameraPosition(
-                      target: _location,
-                      zoom: 15,
-                    ),
-                    markers: _markers,
-                    onMapCreated: (controller) {
-                      _mapController = controller;
-                      _mapCreated = true;
-                    },
-                    zoomControlsEnabled: false,
-                    mapToolbarEnabled: false,
-                    myLocationButtonEnabled: false,
-                    scrollGesturesEnabled: true,
-                    zoomGesturesEnabled: true,
-                    rotateGesturesEnabled: false,
-                    tiltGesturesEnabled: false,
-                  ),
-                ),
+          // WebDeferredMount defers the map by one frame on web so the
+          // google_maps_flutter_web "disposed before buildView" assertion can't
+          // fire on fast navigation. That makes the SAME inline interactive map
+          // safe to render on web and mobile alike (no placeholder/new-tab).
+          child: WebDeferredMount(
+            builder: (context) => GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: _location,
+                zoom: 15,
+              ),
+              markers: _markers,
+              onMapCreated: (controller) {
+                _mapController = controller;
+                _mapCreated = true;
+              },
+              zoomControlsEnabled: false,
+              mapToolbarEnabled: false,
+              myLocationButtonEnabled: false,
+              scrollGesturesEnabled: true,
+              zoomGesturesEnabled: true,
+              rotateGesturesEnabled: false,
+              tiltGesturesEnabled: false,
+            ),
+          ),
         ),
         const SizedBox(height: 12),
 
         // Action buttons
         Row(
           children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _openInMaps,
-                icon: const Icon(Icons.map_outlined),
-                label: const Text('View on Map'),
+            // The inline map above is already interactive on web, so "View on
+            // Map" (which hands off to the native Maps app) is mobile-only.
+            if (!kIsWeb) ...[
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _openInMaps,
+                  icon: const Icon(Icons.map_outlined),
+                  label: const Text('View on Map'),
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
+              const SizedBox(width: 12),
+            ],
             Expanded(
               child: FilledButton.icon(
                 onPressed: _openDirections,
@@ -1538,6 +1560,24 @@ class _BookingSheetState extends State<_BookingSheet> {
     // Default to the cheapest offered plan so the price matches the
     // "from ৳X" teaser the guest tapped on the explore card.
     _durationType = widget.listing.cheapestPlan ?? DurationType.daily;
+
+    // Pre-fill the selection with sensible "now" defaults so the guest starts
+    // from a ready-to-book state instead of an empty form; they can change any
+    // of it before confirming. The start time is now + 5 min: a small buffer
+    // that keeps _checkIn in the future (booking requires _checkIn.isAfter(now))
+    // and correctly rolls the date forward when we're within 5 min of midnight.
+    final start = DateTime.now().add(const Duration(minutes: 5));
+    final today = DateTime(start.year, start.month, start.day);
+    _hourlyDate = today;
+    _startTime = TimeOfDay(hour: start.hour, minute: start.minute);
+    _dateRange =
+        DateTimeRange(start: today, end: today.add(const Duration(days: 1)));
+    _monthlyStartDate = today;
+
+    // Reflect availability/conflicts for the prefilled selection once built.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _checkAvailability();
+    });
   }
 
   @override
@@ -2299,14 +2339,16 @@ class _BookingSheetState extends State<_BookingSheet> {
                                   children: [
                                     Text(
                                       'Coupon${_coupon?.code != null ? ' (${_coupon!.code})' : ''}',
-                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                      style:
+                                          theme.textTheme.bodyMedium?.copyWith(
                                         color: AppColors.success,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                     Text(
                                       '-${_discountMoney.format()}',
-                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                      style:
+                                          theme.textTheme.bodyMedium?.copyWith(
                                         color: AppColors.success,
                                         fontWeight: FontWeight.w700,
                                       ),

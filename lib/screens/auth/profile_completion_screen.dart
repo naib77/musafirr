@@ -109,100 +109,100 @@ class _ProfileCompletionScreenState extends State<ProfileCompletionScreen> {
           maxWidth: Responsive.formMaxWidth,
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Almost there!',
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Almost there!',
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Please complete your profile to continue.',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                  const SizedBox(height: 8),
+                  Text(
+                    'Please complete your profile to continue.',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 32),
+                  const SizedBox(height: 32),
 
-                // Full Name (required)
-                AppTextField(
-                  controller: _nameController,
-                  label: 'Full Name',
-                  hint: 'Enter your full name',
-                  keyboardType: TextInputType.name,
-                  textCapitalization: TextCapitalization.words,
-                  textInputAction: TextInputAction.next,
-                  prefix: const Icon(Icons.person_outline),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Full name is required';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                // Email (optional)
-                AppTextField(
-                  controller: _emailController,
-                  label: 'Email (Optional)',
-                  hint: 'Enter your email address',
-                  keyboardType: TextInputType.emailAddress,
-                  textInputAction: TextInputAction.next,
-                  prefix: const Icon(Icons.email_outlined),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return null; // Optional field
-                    }
-                    if (!value.contains('@')) {
-                      return 'Please enter a valid email';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                // Date of Birth (required)
-                AppTextField(
-                  controller: _dobController,
-                  label: 'Date of Birth',
-                  hint: 'Select your date of birth',
-                  readOnly: true,
-                  onTap: _selectDateOfBirth,
-                  prefix: const Icon(Icons.calendar_today_outlined),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Date of birth is required';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 32),
-
-                FilledButton(
-                  onPressed: _isLoading ? null : _handleCompleteRegistration,
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  // Full Name (required)
+                  AppTextField(
+                    controller: _nameController,
+                    label: 'Full Name',
+                    hint: 'Enter your full name',
+                    keyboardType: TextInputType.name,
+                    textCapitalization: TextCapitalization.words,
+                    textInputAction: TextInputAction.next,
+                    prefix: const Icon(Icons.person_outline),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Full name is required';
+                      }
+                      return null;
+                    },
                   ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('Complete Registration'),
-                ),
-              ],
+                  const SizedBox(height: 16),
+
+                  // Email (optional)
+                  AppTextField(
+                    controller: _emailController,
+                    label: 'Email (Optional)',
+                    hint: 'Enter your email address',
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    prefix: const Icon(Icons.email_outlined),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return null; // Optional field
+                      }
+                      if (!value.contains('@')) {
+                        return 'Please enter a valid email';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Date of Birth (required)
+                  AppTextField(
+                    controller: _dobController,
+                    label: 'Date of Birth',
+                    hint: 'Select your date of birth',
+                    readOnly: true,
+                    onTap: _selectDateOfBirth,
+                    prefix: const Icon(Icons.calendar_today_outlined),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Date of birth is required';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 32),
+
+                  FilledButton(
+                    onPressed: _isLoading ? null : _handleCompleteRegistration,
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text('Complete Registration'),
+                  ),
+                ],
+              ),
             ),
-          ),
           ),
         ),
       ),

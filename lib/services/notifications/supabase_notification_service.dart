@@ -23,7 +23,8 @@ class SupabaseNotificationService implements NotificationService {
   SupabaseClient get _client => Supabase.instance.client;
 
   // Stream controllers for real-time updates
-  final Map<String, StreamController<AppNotification>> _notificationStreams = {};
+  final Map<String, StreamController<AppNotification>> _notificationStreams =
+      {};
   final Map<String, StreamController<int>> _unreadCountStreams = {};
 
   // Realtime subscriptions
@@ -47,7 +48,8 @@ class SupabaseNotificationService implements NotificationService {
 
       // Apply filters
       if (filter?.types != null && filter!.types!.isNotEmpty) {
-        query = query.inFilter('type', filter.types!.map((t) => t.name).toList());
+        query =
+            query.inFilter('type', filter.types!.map((t) => t.name).toList());
       }
       if (filter?.status != null) {
         query = query.eq('status', filter!.status!.name);
@@ -192,8 +194,7 @@ class SupabaseNotificationService implements NotificationService {
       // Soft delete by setting status
       await _client
           .from('notifications')
-          .update({'status': 'deleted'})
-          .eq('id', notificationId);
+          .update({'status': 'deleted'}).eq('id', notificationId);
 
       return true;
     } catch (e) {
@@ -263,9 +264,9 @@ class SupabaseNotificationService implements NotificationService {
   Future<bool> savePreferences(NotificationPreferences preferences) async {
     try {
       await _client.from('notification_preferences').upsert(
-        _preferencesToJson(preferences),
-        onConflict: 'user_id',
-      );
+            _preferencesToJson(preferences),
+            onConflict: 'user_id',
+          );
 
       return true;
     } catch (e) {
@@ -533,7 +534,10 @@ class SupabaseNotificationService implements NotificationService {
     final parts = input.split('_');
     if (parts.length == 1) return input;
     return parts.first +
-        parts.skip(1).map((p) => p.isEmpty ? '' : p[0].toUpperCase() + p.substring(1)).join();
+        parts
+            .skip(1)
+            .map((p) => p.isEmpty ? '' : p[0].toUpperCase() + p.substring(1))
+            .join();
   }
 
   NotificationStatus _notificationStatusFromString(String? value) {
@@ -558,7 +562,8 @@ class SupabaseNotificationService implements NotificationService {
     if (json['category_preferences'] != null) {
       final catJson = json['category_preferences'] as Map<String, dynamic>;
       categoryPrefs = catJson.map(
-        (k, v) => MapEntry(k, CategoryPreferences.fromJson(v as Map<String, dynamic>)),
+        (k, v) => MapEntry(
+            k, CategoryPreferences.fromJson(v as Map<String, dynamic>)),
       );
     }
 

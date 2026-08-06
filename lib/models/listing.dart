@@ -1,6 +1,7 @@
 import '../core/currency/currency.dart';
 import '../core/currency/money.dart';
 import 'facility.dart';
+import 'listing_purpose.dart';
 import 'listing_type.dart';
 import 'rental_plan.dart';
 
@@ -53,6 +54,12 @@ class Listing {
     // When the listing was created (server timestamp). Used to surface
     // "Newly available" stays. Null for locally-built/mock listings.
     this.createdAt,
+    // What this place is good for (medical/exam/tourism/…). Separate from [type]
+    // (the unit). Empty means untagged.
+    this.purposeTags = const [],
+    // Distance in metres from a searched landmark, when the listing came from a
+    // proximity search. Null otherwise. Not persisted — a per-search value.
+    this.distanceMeters,
   });
 
   final String id;
@@ -104,6 +111,12 @@ class Listing {
 
   /// Server creation timestamp; null for locally-built/mock listings.
   final DateTime? createdAt;
+
+  /// What this place is good for (medical/exam/tourism/…). Separate from [type].
+  final List<ListingPurpose> purposeTags;
+
+  /// Distance in metres from a searched landmark (proximity search only).
+  final double? distanceMeters;
 
   /// Per-plan minimum/maximum booking duration.
   final BookingLimits bookingLimits;
@@ -245,6 +258,8 @@ class Listing {
     CheckInDetails? checkInDetails,
     Currency? currency,
     DateTime? createdAt,
+    List<ListingPurpose>? purposeTags,
+    double? distanceMeters,
   }) {
     return Listing(
       id: id ?? this.id,
@@ -284,6 +299,8 @@ class Listing {
       checkInDetails: checkInDetails ?? this.checkInDetails,
       currency: currency ?? this.currency,
       createdAt: createdAt ?? this.createdAt,
+      purposeTags: purposeTags ?? this.purposeTags,
+      distanceMeters: distanceMeters ?? this.distanceMeters,
     );
   }
 

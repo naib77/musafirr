@@ -60,7 +60,8 @@ class GuestHostSwitcher extends StatelessWidget {
                 // Background line
                 Container(
                   height: 3,
-                  color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+                  color:
+                      theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
                 ),
                 // Animated indicator
                 AnimatedAlign(

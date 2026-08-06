@@ -41,7 +41,8 @@ class NotificationItem extends StatelessWidget {
             color: Colors.red.shade400,
             borderRadius: BorderRadius.circular(16),
           ),
-          child: const Icon(Icons.delete_outline, color: Colors.white, size: 28),
+          child:
+              const Icon(Icons.delete_outline, color: Colors.white, size: 28),
         ),
         child: GestureDetector(
           onTap: () {
@@ -112,7 +113,8 @@ class NotificationItem extends StatelessWidget {
                           notification.body,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: notification.isUnread
-                                ? theme.colorScheme.onSurface.withValues(alpha: 0.9)
+                                ? theme.colorScheme.onSurface
+                                    .withValues(alpha: 0.9)
                                 : theme.colorScheme.onSurfaceVariant,
                             height: 1.4,
                           ),
@@ -120,10 +122,13 @@ class NotificationItem extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                         // Priority badge for high/urgent
-                        if (notification.priority == NotificationPriority.high ||
-                            notification.priority == NotificationPriority.urgent) ...[
+                        if (notification.priority ==
+                                NotificationPriority.high ||
+                            notification.priority ==
+                                NotificationPriority.urgent) ...[
                           const SizedBox(height: 10),
-                          NotificationPriorityBadge(priority: notification.priority),
+                          NotificationPriorityBadge(
+                              priority: notification.priority),
                         ],
                       ],
                     ),
@@ -146,7 +151,8 @@ class NotificationItem extends StatelessWidget {
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: theme.colorScheme.primary.withValues(alpha: 0.4),
+                            color: theme.colorScheme.primary
+                                .withValues(alpha: 0.4),
                             blurRadius: 6,
                             offset: const Offset(0, 2),
                           ),
@@ -191,19 +197,24 @@ class _GlassCard extends StatelessWidget {
               end: Alignment.bottomRight,
               colors: isUnread
                   ? [
-                      theme.colorScheme.primaryContainer.withValues(alpha: isDark ? 0.3 : 0.5),
-                      theme.colorScheme.primaryContainer.withValues(alpha: isDark ? 0.15 : 0.25),
+                      theme.colorScheme.primaryContainer
+                          .withValues(alpha: isDark ? 0.3 : 0.5),
+                      theme.colorScheme.primaryContainer
+                          .withValues(alpha: isDark ? 0.15 : 0.25),
                     ]
                   : [
-                      (isDark ? Colors.white : Colors.white).withValues(alpha: isDark ? 0.08 : 0.7),
-                      (isDark ? Colors.white : Colors.white).withValues(alpha: isDark ? 0.04 : 0.5),
+                      (isDark ? Colors.white : Colors.white)
+                          .withValues(alpha: isDark ? 0.08 : 0.7),
+                      (isDark ? Colors.white : Colors.white)
+                          .withValues(alpha: isDark ? 0.04 : 0.5),
                     ],
             ),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: isUnread
                   ? theme.colorScheme.primary.withValues(alpha: 0.3)
-                  : (isDark ? Colors.white : Colors.black).withValues(alpha: isDark ? 0.1 : 0.08),
+                  : (isDark ? Colors.white : Colors.black)
+                      .withValues(alpha: isDark ? 0.1 : 0.08),
               width: 1,
             ),
             boxShadow: [
@@ -432,7 +443,10 @@ class NotificationPriorityBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [colors[0].withValues(alpha: 0.15), colors[1].withValues(alpha: 0.1)],
+          colors: [
+            colors[0].withValues(alpha: 0.15),
+            colors[1].withValues(alpha: 0.1)
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -449,7 +463,9 @@ class NotificationPriorityBadge extends StatelessWidget {
               shape: BoxShape.circle,
             ),
             child: Icon(
-              isUrgent ? Icons.priority_high_rounded : Icons.trending_up_rounded,
+              isUrgent
+                  ? Icons.priority_high_rounded
+                  : Icons.trending_up_rounded,
               size: 10,
               color: Colors.white,
             ),
@@ -493,7 +509,8 @@ class NotificationItemCompact extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          fontWeight: notification.isUnread ? FontWeight.w600 : FontWeight.normal,
+          fontWeight:
+              notification.isUnread ? FontWeight.w600 : FontWeight.normal,
         ),
       ),
       subtitle: Text(
@@ -587,7 +604,8 @@ class NotificationGroupHeader extends StatelessWidget {
             TextButton(
               onPressed: onMarkAllAsRead,
               style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 backgroundColor: isDark
                     ? Colors.white.withValues(alpha: 0.1)
                     : Colors.black.withValues(alpha: 0.05),

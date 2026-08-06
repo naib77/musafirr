@@ -456,14 +456,13 @@ class Discount {
       type: DiscountTypeExtension.fromDatabase(json['type'] as String),
       category:
           DiscountCategoryExtension.fromDatabase(json['category'] as String),
-      status:
-          DiscountStatusExtension.fromDatabase(json['status'] as String? ?? 'draft'),
+      status: DiscountStatusExtension.fromDatabase(
+          json['status'] as String? ?? 'draft'),
       value: (json['value'] as num).toDouble(),
       maxDiscountAmount: json['max_discount_amount'] != null
           ? (json['max_discount_amount'] as num).toDouble()
           : null,
-      minBookingAmount:
-          (json['min_booking_amount'] as num?)?.toDouble() ?? 0,
+      minBookingAmount: (json['min_booking_amount'] as num?)?.toDouble() ?? 0,
       freeNightsConfig: json['free_nights_config'] != null
           ? FreeNightsConfig.fromJson(
               json['free_nights_config'] as Map<String, dynamic>)

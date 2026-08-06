@@ -91,14 +91,12 @@ class AuthStateNotifier extends ChangeNotifier with SafeNotifier {
     // Update status on auth change
     if (!_hasReceivedFirstAuthEvent || _status == AuthStatus.initializing) {
       _hasReceivedFirstAuthEvent = true;
-      _status = user != null
-          ? AuthStatus.authenticated
-          : AuthStatus.unauthenticated;
+      _status =
+          user != null ? AuthStatus.authenticated : AuthStatus.unauthenticated;
     } else {
       // Subsequent auth changes (login/logout during app use)
-      _status = user != null
-          ? AuthStatus.authenticated
-          : AuthStatus.unauthenticated;
+      _status =
+          user != null ? AuthStatus.authenticated : AuthStatus.unauthenticated;
     }
 
     notifyListeners();

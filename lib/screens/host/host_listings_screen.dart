@@ -36,35 +36,35 @@ class HostListingsScreen extends StatelessWidget {
       body: ResponsiveCenter(
         maxWidth: 960,
         child: ListenableBuilder(
-        listenable: Listenable.merge([repository, authState]),
-        builder: (context, _) {
-          final hostListings = user != null
-              ? repository.listings.where((l) => l.hostId == user.id).toList()
-              : <Listing>[];
+          listenable: Listenable.merge([repository, authState]),
+          builder: (context, _) {
+            final hostListings = user != null
+                ? repository.listings.where((l) => l.hostId == user.id).toList()
+                : <Listing>[];
 
-          if (hostListings.isEmpty) {
-            return _buildEmptyState(context, theme);
-          }
+            if (hostListings.isEmpty) {
+              return _buildEmptyState(context, theme);
+            }
 
-          return ListView.separated(
-            // Extra bottom padding so the last card's action row (Edit/Delete)
-            // clears the "Add Listing" FAB that floats over the list.
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-            itemCount: hostListings.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              final listing = hostListings[index];
-              return _ListingCard(
-                listing: listing,
-                onEdit: () => _editListing(context, listing),
-                onDelete: () => _confirmDelete(context, listing),
-                onToggleAvailability: () =>
-                    _toggleAvailability(context, listing),
-                repository: repository,
-              );
-            },
-          );
-        },
+            return ListView.separated(
+              // Extra bottom padding so the last card's action row (Edit/Delete)
+              // clears the "Add Listing" FAB that floats over the list.
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+              itemCount: hostListings.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final listing = hostListings[index];
+                return _ListingCard(
+                  listing: listing,
+                  onEdit: () => _editListing(context, listing),
+                  onDelete: () => _confirmDelete(context, listing),
+                  onToggleAvailability: () =>
+                      _toggleAvailability(context, listing),
+                  repository: repository,
+                );
+              },
+            );
+          },
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(

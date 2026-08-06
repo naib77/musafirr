@@ -36,7 +36,7 @@ class _ReferralScreenState extends State<ReferralScreen>
   void _shareReferralCode(UserReferral referral) {
     Share.share(
       referral.shareMessage,
-      subject: 'Join Musafir and save!',
+      subject: 'Join Musaafir and save!',
     );
   }
 
@@ -300,7 +300,8 @@ class _ReferralScreenState extends State<ReferralScreen>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.hourglass_empty, color: Colors.white, size: 18),
+                  const Icon(Icons.hourglass_empty,
+                      color: Colors.white, size: 18),
                   const SizedBox(width: 8),
                   Text(
                     '${stats.pendingReferrals} pending • ৳${stats.pendingEarnings.toStringAsFixed(0)} potential',
@@ -415,7 +416,10 @@ class _ReferralScreenState extends State<ReferralScreen>
               label,
               style: TextStyle(
                 fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.7),
               ),
             ),
           ],
@@ -454,11 +458,11 @@ class _ReferralScreenState extends State<ReferralScreen>
           ),
           const SizedBox(height: 12),
           Text(
-            '• Your friend must be a new Musafir user\n'
+            '• Your friend must be a new Musaafir user\n'
             '• They must complete their first booking\n'
             '• Rewards are credited after checkout\n'
             '• Credits can be used on future bookings\n'
-            '• Musafir reserves the right to modify terms',
+            '• Musaafir reserves the right to modify terms',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
               height: 1.5,

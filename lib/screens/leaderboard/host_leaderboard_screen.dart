@@ -210,7 +210,7 @@ class _HeroHeader extends StatelessWidget {
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      'The most loved hosts on Musafir',
+                      'The most loved hosts on Musaafir',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: Colors.white.withValues(alpha: 0.92),
                       ),
@@ -513,7 +513,8 @@ class _PodiumSpot extends StatelessWidget {
                   medalColor.withValues(alpha: 0.55),
                 ],
               ),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(8)),
             ),
             child: Center(
               child: Opacity(
@@ -720,9 +721,8 @@ class _RankDelta extends StatelessWidget {
               : Theme.of(context).colorScheme.onSurfaceVariant);
     }
     final up = change > 0;
-    final color = onDark
-        ? Colors.white
-        : (up ? AppColors.success : AppColors.error);
+    final color =
+        onDark ? Colors.white : (up ? AppColors.success : AppColors.error);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

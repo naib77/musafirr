@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/booking.dart';
 import '../models/booking_contacts.dart';
 import '../models/booking_duration.dart';
+import '../models/landmark.dart';
 import '../models/leaderboard_entry.dart';
 import '../models/listing.dart';
 import '../models/owner_registration_draft.dart';
@@ -183,6 +184,19 @@ abstract class MusafirRepository implements Listenable, BookingStore {
     required String listingId,
     required DateTime checkIn,
     required DateTime checkOut,
+  });
+
+  /// Landmarks (hospitals, exam centers, universities, …) for purpose-based
+  /// search. [type] filters to one landmark type; [query] matches name/area/city.
+  Future<List<Landmark>> searchLandmarks({String? query, String? type});
+
+  /// Landmarks closest to a coordinate (e.g. a listing's pin), nearest first,
+  /// each carrying its distance. Used for the host "what's nearby" preview.
+  Future<List<Landmark>> nearbyLandmarks({
+    required double latitude,
+    required double longitude,
+    int limit,
+    String? type,
   });
 
   /// The signed-in user's own payment history (payments they made as a guest),

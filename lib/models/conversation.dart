@@ -168,7 +168,8 @@ class Conversation {
       participantTwoId: json['participant_two_id'] as String,
       bookingId: json['booking_id'] as String?,
       listingId: json['listing_id'] as String?,
-      status: ConversationStatus.fromString(json['status'] as String? ?? 'active'),
+      status:
+          ConversationStatus.fromString(json['status'] as String? ?? 'active'),
       lastMessageId: json['last_message_id'] as String?,
       lastMessageText: json['last_message_text'] as String?,
       lastMessageAt: json['last_message_at'] != null
@@ -271,7 +272,8 @@ class Conversation {
   int get hashCode => id.hashCode;
 
   @override
-  String toString() => 'Conversation(id: $id, participants: [$participantOneId, $participantTwoId])';
+  String toString() =>
+      'Conversation(id: $id, participants: [$participantOneId, $participantTwoId])';
 }
 
 /// Represents a read cursor for tracking read status

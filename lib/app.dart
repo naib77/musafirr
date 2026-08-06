@@ -208,7 +208,7 @@ class _MusafirAppState extends State<MusafirApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Musafir',
+      title: 'Musaafir',
       navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
       // The design system is light-only; pinning themeMode (plus

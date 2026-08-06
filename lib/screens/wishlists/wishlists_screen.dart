@@ -43,8 +43,8 @@ class WishlistsScreen extends StatelessWidget {
         // populated but not all resolved AND listings still fetching). Once
         // listings finish, an id with no match is a genuinely removed listing
         // and correctly falls through to the empty/partial state.
-        final favoritesUnresolved =
-            favoriteIds.isNotEmpty && favoriteListings.length < favoriteIds.length;
+        final favoritesUnresolved = favoriteIds.isNotEmpty &&
+            favoriteListings.length < favoriteIds.length;
         if (favoritesState.isLoading ||
             (favoritesUnresolved && repository.isLoadingListings)) {
           return const Center(child: CircularProgressIndicator());

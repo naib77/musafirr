@@ -139,7 +139,8 @@ class _ImagePickerGridState extends State<ImagePickerGrid> {
   }
 
   void _showMaxImagesError() {
-    ModernBanner.showWarning(context, 'Maximum ${widget.maxImages} images allowed');
+    ModernBanner.showWarning(
+        context, 'Maximum ${widget.maxImages} images allowed');
   }
 
   Future<void> _removeImage(int index) async {

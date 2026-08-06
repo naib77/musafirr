@@ -147,7 +147,8 @@ void main() {
       expect(rules.canCheckIn(booking, now: now), isFalse);
     });
 
-    test('returns false for a confirmed stay whose day range fully elapsed', () {
+    test('returns false for a confirmed stay whose day range fully elapsed',
+        () {
       final now = DateTime.now();
       final booking = createBooking(
         status: BookingStatus.confirmed,

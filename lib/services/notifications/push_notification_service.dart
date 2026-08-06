@@ -78,10 +78,12 @@ class PushNotificationPayload {
 
   factory PushNotificationPayload.fromMap(Map<String, dynamic> map) {
     return PushNotificationPayload(
-      title: map['title'] as String? ?? map['notification']?['title'] as String?,
+      title:
+          map['title'] as String? ?? map['notification']?['title'] as String?,
       body: map['body'] as String? ?? map['notification']?['body'] as String?,
       data: map['data'] as Map<String, dynamic>? ?? map,
-      imageUrl: map['image'] as String? ?? map['notification']?['image'] as String?,
+      imageUrl:
+          map['image'] as String? ?? map['notification']?['image'] as String?,
     );
   }
 }
@@ -133,8 +135,10 @@ class StubPushNotificationService implements PushNotificationService {
   }
 
   final _tokenRefreshController = StreamController<String>.broadcast();
-  final _foregroundNotificationController = StreamController<PushNotificationPayload>.broadcast();
-  final _notificationTapController = StreamController<PushNotificationPayload>.broadcast();
+  final _foregroundNotificationController =
+      StreamController<PushNotificationPayload>.broadcast();
+  final _notificationTapController =
+      StreamController<PushNotificationPayload>.broadcast();
 
   String? _token;
   PushPermissionStatus _permissionStatus = PushPermissionStatus.notDetermined;
@@ -216,7 +220,8 @@ class StubPushNotificationService implements PushNotificationService {
 
   /// Simulate receiving a foreground notification (for testing)
   void simulateForegroundNotification(PushNotificationPayload payload) {
-    debugPrint('📱 [Stub] Simulating foreground notification: ${payload.title}');
+    debugPrint(
+        '📱 [Stub] Simulating foreground notification: ${payload.title}');
     _foregroundNotificationController.add(payload);
   }
 
@@ -291,37 +296,44 @@ class NotificationDeepLinkHandler {
       case 'trips':
         return DeepLinkResult(
           route: '/trips',
-          arguments: pathSegments.length > 1 ? {'bookingId': pathSegments[1]} : null,
+          arguments:
+              pathSegments.length > 1 ? {'bookingId': pathSegments[1]} : null,
         );
       case 'host':
         if (pathSegments.length > 1 && pathSegments[1] == 'reservations') {
           return DeepLinkResult(
             route: '/host/reservations',
-            arguments: pathSegments.length > 2 ? {'bookingId': pathSegments[2]} : null,
+            arguments:
+                pathSegments.length > 2 ? {'bookingId': pathSegments[2]} : null,
           );
         }
         return DeepLinkResult(route: '/host');
       case 'messages':
         return DeepLinkResult(
           route: '/messages',
-          arguments: pathSegments.length > 1 ? {'conversationId': pathSegments[1]} : null,
+          arguments: pathSegments.length > 1
+              ? {'conversationId': pathSegments[1]}
+              : null,
         );
       case 'explore':
         return DeepLinkResult(route: '/explore');
       case 'profile':
         return DeepLinkResult(
           route: '/profile',
-          arguments: pathSegments.length > 1 ? {'section': pathSegments[1]} : null,
+          arguments:
+              pathSegments.length > 1 ? {'section': pathSegments[1]} : null,
         );
       case 'listings':
         return DeepLinkResult(
           route: '/listings',
-          arguments: pathSegments.length > 1 ? {'listingId': pathSegments[1]} : null,
+          arguments:
+              pathSegments.length > 1 ? {'listingId': pathSegments[1]} : null,
         );
       case 'review':
         return DeepLinkResult(
           route: '/review',
-          arguments: pathSegments.length > 1 ? {'bookingId': pathSegments[1]} : null,
+          arguments:
+              pathSegments.length > 1 ? {'bookingId': pathSegments[1]} : null,
         );
       default:
         return DeepLinkResult(route: '/${pathSegments.first}');

@@ -54,15 +54,11 @@ class EarningsScreen extends StatelessWidget {
         // accepted stays still awaiting payment. Payment-driven so a paid,
         // not-yet-completed booking is realized immediately instead of sitting
         // in "pending" forever.
-        final completed = hostBookings
-            .where((b) => b.isEarnedRevenue)
-            .toList()
-          ..sort((a, b) =>
-              (b.paidAt ?? b.completedAt ?? b.effectiveCheckOut).compareTo(
-                  a.paidAt ?? a.completedAt ?? a.effectiveCheckOut));
+        final completed = hostBookings.where((b) => b.isEarnedRevenue).toList()
+          ..sort((a, b) => (b.paidAt ?? b.completedAt ?? b.effectiveCheckOut)
+              .compareTo(a.paidAt ?? a.completedAt ?? a.effectiveCheckOut));
 
-        final pending =
-            hostBookings.where((b) => b.isPendingPayout).toList();
+        final pending = hostBookings.where((b) => b.isPendingPayout).toList();
 
         final now = DateTime.now();
         final thisMonthStart = DateTime(now.year, now.month, 1);

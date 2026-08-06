@@ -54,8 +54,18 @@ class _PaymentsPayoutsScreenState extends State<PaymentsPayoutsScreen> {
   String _date(DateTime? d) {
     if (d == null) return '';
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${months[d.month - 1]} ${d.day}, ${d.year}';
   }
@@ -157,7 +167,8 @@ class _PaymentsPayoutsScreenState extends State<PaymentsPayoutsScreen> {
     );
   }
 
-  Widget _summaryStat(ThemeData theme, String label, String value, Color color) {
+  Widget _summaryStat(
+      ThemeData theme, String label, String value, Color color) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -205,7 +216,8 @@ class _PaymentsPayoutsScreenState extends State<PaymentsPayoutsScreen> {
                 style: theme.textTheme.titleSmall
                     ?.copyWith(fontWeight: FontWeight.bold)),
             Text(p.status,
-                style: theme.textTheme.labelSmall?.copyWith(color: statusColor)),
+                style:
+                    theme.textTheme.labelSmall?.copyWith(color: statusColor)),
           ],
         ),
       ),

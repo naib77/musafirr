@@ -84,10 +84,12 @@ class WhatsAppIncomingMessage {
           ? WhatsAppMediaInfo.fromJson(json['image'] as Map<String, dynamic>)
           : null,
       location: json['location'] != null
-          ? WhatsAppLocationInfo.fromJson(json['location'] as Map<String, dynamic>)
+          ? WhatsAppLocationInfo.fromJson(
+              json['location'] as Map<String, dynamic>)
           : null,
       context: json['context'] != null
-          ? WhatsAppMessageContext.fromJson(json['context'] as Map<String, dynamic>)
+          ? WhatsAppMessageContext.fromJson(
+              json['context'] as Map<String, dynamic>)
           : null,
     );
   }
@@ -178,10 +180,9 @@ class WhatsAppContact {
 
   factory WhatsAppContact.fromJson(Map<String, dynamic> json) {
     final name = json['name'] as Map<String, dynamic>;
-    final phones = (json['phones'] as List?)
-            ?.map((p) => p['phone'] as String)
-            .toList() ??
-        [];
+    final phones =
+        (json['phones'] as List?)?.map((p) => p['phone'] as String).toList() ??
+            [];
 
     return WhatsAppContact(
       name: name['formatted_name'] as String? ?? 'Unknown',
@@ -307,12 +308,14 @@ class StubWhatsAppService implements WhatsAppService {
       : _config = config ?? WhatsAppConfig.stub;
 
   final WhatsAppConfig _config;
-  final _incomingController = StreamController<WhatsAppIncomingMessage>.broadcast();
+  final _incomingController =
+      StreamController<WhatsAppIncomingMessage>.broadcast();
   final _statusController = StreamController<WhatsAppStatusUpdate>.broadcast();
   final Map<String, WhatsAppSession> _sessions = {};
 
   @override
-  Stream<WhatsAppIncomingMessage> get incomingMessages => _incomingController.stream;
+  Stream<WhatsAppIncomingMessage> get incomingMessages =>
+      _incomingController.stream;
 
   @override
   Stream<WhatsAppStatusUpdate> get statusUpdates => _statusController.stream;
@@ -373,7 +376,8 @@ class StubWhatsAppService implements WhatsAppService {
     String? name,
     String? address,
   }) async {
-    print('[StubWhatsAppService] Sending location to $to: ($latitude, $longitude)');
+    print(
+        '[StubWhatsAppService] Sending location to $to: ($latitude, $longitude)');
 
     await Future.delayed(const Duration(milliseconds: 500));
 
@@ -503,11 +507,13 @@ class CloudWhatsAppService implements WhatsAppService {
 
   final WhatsAppConfig _config;
   final http.Client _client;
-  final _incomingController = StreamController<WhatsAppIncomingMessage>.broadcast();
+  final _incomingController =
+      StreamController<WhatsAppIncomingMessage>.broadcast();
   final _statusController = StreamController<WhatsAppStatusUpdate>.broadcast();
 
   @override
-  Stream<WhatsAppIncomingMessage> get incomingMessages => _incomingController.stream;
+  Stream<WhatsAppIncomingMessage> get incomingMessages =>
+      _incomingController.stream;
 
   @override
   Stream<WhatsAppStatusUpdate> get statusUpdates => _statusController.stream;
@@ -632,7 +638,8 @@ class CloudWhatsAppService implements WhatsAppService {
         return const WhatsAppResult.success(null);
       } else {
         final error = jsonDecode(response.body);
-        return WhatsAppResult.failure(error['error']?['message'] ?? 'Unknown error');
+        return WhatsAppResult.failure(
+            error['error']?['message'] ?? 'Unknown error');
       }
     } catch (e) {
       return WhatsAppResult.failure(e.toString());

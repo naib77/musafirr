@@ -291,8 +291,7 @@ abstract class MessengerService {
   });
 
   /// Get user profile
-  Future<MessengerResult<MessengerUserProfile>> getUserProfile(
-      String userId);
+  Future<MessengerResult<MessengerUserProfile>> getUserProfile(String userId);
 
   /// Stream of incoming messages
   Stream<MessengerIncomingMessage> get incomingMessages;
@@ -733,7 +732,8 @@ class GraphApiMessengerService implements MessengerService {
       final url = Uri.parse(config.userProfileEndpoint(userId)).replace(
         queryParameters: {
           ...config.authParams,
-          'fields': 'id,first_name,last_name,profile_pic,locale,timezone,gender',
+          'fields':
+              'id,first_name,last_name,profile_pic,locale,timezone,gender',
         },
       );
 

@@ -52,7 +52,9 @@ class NotificationBell extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               Icon(
-                unreadCount > 0 ? Icons.notifications : Icons.notifications_outlined,
+                unreadCount > 0
+                    ? Icons.notifications
+                    : Icons.notifications_outlined,
                 size: iconSize,
                 color: iconColor ?? theme.colorScheme.onSurface,
               ),
@@ -149,7 +151,8 @@ class AnimatedNotificationBell extends StatefulWidget {
   final bool decorated;
 
   @override
-  State<AnimatedNotificationBell> createState() => _AnimatedNotificationBellState();
+  State<AnimatedNotificationBell> createState() =>
+      _AnimatedNotificationBellState();
 }
 
 class _AnimatedNotificationBellState extends State<AnimatedNotificationBell>
@@ -205,7 +208,8 @@ class _AnimatedNotificationBellState extends State<AnimatedNotificationBell>
           animation: _shakeAnimation,
           builder: (context, child) {
             return Transform.rotate(
-              angle: _shakeAnimation.value * 0.1 *
+              angle: _shakeAnimation.value *
+                  0.1 *
                   ((_shakeAnimation.value * 10).toInt().isEven ? 1 : -1),
               child: child,
             );
@@ -214,7 +218,9 @@ class _AnimatedNotificationBellState extends State<AnimatedNotificationBell>
             clipBehavior: Clip.none,
             children: [
               Icon(
-                unreadCount > 0 ? Icons.notifications : Icons.notifications_outlined,
+                unreadCount > 0
+                    ? Icons.notifications
+                    : Icons.notifications_outlined,
                 size: widget.iconSize,
                 color: widget.iconColor ??
                     (widget.decorated

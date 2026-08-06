@@ -200,8 +200,8 @@ class AutoDiscountResult {
   /// Get highest value discount
   DetectedDiscount? get bestDiscount {
     if (detectedDiscounts.isEmpty) return null;
-    return detectedDiscounts.reduce((a, b) =>
-        a.discount.value > b.discount.value ? a : b);
+    return detectedDiscounts
+        .reduce((a, b) => a.discount.value > b.discount.value ? a : b);
   }
 
   /// Get discounts by type
@@ -307,7 +307,8 @@ class InMemoryAutoDiscountService implements AutoDiscountService {
   final AutoDiscountConfig _config;
 
   @override
-  Future<AutoDiscountResult> detectDiscounts(AutoDiscountContext context) async {
+  Future<AutoDiscountResult> detectDiscounts(
+      AutoDiscountContext context) async {
     final detected = <DetectedDiscount>[];
     double totalSavings = 0;
 
@@ -315,49 +316,56 @@ class InMemoryAutoDiscountService implements AutoDiscountService {
     if (context.isFirstBooking) {
       final discount = _createFirstBookingDiscount(context);
       detected.add(discount);
-      totalSavings += _calculateSavings(discount.discount, context.bookingAmount, context.nights);
+      totalSavings += _calculateSavings(
+          discount.discount, context.bookingAmount, context.nights);
     }
 
     // Check early bird discount
     if (await qualifiesForEarlyBird(context)) {
       final discount = _createEarlyBirdDiscount(context);
       detected.add(discount);
-      totalSavings += _calculateSavings(discount.discount, context.bookingAmount, context.nights);
+      totalSavings += _calculateSavings(
+          discount.discount, context.bookingAmount, context.nights);
     }
 
     // Check long stay discount
     if (await qualifiesForLongStay(context)) {
       final discount = _createLongStayDiscount(context);
       detected.add(discount);
-      totalSavings += _calculateSavings(discount.discount, context.bookingAmount, context.nights);
+      totalSavings += _calculateSavings(
+          discount.discount, context.bookingAmount, context.nights);
     }
 
     // Check last minute discount
     if (await qualifiesForLastMinute(context)) {
       final discount = _createLastMinuteDiscount(context);
       detected.add(discount);
-      totalSavings += _calculateSavings(discount.discount, context.bookingAmount, context.nights);
+      totalSavings += _calculateSavings(
+          discount.discount, context.bookingAmount, context.nights);
     }
 
     // Check weekday discount
     if (context.isFullWeekdayStay) {
       final discount = _createWeekdayDiscount(context);
       detected.add(discount);
-      totalSavings += _calculateSavings(discount.discount, context.bookingAmount, context.nights);
+      totalSavings += _calculateSavings(
+          discount.discount, context.bookingAmount, context.nights);
     }
 
     // Check repeat guest discount
     if (context.previousBookingsCount >= _config.repeatGuestMinBookings) {
       final discount = _createRepeatGuestDiscount(context);
       detected.add(discount);
-      totalSavings += _calculateSavings(discount.discount, context.bookingAmount, context.nights);
+      totalSavings += _calculateSavings(
+          discount.discount, context.bookingAmount, context.nights);
     }
 
     // Check loyalty discount
     final loyaltyDiscount = await _checkLoyaltyDiscount(context);
     if (loyaltyDiscount != null) {
       detected.add(loyaltyDiscount);
-      totalSavings += _calculateSavings(loyaltyDiscount.discount, context.bookingAmount, context.nights);
+      totalSavings += _calculateSavings(
+          loyaltyDiscount.discount, context.bookingAmount, context.nights);
     }
 
     // Check referral discount
@@ -464,7 +472,8 @@ class InMemoryAutoDiscountService implements AutoDiscountService {
       discount: Discount(
         id: 'auto_first_booking',
         name: 'First Booking Discount',
-        description: 'Welcome! Enjoy ${_config.firstBookingDiscountPercent.toStringAsFixed(0)}% off your first booking',
+        description:
+            'Welcome! Enjoy ${_config.firstBookingDiscountPercent.toStringAsFixed(0)}% off your first booking',
         type: DiscountType.percentage,
         category: DiscountCategory.firstBooking,
         status: DiscountStatus.active,
@@ -487,7 +496,8 @@ class InMemoryAutoDiscountService implements AutoDiscountService {
       discount: Discount(
         id: 'auto_early_bird',
         name: 'Early Bird Discount',
-        description: 'Book ${_config.earlyBirdDaysAhead}+ days ahead and save ${_config.earlyBirdDiscountPercent.toStringAsFixed(0)}%',
+        description:
+            'Book ${_config.earlyBirdDaysAhead}+ days ahead and save ${_config.earlyBirdDiscountPercent.toStringAsFixed(0)}%',
         type: DiscountType.percentage,
         category: DiscountCategory.platform,
         status: DiscountStatus.active,
@@ -511,7 +521,8 @@ class InMemoryAutoDiscountService implements AutoDiscountService {
       discount: Discount(
         id: 'auto_long_stay',
         name: 'Long Stay Discount',
-        description: 'Stay ${_config.longStayMinNights}+ nights and save ${_config.longStayDiscountPercent.toStringAsFixed(0)}%',
+        description:
+            'Stay ${_config.longStayMinNights}+ nights and save ${_config.longStayDiscountPercent.toStringAsFixed(0)}%',
         type: DiscountType.percentage,
         category: DiscountCategory.platform,
         status: DiscountStatus.active,
@@ -535,13 +546,15 @@ class InMemoryAutoDiscountService implements AutoDiscountService {
       discount: Discount(
         id: 'auto_last_minute',
         name: 'Last Minute Deal',
-        description: 'Book within ${_config.lastMinuteDaysAhead} days and save ${_config.lastMinuteDiscountPercent.toStringAsFixed(0)}%',
+        description:
+            'Book within ${_config.lastMinuteDaysAhead} days and save ${_config.lastMinuteDiscountPercent.toStringAsFixed(0)}%',
         type: DiscountType.percentage,
         category: DiscountCategory.platform,
         status: DiscountStatus.active,
         value: _config.lastMinuteDiscountPercent,
         startsAt: DateTime.now().subtract(const Duration(days: 365)),
-        stackingBehavior: StackingBehavior.exclusive, // Doesn't stack with early bird
+        stackingBehavior:
+            StackingBehavior.exclusive, // Doesn't stack with early bird
         priority: AutoDiscountType.lastMinute.priority,
       ),
       reason: 'Booking ${context.daysUntilCheckIn} days before check-in',
@@ -556,7 +569,8 @@ class InMemoryAutoDiscountService implements AutoDiscountService {
       discount: Discount(
         id: 'auto_weekday',
         name: 'Weekday Special',
-        description: 'Save ${_config.weekdayDiscountPercent.toStringAsFixed(0)}% on weekday stays',
+        description:
+            'Save ${_config.weekdayDiscountPercent.toStringAsFixed(0)}% on weekday stays',
         type: DiscountType.percentage,
         category: DiscountCategory.platform,
         status: DiscountStatus.active,
@@ -580,7 +594,8 @@ class InMemoryAutoDiscountService implements AutoDiscountService {
       discount: Discount(
         id: 'auto_repeat_guest',
         name: 'Repeat Guest Discount',
-        description: 'Thank you for coming back! Save ${_config.repeatGuestDiscountPercent.toStringAsFixed(0)}%',
+        description:
+            'Thank you for coming back! Save ${_config.repeatGuestDiscountPercent.toStringAsFixed(0)}%',
         type: DiscountType.percentage,
         category: DiscountCategory.platform,
         status: DiscountStatus.active,
@@ -604,7 +619,8 @@ class InMemoryAutoDiscountService implements AutoDiscountService {
       discount: Discount(
         id: 'auto_referral',
         name: 'Referral Discount',
-        description: 'Referral reward: ৳${context.referralDiscountAmount?.toStringAsFixed(0) ?? '0'} off',
+        description:
+            'Referral reward: ৳${context.referralDiscountAmount?.toStringAsFixed(0) ?? '0'} off',
         type: DiscountType.fixedAmount,
         category: DiscountCategory.referral,
         status: DiscountStatus.active,
@@ -639,7 +655,8 @@ class InMemoryAutoDiscountService implements AutoDiscountService {
         discount: Discount(
           id: 'auto_loyalty_${loyalty.currentTierId}',
           name: '${loyalty.tierName} Member Discount',
-          description: '${loyalty.discountPercentage.toStringAsFixed(0)}% off for ${loyalty.tierName} members',
+          description:
+              '${loyalty.discountPercentage.toStringAsFixed(0)}% off for ${loyalty.tierName} members',
           type: DiscountType.percentage,
           category: DiscountCategory.loyalty,
           status: DiscountStatus.active,
@@ -669,7 +686,8 @@ class InMemoryAutoDiscountService implements AutoDiscountService {
       discount: Discount(
         id: 'auto_loyalty_${loyalty.currentTierId}',
         name: '${loyalty.tierName} Member Discount',
-        description: '${loyalty.discountPercentage.toStringAsFixed(0)}% off for ${loyalty.tierName} members',
+        description:
+            '${loyalty.discountPercentage.toStringAsFixed(0)}% off for ${loyalty.tierName} members',
         type: DiscountType.percentage,
         category: DiscountCategory.loyalty,
         status: DiscountStatus.active,
@@ -709,14 +727,16 @@ class InMemoryAutoDiscountService implements AutoDiscountService {
     // Calculate stackable total
     double stackableTotal = 0;
     for (final d in stackable) {
-      stackableTotal += _calculateSavings(d.discount, context.bookingAmount, context.nights);
+      stackableTotal +=
+          _calculateSavings(d.discount, context.bookingAmount, context.nights);
     }
 
     // Find best exclusive
     double bestExclusiveValue = 0;
     DetectedDiscount? bestExclusive;
     for (final d in exclusive) {
-      final value = _calculateSavings(d.discount, context.bookingAmount, context.nights);
+      final value =
+          _calculateSavings(d.discount, context.bookingAmount, context.nights);
       if (value > bestExclusiveValue) {
         bestExclusiveValue = value;
         bestExclusive = d;

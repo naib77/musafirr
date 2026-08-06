@@ -194,7 +194,8 @@ class ReferralCard extends StatelessWidget {
                             ClipboardData(text: referral.referralCode),
                           );
                           onCopyCode?.call();
-                          ModernBanner.showSuccess(context, 'Code copied to clipboard');
+                          ModernBanner.showSuccess(
+                              context, 'Code copied to clipboard');
                         },
                         tooltip: 'Copy code',
                       ),
@@ -333,7 +334,8 @@ class ReferralCompletionCard extends StatelessWidget {
             // Avatar
             CircleAvatar(
               radius: 24,
-              backgroundColor: _getStatusColor(completion.status).withValues(alpha: 0.1),
+              backgroundColor:
+                  _getStatusColor(completion.status).withValues(alpha: 0.1),
               backgroundImage: completion.refereeAvatarUrl != null
                   ? NetworkImage(completion.refereeAvatarUrl!)
                   : null,
@@ -381,9 +383,11 @@ class ReferralCompletionCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: _getStatusColor(completion.status).withValues(alpha: 0.1),
+                    color: _getStatusColor(completion.status)
+                        .withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(

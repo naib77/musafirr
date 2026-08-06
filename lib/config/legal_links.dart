@@ -9,12 +9,12 @@ class LegalLinks {
   const LegalLinks._();
 
   /// Terms of Service page.
-  static const String termsUrl = 'https://musafir.app/terms';
+  static const String termsUrl = 'https://musaafir.app/terms';
 
   /// Privacy Policy page.
-  static const String privacyUrl = 'https://musafir.app/privacy';
+  static const String privacyUrl = 'https://musaafir.app/privacy';
 
   /// Support/help destination. A `mailto:` opens the user's mail client; an
   /// `https://` opens a help center.
-  static const String helpUrl = 'mailto:support@musafir.app';
+  static const String helpUrl = 'mailto:support@musaafir.app';
 }

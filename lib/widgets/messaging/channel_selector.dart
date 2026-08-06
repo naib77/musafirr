@@ -319,9 +319,7 @@ class ChannelConnectionCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    isConnected
-                        ? identifier ?? 'Connected'
-                        : 'Not connected',
+                    isConnected ? identifier ?? 'Connected' : 'Not connected',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: isConnected
                           ? theme.colorScheme.primary
@@ -451,9 +449,8 @@ class ChannelPreferencesSheet extends StatelessWidget {
             _ChannelOptionTile(
               channel: MessagingChannel.messenger,
               isConnected: preferences.canUseMessenger,
-              identifier: preferences.messengerPsid != null
-                  ? 'Connected'
-                  : null,
+              identifier:
+                  preferences.messengerPsid != null ? 'Connected' : null,
               onConnect: onConnectMessenger,
             ),
 
@@ -527,9 +524,7 @@ class _ChannelOptionTile extends StatelessWidget {
       ),
       title: Text(channel.displayName),
       subtitle: Text(
-        isConnected
-            ? identifier ?? 'Connected'
-            : 'Tap to connect',
+        isConnected ? identifier ?? 'Connected' : 'Tap to connect',
         style: TextStyle(
           color: isConnected
               ? theme.colorScheme.primary

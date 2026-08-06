@@ -42,9 +42,7 @@ class BookingFilterBar extends StatelessWidget {
         children: [
           // Date sort toggle
           _ControlChip(
-            icon: sortDescending
-                ? Icons.south_rounded
-                : Icons.north_rounded,
+            icon: sortDescending ? Icons.south_rounded : Icons.north_rounded,
             label: sortDescending ? 'Latest first' : 'Soonest first',
             onTap: () => onSortChanged(!sortDescending),
           ),
@@ -61,8 +59,7 @@ class BookingFilterBar extends StatelessWidget {
               onSelected: onStatusChanged,
               itemBuilder: (context) => [
                 _menuItem(theme, null, 'All statuses'),
-                for (final s in availableStatuses)
-                  _menuItem(theme, s, s.title),
+                for (final s in availableStatuses) _menuItem(theme, s, s.title),
               ],
               child: _ControlChip(
                 icon: Icons.filter_list_rounded,
@@ -141,8 +138,7 @@ class _ControlChip extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              if (trailing != null)
-                Icon(trailing, size: 18, color: fg),
+              if (trailing != null) Icon(trailing, size: 18, color: fg),
             ],
           ),
         ),

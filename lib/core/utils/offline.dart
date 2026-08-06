@@ -109,7 +109,8 @@ class QueuedOperation {
         'retryCount': retryCount,
       };
 
-  factory QueuedOperation.fromJson(Map<String, dynamic> json) => QueuedOperation(
+  factory QueuedOperation.fromJson(Map<String, dynamic> json) =>
+      QueuedOperation(
         id: json['id'] as String,
         type: json['type'] as String,
         data: json['data'] as Map<String, dynamic>,
@@ -302,11 +303,9 @@ class CacheEntry<T> {
   final DateTime? expiresAt;
   final List<String> tags;
 
-  bool get isExpired =>
-      expiresAt != null && DateTime.now().isAfter(expiresAt!);
+  bool get isExpired => expiresAt != null && DateTime.now().isAfter(expiresAt!);
 
-  Duration? get timeToLive =>
-      expiresAt?.difference(DateTime.now());
+  Duration? get timeToLive => expiresAt?.difference(DateTime.now());
 }
 
 /// In-memory cache with TTL and tags support

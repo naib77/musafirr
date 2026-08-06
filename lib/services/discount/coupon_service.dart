@@ -32,7 +32,8 @@ class CouponValidation {
     final valid = m['valid'] == true;
     return CouponValidation(
       valid: valid,
-      message: (m['message'] as String?) ?? (valid ? 'Coupon applied' : 'Invalid coupon'),
+      message: (m['message'] as String?) ??
+          (valid ? 'Coupon applied' : 'Invalid coupon'),
       couponId: m['coupon_id'] as String?,
       code: m['code'] as String?,
       discountType: m['discount_type'] as String?,
@@ -65,10 +66,12 @@ class CouponService {
       if (res is Map) {
         return CouponValidation.fromMap(res.cast<String, dynamic>());
       }
-      return CouponValidation.error('Could not check coupon. Please try again.');
+      return CouponValidation.error(
+          'Could not check coupon. Please try again.');
     } catch (e) {
       debugPrint('[CouponService] validate failed: $e');
-      return CouponValidation.error('Could not check coupon. Please try again.');
+      return CouponValidation.error(
+          'Could not check coupon. Please try again.');
     }
   }
 

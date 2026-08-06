@@ -21,187 +21,187 @@ class BecomeHostScreen extends StatelessWidget {
       body: ResponsiveCenter(
         maxWidth: 760,
         child: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Header with close button
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Hero section
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Become a Host',
-                      style: theme.textTheme.headlineLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Header with close button
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(context),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Share your space and earn extra income by hosting travelers from around the world.',
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              // Benefits
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Why host on Musafir?',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _BenefitItem(
-                      icon: Icons.attach_money,
-                      title: 'Earn extra income',
-                      description:
-                          'Turn your extra space into extra income. Set your own prices and availability.',
-                      theme: theme,
-                    ),
-                    const SizedBox(height: 16),
-                    _BenefitItem(
-                      icon: Icons.calendar_today,
-                      title: 'Host on your schedule',
-                      description:
-                          'You decide when to host. Block dates, set minimum stays, and manage bookings easily.',
-                      theme: theme,
-                    ),
-                    const SizedBox(height: 16),
-                    _BenefitItem(
-                      icon: Icons.security,
-                      title: 'Host with confidence',
-                      description:
-                          'Our platform provides support and protection for every booking.',
-                      theme: theme,
-                    ),
-                    const SizedBox(height: 16),
-                    _BenefitItem(
-                      icon: Icons.people,
-                      title: 'Meet travelers',
-                      description:
-                          'Connect with guests from different backgrounds and share local experiences.',
-                      theme: theme,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              // How it works
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'How it works',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _StepItem(
-                      number: '1',
-                      title: 'Create your listing',
-                      description:
-                          'Tell us about your space, add photos, and set your price.',
-                      theme: theme,
-                    ),
-                    const SizedBox(height: 12),
-                    _StepItem(
-                      number: '2',
-                      title: 'Welcome guests',
-                      description:
-                          'Accept bookings and communicate with travelers.',
-                      theme: theme,
-                    ),
-                    const SizedBox(height: 12),
-                    _StepItem(
-                      number: '3',
-                      title: 'Get paid',
-                      description:
-                          'Receive payments securely through our platform.',
-                      theme: theme,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 40),
-
-              // CTA Button
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: ListenableBuilder(
-                  listenable: authState,
-                  builder: (context, _) {
-                    return FilledButton(
-                      onPressed: authState.isLoading
-                          ? null
-                          : () async {
-                              final success = await authState.becomeHost();
-                              if (success && context.mounted) {
-                                onBecomeHost();
-                              }
-                            },
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      child: authState.isLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text('Get Started'),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Terms
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Text(
-                  'By becoming a host, you agree to our Host Terms of Service and acknowledge our Host Privacy Policy.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                    ],
                   ),
-                  textAlign: TextAlign.center,
                 ),
-              ),
-              const SizedBox(height: 32),
-            ],
+
+                // Hero section
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Become a Host',
+                        style: theme.textTheme.headlineLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Share your space and earn extra income by hosting travelers from around the world.',
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 32),
+
+                // Benefits
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Why host on Musaafir?',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _BenefitItem(
+                        icon: Icons.attach_money,
+                        title: 'Earn extra income',
+                        description:
+                            'Turn your extra space into extra income. Set your own prices and availability.',
+                        theme: theme,
+                      ),
+                      const SizedBox(height: 16),
+                      _BenefitItem(
+                        icon: Icons.calendar_today,
+                        title: 'Host on your schedule',
+                        description:
+                            'You decide when to host. Block dates, set minimum stays, and manage bookings easily.',
+                        theme: theme,
+                      ),
+                      const SizedBox(height: 16),
+                      _BenefitItem(
+                        icon: Icons.security,
+                        title: 'Host with confidence',
+                        description:
+                            'Our platform provides support and protection for every booking.',
+                        theme: theme,
+                      ),
+                      const SizedBox(height: 16),
+                      _BenefitItem(
+                        icon: Icons.people,
+                        title: 'Meet travelers',
+                        description:
+                            'Connect with guests from different backgrounds and share local experiences.',
+                        theme: theme,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 32),
+
+                // How it works
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'How it works',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _StepItem(
+                        number: '1',
+                        title: 'Create your listing',
+                        description:
+                            'Tell us about your space, add photos, and set your price.',
+                        theme: theme,
+                      ),
+                      const SizedBox(height: 12),
+                      _StepItem(
+                        number: '2',
+                        title: 'Welcome guests',
+                        description:
+                            'Accept bookings and communicate with travelers.',
+                        theme: theme,
+                      ),
+                      const SizedBox(height: 12),
+                      _StepItem(
+                        number: '3',
+                        title: 'Get paid',
+                        description:
+                            'Receive payments securely through our platform.',
+                        theme: theme,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 40),
+
+                // CTA Button
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: ListenableBuilder(
+                    listenable: authState,
+                    builder: (context, _) {
+                      return FilledButton(
+                        onPressed: authState.isLoading
+                            ? null
+                            : () async {
+                                final success = await authState.becomeHost();
+                                if (success && context.mounted) {
+                                  onBecomeHost();
+                                }
+                              },
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        child: authState.isLoading
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text('Get Started'),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Terms
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(
+                    'By becoming a host, you agree to our Host Terms of Service and acknowledge our Host Privacy Policy.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 32),
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }

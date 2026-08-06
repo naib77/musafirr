@@ -85,7 +85,8 @@ class _AvatarUploadState extends State<AvatarUpload> {
           _localImagePath = null;
           _localImageBytes = null;
         });
-        ModernBanner.showError(context, result.errorMessage ?? 'Failed to upload avatar');
+        ModernBanner.showError(
+            context, result.errorMessage ?? 'Failed to upload avatar');
       }
     }
   }

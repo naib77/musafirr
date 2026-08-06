@@ -33,9 +33,7 @@ class TierUpgradeEvent {
 
   List<String> get newBenefits {
     final oldBenefits = previousTier.benefitsList.toSet();
-    return newTier.benefitsList
-        .where((b) => !oldBenefits.contains(b))
-        .toList();
+    return newTier.benefitsList.where((b) => !oldBenefits.contains(b)).toList();
   }
 }
 
@@ -254,7 +252,8 @@ class InMemoryLoyaltyService implements LoyaltyService {
       totalBookings: loyalty.totalBookings + 1,
       totalNightsStayed: loyalty.totalNightsStayed + nights,
       totalAmountSpent: loyalty.totalAmountSpent + amount,
-      loyaltyPoints: loyalty.loyaltyPoints + (amount ~/ 100), // 1 point per ৳100
+      loyaltyPoints:
+          loyalty.loyaltyPoints + (amount ~/ 100), // 1 point per ৳100
       updatedAt: DateTime.now(),
     );
 
@@ -266,7 +265,8 @@ class InMemoryLoyaltyService implements LoyaltyService {
     print('║ User: $userId');
     print('║ Total Bookings: ${updatedLoyalty.totalBookings}');
     print('║ Total Nights: ${updatedLoyalty.totalNightsStayed}');
-    print('║ Total Spent: ৳${updatedLoyalty.totalAmountSpent.toStringAsFixed(0)}');
+    print(
+        '║ Total Spent: ৳${updatedLoyalty.totalAmountSpent.toStringAsFixed(0)}');
     print('║ Points: ${updatedLoyalty.loyaltyPoints}');
     print('╚══════════════════════════════════════════════════════════════╝');
 
@@ -345,7 +345,8 @@ class InMemoryLoyaltyService implements LoyaltyService {
     final discount = Discount(
       id: 'loyalty_discount_${tier.id}',
       name: '${tier.name} Member Discount',
-      description: '${tier.discountPercentage.toStringAsFixed(0)}% off for ${tier.name} members',
+      description:
+          '${tier.discountPercentage.toStringAsFixed(0)}% off for ${tier.name} members',
       type: DiscountType.percentage,
       category: DiscountCategory.loyalty,
       status: DiscountStatus.active,

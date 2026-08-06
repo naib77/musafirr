@@ -21,16 +21,16 @@ class _IdDocType {
 }
 
 const List<_IdDocType> _idDocTypes = [
-  _IdDocType('nid', 'National ID (NID)', Icons.credit_card_rounded,
-      'NID number'),
-  _IdDocType('passport', 'Passport', Icons.flight_takeoff_rounded,
-      'Passport number'),
+  _IdDocType(
+      'nid', 'National ID (NID)', Icons.credit_card_rounded, 'NID number'),
+  _IdDocType(
+      'passport', 'Passport', Icons.flight_takeoff_rounded, 'Passport number'),
   _IdDocType('driving_license', 'Driving License',
       Icons.directions_car_filled_rounded, 'License number'),
   _IdDocType('student_id', 'Student / Admission', Icons.school_rounded,
       'Student / Admission ID'),
-  _IdDocType('office_id', 'Office / Employee ID', Icons.badge_rounded,
-      'Employee ID'),
+  _IdDocType(
+      'office_id', 'Office / Employee ID', Icons.badge_rounded, 'Employee ID'),
 ];
 
 /// Standalone screen that captures and uploads an identity document. Used both
@@ -328,8 +328,9 @@ class _IdentityVerificationScreenState
       body: ResponsiveCenter(
         maxWidth: 640,
         child: SafeArea(
-          child:
-              _step == 0 ? _buildDetailsStep(theme) : _buildDocumentsStep(theme),
+          child: _step == 0
+              ? _buildDetailsStep(theme)
+              : _buildDocumentsStep(theme),
         ),
       ),
     );
@@ -345,56 +346,56 @@ class _IdentityVerificationScreenState
       body: ResponsiveCenter(
         maxWidth: 640,
         child: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 88,
-                  height: 88,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: accent.withValues(alpha: 0.12),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 88,
+                    height: 88,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: accent.withValues(alpha: 0.12),
+                    ),
+                    child: Icon(
+                      verified
+                          ? Icons.verified_rounded
+                          : Icons.hourglass_top_rounded,
+                      size: 44,
+                      color: accent,
+                    ),
                   ),
-                  child: Icon(
+                  const SizedBox(height: 20),
+                  Text(
+                    verified ? 'Identity verified' : 'Under review',
+                    style: theme.textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
                     verified
-                        ? Icons.verified_rounded
-                        : Icons.hourglass_top_rounded,
-                    size: 44,
-                    color: accent,
+                        ? "Your identity has been approved. You're all set to host and book."
+                        : "You've submitted your identity documents. An admin will "
+                            "review and approve them shortly — you'll be able to host "
+                            'and book once approved.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  verified ? 'Identity verified' : 'Under review',
-                  style: theme.textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  verified
-                      ? "Your identity has been approved. You're all set to host and book."
-                      : "You've submitted your identity documents. An admin will "
-                          "review and approve them shortly — you'll be able to host "
-                          'and book once approved.',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                ),
-                const SizedBox(height: 28),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Got it'),
+                  const SizedBox(height: 28),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Got it'),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
         ),
       ),
     );
@@ -424,7 +425,6 @@ class _IdentityVerificationScreenState
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 24),
-
             Text(
               'Document type',
               style: theme.textTheme.bodyMedium
@@ -458,7 +458,6 @@ class _IdentityVerificationScreenState
               ],
             ),
             const SizedBox(height: 24),
-
             TextFormField(
               controller: _idNumberController,
               textInputAction: TextInputAction.done,
@@ -477,7 +476,6 @@ class _IdentityVerificationScreenState
               onFieldSubmitted: (_) => _goToDocuments(),
             ),
             const SizedBox(height: 32),
-
             FilledButton(
               onPressed: _goToDocuments,
               style: FilledButton.styleFrom(

@@ -183,7 +183,8 @@ class PriceCalculator {
     // Calculate service fee on discounted amount
     Money serviceFee = Money.zeroBdt;
     if (includeServiceFee) {
-      serviceFee = discountedAmount.percentage(CurrencyConfig.serviceFeePercent);
+      serviceFee =
+          discountedAmount.percentage(CurrencyConfig.serviceFeePercent);
     }
 
     // Calculate final total

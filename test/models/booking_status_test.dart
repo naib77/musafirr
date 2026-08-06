@@ -4,14 +4,16 @@ import 'package:musafir/models/booking_status.dart';
 void main() {
   group('BookingStatus', () {
     test('has all expected status values', () {
-      expect(BookingStatus.values, containsAll([
-        BookingStatus.pending,
-        BookingStatus.confirmed,
-        BookingStatus.rejected,
-        BookingStatus.active,
-        BookingStatus.completed,
-        BookingStatus.cancelled,
-      ]));
+      expect(
+          BookingStatus.values,
+          containsAll([
+            BookingStatus.pending,
+            BookingStatus.confirmed,
+            BookingStatus.rejected,
+            BookingStatus.active,
+            BookingStatus.completed,
+            BookingStatus.cancelled,
+          ]));
     });
 
     group('isActive', () {

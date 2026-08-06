@@ -87,8 +87,7 @@ class _TypingIndicatorState extends State<TypingIndicator>
     final theme = Theme.of(context);
     final bubbleColor =
         widget.bubbleColor ?? theme.colorScheme.surfaceContainerHighest;
-    final dotColor =
-        widget.dotColor ?? theme.colorScheme.onSurfaceVariant;
+    final dotColor = widget.dotColor ?? theme.colorScheme.onSurfaceVariant;
 
     return AnimatedBuilder(
       animation: _indicatorSpaceAnimation,

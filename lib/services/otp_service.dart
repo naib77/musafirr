@@ -44,7 +44,8 @@ class OtpVerificationResult {
     return const OtpVerificationResult(success: true);
   }
 
-  factory OtpVerificationResult.failure(String message, {int? attemptsRemaining}) {
+  factory OtpVerificationResult.failure(String message,
+      {int? attemptsRemaining}) {
     return OtpVerificationResult(
       success: false,
       errorMessage: message,
@@ -224,7 +225,8 @@ class OtpService {
     // Check resend cooldown
     if (isResendCooldownActive(normalized)) {
       final remaining = getResendCooldownRemaining(normalized);
-      debugPrint('[OTP Service] Cooldown active! Remaining: $remaining seconds');
+      debugPrint(
+          '[OTP Service] Cooldown active! Remaining: $remaining seconds');
       return SmsSendResult.failure(
         'Please wait $remaining seconds before requesting a new code',
       );
@@ -261,7 +263,8 @@ class OtpService {
     final gateway = SmsGatewayFactory.getGateway();
     final message = SmsConfig.getOtpMessage(otp);
 
-    debugPrint('[OTP Service] Sending OTP to $normalized via ${gateway.gatewayName}');
+    debugPrint(
+        '[OTP Service] Sending OTP to $normalized via ${gateway.gatewayName}');
 
     // Print OTP to console in development mode for easy testing
     if (OtpConfig.printOtpToConsole) {
@@ -274,7 +277,8 @@ class OtpService {
 
     // Log master OTP info if configured
     if (OtpConfig.isMasterOtpConfigured) {
-      debugPrint('[OTP Service] Master OTP is enabled. Use "${OtpConfig.masterOtp}" to bypass.');
+      debugPrint(
+          '[OTP Service] Master OTP is enabled. Use "${OtpConfig.masterOtp}" to bypass.');
     }
 
     return gateway.sendSms(
@@ -284,7 +288,8 @@ class OtpService {
   }
 
   /// Verify OTP
-  Future<OtpVerificationResult> verifyOtp(String phoneNumber, String otp) async {
+  Future<OtpVerificationResult> verifyOtp(
+      String phoneNumber, String otp) async {
     final normalized = normalizePhoneNumber(phoneNumber);
 
     // Check master OTP first (if enabled)
@@ -308,7 +313,8 @@ class OtpService {
     // Check if OTP is expired
     if (entry.isExpired) {
       _otpStore.remove(normalized);
-      return OtpVerificationResult.failure('OTP has expired. Please request a new one.');
+      return OtpVerificationResult.failure(
+          'OTP has expired. Please request a new one.');
     }
 
     // Check attempts

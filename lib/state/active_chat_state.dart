@@ -232,7 +232,8 @@ class ActiveChatState extends ChangeNotifier with SafeNotifier {
       ),
     );
 
-    final result = await _messagingService.sendMessage(request, _currentUserId!);
+    final result =
+        await _messagingService.sendMessage(request, _currentUserId!);
 
     _isSendingMessage = false;
 
@@ -368,9 +369,8 @@ class ActiveChatState extends ChangeNotifier with SafeNotifier {
 
   void _subscribeToMessages(String conversationId) {
     _messagesSubscription?.cancel();
-    _messagesSubscription = _messagingService
-        .subscribeToMessages(conversationId)
-        .listen((message) {
+    _messagesSubscription =
+        _messagingService.subscribeToMessages(conversationId).listen((message) {
       _addMessageIfNotExists(message);
       _sortMessages();
       notifyListeners();

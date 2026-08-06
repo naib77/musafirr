@@ -67,9 +67,21 @@ class PlaceholderImages {
 
   // Avatar placeholders - using ui-avatars.com which is CORS-friendly
   static const List<String> _avatarNames = [
-    'Ahmed', 'Fatima', 'Karim', 'Nadia', 'Omar',
-    'Sara', 'Yusuf', 'Aisha', 'Hassan', 'Layla',
-    'Ibrahim', 'Maryam', 'Ali', 'Zainab', 'Tariq',
+    'Ahmed',
+    'Fatima',
+    'Karim',
+    'Nadia',
+    'Omar',
+    'Sara',
+    'Yusuf',
+    'Aisha',
+    'Hassan',
+    'Layla',
+    'Ibrahim',
+    'Maryam',
+    'Ali',
+    'Zainab',
+    'Tariq',
   ];
 
   static String avatar(int index) {

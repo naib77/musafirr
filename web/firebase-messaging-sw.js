@@ -31,7 +31,7 @@ const messaging = firebase.messaging();
 messaging.onBackgroundMessage((payload) => {
   const n = payload.notification || {};
   const data = payload.data || {};
-  self.registration.showNotification(n.title || "Musafir", {
+  self.registration.showNotification(n.title || "Musaafir", {
     body: n.body || "",
     icon: "/icons/Icon-192.png",
     badge: "/icons/Icon-192.png",

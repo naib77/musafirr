@@ -71,7 +71,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen>
         _otpFieldKey++;
       });
 
-      ModernBanner.showError(context, widget.otpState.error ?? 'Verification failed');
+      ModernBanner.showError(
+          context, widget.otpState.error ?? 'Verification failed');
     }
   }
 
@@ -89,7 +90,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen>
       if (success) {
         ModernBanner.showSuccess(context, 'OTP sent successfully');
       } else {
-        ModernBanner.showError(context, widget.otpState.error ?? 'Failed to resend');
+        ModernBanner.showError(
+            context, widget.otpState.error ?? 'Failed to resend');
       }
     }
   }
@@ -117,119 +119,120 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen>
           maxWidth: Responsive.formMaxWidth,
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
-          child: ListenableBuilder(
-            listenable: widget.otpState,
-            builder: (context, _) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 32),
-                  // Icon
-                  Icon(
-                    Icons.sms_outlined,
-                    size: 64,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Title
-                  Text(
-                    'Enter verification code',
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
+            child: ListenableBuilder(
+              listenable: widget.otpState,
+              builder: (context, _) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: 32),
+                    // Icon
+                    Icon(
+                      Icons.sms_outlined,
+                      size: 64,
+                      color: theme.colorScheme.primary,
                     ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
+                    const SizedBox(height: 24),
 
-                  // Phone number display with edit option
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'Code sent to +880 ${widget.otpState.phoneNumber}',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () => widget.otpState.editPhoneNumber(),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        child: const Text('Edit'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 32),
-
-                  // OTP Input - use ValueKey to reset on error
-                  OtpInputField(
-                    key: ValueKey('otp_field_$_otpFieldKey'),
-                    length: 4,
-                    enabled: !widget.otpState.isLoading,
-                    initialValue: _currentOtp,
-                    onChanged: (value) => setState(() => _currentOtp = value),
-                    onCompleted: _handleVerifyOtp,
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Expiry countdown
-                  if (widget.otpState.expiryCountdown > 0)
+                    // Title
                     Text(
-                      'Code expires in ${_formatTime(widget.otpState.expiryCountdown)}',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: widget.otpState.expiryCountdown < 60
-                            ? Colors.red
-                            : theme.colorScheme.onSurfaceVariant,
+                      'Enter verification code',
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
                       ),
                       textAlign: TextAlign.center,
                     ),
-                  const SizedBox(height: 24),
+                    const SizedBox(height: 8),
 
-                  // Verify button
-                  FilledButton(
-                    onPressed: widget.otpState.isLoading || _currentOtp.length != 4
-                        ? null
-                        : () => _handleVerifyOtp(_currentOtp),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                    child: widget.otpState.isLoading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text('Verify'),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Resend button
-                  Center(
-                    child: widget.otpState.canResend
-                        ? TextButton(
-                            onPressed: widget.otpState.isLoading
-                                ? null
-                                : _handleResendOtp,
-                            child: const Text('Resend Code'),
-                          )
-                        : Text(
-                            'Resend code in ${widget.otpState.resendCountdown}s',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
+                    // Phone number display with edit option
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Code sent to +880 ${widget.otpState.phoneNumber}',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
-                  ),
-                ],
-              );
-            },
-          ),
+                        ),
+                        TextButton(
+                          onPressed: () => widget.otpState.editPhoneNumber(),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text('Edit'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 32),
+
+                    // OTP Input - use ValueKey to reset on error
+                    OtpInputField(
+                      key: ValueKey('otp_field_$_otpFieldKey'),
+                      length: 4,
+                      enabled: !widget.otpState.isLoading,
+                      initialValue: _currentOtp,
+                      onChanged: (value) => setState(() => _currentOtp = value),
+                      onCompleted: _handleVerifyOtp,
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Expiry countdown
+                    if (widget.otpState.expiryCountdown > 0)
+                      Text(
+                        'Code expires in ${_formatTime(widget.otpState.expiryCountdown)}',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: widget.otpState.expiryCountdown < 60
+                              ? Colors.red
+                              : theme.colorScheme.onSurfaceVariant,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    const SizedBox(height: 24),
+
+                    // Verify button
+                    FilledButton(
+                      onPressed:
+                          widget.otpState.isLoading || _currentOtp.length != 4
+                              ? null
+                              : () => _handleVerifyOtp(_currentOtp),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      child: widget.otpState.isLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('Verify'),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Resend button
+                    Center(
+                      child: widget.otpState.canResend
+                          ? TextButton(
+                              onPressed: widget.otpState.isLoading
+                                  ? null
+                                  : _handleResendOtp,
+                              child: const Text('Resend Code'),
+                            )
+                          : Text(
+                              'Resend code in ${widget.otpState.resendCountdown}s',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),

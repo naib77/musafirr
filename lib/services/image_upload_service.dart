@@ -187,7 +187,8 @@ class ImageUploadService {
           _detectMimeTypeFromBytes(bytes) ??
           'image/jpeg'; // Safe default for image uploads
 
-      debugPrint('[ImageUploadService] Detected MIME type: $mimeType for ${file.name}');
+      debugPrint(
+          '[ImageUploadService] Detected MIME type: $mimeType for ${file.name}');
 
       var uploadPath = path;
       if (compressionProfile != null) {
@@ -244,19 +245,31 @@ class ImageUploadService {
     }
 
     // PNG: 89 50 4E 47
-    if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) {
+    if (bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47) {
       return 'image/png';
     }
 
     // WebP: RIFF....WEBP
     if (bytes.length >= 12 &&
-        bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
-        bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50) {
+        bytes[0] == 0x52 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46 &&
+        bytes[3] == 0x46 &&
+        bytes[8] == 0x57 &&
+        bytes[9] == 0x45 &&
+        bytes[10] == 0x42 &&
+        bytes[11] == 0x50) {
       return 'image/webp';
     }
 
     // PDF: %PDF
-    if (bytes[0] == 0x25 && bytes[1] == 0x50 && bytes[2] == 0x44 && bytes[3] == 0x46) {
+    if (bytes[0] == 0x25 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x44 &&
+        bytes[3] == 0x46) {
       return 'application/pdf';
     }
 
@@ -313,13 +326,13 @@ class ImageUploadService {
 
       // Upload to Supabase Storage
       await _storage.from(bucket).uploadBinary(
-        path,
-        bytes,
-        fileOptions: FileOptions(
-          contentType: mimeType,
-          upsert: true, // Overwrite if exists
-        ),
-      );
+            path,
+            bytes,
+            fileOptions: FileOptions(
+              contentType: mimeType,
+              upsert: true, // Overwrite if exists
+            ),
+          );
 
       // Get public URL
       final publicUrl = _storage.from(bucket).getPublicUrl(path);
@@ -348,7 +361,8 @@ class ImageUploadService {
     UploadProgressCallback? onProgress,
   }) async {
     final ext = p.extension(image.path).toLowerCase().replaceAll('.', '');
-    final fileName = '${DateTime.now().millisecondsSinceEpoch}_${_generateId()}.$ext';
+    final fileName =
+        '${DateTime.now().millisecondsSinceEpoch}_${_generateId()}.$ext';
     final path = '$listingId/$fileName';
 
     return uploadXFile(
@@ -427,7 +441,8 @@ class ImageUploadService {
     UploadProgressCallback? onProgress,
   }) async {
     final ext = p.extension(file.name).toLowerCase().replaceAll('.', '');
-    final fileName = '${documentType}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+    final fileName =
+        '${documentType}_${DateTime.now().millisecondsSinceEpoch}.$ext';
     final path = '$userId/$fileName';
 
     return uploadPlatformFile(
@@ -510,7 +525,8 @@ class ImageUploadService {
           'document_type': slot,
           'file_path': result.storagePath,
           'file_name': image.name,
-          'mime_type': image.mimeType ?? lookupMimeType(image.path) ?? 'image/jpeg',
+          'mime_type':
+              image.mimeType ?? lookupMimeType(image.path) ?? 'image/jpeg',
         },
         onConflict: 'user_id,document_type',
       );
@@ -556,7 +572,8 @@ class ImageUploadService {
         onConflict: 'user_id,document_type',
       );
     } catch (e) {
-      debugPrint('[ImageUploadService] owner_documents (selfie) record failed: $e');
+      debugPrint(
+          '[ImageUploadService] owner_documents (selfie) record failed: $e');
     }
 
     return result;
@@ -614,7 +631,8 @@ class ImageUploadService {
 
   /// A short-lived signed URL for a private `documents` file (used by admin
   /// review to preview documents the bucket won't serve publicly).
-  Future<String?> signedDocumentUrl(String filePath, {int expiresIn = 3600}) async {
+  Future<String?> signedDocumentUrl(String filePath,
+      {int expiresIn = 3600}) async {
     try {
       return await _storage
           .from(StorageBuckets.documents)
@@ -733,7 +751,8 @@ class ImageUploadService {
   String _generateId() {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
     final random = DateTime.now().microsecondsSinceEpoch;
-    return List.generate(8, (i) => chars[(random + i * 7) % chars.length]).join();
+    return List.generate(8, (i) => chars[(random + i * 7) % chars.length])
+        .join();
   }
 
   /// Get optimized URL with size parameters

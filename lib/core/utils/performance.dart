@@ -112,7 +112,8 @@ class PerformanceMonitor {
                 durations.length,
           ),
           p50: sorted[sorted.length ~/ 2],
-          p95: sorted[(sorted.length * 0.95).floor().clamp(0, sorted.length - 1)],
+          p95: sorted[
+              (sorted.length * 0.95).floor().clamp(0, sorted.length - 1)],
         ),
       );
     });
@@ -246,7 +247,8 @@ class FrameMonitor {
         }
 
         if (kDebugMode) {
-          print('⚠️ Slow frame #$_frameCount: ${totalDuration.inMilliseconds}ms '
+          print(
+              '⚠️ Slow frame #$_frameCount: ${totalDuration.inMilliseconds}ms '
               '(build: ${buildDuration.inMilliseconds}ms, '
               'raster: ${rasterDuration.inMilliseconds}ms)');
         }
@@ -293,7 +295,8 @@ class FrameMonitor {
     print('📊 Total frames: $_frameCount');
     print('📊 Average frame time: ${averageFrameTime.inMicroseconds / 1000}ms');
     print('📊 Estimated FPS: ${estimatedFps.toStringAsFixed(1)}');
-    print('⚠️ Slow frames: $slowFrameCount (${slowFramePercentage.toStringAsFixed(1)}%)');
+    print(
+        '⚠️ Slow frames: $slowFrameCount (${slowFramePercentage.toStringAsFixed(1)}%)');
   }
 
   /// Reset statistics
@@ -384,8 +387,10 @@ class MemoryMonitor {
     print('📊 Snapshots: ${_snapshots.length}');
     if (_snapshots.isNotEmpty) {
       final latest = _snapshots.last;
-      print('📊 Latest heap: ${(latest.heapUsage / 1024 / 1024).toStringAsFixed(2)}MB');
-      print('📊 Latest external: ${(latest.externalUsage / 1024 / 1024).toStringAsFixed(2)}MB');
+      print(
+          '📊 Latest heap: ${(latest.heapUsage / 1024 / 1024).toStringAsFixed(2)}MB');
+      print(
+          '📊 Latest external: ${(latest.externalUsage / 1024 / 1024).toStringAsFixed(2)}MB');
     }
     final trend = getMemoryTrend();
     if (trend != null) {
@@ -439,8 +444,7 @@ class Throttler {
 
   void call(VoidCallback action) {
     final now = DateTime.now();
-    if (_lastExecution == null ||
-        now.difference(_lastExecution!) >= duration) {
+    if (_lastExecution == null || now.difference(_lastExecution!) >= duration) {
       _lastExecution = now;
       action();
     }

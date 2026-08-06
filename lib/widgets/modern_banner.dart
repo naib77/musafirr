@@ -24,7 +24,8 @@ class ModernBanner {
     VoidCallback? onAction,
     double topOffset = 0,
   }) =>
-      _show(context, message, _ToastType.success, duration, actionLabel, onAction,
+      _show(
+          context, message, _ToastType.success, duration, actionLabel, onAction,
           topOffset: topOffset);
 
   static void showError(
@@ -34,7 +35,8 @@ class ModernBanner {
     String? actionLabel,
     VoidCallback? onAction,
   }) =>
-      _show(context, message, _ToastType.error, duration, actionLabel, onAction);
+      _show(
+          context, message, _ToastType.error, duration, actionLabel, onAction);
 
   static void showInfo(
     BuildContext context,
@@ -52,7 +54,8 @@ class ModernBanner {
     String? actionLabel,
     VoidCallback? onAction,
   }) =>
-      _show(context, message, _ToastType.warning, duration, actionLabel, onAction);
+      _show(context, message, _ToastType.warning, duration, actionLabel,
+          onAction);
 
   static void show(
     BuildContext context,
@@ -61,7 +64,8 @@ class ModernBanner {
     String? actionLabel,
     VoidCallback? onAction,
   }) =>
-      _show(context, message, _ToastType.neutral, duration, actionLabel, onAction);
+      _show(context, message, _ToastType.neutral, duration, actionLabel,
+          onAction);
 
   static void _show(
     BuildContext context,
@@ -175,11 +179,20 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
   }
 
   ({Color color, IconData icon}) get _style => switch (widget.type) {
-        _ToastType.success => (color: AppColors.success, icon: Icons.check_circle_rounded),
+        _ToastType.success => (
+            color: AppColors.success,
+            icon: Icons.check_circle_rounded
+          ),
         _ToastType.error => (color: AppColors.error, icon: Icons.error_rounded),
-        _ToastType.warning => (color: AppColors.warning, icon: Icons.warning_rounded),
+        _ToastType.warning => (
+            color: AppColors.warning,
+            icon: Icons.warning_rounded
+          ),
         _ToastType.info => (color: AppColors.info, icon: Icons.info_rounded),
-        _ToastType.neutral => (color: AppColors.brand, icon: Icons.notifications_rounded),
+        _ToastType.neutral => (
+            color: AppColors.brand,
+            icon: Icons.notifications_rounded
+          ),
       };
 
   @override

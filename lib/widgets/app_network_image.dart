@@ -39,7 +39,8 @@ class AppNetworkImage extends StatelessWidget {
       child = errorWidget ?? _defaultError(context);
     } else {
       final dpr = MediaQuery.of(context).devicePixelRatio;
-      final memWidth = decodeWidth != null ? (decodeWidth! * dpr).round() : null;
+      final memWidth =
+          decodeWidth != null ? (decodeWidth! * dpr).round() : null;
       child = CachedNetworkImage(
         imageUrl: url,
         width: width,

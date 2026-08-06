@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../core/utils/external_launcher.dart';
 
 import '../../models/message.dart';
 
@@ -553,11 +553,9 @@ class _LocationContent extends StatelessWidget {
     final metadata = message.metadata as LocationMetadata?;
     if (metadata == null) return;
 
-    final uri = Uri.parse(
-      'https://www.google.com/maps/search/?api=1'
-      '&query=${metadata.latitude},${metadata.longitude}',
-    );
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final url = 'https://www.google.com/maps/search/?api=1'
+        '&query=${metadata.latitude},${metadata.longitude}';
+    await openExternalUrl(url);
   }
 
   @override

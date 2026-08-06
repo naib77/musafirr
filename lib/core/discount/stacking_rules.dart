@@ -71,12 +71,15 @@ class StackingRulesEngine {
       ..sort((a, b) => a.priority.compareTo(b.priority));
 
     // Separate exclusive and stackable discounts
-    final exclusiveDiscounts =
-        sorted.where((d) => d.stackingBehavior == StackingBehavior.exclusive).toList();
-    final stackableDiscounts =
-        sorted.where((d) => d.stackingBehavior == StackingBehavior.stackable).toList();
-    final bestOnlyDiscounts =
-        sorted.where((d) => d.stackingBehavior == StackingBehavior.bestOnly).toList();
+    final exclusiveDiscounts = sorted
+        .where((d) => d.stackingBehavior == StackingBehavior.exclusive)
+        .toList();
+    final stackableDiscounts = sorted
+        .where((d) => d.stackingBehavior == StackingBehavior.stackable)
+        .toList();
+    final bestOnlyDiscounts = sorted
+        .where((d) => d.stackingBehavior == StackingBehavior.bestOnly)
+        .toList();
 
     // Calculate best exclusive discount
     StackingResult? bestExclusive;
@@ -122,7 +125,8 @@ class StackingRulesEngine {
     }
 
     // Return the one with highest total discount
-    return candidates.reduce((a, b) => a.totalDiscount >= b.totalDiscount ? a : b);
+    return candidates
+        .reduce((a, b) => a.totalDiscount >= b.totalDiscount ? a : b);
   }
 
   /// Find the best single discount from a list
@@ -220,7 +224,8 @@ class StackingRulesEngine {
 
       // Check max total discount
       if (_config.maxTotalDiscountPercentage != null) {
-        final maxDiscount = bookingAmount * (_config.maxTotalDiscountPercentage! / 100);
+        final maxDiscount =
+            bookingAmount * (_config.maxTotalDiscountPercentage! / 100);
         if (totalDiscount >= maxDiscount) {
           totalDiscount = maxDiscount;
           break;
@@ -242,7 +247,8 @@ class StackingRulesEngine {
     // Check if discount specifies stackable categories
     if (discount.stackableWithCategories != null) {
       for (final appliedDiscount in applied) {
-        if (!discount.stackableWithCategories!.contains(appliedDiscount.category)) {
+        if (!discount.stackableWithCategories!
+            .contains(appliedDiscount.category)) {
           return false;
         }
       }
@@ -259,7 +265,8 @@ class StackingRulesEngine {
 
       // Check if applied discount restricts stacking
       if (appliedDiscount.stackableWithCategories != null &&
-          !appliedDiscount.stackableWithCategories!.contains(discount.category)) {
+          !appliedDiscount.stackableWithCategories!
+              .contains(discount.category)) {
         return false;
       }
     }

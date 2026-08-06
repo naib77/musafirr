@@ -97,11 +97,11 @@ class UserReferral {
   }
 
   /// Shareable referral link
-  String get shareLink => 'https://musafir.app/ref/$referralCode';
+  String get shareLink => 'https://musaafir.app/ref/$referralCode';
 
   /// Share message
   String get shareMessage =>
-      'Join Musafir and get ৳${refereeDiscountAmount.toStringAsFixed(0)} off your first booking! Use my code: $referralCode or sign up here: $shareLink';
+      'Join Musaafir and get ৳${refereeDiscountAmount.toStringAsFixed(0)} off your first booking! Use my code: $referralCode or sign up here: $shareLink';
 
   factory UserReferral.fromJson(Map<String, dynamic> json) {
     return UserReferral(
@@ -271,7 +271,8 @@ class ReferralCompletion {
       'first_booking_completed_at': firstBookingCompletedAt?.toIso8601String(),
       'referee_discount_applied': refereeDiscountApplied,
       'referrer_reward_credited': referrerRewardCredited,
-      'referrer_reward_credited_at': referrerRewardCreditedAt?.toIso8601String(),
+      'referrer_reward_credited_at':
+          referrerRewardCreditedAt?.toIso8601String(),
       'status': status.databaseValue,
       'created_at': createdAt?.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),

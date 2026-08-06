@@ -80,8 +80,7 @@ class _InboxScreenState extends State<InboxScreen> {
         if (conversations.isEmpty) {
           return const ConversationsEmptyState(
             title: 'No messages yet',
-            subtitle:
-                'When you contact a host or receive a booking, your '
+            subtitle: 'When you contact a host or receive a booking, your '
                 'conversations will appear here.',
             icon: Icons.chat_bubble_outline,
           );

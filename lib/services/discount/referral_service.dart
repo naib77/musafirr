@@ -98,10 +98,12 @@ class InMemoryReferralService implements ReferralService {
         refereeId: 'user_2',
         signedUpAt: DateTime.now().subtract(const Duration(days: 30)),
         firstBookingId: 'booking_1',
-        firstBookingCompletedAt: DateTime.now().subtract(const Duration(days: 25)),
+        firstBookingCompletedAt:
+            DateTime.now().subtract(const Duration(days: 25)),
         refereeDiscountApplied: true,
         referrerRewardCredited: true,
-        referrerRewardCreditedAt: DateTime.now().subtract(const Duration(days: 25)),
+        referrerRewardCreditedAt:
+            DateTime.now().subtract(const Duration(days: 25)),
         status: ReferralStatus.completed,
         refereeName: 'Fatima Khan',
       ),
@@ -111,10 +113,12 @@ class InMemoryReferralService implements ReferralService {
         refereeId: 'user_3',
         signedUpAt: DateTime.now().subtract(const Duration(days: 15)),
         firstBookingId: 'booking_2',
-        firstBookingCompletedAt: DateTime.now().subtract(const Duration(days: 10)),
+        firstBookingCompletedAt:
+            DateTime.now().subtract(const Duration(days: 10)),
         refereeDiscountApplied: true,
         referrerRewardCredited: true,
-        referrerRewardCreditedAt: DateTime.now().subtract(const Duration(days: 10)),
+        referrerRewardCreditedAt:
+            DateTime.now().subtract(const Duration(days: 10)),
         status: ReferralStatus.completed,
         refereeName: 'Karim Hassan',
       ),
@@ -197,7 +201,8 @@ class InMemoryReferralService implements ReferralService {
 
     if (!referral.isActive) {
       return ReferralResult.success(
-        ReferralCodeValidation.invalid('This referral code is no longer active'),
+        ReferralCodeValidation.invalid(
+            'This referral code is no longer active'),
       );
     }
 
@@ -233,10 +238,11 @@ class InMemoryReferralService implements ReferralService {
     final referral = validationResult.referral!;
 
     // Check if user was already referred
-    final existingCompletion = _completions.cast<ReferralCompletion?>().firstWhere(
-          (c) => c?.refereeId == refereeId,
-          orElse: () => null,
-        );
+    final existingCompletion =
+        _completions.cast<ReferralCompletion?>().firstWhere(
+              (c) => c?.refereeId == refereeId,
+              orElse: () => null,
+            );
 
     if (existingCompletion != null) {
       return const ReferralResult.failure(
@@ -340,7 +346,8 @@ class InMemoryReferralService implements ReferralService {
     print('╔══════════════════════════════════════════════════════════════╗');
     print('║              REFERRAL COMPLETED                              ║');
     print('╠══════════════════════════════════════════════════════════════╣');
-    print('║ Referrer ${referral.referrerId} earned ৳${referral.referrerRewardAmount}');
+    print(
+        '║ Referrer ${referral.referrerId} earned ৳${referral.referrerRewardAmount}');
     print('║ Booking ID: $bookingId');
     print('╚══════════════════════════════════════════════════════════════╝');
 

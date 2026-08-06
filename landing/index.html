@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Musaafir — Modern Rental Marketplace</title>
+  <meta name="description" content="Musaafir is a modern rental marketplace. Book verified stays, pay securely, and message hosts directly — or list your place and start earning.">
+
+  <!-- Open Graph / social preview -->
+  <meta property="og:title" content="Musaafir — Modern Rental Marketplace">
+  <meta property="og:description" content="Book verified stays, pay securely, message hosts directly — or list your place and start earning.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://musaafir.io">
+
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="apple-touch-icon" href="Icon-192.png">
+
+  <!--
+    Self-contained on purpose: all CSS is inline, fonts are the system stack, and
+    icons are inline SVG. That means the whole page arrives in a single HTML
+    request and paints almost immediately — the opposite of the Flutter app, which
+    must download a multi-MB bundle before anything shows. First-time visitors land
+    here; the "Open app" buttons hand off to the Flutter app at app.musaafir.io.
+  -->
+  <style>
+    :root {
+      --brand: #0B7285;
+      --brand-dark: #075460;
+      --brand-light: #0E9AA7;
+      --coral: #FF6B6B;
+      --ink: #0E1F23;
+      --muted: #5B6B70;
+      --bg: #F6F8F7;
+      --surface: #FFFFFF;
+      --surface-2: #EDF1F1;
+      --outline: #E2E8E9;
+      --radius: 18px;
+      --shadow: 0 12px 34px rgba(11, 114, 133, 0.10);
+      --maxw: 1120px;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #EAF1F1;
+        --muted: #9FB0B4;
+        --bg: #0B1618;
+        --surface: #13252A;
+        --surface-2: #172E33;
+        --outline: #24393F;
+        --shadow: 0 12px 34px rgba(0, 0, 0, 0.35);
+      }
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font);
+      color: var(--ink);
+      background: var(--bg);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    a { color: inherit; text-decoration: none; }
+    .wrap { width: 100%; max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+    /* ---------- Buttons ---------- */
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-weight: 650; font-size: 15px; line-height: 1;
+      padding: 14px 22px; border-radius: 999px; border: 1px solid transparent;
+      cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn-primary { background: var(--brand); color: #fff; box-shadow: 0 8px 20px rgba(11,114,133,.28); }
+    .btn-primary:hover { background: var(--brand-dark); box-shadow: 0 10px 26px rgba(11,114,133,.36); }
+    .btn-ghost { background: transparent; color: var(--ink); border-color: var(--outline); }
+    .btn-ghost:hover { background: var(--surface-2); }
+
+    /* ---------- Header ---------- */
+    header {
+      position: sticky; top: 0; z-index: 50;
+      background: color-mix(in srgb, var(--bg) 82%, transparent);
+      backdrop-filter: saturate(160%) blur(12px);
+      border-bottom: 1px solid var(--outline);
+    }
+    .nav { display: flex; align-items: center; justify-content: space-between; height: 68px; }
+    .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 800; font-size: 20px; letter-spacing: -.01em; }
+    .brand .mark { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center;
+      background: linear-gradient(135deg, var(--brand-light), var(--brand-dark)); color: #fff; }
+    .nav-links { display: flex; align-items: center; gap: 28px; }
+    .nav-links a.link { color: var(--muted); font-weight: 550; font-size: 15px; }
+    .nav-links a.link:hover { color: var(--ink); }
+    @media (max-width: 720px) { .nav-links .link { display: none; } }
+
+    /* ---------- Hero ---------- */
+    .hero { position: relative; overflow: hidden; }
+    .hero::before {
+      content: ""; position: absolute; inset: -30% -10% auto -10%; height: 620px; z-index: 0;
+      background: radial-gradient(60% 60% at 70% 20%, rgba(14,154,167,.20), transparent 70%),
+                  radial-gradient(50% 50% at 15% 10%, rgba(11,114,133,.16), transparent 70%);
+    }
+    .hero-inner { position: relative; z-index: 1; display: grid; grid-template-columns: 1.05fr .95fr; gap: 48px; align-items: center; padding: 72px 0 84px; }
+    @media (max-width: 900px) { .hero-inner { grid-template-columns: 1fr; gap: 36px; padding: 48px 0 56px; } }
+    .pill { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--brand);
+      background: color-mix(in srgb, var(--brand) 12%, transparent); padding: 7px 13px; border-radius: 999px; margin-bottom: 20px; }
+    h1 { font-size: clamp(34px, 5.2vw, 56px); line-height: 1.05; letter-spacing: -.02em; font-weight: 820; }
+    h1 .accent { background: linear-gradient(120deg, var(--brand-light), var(--brand)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .sub { margin: 20px 0 30px; font-size: clamp(16px, 2vw, 19px); color: var(--muted); max-width: 42ch; }
+    .cta-row { display: flex; flex-wrap: wrap; gap: 12px; }
+    .trust { display: flex; flex-wrap: wrap; gap: 22px; margin-top: 34px; color: var(--muted); font-size: 14px; }
+    .trust b { color: var(--ink); font-size: 20px; font-weight: 800; display: block; letter-spacing: -.01em; }
+
+    /* ---------- Hero mock (pure CSS, no image request) ---------- */
+    .mock { justify-self: center; width: 100%; max-width: 340px; }
+    .phone { background: var(--surface); border: 1px solid var(--outline); border-radius: 32px; padding: 16px; box-shadow: var(--shadow); }
+    .phone .screen { border-radius: 20px; overflow: hidden; border: 1px solid var(--outline); }
+    .phone .photo { height: 150px; background: linear-gradient(135deg, var(--brand-light), var(--brand-dark)); position: relative; }
+    .phone .photo .fav { position: absolute; top: 12px; right: 12px; width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.9); display: grid; place-items: center; color: var(--coral); }
+    .phone .body { padding: 14px 14px 16px; background: var(--surface); }
+    .phone .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .phone .title { font-weight: 700; font-size: 15px; }
+    .phone .rate { font-weight: 800; color: var(--brand); font-size: 15px; }
+    .phone .meta { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+    .phone .stars { color: var(--amber, #F59E0B); font-size: 12.5px; margin-top: 8px; }
+    .phone .cta { margin-top: 14px; text-align: center; background: var(--brand); color: #fff; font-weight: 700; font-size: 14px; padding: 11px; border-radius: 12px; }
+    .phone .line { height: 10px; border-radius: 6px; background: var(--surface-2); margin-top: 10px; }
+    .phone .line.short { width: 55%; }
+
+    /* ---------- Sections ---------- */
+    section.block { padding: 72px 0; }
+    .eyebrow { color: var(--brand); font-weight: 700; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; }
+    h2 { font-size: clamp(26px, 3.6vw, 38px); letter-spacing: -.02em; line-height: 1.1; margin: 10px 0 12px; font-weight: 800; }
+    .lead { color: var(--muted); max-width: 56ch; font-size: 17px; }
+
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 40px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+    .card { background: var(--surface); border: 1px solid var(--outline); border-radius: var(--radius); padding: 24px; transition: transform .18s ease, box-shadow .18s ease; }
+    .card:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
+    .card .ic { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; color: var(--brand);
+      background: color-mix(in srgb, var(--brand) 12%, transparent); margin-bottom: 16px; }
+    .card h3 { font-size: 18px; font-weight: 720; letter-spacing: -.01em; }
+    .card p { color: var(--muted); font-size: 15px; margin-top: 6px; }
+
+    /* ---------- Steps ---------- */
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 40px; counter-reset: step; }
+    @media (max-width: 720px) { .steps { grid-template-columns: 1fr; } }
+    .step { position: relative; padding-left: 8px; }
+    .step .n { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 800;
+      background: var(--brand); color: #fff; margin-bottom: 14px; }
+    .step h3 { font-size: 18px; font-weight: 720; }
+    .step p { color: var(--muted); font-size: 15px; margin-top: 6px; }
+
+    /* ---------- Host CTA band ---------- */
+    .band { background: linear-gradient(120deg, var(--brand-dark), var(--brand)); color: #fff; border-radius: 26px; padding: 48px; position: relative; overflow: hidden; }
+    .band::after { content: ""; position: absolute; right: -60px; top: -60px; width: 260px; height: 260px; border-radius: 50%; background: rgba(255,255,255,.08); }
+    .band h2 { color: #fff; }
+    .band p { color: rgba(255,255,255,.86); max-width: 46ch; margin-top: 8px; }
+    .band .btn-primary { background: #fff; color: var(--brand-dark); box-shadow: none; margin-top: 22px; }
+    .band .btn-primary:hover { background: #eef7f8; }
+
+    /* ---------- Footer ---------- */
+    footer { border-top: 1px solid var(--outline); padding: 40px 0; color: var(--muted); font-size: 14px; margin-top: 24px; }
+    .foot { display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; align-items: center; }
+    .foot .links { display: flex; gap: 22px; flex-wrap: wrap; }
+    .foot a:hover { color: var(--ink); }
+
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap nav">
+      <a class="brand" href="/">
+        <span class="mark" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v9h14v-9"/><path d="M9.5 19v-5h5v5"/></svg>
+        </span>
+        Musaafir
+      </a>
+      <nav class="nav-links">
+        <a class="link" href="#features">Features</a>
+        <a class="link" href="#how">How it works</a>
+        <a class="link" href="#host">Become a host</a>
+        <a class="btn btn-primary" href="https://app.musaafir.io">Open app</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="wrap hero-inner">
+      <div>
+        <span class="pill">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          Verified hosts · Secure payments
+        </span>
+        <h1>Find your next stay,<br><span class="accent">book it in minutes.</span></h1>
+        <p class="sub">Musaafir is a modern rental marketplace — browse verified listings, message hosts directly, and pay securely. Or list your place and start earning.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="https://app.musaafir.io">
+            Explore stays
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+          </a>
+          <a class="btn btn-ghost" href="#host">Become a host</a>
+        </div>
+        <div class="trust">
+          <div><b>Verified</b> identity checks</div>
+          <div><b>Secure</b> SSLCommerz payments</div>
+          <div><b>Direct</b> host messaging</div>
+        </div>
+      </div>
+
+      <!-- Pure-CSS listing card mock (no image download) -->
+      <div class="mock" aria-hidden="true">
+        <div class="phone">
+          <div class="screen">
+            <div class="photo"><div class="fav">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7-4.35-9.5-8.5C.9 9.6 2.4 6 5.8 6c1.9 0 3.2 1 4.2 2.3C11 7 12.3 6 14.2 6c3.4 0 4.9 3.6 3.3 6.5C19 16.65 12 21 12 21z"/></svg>
+            </div></div>
+            <div class="body">
+              <div class="row"><span class="title">Lakeside Studio</span><span class="rate">৳2,400</span></div>
+              <div class="meta">Gulshan, Dhaka · night</div>
+              <div class="stars">★★★★★ <span style="color:var(--muted)">(48)</span></div>
+              <div class="cta">Reserve</div>
+            </div>
+          </div>
+          <div class="line"></div>
+          <div class="line short"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FEATURES -->
+  <section class="block" id="features">
+    <div class="wrap">
+      <span class="eyebrow">Why Musaafir</span>
+      <h2>Everything you need to book with confidence</h2>
+      <p class="lead">Built for trust on both sides of the booking — guests get verified places and secure checkout, hosts get real tools to manage and grow.</p>
+      <div class="grid">
+        <div class="card">
+          <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></div>
+          <h3>Verified identities</h3>
+          <p>Hosts and guests pass identity verification, so you always know who you're dealing with.</p>
+        </div>
+        <div class="card">
+          <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></div>
+          <h3>Secure payments</h3>
+          <p>Pay through SSLCommerz with cards, mobile wallets and bank transfer — fully validated server-side.</p>
+        </div>
+        <div class="card">
+          <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+          <h3>Message hosts directly</h3>
+          <p>Ask questions and coordinate check-in over built-in chat before and during your stay.</p>
+        </div>
+        <div class="card">
+          <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12v9H4v-9"/><path d="M2 7h20v5H2z"/><path d="M12 22V7"/><path d="M12 7C12 7 8 3 5.5 5.5 3 8 12 7 12 7z"/></svg></div>
+          <h3>Discounts & rewards</h3>
+          <p>Apply coupons at checkout and earn through loyalty and referrals every time you book.</p>
+        </div>
+        <div class="card">
+          <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5 8 12 8 12s8-7 8-12a8 8 0 0 0-8-8z"/></svg></div>
+          <h3>Real listings, mapped</h3>
+          <p>See exactly where you'll stay with maps, photos and honest reviews from past guests.</p>
+        </div>
+        <div class="card">
+          <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 5-6"/></svg></div>
+          <h3>Tools for hosts</h3>
+          <p>Manage listings, reservations and earnings, and climb the host leaderboard as you grow.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="block" id="how" style="background:var(--surface-2);">
+    <div class="wrap">
+      <span class="eyebrow">How it works</span>
+      <h2>Book a stay in three steps</h2>
+      <div class="steps">
+        <div class="step"><div class="n">1</div><h3>Discover</h3><p>Search verified listings by location, dates and price. Filter to exactly what you need.</p></div>
+        <div class="step"><div class="n">2</div><h3>Book & pay</h3><p>Reserve instantly and pay securely. Message your host to sort out the details.</p></div>
+        <div class="step"><div class="n">3</div><h3>Stay & review</h3><p>Check in, enjoy your stay, and leave a review to help the next traveller.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOST BAND -->
+  <section class="block" id="host">
+    <div class="wrap">
+      <div class="band">
+        <span class="eyebrow" style="color:rgba(255,255,255,.85)">For hosts</span>
+        <h2>Turn your space into income</h2>
+        <p>List in minutes, set your own price, and manage bookings, guests and earnings from one dashboard. Get paid securely with every reservation.</p>
+        <a class="btn btn-primary" href="https://app.musaafir.io">
+          Start hosting
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap foot">
+      <div>
+        <span class="brand" style="font-size:17px;">
+          <span class="mark" aria-hidden="true" style="width:26px;height:26px;border-radius:7px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v9h14v-9"/><path d="M9.5 19v-5h5v5"/></svg>
+          </span>
+          Musaafir
+        </span>
+        <div style="margin-top:8px;">© 2026 Musaafir. Modern rental marketplace.</div>
+      </div>
+      <div class="links">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#host">Become a host</a>
+        <a href="https://app.musaafir.io">Open app</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

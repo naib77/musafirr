@@ -390,7 +390,8 @@ class DiscountEligibilityChecker {
       return DiscountEligibilityResult.ineligible(
         discount: discount,
         reason: IneligibilityReason.checkInDateInvalid,
-        details: 'Check-in must be after ${_formatDate(discount.checkInStartDate!)}',
+        details:
+            'Check-in must be after ${_formatDate(discount.checkInStartDate!)}',
       );
     }
 
@@ -399,7 +400,8 @@ class DiscountEligibilityChecker {
       return DiscountEligibilityResult.ineligible(
         discount: discount,
         reason: IneligibilityReason.checkInDateInvalid,
-        details: 'Check-in must be before ${_formatDate(discount.checkInEndDate!)}',
+        details:
+            'Check-in must be before ${_formatDate(discount.checkInEndDate!)}',
       );
     }
 
@@ -415,7 +417,8 @@ class DiscountEligibilityChecker {
 
     // Check stacking rules
     if (context.existingDiscounts.isNotEmpty) {
-      final stackingResult = _checkStacking(discount, context.existingDiscounts);
+      final stackingResult =
+          _checkStacking(discount, context.existingDiscounts);
       if (!stackingResult.canStack) {
         return DiscountEligibilityResult.ineligible(
           discount: discount,
@@ -493,9 +496,7 @@ class DiscountEligibilityChecker {
 
       case DiscountType.fixedAmount:
         // Don't exceed booking amount
-        return discount.value > bookingAmount
-            ? bookingAmount
-            : discount.value;
+        return discount.value > bookingAmount ? bookingAmount : discount.value;
 
       case DiscountType.freeNights:
         if (discount.freeNightsConfig != null &&

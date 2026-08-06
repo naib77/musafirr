@@ -559,8 +559,7 @@ class _CampaignCountdownState extends State<CampaignCountdown> {
             fontSize: 14,
           ),
         ),
-        if (days > 0)
-          _buildTimeUnit(days.toString().padLeft(2, '0'), 'D'),
+        if (days > 0) _buildTimeUnit(days.toString().padLeft(2, '0'), 'D'),
         _buildTimeUnit(hours.toString().padLeft(2, '0'), 'H'),
         _buildTimeUnit(minutes.toString().padLeft(2, '0'), 'M'),
         _buildTimeUnit(seconds.toString().padLeft(2, '0'), 'S'),

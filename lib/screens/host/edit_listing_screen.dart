@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/utils/responsive.dart';
 import '../../data/facility_catalog.dart';
 import '../../models/listing.dart';
+import '../../models/listing_purpose.dart';
 import '../../models/listing_type.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../services/image_upload_service.dart';
@@ -11,6 +12,7 @@ import '../../widgets/app_text_field.dart';
 import '../../widgets/image_picker_grid.dart';
 import '../../widgets/location_picker.dart';
 import '../../widgets/modern_banner.dart';
+import '../../widgets/purpose_selector.dart';
 import 'listing_pricing_fields.dart';
 
 /// Single-scroll form for editing an existing listing.
@@ -48,6 +50,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
   late final TextEditingController _monthlyPriceController;
 
   late ListingType _propertyType;
+  late Set<ListingPurpose> _selectedPurposes;
   late double _latitude;
   late double _longitude;
   late int _maxGuests;
@@ -133,6 +136,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
         text: l.monthlyRate?.toStringAsFixed(0) ?? '35000');
 
     _propertyType = l.type;
+    _selectedPurposes = l.purposeTags.toSet();
     _latitude = l.latitude;
     _longitude = l.longitude;
     _maxGuests = l.maxGuests;
@@ -387,6 +391,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
         landmark: _nullIfEmpty(_landmarkController.text),
         country: l.country,
         type: _propertyType,
+        purposeTags: _selectedPurposes.toList(),
         latitude: _latitude,
         longitude: _longitude,
         hourlyRate: hourlyRate,
@@ -525,373 +530,385 @@ class _EditListingScreenState extends State<EditListingScreen> {
       body: ResponsiveCenter(
         maxWidth: 760,
         child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ---------- Basics ----------
-            _sectionTitle(theme, 'Basics'),
-            AppTextField(
-              controller: _titleController,
-              label: 'Listing title',
-              hint: 'e.g., Cozy room in the heart of Gulshan',
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 16),
-            AppTextField(
-              controller: _descriptionController,
-              label: 'Description (optional)',
-              hint: 'Describe the unique features of your space...',
-              maxLines: 5,
-              onChanged: (_) => setState(() {}),
-            ),
-
-            _sectionDivider(),
-
-            // ---------- Type ----------
-            _sectionTitle(theme, 'Property type'),
-            Wrap(
-              spacing: 8,
-              children: ListingType.values.map((t) {
-                return ChoiceChip(
-                  label: Text(t.title),
-                  selected: _propertyType == t,
-                  onSelected: (_) => setState(() => _propertyType = t),
-                );
-              }).toList(),
-            ),
-
-            _sectionDivider(),
-
-            // ---------- Location ----------
-            _sectionTitle(theme, 'Location'),
-            AppTextField(
-              controller: _houseNoController,
-              label: 'House / Building no.',
-              hint: 'e.g., House 12',
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 16),
-            AppTextField(
-              controller: _flatFloorController,
-              label: 'Flat / Floor (optional)',
-              hint: 'e.g., B-4, 3rd floor',
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 16),
-            AppTextField(
-              controller: _streetController,
-              label: 'Road / Street',
-              hint: 'e.g., Road 27',
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 16),
-            AppTextField(
-              controller: _areaController,
-              label: 'Area / Locality',
-              hint: 'e.g., Banani',
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 16),
-            AppTextField(
-              controller: _cityController,
-              label: 'City',
-              hint: 'e.g., Dhaka',
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 16),
-            AppTextField(
-              controller: _postalCodeController,
-              label: 'Postal code (optional)',
-              hint: 'e.g., 1213',
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 16),
-            AppTextField(
-              controller: _landmarkController,
-              label: 'Landmark (optional)',
-              hint: 'e.g., Near Banani Bridge',
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () async {
-                final result = await LocationPicker.show(
-                  context,
-                  initialLatitude: _latitude,
-                  initialLongitude: _longitude,
-                );
-                if (result != null) {
-                  setState(() {
-                    _latitude = result.latitude;
-                    _longitude = result.longitude;
-                    // Seed Road/Street from the geocoded address only if empty.
-                    if (result.address != null &&
-                        result.address!.isNotEmpty &&
-                        _streetController.text.trim().isEmpty) {
-                      _streetController.text = result.address!;
-                    }
-                  });
-                }
-              },
-              icon: const Icon(Icons.map),
-              label: const Text('Pick on Map'),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Location: ${_latitude.toStringAsFixed(4)}, ${_longitude.toStringAsFixed(4)}',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ---------- Basics ----------
+              _sectionTitle(theme, 'Basics'),
+              AppTextField(
+                controller: _titleController,
+                label: 'Listing title',
+                hint: 'e.g., Cozy room in the heart of Gulshan',
+                onChanged: (_) => setState(() {}),
               ),
-            ),
-
-            _sectionDivider(),
-
-            // ---------- Details ----------
-            _sectionTitle(theme, 'Details'),
-            _CounterRow(
-              label: 'Guests',
-              value: _maxGuests,
-              min: 1,
-              max: 16,
-              onChanged: (v) => setState(() => _maxGuests = v),
-            ),
-            const Divider(),
-            _CounterRow(
-              label: 'Bedrooms',
-              value: _bedrooms,
-              min: 1,
-              max: 10,
-              onChanged: (v) => setState(() => _bedrooms = v),
-            ),
-            const Divider(),
-            _CounterRow(
-              label: 'Beds',
-              value: _beds,
-              min: 1,
-              max: 20,
-              onChanged: (v) => setState(() => _beds = v),
-            ),
-            const Divider(),
-            _CounterRow(
-              label: 'Bathrooms',
-              value: _bathrooms,
-              min: 1,
-              max: 10,
-              onChanged: (v) => setState(() => _bathrooms = v),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Amenities',
-              style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            for (final group in FacilityCatalog.groups) ...[
-              const SizedBox(height: 12),
-              Text(
-                group.title,
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
+              const SizedBox(height: 16),
+              AppTextField(
+                controller: _descriptionController,
+                label: 'Description (optional)',
+                hint: 'Describe the unique features of your space...',
+                maxLines: 5,
+                onChanged: (_) => setState(() {}),
               ),
-              const SizedBox(height: 8),
+
+              _sectionDivider(),
+
+              // ---------- Type ----------
+              _sectionTitle(theme, 'Property type'),
               Wrap(
                 spacing: 8,
-                runSpacing: 8,
-                children: group.facilities.map((facility) {
-                  final selected = _selectedAmenities.contains(facility.name);
-                  return FilterChip(
-                    selected: selected,
-                    label: Text(facility.name),
-                    avatar: Icon(facility.icon, size: 18),
-                    onSelected: (_) => setState(() {
-                      if (selected) {
-                        _selectedAmenities.remove(facility.name);
-                      } else {
-                        _selectedAmenities.add(facility.name);
-                      }
-                    }),
+                children: ListingType.values.map((t) {
+                  return ChoiceChip(
+                    label: Text(t.title),
+                    selected: _propertyType == t,
+                    onSelected: (_) => setState(() => _propertyType = t),
                   );
                 }).toList(),
               ),
-            ],
 
-            _sectionDivider(),
+              _sectionDivider(),
 
-            // ---------- Pricing ----------
-            _sectionTitle(theme, 'Pricing'),
-            Text(
-              'Turn off any plan you don\'t offer — at least one must stay on.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+              // ---------- Purpose ----------
+              PurposeSelector(
+                selected: _selectedPurposes,
+                onChanged: (next) => setState(() {
+                  _selectedPurposes
+                    ..clear()
+                    ..addAll(next);
+                }),
               ),
-            ),
-            const SizedBox(height: 16),
-            PlanPriceRow(
-              controller: _hourlyPriceController,
-              label: 'Hourly rate',
-              icon: Icons.schedule,
-              hint: '150',
-              helperText: 'For short stays (1-12 hours)',
-              enabled: _hourlyEnabled,
-              onToggled: (v) => setState(() => _hourlyEnabled = v),
-              onChanged: () => setState(() {}),
-              minController: _minHoursController,
-              maxController: _maxHoursController,
-              unitLabel: 'hours',
-            ),
-            const SizedBox(height: 20),
-            PlanPriceRow(
-              controller: _dailyPriceController,
-              label: 'Daily rate (per night)',
-              icon: Icons.today,
-              hint: '1500',
-              helperText: 'For overnight stays',
-              enabled: _dailyEnabled,
-              onToggled: (v) => setState(() => _dailyEnabled = v),
-              onChanged: () => setState(() {}),
-              minController: _minNightsController,
-              maxController: _maxNightsController,
-              unitLabel: 'nights',
-            ),
-            const SizedBox(height: 20),
-            PlanPriceRow(
-              controller: _monthlyPriceController,
-              label: 'Monthly rate',
-              icon: Icons.calendar_month,
-              hint: '35000',
-              helperText: 'For long-term stays (1+ months)',
-              enabled: _monthlyEnabled,
-              onToggled: (v) => setState(() => _monthlyEnabled = v),
-              onChanged: () => setState(() {}),
-              minController: _minMonthsController,
-              maxController: _maxMonthsController,
-              unitLabel: 'months',
-            ),
-            if (pricingError != null) ...[
+
+              _sectionDivider(),
+
+              // ---------- Location ----------
+              _sectionTitle(theme, 'Location'),
+              AppTextField(
+                controller: _houseNoController,
+                label: 'House / Building no.',
+                hint: 'e.g., House 12',
+                onChanged: (_) => setState(() {}),
+              ),
               const SizedBox(height: 16),
+              AppTextField(
+                controller: _flatFloorController,
+                label: 'Flat / Floor (optional)',
+                hint: 'e.g., B-4, 3rd floor',
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 16),
+              AppTextField(
+                controller: _streetController,
+                label: 'Road / Street',
+                hint: 'e.g., Road 27',
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 16),
+              AppTextField(
+                controller: _areaController,
+                label: 'Area / Locality',
+                hint: 'e.g., Banani',
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 16),
+              AppTextField(
+                controller: _cityController,
+                label: 'City',
+                hint: 'e.g., Dhaka',
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 16),
+              AppTextField(
+                controller: _postalCodeController,
+                label: 'Postal code (optional)',
+                hint: 'e.g., 1213',
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 16),
+              AppTextField(
+                controller: _landmarkController,
+                label: 'Landmark (optional)',
+                hint: 'e.g., Near Banani Bridge',
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final result = await LocationPicker.show(
+                    context,
+                    initialLatitude: _latitude,
+                    initialLongitude: _longitude,
+                  );
+                  if (result != null) {
+                    setState(() {
+                      _latitude = result.latitude;
+                      _longitude = result.longitude;
+                      // Seed Road/Street from the geocoded address only if empty.
+                      if (result.address != null &&
+                          result.address!.isNotEmpty &&
+                          _streetController.text.trim().isEmpty) {
+                        _streetController.text = result.address!;
+                      }
+                    });
+                  }
+                },
+                icon: const Icon(Icons.map),
+                label: const Text('Pick on Map'),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Location: ${_latitude.toStringAsFixed(4)}, ${_longitude.toStringAsFixed(4)}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+
+              _sectionDivider(),
+
+              // ---------- Details ----------
+              _sectionTitle(theme, 'Details'),
+              _CounterRow(
+                label: 'Guests',
+                value: _maxGuests,
+                min: 1,
+                max: 16,
+                onChanged: (v) => setState(() => _maxGuests = v),
+              ),
+              const Divider(),
+              _CounterRow(
+                label: 'Bedrooms',
+                value: _bedrooms,
+                min: 1,
+                max: 10,
+                onChanged: (v) => setState(() => _bedrooms = v),
+              ),
+              const Divider(),
+              _CounterRow(
+                label: 'Beds',
+                value: _beds,
+                min: 1,
+                max: 20,
+                onChanged: (v) => setState(() => _beds = v),
+              ),
+              const Divider(),
+              _CounterRow(
+                label: 'Bathrooms',
+                value: _bathrooms,
+                min: 1,
+                max: 10,
+                onChanged: (v) => setState(() => _bathrooms = v),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Amenities',
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              for (final group in FacilityCatalog.groups) ...[
+                const SizedBox(height: 12),
+                Text(
+                  group.title,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: group.facilities.map((facility) {
+                    final selected = _selectedAmenities.contains(facility.name);
+                    return FilterChip(
+                      selected: selected,
+                      label: Text(facility.name),
+                      avatar: Icon(facility.icon, size: 18),
+                      onSelected: (_) => setState(() {
+                        if (selected) {
+                          _selectedAmenities.remove(facility.name);
+                        } else {
+                          _selectedAmenities.add(facility.name);
+                        }
+                      }),
+                    );
+                  }).toList(),
+                ),
+              ],
+
+              _sectionDivider(),
+
+              // ---------- Pricing ----------
+              _sectionTitle(theme, 'Pricing'),
+              Text(
+                'Turn off any plan you don\'t offer — at least one must stay on.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 16),
+              PlanPriceRow(
+                controller: _hourlyPriceController,
+                label: 'Hourly rate',
+                icon: Icons.schedule,
+                hint: '150',
+                helperText: 'For short stays (1-12 hours)',
+                enabled: _hourlyEnabled,
+                onToggled: (v) => setState(() => _hourlyEnabled = v),
+                onChanged: () => setState(() {}),
+                minController: _minHoursController,
+                maxController: _maxHoursController,
+                unitLabel: 'hours',
+              ),
+              const SizedBox(height: 20),
+              PlanPriceRow(
+                controller: _dailyPriceController,
+                label: 'Daily rate (per night)',
+                icon: Icons.today,
+                hint: '1500',
+                helperText: 'For overnight stays',
+                enabled: _dailyEnabled,
+                onToggled: (v) => setState(() => _dailyEnabled = v),
+                onChanged: () => setState(() {}),
+                minController: _minNightsController,
+                maxController: _maxNightsController,
+                unitLabel: 'nights',
+              ),
+              const SizedBox(height: 20),
+              PlanPriceRow(
+                controller: _monthlyPriceController,
+                label: 'Monthly rate',
+                icon: Icons.calendar_month,
+                hint: '35000',
+                helperText: 'For long-term stays (1+ months)',
+                enabled: _monthlyEnabled,
+                onToggled: (v) => setState(() => _monthlyEnabled = v),
+                onChanged: () => setState(() {}),
+                minController: _minMonthsController,
+                maxController: _maxMonthsController,
+                unitLabel: 'months',
+              ),
+              if (pricingError != null) ...[
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Icon(Icons.error_outline,
+                        size: 18, color: theme.colorScheme.error),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        pricingError,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.error,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+
+              _sectionDivider(),
+
+              // ---------- House rules ----------
+              _sectionTitle(theme, 'House rules'),
               Row(
                 children: [
-                  Icon(Icons.error_outline,
-                      size: 18, color: theme.colorScheme.error),
-                  const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      pricingError,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.error,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    child: AppTextField(
+                      controller: _checkInTimeController,
+                      label: 'Check-in time',
+                      hint: 'e.g. 2:00 PM',
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: AppTextField(
+                      controller: _checkOutTimeController,
+                      label: 'Check-out time',
+                      hint: 'e.g. 11:00 AM',
                     ),
                   ),
                 ],
               ),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Smoking allowed'),
+                value: _smokingAllowed,
+                onChanged: (v) => setState(() => _smokingAllowed = v),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Pets allowed'),
+                value: _petsAllowed,
+                onChanged: (v) => setState(() => _petsAllowed = v),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Parties / events allowed'),
+                value: _partiesAllowed,
+                onChanged: (v) => setState(() => _partiesAllowed = v),
+              ),
+              const SizedBox(height: 12),
+              AppTextField(
+                controller: _quietHoursController,
+                label: 'Quiet hours (optional)',
+                hint: 'e.g. 10:00 PM – 7:00 AM',
+              ),
+              const SizedBox(height: 16),
+              AppTextField(
+                controller: _additionalRulesController,
+                label: 'Additional rules (optional)',
+                hint: 'Anything else guests should know',
+                maxLines: 4,
+              ),
+
+              _sectionDivider(),
+
+              // ---------- Check-in & access (private) ----------
+              _sectionTitle(theme, 'Check-in & access'),
+              Text(
+                'Private — shared with a guest only after their booking is '
+                'confirmed. Never shown publicly.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 12),
+              AppTextField(
+                controller: _directionsController,
+                label: 'Directions (optional)',
+                hint: 'Landmarks, floor, which gate to use…',
+                maxLines: 4,
+              ),
+              const SizedBox(height: 16),
+              AppTextField(
+                controller: _wifiNameController,
+                label: 'Wi-Fi network name (optional)',
+                hint: 'e.g. Musaafir_5G',
+              ),
+              const SizedBox(height: 16),
+              AppTextField(
+                controller: _wifiPasswordController,
+                label: 'Wi-Fi password (optional)',
+                hint: 'Shared only with confirmed guests',
+              ),
+              const SizedBox(height: 16),
+              AppTextField(
+                controller: _accessCodeController,
+                label: 'Door / access code (optional)',
+                hint: 'e.g. 1234# or lockbox code',
+              ),
+
+              _sectionDivider(),
+
+              // ---------- Photos ----------
+              ImagePickerGrid(
+                images: _images,
+                onImagesChanged: (imgs) => setState(() => _images = imgs),
+                enabled: !_isSaving,
+              ),
             ],
-
-            _sectionDivider(),
-
-            // ---------- House rules ----------
-            _sectionTitle(theme, 'House rules'),
-            Row(
-              children: [
-                Expanded(
-                  child: AppTextField(
-                    controller: _checkInTimeController,
-                    label: 'Check-in time',
-                    hint: 'e.g. 2:00 PM',
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: AppTextField(
-                    controller: _checkOutTimeController,
-                    label: 'Check-out time',
-                    hint: 'e.g. 11:00 AM',
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Smoking allowed'),
-              value: _smokingAllowed,
-              onChanged: (v) => setState(() => _smokingAllowed = v),
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Pets allowed'),
-              value: _petsAllowed,
-              onChanged: (v) => setState(() => _petsAllowed = v),
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Parties / events allowed'),
-              value: _partiesAllowed,
-              onChanged: (v) => setState(() => _partiesAllowed = v),
-            ),
-            const SizedBox(height: 12),
-            AppTextField(
-              controller: _quietHoursController,
-              label: 'Quiet hours (optional)',
-              hint: 'e.g. 10:00 PM – 7:00 AM',
-            ),
-            const SizedBox(height: 16),
-            AppTextField(
-              controller: _additionalRulesController,
-              label: 'Additional rules (optional)',
-              hint: 'Anything else guests should know',
-              maxLines: 4,
-            ),
-
-            _sectionDivider(),
-
-            // ---------- Check-in & access (private) ----------
-            _sectionTitle(theme, 'Check-in & access'),
-            Text(
-              'Private — shared with a guest only after their booking is '
-              'confirmed. Never shown publicly.',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 12),
-            AppTextField(
-              controller: _directionsController,
-              label: 'Directions (optional)',
-              hint: 'Landmarks, floor, which gate to use…',
-              maxLines: 4,
-            ),
-            const SizedBox(height: 16),
-            AppTextField(
-              controller: _wifiNameController,
-              label: 'Wi-Fi network name (optional)',
-              hint: 'e.g. Musafir_5G',
-            ),
-            const SizedBox(height: 16),
-            AppTextField(
-              controller: _wifiPasswordController,
-              label: 'Wi-Fi password (optional)',
-              hint: 'Shared only with confirmed guests',
-            ),
-            const SizedBox(height: 16),
-            AppTextField(
-              controller: _accessCodeController,
-              label: 'Door / access code (optional)',
-              hint: 'e.g. 1234# or lockbox code',
-            ),
-
-            _sectionDivider(),
-
-            // ---------- Photos ----------
-            ImagePickerGrid(
-              images: _images,
-              onImagesChanged: (imgs) => setState(() => _images = imgs),
-              enabled: !_isSaving,
-            ),
-          ],
+          ),
         ),
-      ),
       ),
       bottomNavigationBar: Container(
         padding: EdgeInsets.fromLTRB(

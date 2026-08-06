@@ -217,7 +217,8 @@ class SavingsBanner extends StatelessWidget {
                   Colors.green.shade600,
                 ],
               ),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(16)),
             ),
             child: Row(
               children: [
@@ -252,7 +253,9 @@ class SavingsBanner extends StatelessWidget {
           ),
 
           // Breakdown
-          if (showBreakdown && appliedDiscounts != null && appliedDiscounts!.isNotEmpty)
+          if (showBreakdown &&
+              appliedDiscounts != null &&
+              appliedDiscounts!.isNotEmpty)
             Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -389,7 +392,8 @@ class SavingsBanner extends StatelessWidget {
               alignment: WrapAlignment.center,
               children: appliedDiscounts!.map((applied) {
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(12),

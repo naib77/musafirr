@@ -77,8 +77,7 @@ class _ScheduledMessagesScreenState extends State<ScheduledMessagesScreen> {
 
     setState(() {
       _templates = [
-        for (final t in _templates!)
-          t.trigger == result.trigger ? result : t,
+        for (final t in _templates!) t.trigger == result.trigger ? result : t,
       ];
     });
     final saved = await _repository.save(result);
@@ -101,60 +100,60 @@ class _ScheduledMessagesScreenState extends State<ScheduledMessagesScreen> {
       body: ResponsiveCenter(
         maxWidth: 760,
         child: templates == null
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                Text(
-                  'Messages sent to your guests automatically at each stage '
-                  'of their stay. Variables like {{guest_name}} are filled '
-                  'in per booking.',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Text(
+                    'Messages sent to your guests automatically at each stage '
+                    'of their stay. Variables like {{guest_name}} are filled '
+                    'in per booking.',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                // Language: applied automatically to every automated message
-                // sent to guests.
-                Text('Language', style: theme.textTheme.titleSmall),
-                const SizedBox(height: 8),
-                SegmentedButton<MessageLanguage>(
-                  segments: const [
-                    ButtonSegment(
-                      value: MessageLanguage.en,
-                      label: Text('English'),
+                  // Language: applied automatically to every automated message
+                  // sent to guests.
+                  Text('Language', style: theme.textTheme.titleSmall),
+                  const SizedBox(height: 8),
+                  SegmentedButton<MessageLanguage>(
+                    segments: const [
+                      ButtonSegment(
+                        value: MessageLanguage.en,
+                        label: Text('English'),
+                      ),
+                      ButtonSegment(
+                        value: MessageLanguage.bn,
+                        label: Text('বাংলা'),
+                      ),
+                    ],
+                    selected: {_language},
+                    onSelectionChanged: (selection) =>
+                        _setLanguage(selection.first),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Guests receive these messages in the selected language. '
+                    'Messages you edit yourself are sent exactly as written.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
-                    ButtonSegment(
-                      value: MessageLanguage.bn,
-                      label: Text('বাংলা'),
+                  ),
+                  const SizedBox(height: 20),
+
+                  for (final template in templates) ...[
+                    _TemplateCard(
+                      template: template,
+                      language: _language,
+                      onToggle: (enabled) => _toggle(template, enabled),
+                      onEdit: () => _edit(template),
                     ),
+                    const SizedBox(height: 12),
                   ],
-                  selected: {_language},
-                  onSelectionChanged: (selection) =>
-                      _setLanguage(selection.first),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Guests receive these messages in the selected language. '
-                  'Messages you edit yourself are sent exactly as written.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                for (final template in templates) ...[
-                  _TemplateCard(
-                    template: template,
-                    language: _language,
-                    onToggle: (enabled) => _toggle(template, enabled),
-                    onEdit: () => _edit(template),
-                  ),
-                  const SizedBox(height: 12),
                 ],
-              ],
-            ),
+              ),
       ),
     );
   }
@@ -208,8 +207,7 @@ class _TemplateCard extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          template.trigger ==
-                                  MessageTemplateTrigger.checkIn
+                          template.trigger == MessageTemplateTrigger.checkIn
                               ? 'Sent ${template.leadDays} day(s) before '
                                   'arrival'
                               : template.trigger.description,
@@ -308,8 +306,7 @@ class _TemplateEditorScreenState extends State<_TemplateEditorScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isCheckIn =
-        widget.template.trigger == MessageTemplateTrigger.checkIn;
+    final isCheckIn = widget.template.trigger == MessageTemplateTrigger.checkIn;
 
     return Scaffold(
       appBar: AppBar(
@@ -328,7 +325,6 @@ class _TemplateEditorScreenState extends State<_TemplateEditorScreen> {
             ),
           ),
           const SizedBox(height: 16),
-
           if (isCheckIn) ...[
             Row(
               children: [
@@ -355,7 +351,6 @@ class _TemplateEditorScreenState extends State<_TemplateEditorScreen> {
             ),
             const SizedBox(height: 16),
           ],
-
           TextField(
             controller: _controller,
             maxLines: 14,
@@ -366,7 +361,6 @@ class _TemplateEditorScreenState extends State<_TemplateEditorScreen> {
             ),
           ),
           const SizedBox(height: 12),
-
           Text('Insert a variable', style: theme.textTheme.titleSmall),
           const SizedBox(height: 8),
           Wrap(
@@ -381,7 +375,6 @@ class _TemplateEditorScreenState extends State<_TemplateEditorScreen> {
             ],
           ),
           const SizedBox(height: 16),
-
           TextButton.icon(
             onPressed: () {
               _controller.text = MessageTemplate.defaultContentFor(

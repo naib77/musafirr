@@ -47,8 +47,10 @@ class DiscountStateNotifier extends ChangeNotifier with SafeNotifier {
   bool get isLoading => _isLoading;
   bool get isValidatingCode => _isValidatingCode;
   bool get isApplyingDiscounts => _isApplyingDiscounts;
-  List<Discount> get availableDiscounts => List.unmodifiable(_availableDiscounts);
-  List<PromoCodeSuggestion> get suggestedCodes => List.unmodifiable(_suggestedCodes);
+  List<Discount> get availableDiscounts =>
+      List.unmodifiable(_availableDiscounts);
+  List<PromoCodeSuggestion> get suggestedCodes =>
+      List.unmodifiable(_suggestedCodes);
   DiscountSummary? get appliedDiscountSummary => _appliedDiscountSummary;
   PromoCodeValidationResult? get promoCodeValidationResult =>
       _promoCodeValidationResult;
@@ -217,7 +219,8 @@ class DiscountStateNotifier extends ChangeNotifier with SafeNotifier {
   }
 
   /// Calculate potential savings without actually applying
-  Future<DiscountSummary?> calculatePotentialSavings({String? promoCode}) async {
+  Future<DiscountSummary?> calculatePotentialSavings(
+      {String? promoCode}) async {
     if (_bookingAmount <= 0) return null;
 
     try {

@@ -185,7 +185,8 @@ class DiscountEngine {
     // Split into applied and rejected based on stacking
     final appliedResults = <DiscountEligibilityResult>[];
     for (final result in eligibleResults) {
-      if (stackingResult.appliedDiscounts.any((d) => d.id == result.discount.id)) {
+      if (stackingResult.appliedDiscounts
+          .any((d) => d.id == result.discount.id)) {
         appliedResults.add(result);
       } else {
         rejectedResults.add(DiscountEligibilityResult.ineligible(
@@ -248,8 +249,8 @@ class DiscountEngine {
     }
 
     // Sort by calculated amount (highest first)
-    results.sort((a, b) =>
-        (b.calculatedAmount ?? 0).compareTo(a.calculatedAmount ?? 0));
+    results.sort(
+        (a, b) => (b.calculatedAmount ?? 0).compareTo(a.calculatedAmount ?? 0));
 
     return results;
   }

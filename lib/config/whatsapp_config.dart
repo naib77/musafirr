@@ -33,7 +33,8 @@ class WhatsAppConfig {
   String get mediaEndpoint => '$baseUrl/$phoneNumberId/media';
 
   /// Template endpoint
-  String get templateEndpoint => '$baseUrl/$businessAccountId/message_templates';
+  String get templateEndpoint =>
+      '$baseUrl/$businessAccountId/message_templates';
 
   /// Development/stub configuration
   static const WhatsAppConfig stub = WhatsAppConfig(
@@ -91,7 +92,8 @@ class WhatsAppTemplate {
     return {
       'name': name,
       'language': {'code': language},
-      if (components.isNotEmpty) 'components': components.map((c) => c.toJson()).toList(),
+      if (components.isNotEmpty)
+        'components': components.map((c) => c.toJson()).toList(),
     };
   }
 }
@@ -113,7 +115,8 @@ class WhatsAppTemplateComponent {
   Map<String, dynamic> toJson() {
     return {
       'type': type,
-      if (parameters.isNotEmpty) 'parameters': parameters.map((p) => p.toJson()).toList(),
+      if (parameters.isNotEmpty)
+        'parameters': parameters.map((p) => p.toJson()).toList(),
       if (subType != null) 'sub_type': subType,
       if (index != null) 'index': index,
     };
@@ -201,7 +204,7 @@ class WhatsAppMedia {
   }
 }
 
-/// Pre-defined templates for Musafir
+/// Pre-defined templates for Musaafir
 class MusafirWhatsAppTemplates {
   static const String defaultLanguage = 'en';
 

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/utils/responsive.dart';
 import '../../models/listing.dart';
 import '../../models/listing_type.dart';
+import '../../models/listing_purpose.dart';
 import '../../models/search_filters.dart';
 import '../../repositories/musafir_repository.dart';
 import '../leaderboard/host_leaderboard_screen.dart';
@@ -15,6 +16,8 @@ import '../../state/notification_state.dart';
 import '../../state/search_state.dart';
 import '../../widgets/animations/fade_slide_in.dart';
 import '../../widgets/category_scroll.dart';
+import '../../widgets/landmark_picker_sheet.dart';
+import '../../widgets/purpose_scroll.dart';
 import '../../widgets/hover_lift.dart';
 import '../../widgets/listing_card_modern.dart';
 import '../../widgets/notification_bell.dart';
@@ -91,6 +94,50 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   /// Whether a server-side search is currently driving the results.
   bool get _searchActive => widget.searchState.filters.hasActiveFilters;
+
+  /// The active guest-facing purpose (null for "Any purpose"; general is a host
+  /// default, not a guest filter, so it reads as "Any").
+  ListingPurpose? get _selectedPurpose {
+    final tags = widget.searchState.filters.purposeTags;
+    final p = tags.isEmpty ? null : tags.first;
+    return (p == null || p == ListingPurpose.general) ? null : p;
+  }
+
+  Future<void> _onPurposeSelected(ListingPurpose? purpose) async {
+    final filters = widget.searchState.filters;
+    if (purpose == null) {
+      widget.searchState.updateFilters(
+          filters.copyWith(purposeTags: const [], clearLandmark: true));
+      return;
+    }
+    final type = purpose.landmarkType;
+    if (type == null) {
+      widget.searchState.updateFilters(
+          filters.copyWith(purposeTags: [purpose], clearLandmark: true));
+      return;
+    }
+    // Purpose needs a landmark to rank distance from — let the guest pick one.
+    final title = switch (purpose) {
+      ListingPurpose.medical => 'Choose a hospital',
+      ListingPurpose.exam => 'Choose an exam center',
+      ListingPurpose.tourism => 'Choose an attraction',
+      ListingPurpose.business => 'Choose a business hub',
+      ListingPurpose.student => 'Choose a university',
+      ListingPurpose.general => '',
+    };
+    final chosen = await showLandmarkPicker(
+      context,
+      repository: widget.repository,
+      type: type,
+      title: title,
+    );
+    if (chosen == null) return; // dismissed — leave current filters untouched
+    widget.searchState.updateFilters(filters.copyWith(
+      purposeTags: [purpose],
+      landmark: chosen,
+      radiusMeters: 15000,
+    ));
+  }
 
   List<Listing> get _filteredListings {
     // When a search is active, show its server-side results (already ranked and
@@ -335,6 +382,15 @@ class _ExploreScreenState extends State<ExploreScreen> {
               onTypeSelected: (type) {
                 setState(() => _selectedType = type);
               },
+            ),
+
+            // Purpose scroll (stay near a hospital / exam center / …).
+            ListenableBuilder(
+              listenable: widget.searchState,
+              builder: (context, _) => PurposeScroll(
+                selected: _selectedPurpose,
+                onSelected: _onPurposeSelected,
+              ),
             ),
 
             const Divider(height: 1),

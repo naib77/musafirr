@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'landmark.dart';
+import 'listing_purpose.dart';
 import 'listing_type.dart';
 
 /// Search mode for date/time selection
@@ -27,6 +29,9 @@ class SearchFilters {
     this.singleDate,
     this.startTime,
     this.endTime,
+    this.purposeTags = const [],
+    this.landmark,
+    this.radiusMeters,
   });
 
   final String? location;
@@ -46,6 +51,12 @@ class SearchFilters {
   final TimeOfDay? startTime;
   final TimeOfDay? endTime;
 
+  // Purpose-based search: what the stay is for, and (optionally) a landmark to
+  // rank by distance to (e.g. a specific hospital / exam center).
+  final List<ListingPurpose> purposeTags;
+  final Landmark? landmark;
+  final int? radiusMeters;
+
   bool get hasActiveFilters =>
       location != null ||
       checkIn != null ||
@@ -55,7 +66,9 @@ class SearchFilters {
       minPrice != null ||
       maxPrice != null ||
       propertyTypes.isNotEmpty ||
-      amenities.isNotEmpty;
+      amenities.isNotEmpty ||
+      purposeTags.isNotEmpty ||
+      landmark != null;
 
   bool get hasDateSelection {
     if (dateMode == SearchDateMode.dateRange) {
@@ -124,10 +137,14 @@ class SearchFilters {
     DateTime? singleDate,
     TimeOfDay? startTime,
     TimeOfDay? endTime,
+    List<ListingPurpose>? purposeTags,
+    Landmark? landmark,
+    int? radiusMeters,
     bool clearLocation = false,
     bool clearDates = false,
     bool clearPriceRange = false,
     bool clearTime = false,
+    bool clearLandmark = false,
   }) {
     return SearchFilters(
       location: clearLocation ? null : (location ?? this.location),
@@ -144,6 +161,9 @@ class SearchFilters {
       singleDate: clearDates ? null : (singleDate ?? this.singleDate),
       startTime: clearTime ? null : (startTime ?? this.startTime),
       endTime: clearTime ? null : (endTime ?? this.endTime),
+      purposeTags: purposeTags ?? this.purposeTags,
+      landmark: clearLandmark ? null : (landmark ?? this.landmark),
+      radiusMeters: clearLandmark ? null : (radiusMeters ?? this.radiusMeters),
     );
   }
 

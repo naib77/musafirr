@@ -885,7 +885,8 @@ class _EnhancedBookingCard extends StatelessWidget {
                         child: FilledButton.icon(
                           onPressed: onPay,
                           icon: const Icon(Icons.lock_outline, size: 16),
-                          label: Text('Pay ৳${booking.totalPrice.toStringAsFixed(0)}'),
+                          label: Text(
+                              'Pay ৳${booking.totalPrice.toStringAsFixed(0)}'),
                           style: FilledButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             visualDensity: VisualDensity.compact,
@@ -983,8 +984,9 @@ class _EnhancedBookingCard extends StatelessWidget {
         return (
           icon: Icons.hourglass_top_rounded,
           text: 'Awaiting host · $t',
-          color:
-              remaining.inHours < 6 ? Colors.red.shade700 : Colors.orange.shade800,
+          color: remaining.inHours < 6
+              ? Colors.red.shade700
+              : Colors.orange.shade800,
         );
       case BookingStatus.confirmed:
         final canCheckIn = bookingRules.canCheckIn(booking, now: now);
@@ -1020,8 +1022,9 @@ class _EnhancedBookingCard extends StatelessWidget {
       case BookingStatus.active:
         final total = booking.numberOfNights;
         final left = booking.effectiveCheckOut.difference(now).inDays;
-        final checkoutHint =
-            left > 0 ? '$left day${left == 1 ? '' : 's'} left' : 'checkout today';
+        final checkoutHint = left > 0
+            ? '$left day${left == 1 ? '' : 's'} left'
+            : 'checkout today';
         // Hourly / sub-day stays have no "nights" — a "Day X of N" counter is
         // meaningless (it would read "Day 1 of 0").
         if (total < 1) {
@@ -1033,8 +1036,8 @@ class _EnhancedBookingCard extends StatelessWidget {
         }
         // Clamp so an active stay lingering past checkout (within the
         // auto-complete grace) never reads "Day 4 of 3".
-        final stayed =
-            (now.difference(booking.effectiveCheckIn).inDays + 1).clamp(1, total);
+        final stayed = (now.difference(booking.effectiveCheckIn).inDays + 1)
+            .clamp(1, total);
         return (
           icon: Icons.hotel_rounded,
           text: 'Day $stayed of $total · $checkoutHint',
@@ -1050,7 +1053,8 @@ class _EnhancedBookingCard extends StatelessWidget {
           return daysLeft > 0
               ? (
                   icon: Icons.rate_review_rounded,
-                  text: '$daysLeft day${daysLeft == 1 ? '' : 's'} left to review',
+                  text:
+                      '$daysLeft day${daysLeft == 1 ? '' : 's'} left to review',
                   color: Colors.amber.shade800,
                 )
               : (
@@ -1489,7 +1493,8 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
         return _DetailsBanner(
           icon: Icons.hourglass_bottom_rounded,
           title: 'Stay Window Ended',
-          subtitle: 'Being finalized — this will move to your past trips shortly',
+          subtitle:
+              'Being finalized — this will move to your past trips shortly',
           color: Colors.blueGrey,
         );
       }

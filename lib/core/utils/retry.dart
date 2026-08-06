@@ -40,7 +40,8 @@ class RetryConfig {
     final clampedDelay = min(exponentialDelay, maxDelay.inMilliseconds);
 
     // Add jitter
-    final jitter = (Random().nextDouble() * 2 - 1) * jitterFactor * clampedDelay;
+    final jitter =
+        (Random().nextDouble() * 2 - 1) * jitterFactor * clampedDelay;
     final finalDelay = (clampedDelay + jitter).round();
 
     return Duration(milliseconds: max(0, finalDelay));
@@ -115,7 +116,8 @@ Future<T> retry<T>(
 
   stopwatch.stop();
   if (kDebugMode) {
-    print('❌ All $attempt retry attempts failed after ${stopwatch.elapsed.inMilliseconds}ms');
+    print(
+        '❌ All $attempt retry attempts failed after ${stopwatch.elapsed.inMilliseconds}ms');
   }
 
   Error.throwWithStackTrace(lastError!, lastStackTrace!);
@@ -164,7 +166,8 @@ class CircuitBreaker {
   final Duration timeout;
 
   /// Callback when state changes
-  final void Function(CircuitState oldState, CircuitState newState)? onStateChange;
+  final void Function(CircuitState oldState, CircuitState newState)?
+      onStateChange;
 
   CircuitState _state = CircuitState.closed;
   int _failureCount = 0;
@@ -333,7 +336,8 @@ class Bulkhead {
   int get queueSize => _queue.length;
 
   /// Check if can accept new operation
-  bool get canAccept => _activeCount < maxConcurrent || _queue.length < maxQueue;
+  bool get canAccept =>
+      _activeCount < maxConcurrent || _queue.length < maxQueue;
 
   /// Execute an operation with bulkhead protection
   Future<T> execute<T>(Future<T> Function() operation) async {
@@ -461,7 +465,8 @@ class RateLimiter {
   void _refill() {
     final now = DateTime.now();
     final elapsed = now.difference(_lastRefill);
-    final tokensToAdd = (elapsed.inMilliseconds / refillInterval.inMilliseconds) * refillRate;
+    final tokensToAdd =
+        (elapsed.inMilliseconds / refillInterval.inMilliseconds) * refillRate;
 
     _tokens = min(_tokens + tokensToAdd, maxTokens.toDouble());
     _lastRefill = now;

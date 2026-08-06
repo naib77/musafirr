@@ -15,7 +15,8 @@ class ImageCompressionProfile {
 
   /// Listing / gallery photos. High enough to stay crisp full-screen on the
   /// guest side, while cutting a multi-MB phone JPEG to a few hundred KB.
-  static const listing = ImageCompressionProfile(maxDimension: 1920, quality: 82);
+  static const listing =
+      ImageCompressionProfile(maxDimension: 1920, quality: 82);
 
   /// Avatars only ever render small, so a tight cap is fine.
   static const avatar = ImageCompressionProfile(maxDimension: 512, quality: 80);
@@ -54,11 +55,14 @@ class ImageCompressionService {
       return CompressedImage(bytes: input, mimeType: sourceMime);
     }
     try {
-      final out =
-          kIsWeb ? await _compressWeb(input, profile) : await _compressNative(input, profile);
+      final out = kIsWeb
+          ? await _compressWeb(input, profile)
+          : await _compressNative(input, profile);
       // Only keep the result if it's genuinely smaller; otherwise the original
       // was already tiny and re-encoding would just add generational loss.
-      if (out != null && out.bytes.isNotEmpty && out.bytes.length < input.length) {
+      if (out != null &&
+          out.bytes.isNotEmpty &&
+          out.bytes.length < input.length) {
         return out;
       }
     } catch (e) {
@@ -89,18 +93,21 @@ class ImageCompressionService {
     final decoded = img.decodeImage(input);
     if (decoded == null) return null;
 
-    final tooBig =
-        decoded.width > profile.maxDimension || decoded.height > profile.maxDimension;
+    final tooBig = decoded.width > profile.maxDimension ||
+        decoded.height > profile.maxDimension;
     final resized = tooBig
         ? img.copyResize(
             decoded,
             // Constrain the longer edge so neither dimension exceeds the cap.
-            width: decoded.width >= decoded.height ? profile.maxDimension : null,
-            height: decoded.height > decoded.width ? profile.maxDimension : null,
+            width:
+                decoded.width >= decoded.height ? profile.maxDimension : null,
+            height:
+                decoded.height > decoded.width ? profile.maxDimension : null,
           )
         : decoded;
 
     final jpg = img.encodeJpg(resized, quality: profile.quality);
-    return CompressedImage(bytes: Uint8List.fromList(jpg), mimeType: 'image/jpeg');
+    return CompressedImage(
+        bytes: Uint8List.fromList(jpg), mimeType: 'image/jpeg');
   }
 }

@@ -163,7 +163,8 @@ class OtpStateNotifier extends ChangeNotifier with SafeNotifier {
 
     _error = errorMessage;
     if (attemptsRemaining != null && attemptsRemaining > 0) {
-      _error = '${errorMessage ?? 'Invalid OTP'}. $attemptsRemaining attempts remaining.';
+      _error =
+          '${errorMessage ?? 'Invalid OTP'}. $attemptsRemaining attempts remaining.';
     }
     _safeNotifyListeners();
     return false;

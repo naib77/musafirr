@@ -251,7 +251,8 @@ class _OptimizedImageState extends State<OptimizedImage>
 
           if (widget.config.enableCache) {
             final estimatedSize = (info.image.width * info.image.height * 4);
-            imageCache.put(optimizedUrl, _imageProvider!, estimatedSize: estimatedSize);
+            imageCache.put(optimizedUrl, _imageProvider!,
+                estimatedSize: estimatedSize);
           }
         }
       },
@@ -302,8 +303,8 @@ class _OptimizedImageState extends State<OptimizedImage>
         break;
 
       case ImageLoadingState.error:
-        imageWidget =
-            widget.errorWidget ?? _buildError(context, _error ?? 'Unknown error');
+        imageWidget = widget.errorWidget ??
+            _buildError(context, _error ?? 'Unknown error');
         break;
     }
 
@@ -602,11 +603,15 @@ class _LazyImageGalleryState extends State<LazyImageGallery> {
     final scrollOffset = _scrollController.offset;
     final itemHeight = viewportHeight / widget.crossAxisCount;
 
-    final firstVisible = (scrollOffset / itemHeight).floor() * widget.crossAxisCount;
-    final lastVisible = firstVisible + (viewportHeight / itemHeight).ceil() * widget.crossAxisCount;
+    final firstVisible =
+        (scrollOffset / itemHeight).floor() * widget.crossAxisCount;
+    final lastVisible = firstVisible +
+        (viewportHeight / itemHeight).ceil() * widget.crossAxisCount;
 
-    final start = (firstVisible - widget.preloadCount).clamp(0, widget.imageUrls.length);
-    final end = (lastVisible + widget.preloadCount).clamp(0, widget.imageUrls.length);
+    final start =
+        (firstVisible - widget.preloadCount).clamp(0, widget.imageUrls.length);
+    final end =
+        (lastVisible + widget.preloadCount).clamp(0, widget.imageUrls.length);
 
     for (var i = start; i < end; i++) {
       ImagePreloader.instance.preload(widget.imageUrls[i], context);

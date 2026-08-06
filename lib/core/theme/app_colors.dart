@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Centralized color tokens for the Musafir design system.
+/// Centralized color tokens for the Musaafir design system.
 ///
 /// Brand stays teal; accents lean colorful and modern (multi-accent system).
 /// Light theme only for now — values are grouped so a dark variant can be

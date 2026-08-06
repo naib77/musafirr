@@ -20,7 +20,7 @@ export function normalizePhone(phone: string): string {
 /// Internal Supabase-auth email derived from the phone. Must match the Flutter
 /// client's _phoneToEmail exactly.
 export function phoneToEmail(normalizedPhone: string): string {
-  return `phone.${normalizedPhone}@musafir.app`;
+  return `phone.${normalizedPhone}@musaafir.app`;
 }
 
 /// GenNet msisdn format (8801673293542) from an app-normalized number.
@@ -72,7 +72,7 @@ export function generateCsmsId(): string {
 }
 
 export function otpMessage(otp: string): string {
-  return `Your Musafir verification code is: ${otp}. Valid for ${OTP_TTL_MINUTES} minutes.`;
+  return `Your Musaafir verification code is: ${otp}. Valid for ${OTP_TTL_MINUTES} minutes.`;
 }
 
 /// Parse the MASTER_OTP_PHONES secret (comma/space separated) into a normalized

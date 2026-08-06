@@ -66,7 +66,8 @@ class _TenantDashboardState extends State<TenantDashboard> {
         });
         _search();
       } else {
-        ModernBanner.showError(context, 'Could not get your location. Please check permissions.');
+        ModernBanner.showError(
+            context, 'Could not get your location. Please check permissions.');
       }
     }
   }
@@ -187,11 +188,11 @@ class _TenantDashboardState extends State<TenantDashboard> {
         return StatefulBuilder(
           builder: (context, setModalState) {
             final estimatedCost = (switch (selectedDuration.unitLabel) {
-                  'hour' => listing.hourlyRate,
-                  'day' => listing.dailyRate,
-                  _ => listing.monthlyRate,
-                } ??
-                0) *
+                      'hour' => listing.hourlyRate,
+                      'day' => listing.dailyRate,
+                      _ => listing.monthlyRate,
+                    } ??
+                    0) *
                 selectedDuration.multiplier;
             return Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -239,7 +240,8 @@ class _TenantDashboardState extends State<TenantDashboard> {
                       );
                       Navigator.pop(context);
                       _search();
-                      ModernBanner.showSuccess(this.context, 'Booked until ${booking.endAt}. Total ${booking.totalPrice.toStringAsFixed(0)} BDT.');
+                      ModernBanner.showSuccess(this.context,
+                          'Booked until ${booking.endAt}. Total ${booking.totalPrice.toStringAsFixed(0)} BDT.');
                     },
                     child: const Text('Confirm Booking'),
                   ),

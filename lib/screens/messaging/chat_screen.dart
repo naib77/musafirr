@@ -119,13 +119,15 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     if (!mounted) return;
     if (!result.success || result.publicUrl == null) {
-      ModernBanner.showError(context, 'Could not send the photo. Please try again.');
+      ModernBanner.showError(
+          context, 'Could not send the photo. Please try again.');
       return;
     }
-    final sent =
-        await widget.messagingState.sendImageMessage(imageUrl: result.publicUrl!);
+    final sent = await widget.messagingState
+        .sendImageMessage(imageUrl: result.publicUrl!);
     if (!sent && mounted) {
-      ModernBanner.showError(context, 'Could not send the photo. Please try again.');
+      ModernBanner.showError(
+          context, 'Could not send the photo. Please try again.');
     }
   }
 
@@ -144,7 +146,8 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     if (!mounted) return;
     if (!result.success || result.publicUrl == null) {
-      ModernBanner.showError(context, 'Could not send the file. Please try again.');
+      ModernBanner.showError(
+          context, 'Could not send the file. Please try again.');
       return;
     }
     final sent = await widget.messagingState.sendFileMessage(
@@ -154,7 +157,8 @@ class _ChatScreenState extends State<ChatScreen> {
       sizeBytes: picked.size,
     );
     if (!sent && mounted) {
-      ModernBanner.showError(context, 'Could not send the file. Please try again.');
+      ModernBanner.showError(
+          context, 'Could not send the file. Please try again.');
     }
   }
 
@@ -324,107 +328,114 @@ class _ChatScreenState extends State<ChatScreen> {
                 onChanged: (v) => setState(() => _searchQuery = v.trim()),
               )
             : Row(
-          children: [
-            // Avatar
-            CircleAvatar(
-              radius: 18,
-              backgroundImage: widget.otherParticipantAvatarUrl != null
-                  ? NetworkImage(widget.otherParticipantAvatarUrl!)
-                  : null,
-              child: widget.otherParticipantAvatarUrl == null
-                  ? Text(
-                      widget.otherParticipantName.substring(0, 1).toUpperCase(),
-                      style: const TextStyle(fontSize: 14),
-                    )
-                  : null,
-            ),
-            const SizedBox(width: 12),
-
-            // Name, booking context, and status
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    widget.otherParticipantName,
-                    style: theme.textTheme.titleMedium,
+                  // Avatar
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundImage: widget.otherParticipantAvatarUrl != null
+                        ? NetworkImage(widget.otherParticipantAvatarUrl!)
+                        : null,
+                    child: widget.otherParticipantAvatarUrl == null
+                        ? Text(
+                            widget.otherParticipantName
+                                .substring(0, 1)
+                                .toUpperCase(),
+                            style: const TextStyle(fontSize: 14),
+                          )
+                        : null,
                   ),
-                  // Booking context or typing indicator
-                  ListenableBuilder(
-                    listenable: widget.messagingState,
-                    builder: (context, _) {
-                      final typingUsers = widget.messagingState.typingIndicators
-                          .map((t) => t.userName ?? 'Someone')
-                          .toList();
+                  const SizedBox(width: 12),
 
-                      if (typingUsers.isNotEmpty) {
-                        return Text(
-                          'typing...',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.primary,
-                            fontStyle: FontStyle.italic,
-                          ),
-                        );
-                      }
+                  // Name, booking context, and status
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          widget.otherParticipantName,
+                          style: theme.textTheme.titleMedium,
+                        ),
+                        // Booking context or typing indicator
+                        ListenableBuilder(
+                          listenable: widget.messagingState,
+                          builder: (context, _) {
+                            final typingUsers = widget
+                                .messagingState.typingIndicators
+                                .map((t) => t.userName ?? 'Someone')
+                                .toList();
 
-                      // Show booking context when not typing
-                      if (widget.bookingContextSubtitle != null &&
-                          widget.bookingContextSubtitle!.isNotEmpty) {
-                        return Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                widget.bookingContextSubtitle!,
+                            if (typingUsers.isNotEmpty) {
+                              return Text(
+                                'typing...',
                                 style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
+                                  color: theme.colorScheme.primary,
+                                  fontStyle: FontStyle.italic,
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (widget.isArchived) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color:
-                                      theme.colorScheme.surfaceContainerHighest,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  'Ended',
-                                  style: theme.textTheme.labelSmall?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                    fontSize: 10,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        );
-                      }
+                              );
+                            }
 
-                      return const SizedBox.shrink();
-                    },
+                            // Show booking context when not typing
+                            if (widget.bookingContextSubtitle != null &&
+                                widget.bookingContextSubtitle!.isNotEmpty) {
+                              return Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      widget.bookingContextSubtitle!,
+                                      style:
+                                          theme.textTheme.bodySmall?.copyWith(
+                                        color:
+                                            theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  if (widget.isArchived) ...[
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: theme.colorScheme
+                                            .surfaceContainerHighest,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        'Ended',
+                                        style: theme.textTheme.labelSmall
+                                            ?.copyWith(
+                                          color: theme
+                                              .colorScheme.onSurfaceVariant,
+                                          fontSize: 10,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              );
+                            }
+
+                            return const SizedBox.shrink();
+                          },
+                        ),
+                      ],
+                    ),
                   ),
+
+                  // Channel indicator (if multiple channels available)
+                  if (_availableChannels.length > 1)
+                    ChannelSelector(
+                      selectedChannel: _selectedChannel,
+                      availableChannels: _availableChannels,
+                      onChannelSelected: _onChannelSelected,
+                      compact: true,
+                    ),
                 ],
               ),
-            ),
-
-            // Channel indicator (if multiple channels available)
-            if (_availableChannels.length > 1)
-              ChannelSelector(
-                selectedChannel: _selectedChannel,
-                availableChannels: _availableChannels,
-                onChannelSelected: _onChannelSelected,
-                compact: true,
-              ),
-          ],
-        ),
         actions: _isSearching
             ? [
                 if (_searchQuery.isNotEmpty)
@@ -437,153 +448,154 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
               ]
             : [
-          IconButton(
-            icon: const Icon(Icons.phone),
-            onPressed: () {
-              ModernBanner.showInfo(context, 'Voice calls coming soon');
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.videocam),
-            onPressed: () {
-              ModernBanner.showInfo(context, 'Video calls coming soon');
-            },
-          ),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              switch (value) {
-                case 'search':
-                  _startSearch();
-                  break;
-                case 'media':
-                  _openMediaGallery();
-                  break;
-                case 'channels':
-                  _showChannelSettings();
-                  break;
-                case 'mute':
-                  ModernBanner.showSuccess(context, 'Notifications muted');
-                  break;
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'search',
-                child: Row(
-                  children: [
-                    Icon(Icons.search),
-                    SizedBox(width: 12),
-                    Text('Search'),
+                IconButton(
+                  icon: const Icon(Icons.phone),
+                  onPressed: () {
+                    ModernBanner.showInfo(context, 'Voice calls coming soon');
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.videocam),
+                  onPressed: () {
+                    ModernBanner.showInfo(context, 'Video calls coming soon');
+                  },
+                ),
+                PopupMenuButton<String>(
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'search':
+                        _startSearch();
+                        break;
+                      case 'media':
+                        _openMediaGallery();
+                        break;
+                      case 'channels':
+                        _showChannelSettings();
+                        break;
+                      case 'mute':
+                        ModernBanner.showSuccess(
+                            context, 'Notifications muted');
+                        break;
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'search',
+                      child: Row(
+                        children: [
+                          Icon(Icons.search),
+                          SizedBox(width: 12),
+                          Text('Search'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'media',
+                      child: Row(
+                        children: [
+                          Icon(Icons.photo_library),
+                          SizedBox(width: 12),
+                          Text('Media & Links'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'channels',
+                      child: Row(
+                        children: [
+                          Icon(Icons.multiple_stop),
+                          SizedBox(width: 12),
+                          Text('Message Channels'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'mute',
+                      child: Row(
+                        children: [
+                          Icon(Icons.notifications_off),
+                          SizedBox(width: 12),
+                          Text('Mute'),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
-              ),
-              const PopupMenuItem(
-                value: 'media',
-                child: Row(
-                  children: [
-                    Icon(Icons.photo_library),
-                    SizedBox(width: 12),
-                    Text('Media & Links'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'channels',
-                child: Row(
-                  children: [
-                    Icon(Icons.multiple_stop),
-                    SizedBox(width: 12),
-                    Text('Message Channels'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'mute',
-                child: Row(
-                  children: [
-                    Icon(Icons.notifications_off),
-                    SizedBox(width: 12),
-                    Text('Mute'),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
+              ],
       ),
       body: ResponsiveCenter(
         maxWidth: 900,
         child: Column(
-        children: [
-          // Messages list
-          Expanded(
-            child: ListenableBuilder(
-              listenable: widget.messagingState,
-              builder: (context, _) {
-                if (widget.messagingState.isLoadingMessages) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                final allMessages = widget.messagingState.messages;
-
-                if (allMessages.isEmpty) {
-                  return _EmptyChatState(
-                    otherParticipantName: widget.otherParticipantName,
-                    onSelectSuggestion: _sendMessage,
-                  );
-                }
-
-                // In search mode, show only messages whose text matches.
-                if (_isSearching && _searchQuery.isNotEmpty) {
-                  final q = _searchQuery.toLowerCase();
-                  final matches = allMessages
-                      .where((m) => m.content.toLowerCase().contains(q))
-                      .toList();
-                  if (matches.isEmpty) {
-                    return _NoSearchResults(query: _searchQuery);
+          children: [
+            // Messages list
+            Expanded(
+              child: ListenableBuilder(
+                listenable: widget.messagingState,
+                builder: (context, _) {
+                  if (widget.messagingState.isLoadingMessages) {
+                    return const Center(child: CircularProgressIndicator());
                   }
+
+                  final allMessages = widget.messagingState.messages;
+
+                  if (allMessages.isEmpty) {
+                    return _EmptyChatState(
+                      otherParticipantName: widget.otherParticipantName,
+                      onSelectSuggestion: _sendMessage,
+                    );
+                  }
+
+                  // In search mode, show only messages whose text matches.
+                  if (_isSearching && _searchQuery.isNotEmpty) {
+                    final q = _searchQuery.toLowerCase();
+                    final matches = allMessages
+                        .where((m) => m.content.toLowerCase().contains(q))
+                        .toList();
+                    if (matches.isEmpty) {
+                      return _NoSearchResults(query: _searchQuery);
+                    }
+                    return _MessagesList(
+                      messages: matches,
+                      currentUserId: widget.messagingState.currentUserId ?? '',
+                      scrollController: _scrollController,
+                      onReply: _replyToMessage,
+                      onDelete: _deleteMessage,
+                      onCopy: _copyMessage,
+                      typingIndicator: const SizedBox.shrink(),
+                    );
+                  }
+
                   return _MessagesList(
-                    messages: matches,
+                    messages: allMessages,
                     currentUserId: widget.messagingState.currentUserId ?? '',
                     scrollController: _scrollController,
                     onReply: _replyToMessage,
                     onDelete: _deleteMessage,
                     onCopy: _copyMessage,
-                    typingIndicator: const SizedBox.shrink(),
+                    typingIndicator: _buildTypingIndicator(),
                   );
-                }
+                },
+              ),
+            ),
 
-                return _MessagesList(
-                  messages: allMessages,
-                  currentUserId: widget.messagingState.currentUserId ?? '',
-                  scrollController: _scrollController,
-                  onReply: _replyToMessage,
-                  onDelete: _deleteMessage,
-                  onCopy: _copyMessage,
-                  typingIndicator: _buildTypingIndicator(),
+            // Input area — always shown: guests and hosts can keep messaging
+            // even after the booking ends.
+            ListenableBuilder(
+              listenable: widget.messagingState,
+              builder: (context, _) {
+                return MessageInput(
+                  onSendMessage: _sendMessage,
+                  onSendImage: _sendImage,
+                  onSendLocation: _sendLocation,
+                  onSendFile: _sendFile,
+                  onTextChanged: widget.messagingState.onTextChanged,
+                  replyingTo: _replyingTo,
+                  onCancelReply: _cancelReply,
+                  isSending: widget.messagingState.isSendingMessage,
                 );
               },
             ),
-          ),
-
-          // Input area — always shown: guests and hosts can keep messaging
-          // even after the booking ends.
-          ListenableBuilder(
-            listenable: widget.messagingState,
-            builder: (context, _) {
-              return MessageInput(
-                onSendMessage: _sendMessage,
-                onSendImage: _sendImage,
-                onSendLocation: _sendLocation,
-                onSendFile: _sendFile,
-                onTextChanged: widget.messagingState.onTextChanged,
-                replyingTo: _replyingTo,
-                onCancelReply: _cancelReply,
-                isSending: widget.messagingState.isSendingMessage,
-              );
-            },
-          ),
-        ],
+          ],
         ),
       ),
     );
@@ -845,8 +857,7 @@ class _MediaGalleryScreen extends StatelessWidget {
             )
           : GridView.builder(
               padding: const EdgeInsets.all(4),
-              gridDelegate:
-                  const SliverGridDelegateWithFixedCrossAxisCount(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 3,
                 mainAxisSpacing: 4,
                 crossAxisSpacing: 4,

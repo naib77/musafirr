@@ -249,7 +249,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 boxShadow: isSelected
                     ? [
                         BoxShadow(
-                          color: theme.colorScheme.primary.withValues(alpha: 0.3),
+                          color:
+                              theme.colorScheme.primary.withValues(alpha: 0.3),
                           blurRadius: 8,
                           offset: const Offset(0, 2),
                         ),
@@ -273,7 +274,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                       color: isSelected
                           ? Colors.white
                           : theme.colorScheme.onSurfaceVariant,
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                      fontWeight:
+                          isSelected ? FontWeight.w600 : FontWeight.w500,
                       fontSize: 13,
                     ),
                   ),
@@ -388,8 +390,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               onTap: () => _handleNotificationTap(notification),
               onMarkAsRead: () =>
                   widget.notificationState.markAsRead(notification.id),
-              onDismiss: () =>
-                  widget.notificationState.delete(notification.id),
+              onDismiss: () => widget.notificationState.delete(notification.id),
               onAccept: () => _handleAcceptBooking(notification),
               onDecline: () => _handleDeclineBooking(notification),
               onViewDetails: () => _showBookingDetailsSheet(notification),
@@ -509,8 +510,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     // timestamps, and actions). Covers '/trips/$id' and '/payments/$id'.
     if (actionUrl.startsWith('/trips') || actionUrl.startsWith('/payments')) {
       final bookingId = notification.data?['booking_id'] as String?;
-      final booking =
-          bookingId != null ? widget.repository.getBookingById(bookingId) : null;
+      final booking = bookingId != null
+          ? widget.repository.getBookingById(bookingId)
+          : null;
       if (booking != null) {
         showGuestBookingDetails(
           context,
@@ -519,8 +521,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           authState: widget.authState,
         );
       } else {
-        ModernBanner.showInfo(
-            context, 'This booking is no longer available.');
+        ModernBanner.showInfo(context, 'This booking is no longer available.');
       }
       return;
     }
@@ -607,14 +608,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     // 'host' suffix → reviewing the guest; otherwise reviewing the host.
     // With no suffix, infer: the booking's guest reviews the host.
-    final reviewAsHost =
-        roleSuffix == 'host' || (roleSuffix == null && booking.userId != user.id);
+    final reviewAsHost = roleSuffix == 'host' ||
+        (roleSuffix == null && booking.userId != user.id);
 
     final wantedType =
         reviewAsHost ? ReviewType.hostToGuest : ReviewType.guestToHost;
     final existing = widget.repository.getReviewsForBooking(booking.id);
-    if (existing.any(
-        (r) => r.reviewerId == user.id && r.reviewType == wantedType)) {
+    if (existing
+        .any((r) => r.reviewerId == user.id && r.reviewType == wantedType)) {
       ModernBanner.showInfo(
         context,
         reviewAsHost
@@ -834,10 +835,10 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       if (coordinator != null) {
         // Accept via the coordinator so the guest conversation is created
         // and the host's scheduled welcome message goes out.
-        final hostId = await widget.repository
-                .fetchHostIdForListing(booking.listingId) ??
-            widget.authState.currentUser?.id ??
-            '';
+        final hostId =
+            await widget.repository.fetchHostIdForListing(booking.listingId) ??
+                widget.authState.currentUser?.id ??
+                '';
         await coordinator.acceptBookingWithConversation(
           bookingId: bookingId,
           hostId: hostId,

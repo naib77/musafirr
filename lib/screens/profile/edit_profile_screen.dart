@@ -57,7 +57,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (!mounted) return;
     setState(() => _uploadingAvatar = false);
     if (!result.success || result.publicUrl == null) {
-      ModernBanner.showError(context, 'Could not upload photo. Please try again.');
+      ModernBanner.showError(
+          context, 'Could not upload photo. Please try again.');
       return;
     }
     // Cache-bust so the CDN doesn't keep serving the previous image (same path).

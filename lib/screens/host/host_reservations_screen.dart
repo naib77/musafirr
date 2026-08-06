@@ -907,7 +907,8 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
     );
   }
 
-  Future<void> _confirmCashReceived(BuildContext context, Booking booking) async {
+  Future<void> _confirmCashReceived(
+      BuildContext context, Booking booking) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(

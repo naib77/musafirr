@@ -123,9 +123,7 @@ class PriceBreakdownCard extends StatelessWidget {
             ),
           ),
           Text(
-            item.isDiscount
-                ? '-${item.amount.format()}'
-                : item.amount.format(),
+            item.isDiscount ? '-${item.amount.format()}' : item.amount.format(),
             style: theme.textTheme.bodyMedium?.copyWith(
               color: item.isDiscount
                   ? Colors.green.shade700
@@ -166,7 +164,8 @@ class PriceBreakdownCard extends StatelessWidget {
   Widget _buildPromoCodeSection(BuildContext context) {
     final theme = Theme.of(context);
     final hasPromoApplied = calculation.discounts.any(
-      (d) => d.type == AdjustmentType.percentageDiscount ||
+      (d) =>
+          d.type == AdjustmentType.percentageDiscount ||
           d.type == AdjustmentType.fixedDiscount,
     );
 

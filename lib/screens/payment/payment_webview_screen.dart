@@ -83,8 +83,7 @@ class _PaymentWebViewScreenState extends State<PaymentWebViewScreen> {
         body: Stack(
           children: [
             WebViewWidget(controller: _controller),
-            if (_loading)
-              const LinearProgressIndicator(minHeight: 2),
+            if (_loading) const LinearProgressIndicator(minHeight: 2),
           ],
         ),
       ),

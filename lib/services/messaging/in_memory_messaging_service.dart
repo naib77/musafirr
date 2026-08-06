@@ -20,7 +20,8 @@ class InMemoryMessagingService implements MessagingService {
   // Stream controllers
   final Map<String, StreamController<Message>> _messageStreams = {};
   final Map<String, StreamController<Conversation>> _conversationStreams = {};
-  final Map<String, StreamController<List<TypingIndicator>>> _typingStreams = {};
+  final Map<String, StreamController<List<TypingIndicator>>> _typingStreams =
+      {};
   final Map<String, StreamController<int>> _unreadCountStreams = {};
 
   bool _initialized = false;
@@ -269,16 +270,21 @@ class InMemoryMessagingService implements MessagingService {
     // Apply filters
     if (filter != null) {
       if (filter.status != null) {
-        conversations = conversations.where((c) => c.status == filter.status).toList();
+        conversations =
+            conversations.where((c) => c.status == filter.status).toList();
       }
       if (filter.hasUnread == true) {
         conversations = conversations.where((c) => c.unreadCount > 0).toList();
       }
       if (filter.bookingId != null) {
-        conversations = conversations.where((c) => c.bookingId == filter.bookingId).toList();
+        conversations = conversations
+            .where((c) => c.bookingId == filter.bookingId)
+            .toList();
       }
       if (filter.listingId != null) {
-        conversations = conversations.where((c) => c.listingId == filter.listingId).toList();
+        conversations = conversations
+            .where((c) => c.listingId == filter.listingId)
+            .toList();
       }
     }
 
@@ -363,7 +369,8 @@ class InMemoryMessagingService implements MessagingService {
   }
 
   @override
-  Future<MessagingResult<void>> archiveConversation(String conversationId) async {
+  Future<MessagingResult<void>> archiveConversation(
+      String conversationId) async {
     final conv = _conversations[conversationId];
     if (conv == null) {
       return const MessagingResult.failure('Conversation not found');
@@ -379,7 +386,8 @@ class InMemoryMessagingService implements MessagingService {
   }
 
   @override
-  Future<MessagingResult<void>> unarchiveConversation(String conversationId) async {
+  Future<MessagingResult<void>> unarchiveConversation(
+      String conversationId) async {
     final conv = _conversations[conversationId];
     if (conv == null) {
       return const MessagingResult.failure('Conversation not found');
@@ -411,7 +419,8 @@ class InMemoryMessagingService implements MessagingService {
   }
 
   @override
-  Future<MessagingResult<void>> unblockConversation(String conversationId) async {
+  Future<MessagingResult<void>> unblockConversation(
+      String conversationId) async {
     final conv = _conversations[conversationId];
     if (conv == null) {
       return const MessagingResult.failure('Conversation not found');
@@ -443,10 +452,12 @@ class InMemoryMessagingService implements MessagingService {
     // Apply filters
     if (filter != null) {
       if (filter.contentType != null) {
-        messages = messages.where((m) => m.contentType == filter.contentType).toList();
+        messages =
+            messages.where((m) => m.contentType == filter.contentType).toList();
       }
       if (filter.senderId != null) {
-        messages = messages.where((m) => m.senderId == filter.senderId).toList();
+        messages =
+            messages.where((m) => m.senderId == filter.senderId).toList();
       }
       if (filter.beforeId != null) {
         final beforeIndex = messages.indexWhere((m) => m.id == filter.beforeId);
@@ -489,7 +500,8 @@ class InMemoryMessagingService implements MessagingService {
     }
 
     if (conv.status != ConversationStatus.active) {
-      return const MessagingResult.failure('Cannot send message to inactive conversation');
+      return const MessagingResult.failure(
+          'Cannot send message to inactive conversation');
     }
 
     final now = DateTime.now();
@@ -655,7 +667,8 @@ class InMemoryMessagingService implements MessagingService {
 
   @override
   Stream<Conversation> subscribeToConversation(String conversationId) {
-    _conversationStreams[conversationId] ??= StreamController<Conversation>.broadcast();
+    _conversationStreams[conversationId] ??=
+        StreamController<Conversation>.broadcast();
     return _conversationStreams[conversationId]!.stream;
   }
 
@@ -670,7 +683,8 @@ class InMemoryMessagingService implements MessagingService {
   Stream<List<TypingIndicator>> subscribeToTypingIndicators(
     String conversationId,
   ) {
-    _typingStreams[conversationId] ??= StreamController<List<TypingIndicator>>.broadcast();
+    _typingStreams[conversationId] ??=
+        StreamController<List<TypingIndicator>>.broadcast();
     return _typingStreams[conversationId]!.stream;
   }
 
@@ -762,7 +776,8 @@ class InMemoryMessagingService implements MessagingService {
     if (controller != null && !controller.isClosed) {
       var total = 0;
       for (final conv in _conversations.values) {
-        if (conv.participantOneId == userId || conv.participantTwoId == userId) {
+        if (conv.participantOneId == userId ||
+            conv.participantTwoId == userId) {
           total += conv.unreadCount;
         }
       }

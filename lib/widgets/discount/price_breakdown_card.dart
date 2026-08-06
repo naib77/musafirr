@@ -126,7 +126,6 @@ class PriceBreakdownCard extends StatelessWidget {
 
           if (isExpanded) ...[
             const Divider(height: 1),
-
             Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -170,7 +169,8 @@ class PriceBreakdownCard extends StatelessWidget {
                     ),
 
                   // Discounts
-                  if (appliedDiscounts != null && appliedDiscounts!.isNotEmpty) ...[
+                  if (appliedDiscounts != null &&
+                      appliedDiscounts!.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     const Divider(),
                     const SizedBox(height: 8),
@@ -313,9 +313,8 @@ class PriceBreakdownCard extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    final amountColor = item.isDiscount
-        ? Colors.green
-        : item.color ?? colorScheme.onSurface;
+    final amountColor =
+        item.isDiscount ? Colors.green : item.color ?? colorScheme.onSurface;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),

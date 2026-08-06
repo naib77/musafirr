@@ -61,6 +61,6 @@ class SmsConfig {
 
   /// OTP message template
   static String getOtpMessage(String otp) {
-    return 'Your Musafir verification code is: $otp. Valid for 5 minutes.';
+    return 'Your Musaafir verification code is: $otp. Valid for 5 minutes.';
   }
 }

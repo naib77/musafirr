@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_colors.dart';
+import '../core/utils/distance_format.dart';
 import 'app_network_image.dart';
 import '../models/listing.dart';
 import '../models/listing_type.dart';
@@ -214,6 +215,25 @@ class _ListingCardModernState extends State<ListingCardModern>
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
+                  // Distance from a searched landmark (proximity search only).
+                  if (listing.distanceMeters != null) ...[
+                    Row(
+                      children: [
+                        Icon(Icons.near_me_rounded,
+                            size: 12, color: theme.colorScheme.primary),
+                        const SizedBox(width: 3),
+                        Text(
+                          formatDistanceMeters(listing.distanceMeters!),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                  ],
                   // Place and rating share the second line.
                   Row(
                     children: [

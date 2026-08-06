@@ -83,8 +83,9 @@ class ConversationTile extends StatelessWidget {
                               color: hasUnread
                                   ? theme.colorScheme.primary
                                   : theme.colorScheme.onSurfaceVariant,
-                              fontWeight:
-                                  hasUnread ? FontWeight.w600 : FontWeight.normal,
+                              fontWeight: hasUnread
+                                  ? FontWeight.w600
+                                  : FontWeight.normal,
                             ),
                           ),
                         ],
@@ -120,7 +121,8 @@ class ConversationTile extends StatelessWidget {
                                   vertical: 2,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: theme.colorScheme.surfaceContainerHighest,
+                                  color:
+                                      theme.colorScheme.surfaceContainerHighest,
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
@@ -288,7 +290,8 @@ class ConversationTileCompact extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          fontWeight: conversation.hasUnread ? FontWeight.bold : FontWeight.normal,
+          fontWeight:
+              conversation.hasUnread ? FontWeight.bold : FontWeight.normal,
         ),
       ),
       subtitle: Text(

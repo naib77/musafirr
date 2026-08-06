@@ -3,7 +3,10 @@ String _snakeToCamel(String input) {
   final parts = input.split('_');
   if (parts.length == 1) return input;
   return parts.first +
-      parts.skip(1).map((p) => p.isEmpty ? '' : p[0].toUpperCase() + p.substring(1)).join();
+      parts
+          .skip(1)
+          .map((p) => p.isEmpty ? '' : p[0].toUpperCase() + p.substring(1))
+          .join();
 }
 
 /// Helper to convert camelCase to snake_case
@@ -255,8 +258,7 @@ class AppNotification {
   bool get isUnread => status == NotificationStatus.unread;
 
   /// Whether the notification has expired
-  bool get isExpired =>
-      expiresAt != null && DateTime.now().isAfter(expiresAt!);
+  bool get isExpired => expiresAt != null && DateTime.now().isAfter(expiresAt!);
 
   /// Time elapsed since creation
   Duration get age => DateTime.now().difference(createdAt);

@@ -42,8 +42,8 @@ class FirebasePushNotificationService implements PushNotificationService {
   /// Android notification channel
   static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
     'musafir_notifications',
-    'Musafir Notifications',
-    description: 'Notifications from Musafir app',
+    'Musaafir Notifications',
+    description: 'Notifications from Musaafir app',
     importance: Importance.high,
     playSound: true,
     enableVibration: true,

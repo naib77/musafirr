@@ -50,8 +50,7 @@ class SupabaseMessageTemplateRepository implements MessageTemplateProvider {
           .select()
           .eq('host_id', hostId);
       for (final row in rows as List) {
-        final template =
-            MessageTemplate.fromJson(row as Map<String, dynamic>);
+        final template = MessageTemplate.fromJson(row as Map<String, dynamic>);
         stored[template.trigger] = template;
       }
     } catch (e) {
@@ -83,10 +82,8 @@ class SupabaseMessageTemplateRepository implements MessageTemplateProvider {
   /// Sets the host's automated-message language on their profile.
   Future<bool> setLanguage(String hostId, MessageLanguage language) async {
     try {
-      await _client
-          .from('profiles')
-          .update({'message_language': language.toJsonValue()}).eq(
-              'id', hostId);
+      await _client.from('profiles').update(
+          {'message_language': language.toJsonValue()}).eq('id', hostId);
       return true;
     } catch (e) {
       debugPrint('[MessageTemplateRepository] setLanguage error: $e');

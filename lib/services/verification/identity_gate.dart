@@ -21,8 +21,8 @@ class IdentityGate {
 
   /// The user's identity verification status. Overridable in tests so the gate
   /// can be exercised without Supabase.
-  static Future<String> Function(String userId) statusOf =
-      (userId) => ImageUploadService.instance.identityVerificationStatus(userId);
+  static Future<String> Function(String userId) statusOf = (userId) =>
+      ImageUploadService.instance.identityVerificationStatus(userId);
 
   /// Ensures the user's identity is admin-approved before a gated action.
   /// [reason] is a short phrase, e.g. "to publish a listing". Returns true only

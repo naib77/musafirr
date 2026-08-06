@@ -89,7 +89,8 @@ class PriceDisplay extends StatelessWidget {
         );
 
     return _buildPriceRow(
-      priceText: amount.format(showSymbol: showCurrency, useCompact: useCompact),
+      priceText:
+          amount.format(showSymbol: showCurrency, useCompact: useCompact),
       style: effectiveStyle!,
       theme: theme,
     );

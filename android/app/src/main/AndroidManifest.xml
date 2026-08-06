@@ -23,7 +23,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
-        android:label="musafir"
+        android:label="Musaafir"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <meta-data

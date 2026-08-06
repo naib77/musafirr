@@ -177,8 +177,8 @@ class SupabaseAuthService implements AuthService {
       if (data is Map && data['success'] == true) {
         return OtpResult.success();
       }
-      final error =
-          (data is Map ? data['error']?.toString() : null) ?? 'Failed to send OTP';
+      final error = (data is Map ? data['error']?.toString() : null) ??
+          'Failed to send OTP';
       return OtpResult.failure(error);
     } on FunctionException catch (e) {
       return OtpResult.failure(_functionError(e, 'Failed to send OTP'));
@@ -227,14 +227,16 @@ class SupabaseAuthService implements AuthService {
       await _loadUserProfile(authResponse.user!);
 
       final isExistingUser = data['isExistingUser'] == true;
-      debugPrint('[SupabaseAuthService] verified; isExistingUser=$isExistingUser');
+      debugPrint(
+          '[SupabaseAuthService] verified; isExistingUser=$isExistingUser');
       return OtpResult.success(isExistingUser: isExistingUser);
     } on FunctionException catch (e) {
       final details = e.details;
       return OtpResult.failure(
         _functionError(e, 'Verification failed'),
-        attemptsRemaining:
-            details is Map ? (details['attemptsRemaining'] as num?)?.toInt() : null,
+        attemptsRemaining: details is Map
+            ? (details['attemptsRemaining'] as num?)?.toInt()
+            : null,
       );
     } on AuthException catch (e) {
       debugPrint('[SupabaseAuthService] verifyOtp auth error: ${e.message}');
@@ -271,13 +273,15 @@ class SupabaseAuthService implements AuthService {
     // just fill in the profile — no signUp (and no phone-derived password).
     final authUser = _auth.currentUser;
     if (authUser == null) {
-      return AuthResult.failure('Session not established. Please verify again.');
+      return AuthResult.failure(
+          'Session not established. Please verify again.');
     }
 
     try {
       final formattedPhone = _formatPhoneForDisplay(phone);
 
-      debugPrint('[SupabaseAuthService] Upserting profile with mobile: $formattedPhone');
+      debugPrint(
+          '[SupabaseAuthService] Upserting profile with mobile: $formattedPhone');
       await _client.from('profiles').upsert({
         'id': authUser.id,
         'full_name': name,

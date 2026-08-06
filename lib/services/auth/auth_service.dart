@@ -37,6 +37,7 @@ class OtpResult {
   final bool success;
   final String? error;
   final int? attemptsRemaining;
+
   /// Whether an existing user profile was found (for verifyOtp)
   final bool isExistingUser;
 

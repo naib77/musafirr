@@ -43,58 +43,58 @@ class HostDashboardScreen extends StatelessWidget {
     final user = authState.currentUser;
 
     return ListenableBuilder(
-        listenable: Listenable.merge([repository, authState]),
-        builder: (context, _) {
-          final hostListings = user != null
-              ? repository.listings
-                  .where((l) => l.hostId == user.id)
-                  .toList()
-              : <Listing>[];
+      listenable: Listenable.merge([repository, authState]),
+      builder: (context, _) {
+        final hostListings = user != null
+            ? repository.listings.where((l) => l.hostId == user.id).toList()
+            : <Listing>[];
 
-          final hostBookings = hostListings.isEmpty
-              ? <Booking>[]
-              : repository.bookings
-                  .where((b) => hostListings.any((l) => l.id == b.listingId))
-                  .toList();
+        final hostBookings = hostListings.isEmpty
+            ? <Booking>[]
+            : repository.bookings
+                .where((b) => hostListings.any((l) => l.id == b.listingId))
+                .toList();
 
-          // Same shared categorizer as the Reservations "Upcoming" tab, so the
-          // dashboard count and list always agree with that tab. The dashboard
-          // re-sorts by most-recently-requested for an "activity feed" feel.
-          final upcomingBookings = BookingCategorizer(hostBookings).upcoming
-            ..sort((a, b) => (b.createdAt ?? b.effectiveCheckIn)
-                .compareTo(a.createdAt ?? a.effectiveCheckIn));
+        // Same shared categorizer as the Reservations "Upcoming" tab, so the
+        // dashboard count and list always agree with that tab. The dashboard
+        // re-sorts by most-recently-requested for an "activity feed" feel.
+        final upcomingBookings = BookingCategorizer(hostBookings).upcoming
+          ..sort((a, b) => (b.createdAt ?? b.effectiveCheckIn)
+              .compareTo(a.createdAt ?? a.effectiveCheckIn));
 
-          // Today's overview (migrated from the retired HostingScreen): how many
-          // guests arrive / leave today, and how many are currently in-house.
-          final now = DateTime.now();
-          final today = DateTime(now.year, now.month, now.day);
-          bool isSameDay(DateTime d) =>
-              d.year == today.year && d.month == today.month && d.day == today.day;
+        // Today's overview (migrated from the retired HostingScreen): how many
+        // guests arrive / leave today, and how many are currently in-house.
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        bool isSameDay(DateTime d) =>
+            d.year == today.year &&
+            d.month == today.month &&
+            d.day == today.day;
 
-          final activeBookings =
-              hostBookings.where((b) => b.status == BookingStatus.active).toList();
-          final todayCheckIns = hostBookings
-              .where((b) =>
-                  b.status == BookingStatus.confirmed &&
-                  isSameDay(b.effectiveCheckIn))
-              .length;
-          final todayCheckOuts =
-              activeBookings.where((b) => isSameDay(b.effectiveCheckOut)).length;
+        final activeBookings = hostBookings
+            .where((b) => b.status == BookingStatus.active)
+            .toList();
+        final todayCheckIns = hostBookings
+            .where((b) =>
+                b.status == BookingStatus.confirmed &&
+                isSameDay(b.effectiveCheckIn))
+            .length;
+        final todayCheckOuts =
+            activeBookings.where((b) => isSameDay(b.effectiveCheckOut)).length;
 
-          // Realized earnings — paid OR completed bookings (see
-          // Booking.isEarnedRevenue), matching the Earnings tab. Payment-driven
-          // so a paid-but-not-yet-completed booking shows up immediately;
-          // pending/cancelled/rejected money is still excluded.
-          final totalEarnings = hostBookings
-              .where((b) => b.isEarnedRevenue)
-              .fold<Money>(
-                Money.zero(Currency.BDT),
-                (sum, b) => sum.add(b.totalPriceMoney),
-              );
+        // Realized earnings — paid OR completed bookings (see
+        // Booking.isEarnedRevenue), matching the Earnings tab. Payment-driven
+        // so a paid-but-not-yet-completed booking shows up immediately;
+        // pending/cancelled/rejected money is still excluded.
+        final totalEarnings =
+            hostBookings.where((b) => b.isEarnedRevenue).fold<Money>(
+                  Money.zero(Currency.BDT),
+                  (sum, b) => sum.add(b.totalPriceMoney),
+                );
 
-          return ResponsiveCenter(
-            maxWidth: 960,
-            child: SingleChildScrollView(
+        return ResponsiveCenter(
+          maxWidth: 960,
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -339,10 +339,10 @@ class HostDashboardScreen extends StatelessWidget {
                 ],
               ],
             ),
-            ),
-          );
-        },
-      );
+          ),
+        );
+      },
+    );
   }
 
   void _navigateToCreateListing(BuildContext context) {
@@ -729,7 +729,8 @@ class _TodayCard extends StatelessWidget {
               Container(
                 width: 1,
                 height: 40,
-                color: theme.colorScheme.onPrimaryContainer.withValues(alpha: 0.2),
+                color:
+                    theme.colorScheme.onPrimaryContainer.withValues(alpha: 0.2),
               ),
               Expanded(
                 child: _TodayStat(
@@ -741,7 +742,8 @@ class _TodayCard extends StatelessWidget {
               Container(
                 width: 1,
                 height: 40,
-                color: theme.colorScheme.onPrimaryContainer.withValues(alpha: 0.2),
+                color:
+                    theme.colorScheme.onPrimaryContainer.withValues(alpha: 0.2),
               ),
               Expanded(
                 child: _TodayStat(

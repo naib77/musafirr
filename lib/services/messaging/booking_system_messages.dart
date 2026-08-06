@@ -21,7 +21,8 @@ class BookingSystemMessages {
   static String checkedIn(MessageLanguage language) {
     return switch (language) {
       MessageLanguage.en => 'Guest has checked in. Enjoy your stay! 🏠',
-      MessageLanguage.bn => 'অতিথি চেক-ইন করেছেন। আপনার অবস্থান আনন্দময় হোক! 🏠',
+      MessageLanguage.bn =>
+        'অতিথি চেক-ইন করেছেন। আপনার অবস্থান আনন্দময় হোক! 🏠',
     };
   }
 

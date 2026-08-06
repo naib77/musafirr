@@ -50,7 +50,8 @@ abstract class DiscountService {
   Future<DiscountResult<List<Discount>>> getActiveDiscounts();
 
   /// Get discounts for a specific listing/host
-  Future<DiscountResult<List<Discount>>> getDiscountsForListing(String listingId);
+  Future<DiscountResult<List<Discount>>> getDiscountsForListing(
+      String listingId);
 
   /// Get a discount by code
   Future<DiscountResult<Discount>> getDiscountByCode(String code);
@@ -77,8 +78,7 @@ abstract class DiscountService {
   });
 
   /// Reverse a discount application
-  Future<DiscountResult<void>> reverseDiscount(
-      String usageId, String reason);
+  Future<DiscountResult<void>> reverseDiscount(String usageId, String reason);
 
   /// Create a host discount
   Future<DiscountResult<Discount>> createHostDiscount({
@@ -316,8 +316,7 @@ class InMemoryDiscountService implements DiscountService {
     await Future.delayed(const Duration(milliseconds: 300));
 
     // Build eligibility context
-    final isFirstBooking =
-        (_userBookingCounts[request.userId] ?? 0) == 0;
+    final isFirstBooking = (_userBookingCounts[request.userId] ?? 0) == 0;
 
     final discountsToCheck = <Discount>[];
 

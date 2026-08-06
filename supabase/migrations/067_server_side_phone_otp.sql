@@ -31,7 +31,7 @@ comment on column public.profiles.signup_completed is
   'this to route returning vs new users). Bare trigger-created rows stay false.';
 
 -- Resolve an auth user id by email (email is our internal phone-derived id:
--- phone.<normalized>@musafir.app). SECURITY DEFINER so the service-role Edge
+-- phone.<normalized>@musaafir.app). SECURITY DEFINER so the service-role Edge
 -- Function can check existence without touching the auth schema directly.
 create or replace function public.get_auth_user_id_by_email(p_email text)
 returns uuid

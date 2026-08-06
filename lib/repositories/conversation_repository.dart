@@ -36,11 +36,9 @@ class ConversationNetworkError extends ConversationError {
 
 /// Result of a conversation operation.
 class ConversationResult<T> {
-  const ConversationResult.success(this.data)
-      : error = null;
+  const ConversationResult.success(this.data) : error = null;
 
-  const ConversationResult.failure(this.error)
-      : data = null;
+  const ConversationResult.failure(this.error) : data = null;
 
   final T? data;
   final ConversationError? error;
@@ -65,7 +63,8 @@ class ConversationResult<T> {
   }
 
   /// Execute a callback on failure.
-  ConversationResult<T> onFailure(void Function(ConversationError error) callback) {
+  ConversationResult<T> onFailure(
+      void Function(ConversationError error) callback) {
     if (isFailure && error != null) {
       callback(error!);
     }

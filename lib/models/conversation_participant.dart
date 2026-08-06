@@ -128,7 +128,8 @@ class ConversationParticipants {
         role: ParticipantRole.host,
       ),
       ConversationParticipant(
-        userId: hostId == participantOneId ? participantTwoId : participantOneId,
+        userId:
+            hostId == participantOneId ? participantTwoId : participantOneId,
         role: ParticipantRole.guest,
       ),
     ]);

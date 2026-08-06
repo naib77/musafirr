@@ -101,104 +101,104 @@ class _AddressProofScreenState extends State<AddressProofScreen> {
       body: ResponsiveCenter(
         maxWidth: 640,
         child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Add a proof of address',
-                style: theme.textTheme.headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Upload a recent document showing your name and address — a gas, '
-                'electricity or water bill, bank statement, or similar. Required '
-                'before you can publish a listing.',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Add a proof of address',
+                  style: theme.textTheme.headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.bold),
                 ),
-              ),
-              const SizedBox(height: 24),
-
-              // Capture / preview card
-              GestureDetector(
-                onTap: _capture,
-                child: AspectRatio(
-                  aspectRatio: 1.4,
-                  child: Container(
-                    clipBehavior: Clip.antiAlias,
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceMuted,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: hasDoc
-                            ? AppColors.brand
-                            : theme.colorScheme.outlineVariant,
-                        width: hasDoc ? 2 : 1,
-                      ),
-                    ),
-                    child: hasDoc
-                        ? Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              Image.memory(_preview!, fit: BoxFit.cover),
-                              Positioned(
-                                top: 8,
-                                right: 8,
-                                child: CircleAvatar(
-                                  radius: 16,
-                                  backgroundColor: Colors.black54,
-                                  child: const Icon(Icons.edit,
-                                      size: 16, color: Colors.white),
-                                ),
-                              ),
-                            ],
-                          )
-                        : Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.receipt_long_outlined,
-                                  size: 32, color: AppColors.brand),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Tap to add document',
-                                style: theme.textTheme.bodyMedium
-                                    ?.copyWith(fontWeight: FontWeight.w600),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Photo or scan',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
+                const SizedBox(height: 8),
+                Text(
+                  'Upload a recent document showing your name and address — a gas, '
+                  'electricity or water bill, bank statement, or similar. Required '
+                  'before you can publish a listing.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
-              ),
-              const SizedBox(height: 24),
+                const SizedBox(height: 24),
 
-              FilledButton(
-                onPressed: _isUploading ? null : _submit,
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+                // Capture / preview card
+                GestureDetector(
+                  onTap: _capture,
+                  child: AspectRatio(
+                    aspectRatio: 1.4,
+                    child: Container(
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceMuted,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: hasDoc
+                              ? AppColors.brand
+                              : theme.colorScheme.outlineVariant,
+                          width: hasDoc ? 2 : 1,
+                        ),
+                      ),
+                      child: hasDoc
+                          ? Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Image.memory(_preview!, fit: BoxFit.cover),
+                                Positioned(
+                                  top: 8,
+                                  right: 8,
+                                  child: CircleAvatar(
+                                    radius: 16,
+                                    backgroundColor: Colors.black54,
+                                    child: const Icon(Icons.edit,
+                                        size: 16, color: Colors.white),
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.receipt_long_outlined,
+                                    size: 32, color: AppColors.brand),
+                                const SizedBox(height: 10),
+                                Text(
+                                  'Tap to add document',
+                                  style: theme.textTheme.bodyMedium
+                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Photo or scan',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
                 ),
-                child: _isUploading
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Text('Submit & continue'),
-              ),
-            ],
+                const SizedBox(height: 24),
+
+                FilledButton(
+                  onPressed: _isUploading ? null : _submit,
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  child: _isUploading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text('Submit & continue'),
+                ),
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }

@@ -13,7 +13,8 @@ void main() {
 
   group('defaultContentFor', () {
     for (final trigger in MessageTemplateTrigger.values) {
-      test('has a Bangla variant that differs from English but keeps '
+      test(
+          'has a Bangla variant that differs from English but keeps '
           'the same placeholders (${trigger.name})', () {
         final en = MessageTemplate.defaultContentFor(trigger,
             language: MessageLanguage.en);
@@ -38,7 +39,8 @@ void main() {
 
       expect(
         MessageTemplate.resolveContent(enDefault, MessageLanguage.bn),
-        MessageTemplate.defaultContentFor(trigger, language: MessageLanguage.bn),
+        MessageTemplate.defaultContentFor(trigger,
+            language: MessageLanguage.bn),
       );
       // A stored Bangla default also follows the flag (back to English here).
       final bnDefault = enDefault.copyWith(
@@ -47,7 +49,8 @@ void main() {
       );
       expect(
         MessageTemplate.resolveContent(bnDefault, MessageLanguage.en),
-        MessageTemplate.defaultContentFor(trigger, language: MessageLanguage.en),
+        MessageTemplate.defaultContentFor(trigger,
+            language: MessageLanguage.en),
       );
     });
 

@@ -112,221 +112,221 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
-              children: [
-                // User info card
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        AvatarUpload(
-                          currentAvatarUrl: user.avatarUrl,
-                          userName: user.name,
-                          userId: user.id,
-                          radius: 40,
-                          onAvatarChanged: (newUrl) {
-                            // Update the user's avatar URL
-                            authState.updateAvatar(newUrl);
-                          },
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      user.name,
-                                      style:
-                                          theme.textTheme.titleLarge?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                  if (user.isHost)
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color:
-                                            theme.colorScheme.primaryContainer,
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            Icons.home,
-                                            size: 14,
-                                            color: theme.colorScheme.primary,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            'Host',
-                                            style: theme.textTheme.labelSmall
-                                                ?.copyWith(
-                                              color: theme.colorScheme.primary,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              if (user.email != null)
-                                Text(
-                                  user.email!,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              if (user.phone != null) ...[
-                                const SizedBox(height: 2),
-                                Text(
-                                  user.phone!,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // Settings section
-                _SettingsSection(
-                  title: 'Settings',
-                  items: [
-                    _SettingsItem(
-                      icon: Icons.person_outline,
-                      title: 'Personal information',
-                      onTap: () => _navigateToEditProfile(context),
-                    ),
-                    _SettingsItem(
-                      icon: Icons.verified_user_outlined,
-                      title: 'Identity verification',
-                      subtitle: _verificationSubtitle(),
-                      onTap: () => _navigateToVerification(context, user.id),
-                    ),
-                    _SettingsItem(
-                      icon: Icons.security_outlined,
-                      title: 'Login & security',
-                      onTap: () => _navigateToLoginSecurity(context),
-                    ),
-                    _SettingsItem(
-                      icon: Icons.payment_outlined,
-                      title: 'Payments & payouts',
-                      onTap: () => _navigateToPayments(context),
-                    ),
-                    _SettingsItem(
-                      icon: Icons.notifications_outlined,
-                      title: 'Notifications',
-                      onTap: () => _navigateToNotificationSettings(context),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                // Hosting section.
-                //
-                // Guest-side profile (isHostContext == false) must NOT contain
-                // host tools — it only offers a way INTO hosting: non-hosts get
-                // "Become a Host", existing hosts get "Switch to hosting" which
-                // flips the app into the host portal. All the actual host tools
-                // (dashboard, listings, scheduled messages, …) live in the host
-                // portal / host-side profile (isHostContext == true).
-                _SettingsSection(
-                  title: 'Hosting',
-                  items: [
-                    if (!widget.isHostContext) ...[
-                      if (!user.isHost)
-                        _SettingsItem(
-                          icon: Icons.home_work_outlined,
-                          title: 'Become a Host',
-                          subtitle: 'Start earning by sharing your space',
-                          onTap: () => _navigateToBecomeHost(context),
-                        )
-                      else if (widget.onSwitchToHosting != null)
-                        _SettingsItem(
-                          icon: Icons.swap_horiz,
-                          title: 'Switch to hosting',
-                          subtitle: 'Go to your host dashboard',
-                          onTap: widget.onSwitchToHosting!,
-                        ),
-                    ] else ...[
-                      _SettingsItem(
-                        icon: Icons.dashboard_outlined,
-                        title: 'Host Dashboard',
-                        subtitle: 'Manage your listings and bookings',
-                        onTap: () => _navigateToHostDashboard(context),
+            children: [
+              // User info card
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      AvatarUpload(
+                        currentAvatarUrl: user.avatarUrl,
+                        userName: user.name,
+                        userId: user.id,
+                        radius: 40,
+                        onAvatarChanged: (newUrl) {
+                          // Update the user's avatar URL
+                          authState.updateAvatar(newUrl);
+                        },
                       ),
-                      _SettingsItem(
-                        icon: Icons.add_home_outlined,
-                        title: 'Create New Listing',
-                        onTap: () => _navigateToCreateListing(context),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    user.name,
+                                    style: theme.textTheme.titleLarge?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                if (user.isHost)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.primaryContainer,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.home,
+                                          size: 14,
+                                          color: theme.colorScheme.primary,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Host',
+                                          style: theme.textTheme.labelSmall
+                                              ?.copyWith(
+                                            color: theme.colorScheme.primary,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            if (user.email != null)
+                              Text(
+                                user.email!,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            if (user.phone != null) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                user.phone!,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                     ],
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                // Support section
-                _SettingsSection(
-                  title: 'Support',
-                  items: [
-                    _SettingsItem(
-                      icon: Icons.help_outline,
-                      title: 'Get help',
-                      onTap: () => _openExternalLink(context, LegalLinks.helpUrl),
-                    ),
-                    _SettingsItem(
-                      icon: Icons.article_outlined,
-                      title: 'Terms of service',
-                      onTap: () => _openExternalLink(context, LegalLinks.termsUrl),
-                    ),
-                    _SettingsItem(
-                      icon: Icons.privacy_tip_outlined,
-                      title: 'Privacy policy',
-                      onTap: () => _openExternalLink(context, LegalLinks.privacyUrl),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                // Logout button
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => _confirmLogout(context),
-                    icon: const Icon(Icons.logout),
-                    label: const Text('Log out'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: theme.colorScheme.error,
-                      side: BorderSide(color: theme.colorScheme.error),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
                   ),
                 ),
-                const SizedBox(height: 16),
+              ),
+              const SizedBox(height: 24),
 
-                // Version info
-                Text(
-                  'Musafir v1.0.0',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+              // Settings section
+              _SettingsSection(
+                title: 'Settings',
+                items: [
+                  _SettingsItem(
+                    icon: Icons.person_outline,
+                    title: 'Personal information',
+                    onTap: () => _navigateToEditProfile(context),
+                  ),
+                  _SettingsItem(
+                    icon: Icons.verified_user_outlined,
+                    title: 'Identity verification',
+                    subtitle: _verificationSubtitle(),
+                    onTap: () => _navigateToVerification(context, user.id),
+                  ),
+                  _SettingsItem(
+                    icon: Icons.security_outlined,
+                    title: 'Login & security',
+                    onTap: () => _navigateToLoginSecurity(context),
+                  ),
+                  _SettingsItem(
+                    icon: Icons.payment_outlined,
+                    title: 'Payments & payouts',
+                    onTap: () => _navigateToPayments(context),
+                  ),
+                  _SettingsItem(
+                    icon: Icons.notifications_outlined,
+                    title: 'Notifications',
+                    onTap: () => _navigateToNotificationSettings(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+
+              // Hosting section.
+              //
+              // Guest-side profile (isHostContext == false) must NOT contain
+              // host tools — it only offers a way INTO hosting: non-hosts get
+              // "Become a Host", existing hosts get "Switch to hosting" which
+              // flips the app into the host portal. All the actual host tools
+              // (dashboard, listings, scheduled messages, …) live in the host
+              // portal / host-side profile (isHostContext == true).
+              _SettingsSection(
+                title: 'Hosting',
+                items: [
+                  if (!widget.isHostContext) ...[
+                    if (!user.isHost)
+                      _SettingsItem(
+                        icon: Icons.home_work_outlined,
+                        title: 'Become a Host',
+                        subtitle: 'Start earning by sharing your space',
+                        onTap: () => _navigateToBecomeHost(context),
+                      )
+                    else if (widget.onSwitchToHosting != null)
+                      _SettingsItem(
+                        icon: Icons.swap_horiz,
+                        title: 'Switch to hosting',
+                        subtitle: 'Go to your host dashboard',
+                        onTap: widget.onSwitchToHosting!,
+                      ),
+                  ] else ...[
+                    _SettingsItem(
+                      icon: Icons.dashboard_outlined,
+                      title: 'Host Dashboard',
+                      subtitle: 'Manage your listings and bookings',
+                      onTap: () => _navigateToHostDashboard(context),
+                    ),
+                    _SettingsItem(
+                      icon: Icons.add_home_outlined,
+                      title: 'Create New Listing',
+                      onTap: () => _navigateToCreateListing(context),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 24),
+
+              // Support section
+              _SettingsSection(
+                title: 'Support',
+                items: [
+                  _SettingsItem(
+                    icon: Icons.help_outline,
+                    title: 'Get help',
+                    onTap: () => _openExternalLink(context, LegalLinks.helpUrl),
+                  ),
+                  _SettingsItem(
+                    icon: Icons.article_outlined,
+                    title: 'Terms of service',
+                    onTap: () =>
+                        _openExternalLink(context, LegalLinks.termsUrl),
+                  ),
+                  _SettingsItem(
+                    icon: Icons.privacy_tip_outlined,
+                    title: 'Privacy policy',
+                    onTap: () =>
+                        _openExternalLink(context, LegalLinks.privacyUrl),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+
+              // Logout button
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _confirmLogout(context),
+                  icon: const Icon(Icons.logout),
+                  label: const Text('Log out'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: theme.colorScheme.error,
+                    side: BorderSide(color: theme.colorScheme.error),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
+              ),
+              const SizedBox(height: 16),
+
+              // Version info
+              Text(
+                'Musaafir v1.0.0',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
               const SizedBox(height: 32),
             ],
           ),
@@ -408,7 +408,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           authState: authState,
           onBecomeHost: () {
             Navigator.pop(context);
-            ModernBanner.showSuccess(context, 'Welcome to hosting! You can now create listings.');
+            ModernBanner.showSuccess(
+                context, 'Welcome to hosting! You can now create listings.');
           },
         ),
       ),

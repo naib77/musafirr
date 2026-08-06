@@ -12,9 +12,11 @@ class AsyncValue<T> {
     this.stackTrace,
   });
 
-  factory AsyncValue.initial() => const AsyncValue._(status: AsyncStatus.initial);
+  factory AsyncValue.initial() =>
+      const AsyncValue._(status: AsyncStatus.initial);
 
-  factory AsyncValue.loading() => const AsyncValue._(status: AsyncStatus.loading);
+  factory AsyncValue.loading() =>
+      const AsyncValue._(status: AsyncStatus.loading);
 
   factory AsyncValue.success(T data) => AsyncValue._(
         status: AsyncStatus.success,
@@ -119,9 +121,7 @@ class LoadingIndicator extends StatelessWidget {
           height: size,
           child: CircularProgressIndicator(
             strokeWidth: strokeWidth,
-            valueColor: color != null
-                ? AlwaysStoppedAnimation(color)
-                : null,
+            valueColor: color != null ? AlwaysStoppedAnimation(color) : null,
           ),
         ),
         if (message != null) ...[
@@ -499,7 +499,10 @@ class RefreshableContent<T> extends StatelessWidget {
           Text(
             'No data available',
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.7),
                 ),
           ),
         ],

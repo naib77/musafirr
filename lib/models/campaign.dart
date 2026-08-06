@@ -299,8 +299,8 @@ class Campaign {
       featuredListingIds: json['featured_listing_ids'] != null
           ? List<String>.from(json['featured_listing_ids'] as List)
           : null,
-      status:
-          CampaignStatusExtension.fromDatabase(json['status'] as String? ?? 'draft'),
+      status: CampaignStatusExtension.fromDatabase(
+          json['status'] as String? ?? 'draft'),
       showOnHome: json['show_on_home'] as bool? ?? true,
       showOnExplore: json['show_on_explore'] as bool? ?? true,
       showCountdown: json['show_countdown'] as bool? ?? false,
@@ -415,7 +415,8 @@ class CampaignDisplay {
   /// Get discount display
   String? get discountDisplay {
     if (discountLabel != null) return discountLabel;
-    if (discountValue != null) return '${discountValue!.toStringAsFixed(0)}% OFF';
+    if (discountValue != null)
+      return '${discountValue!.toStringAsFixed(0)}% OFF';
     return null;
   }
 }

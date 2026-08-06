@@ -48,7 +48,8 @@ class CurrencyFormatter {
     if (useCompact) {
       return _formatCompact(money, showSymbol: showSymbol);
     }
-    return _formatStandard(money, showSymbol: showSymbol, showDecimal: showDecimal);
+    return _formatStandard(money,
+        showSymbol: showSymbol, showDecimal: showDecimal);
   }
 
   /// Standard formatting with commas

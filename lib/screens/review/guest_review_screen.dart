@@ -76,171 +76,171 @@ class _GuestReviewScreenState extends State<GuestReviewScreen> {
       body: ResponsiveCenter(
         maxWidth: 640,
         child: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            // Listing info header
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: widget.booking.listingImageUrl != null
-                          ? Image.network(
-                              widget.booking.listingImageUrl!,
-                              width: 64,
-                              height: 64,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
-                                  _buildPlaceholder(theme),
-                            )
-                          : _buildPlaceholder(theme),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.booking.listingTitle ?? 'Your Stay',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          if (widget.booking.listingCity != null)
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              // Listing info header
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: widget.booking.listingImageUrl != null
+                            ? Image.network(
+                                widget.booking.listingImageUrl!,
+                                width: 64,
+                                height: 64,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) =>
+                                    _buildPlaceholder(theme),
+                              )
+                            : _buildPlaceholder(theme),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                             Text(
-                              widget.booking.listingCity!,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
+                              widget.booking.listingTitle ?? 'Your Stay',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                        ],
+                            if (widget.booking.listingCity != null)
+                              Text(
+                                widget.booking.listingCity!,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 24),
+              const SizedBox(height: 24),
 
-            // Overall rating
-            Text(
-              'Overall Experience',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
+              // Overall rating
+              Text(
+                'Overall Experience',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            _RatingSelector(
-              value: _overall,
-              onChanged: (v) => setState(() => _overall = v),
-            ),
-            const SizedBox(height: 24),
-
-            // Category ratings
-            Text(
-              'Rate Your Experience',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
+              const SizedBox(height: 8),
+              _RatingSelector(
+                value: _overall,
+                onChanged: (v) => setState(() => _overall = v),
               ),
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 24),
 
-            _CategoryRating(
-              label: 'Cleanliness',
-              icon: Icons.cleaning_services,
-              value: _cleanliness,
-              onChanged: (v) => setState(() => _cleanliness = v),
-            ),
-            const SizedBox(height: 12),
-
-            _CategoryRating(
-              label: 'Accuracy',
-              icon: Icons.fact_check,
-              value: _accuracy,
-              onChanged: (v) => setState(() => _accuracy = v),
-              subtitle: 'Listing matched description',
-            ),
-            const SizedBox(height: 12),
-
-            _CategoryRating(
-              label: 'Communication',
-              icon: Icons.chat,
-              value: _communication,
-              onChanged: (v) => setState(() => _communication = v),
-            ),
-            const SizedBox(height: 12),
-
-            _CategoryRating(
-              label: 'Location',
-              icon: Icons.location_on,
-              value: _location,
-              onChanged: (v) => setState(() => _location = v),
-            ),
-            const SizedBox(height: 12),
-
-            _CategoryRating(
-              label: 'Value',
-              icon: Icons.attach_money,
-              value: _value,
-              onChanged: (v) => setState(() => _value = v),
-              subtitle: 'Worth the price',
-            ),
-            const SizedBox(height: 24),
-
-            // Comment (optional)
-            Text(
-              'Write a Review (Optional)',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
+              // Category ratings
+              Text(
+                'Rate Your Experience',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            TextFormField(
-              controller: _commentController,
-              maxLines: 5,
-              decoration: const InputDecoration(
-                hintText: 'Share your experience with future guests...',
-                border: OutlineInputBorder(),
-              ),
-              validator: (value) {
-                if (value != null &&
-                    value.trim().isNotEmpty &&
-                    value.trim().length < 10) {
-                  return 'Review must be at least 10 characters';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Your review will be visible after both you and the host have submitted reviews, or after 14 days.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 32),
+              const SizedBox(height: 16),
 
-            // Submit button
-            FilledButton(
-              onPressed: _isSubmitting ? null : _submit,
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(48),
+              _CategoryRating(
+                label: 'Cleanliness',
+                icon: Icons.cleaning_services,
+                value: _cleanliness,
+                onChanged: (v) => setState(() => _cleanliness = v),
               ),
-              child: _isSubmitting
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Submit Review'),
-            ),
-            SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
-          ],
-        ),
+              const SizedBox(height: 12),
+
+              _CategoryRating(
+                label: 'Accuracy',
+                icon: Icons.fact_check,
+                value: _accuracy,
+                onChanged: (v) => setState(() => _accuracy = v),
+                subtitle: 'Listing matched description',
+              ),
+              const SizedBox(height: 12),
+
+              _CategoryRating(
+                label: 'Communication',
+                icon: Icons.chat,
+                value: _communication,
+                onChanged: (v) => setState(() => _communication = v),
+              ),
+              const SizedBox(height: 12),
+
+              _CategoryRating(
+                label: 'Location',
+                icon: Icons.location_on,
+                value: _location,
+                onChanged: (v) => setState(() => _location = v),
+              ),
+              const SizedBox(height: 12),
+
+              _CategoryRating(
+                label: 'Value',
+                icon: Icons.attach_money,
+                value: _value,
+                onChanged: (v) => setState(() => _value = v),
+                subtitle: 'Worth the price',
+              ),
+              const SizedBox(height: 24),
+
+              // Comment (optional)
+              Text(
+                'Write a Review (Optional)',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _commentController,
+                maxLines: 5,
+                decoration: const InputDecoration(
+                  hintText: 'Share your experience with future guests...',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  if (value != null &&
+                      value.trim().isNotEmpty &&
+                      value.trim().length < 10) {
+                    return 'Review must be at least 10 characters';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Your review will be visible after both you and the host have submitted reviews, or after 14 days.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 32),
+
+              // Submit button
+              FilledButton(
+                onPressed: _isSubmitting ? null : _submit,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                ),
+                child: _isSubmitting
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Submit Review'),
+              ),
+              SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
+            ],
+          ),
         ),
       ),
     );

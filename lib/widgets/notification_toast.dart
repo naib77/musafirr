@@ -359,10 +359,12 @@ class NotificationBanner extends StatelessWidget {
                 ),
                 if (onDismiss != null)
                   IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white, size: 18),
+                    icon:
+                        const Icon(Icons.close, color: Colors.white, size: 18),
                     onPressed: onDismiss,
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    constraints:
+                        const BoxConstraints(minWidth: 32, minHeight: 32),
                   ),
               ],
             ),

@@ -69,7 +69,8 @@ class ExpandableNotificationItem extends StatelessWidget {
             color: Colors.red.shade400,
             borderRadius: BorderRadius.circular(16),
           ),
-          child: const Icon(Icons.delete_outline, color: Colors.white, size: 28),
+          child:
+              const Icon(Icons.delete_outline, color: Colors.white, size: 28),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(16),
@@ -82,19 +83,24 @@ class ExpandableNotificationItem extends StatelessWidget {
                   end: Alignment.bottomRight,
                   colors: notification.isUnread
                       ? [
-                          theme.colorScheme.primaryContainer.withValues(alpha: isDark ? 0.3 : 0.5),
-                          theme.colorScheme.primaryContainer.withValues(alpha: isDark ? 0.15 : 0.25),
+                          theme.colorScheme.primaryContainer
+                              .withValues(alpha: isDark ? 0.3 : 0.5),
+                          theme.colorScheme.primaryContainer
+                              .withValues(alpha: isDark ? 0.15 : 0.25),
                         ]
                       : [
-                          (isDark ? Colors.white : Colors.white).withValues(alpha: isDark ? 0.08 : 0.7),
-                          (isDark ? Colors.white : Colors.white).withValues(alpha: isDark ? 0.04 : 0.5),
+                          (isDark ? Colors.white : Colors.white)
+                              .withValues(alpha: isDark ? 0.08 : 0.7),
+                          (isDark ? Colors.white : Colors.white)
+                              .withValues(alpha: isDark ? 0.04 : 0.5),
                         ],
                 ),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: notification.isUnread
                       ? theme.colorScheme.primary.withValues(alpha: 0.3)
-                      : (isDark ? Colors.white : Colors.black).withValues(alpha: isDark ? 0.1 : 0.08),
+                      : (isDark ? Colors.white : Colors.black)
+                          .withValues(alpha: isDark ? 0.1 : 0.08),
                   width: 1,
                 ),
                 boxShadow: [
@@ -323,7 +329,8 @@ class ExpandableNotificationItem extends StatelessWidget {
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: theme.colorScheme.primary.withValues(alpha: 0.4),
+                          color:
+                              theme.colorScheme.primary.withValues(alpha: 0.4),
                           blurRadius: 6,
                           offset: const Offset(0, 2),
                         ),
@@ -338,7 +345,8 @@ class ExpandableNotificationItem extends StatelessWidget {
     );
   }
 
-  Widget _buildExpandedContent(BuildContext context, ThemeData theme, bool isDark) {
+  Widget _buildExpandedContent(
+      BuildContext context, ThemeData theme, bool isDark) {
     final data = notification.data ?? {};
     final guestName = data['guest_name'] as String? ?? 'Guest';
     final guestAvatarUrl = data['guest_avatar_url'] as String?;
@@ -462,7 +470,8 @@ class ExpandableNotificationItem extends StatelessWidget {
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
                           colors: [Color(0xFFF59E0B), Color(0xFFFBBF24)],
@@ -472,7 +481,8 @@ class ExpandableNotificationItem extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.star_rounded, size: 12, color: Colors.white),
+                          const Icon(Icons.star_rounded,
+                              size: 12, color: Colors.white),
                           const SizedBox(width: 2),
                           Text(
                             rating.toStringAsFixed(1),

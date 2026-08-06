@@ -197,7 +197,8 @@ class AppError {
         isRetryable: false,
       );
 
-  factory AppError.unknown({String? message, dynamic details, StackTrace? stackTrace}) =>
+  factory AppError.unknown(
+          {String? message, dynamic details, StackTrace? stackTrace}) =>
       AppError(
         message: message ?? 'An unexpected error occurred.',
         code: 'UNKNOWN_ERROR',
@@ -216,7 +217,8 @@ typedef AppResult<T> = Result<T, AppError>;
 /// Extension for async Result operations
 extension ResultFuture<T, E> on Future<Result<T, E>> {
   /// Map success value asynchronously
-  Future<Result<U, E>> mapAsync<U>(Future<U> Function(T value) transform) async {
+  Future<Result<U, E>> mapAsync<U>(
+      Future<U> Function(T value) transform) async {
     final result = await this;
     if (result is Success<T, E>) {
       return Success(await transform(result.value));

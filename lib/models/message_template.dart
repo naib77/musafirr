@@ -200,9 +200,9 @@ class MessageTemplate {
   /// language; a hand-edited template is returned verbatim.
   static String resolveContent(MessageTemplate t, MessageLanguage language) {
     final content = t.content;
-    final isKnownDefault =
-        content == defaultContentFor(t.trigger, language: MessageLanguage.en) ||
-            content == defaultContentFor(t.trigger, language: MessageLanguage.bn);
+    final isKnownDefault = content ==
+            defaultContentFor(t.trigger, language: MessageLanguage.en) ||
+        content == defaultContentFor(t.trigger, language: MessageLanguage.bn);
     return isKnownDefault
         ? defaultContentFor(t.trigger, language: language)
         : content;

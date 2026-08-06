@@ -219,7 +219,8 @@ class LoyaltyScreen extends StatelessWidget {
                         padding: const EdgeInsets.only(bottom: 4),
                         child: Row(
                           children: [
-                            const Icon(Icons.check, color: Colors.white, size: 16),
+                            const Icon(Icons.check,
+                                color: Colors.white, size: 16),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(

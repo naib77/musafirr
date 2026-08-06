@@ -112,9 +112,8 @@ class _MainShellState extends State<MainShell> {
     if (user == null) return false;
 
     // Check for pending booking requests
-    final hostListings = widget.repository.listings
-        .where((l) => l.hostId == user.id)
-        .toList();
+    final hostListings =
+        widget.repository.listings.where((l) => l.hostId == user.id).toList();
 
     if (hostListings.isEmpty) return false;
 
@@ -313,7 +312,7 @@ class _MainShellState extends State<MainShell> {
               color: AppColors.brand, size: 26),
           const SizedBox(width: 8),
           Text(
-            'Musafir',
+            'Musaafir',
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w700,
@@ -556,8 +555,7 @@ class _MainShellState extends State<MainShell> {
               repository: widget.repository,
               notificationState: widget.notificationState,
               isHostContext: false,
-              onSwitchToHosting: () =>
-                  _appModeState.setMode(AppMode.host),
+              onSwitchToHosting: () => _appModeState.setMode(AppMode.host),
             ),
           ),
         ],

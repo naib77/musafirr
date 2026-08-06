@@ -26,3 +26,7 @@ local.properties
 
 # Stray Windows device-name artifact
 /nul
+
+# Build outputs (build/web is tracked for the web stage deployment)
+/build/*
+!/build/web

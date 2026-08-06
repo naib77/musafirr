@@ -61,7 +61,8 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
       // previews below can actually load.
       final uploads = ImageUploadService.instance;
       for (final v in verifications) {
-        final docs = List<Map<String, dynamic>>.from(v['owner_documents'] ?? []);
+        final docs =
+            List<Map<String, dynamic>>.from(v['owner_documents'] ?? []);
         for (final doc in docs) {
           final path = doc['file_path'] as String?;
           if (path != null && path.isNotEmpty) {
@@ -250,11 +251,11 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
           phone: verification['mobile'] ?? '',
           idType: verification['id_document_type'] as String?,
           idNumber: verification['nid'] as String?,
-          documents:
-              List<Map<String, dynamic>>.from(verification['owner_documents'] ?? []),
+          documents: List<Map<String, dynamic>>.from(
+              verification['owner_documents'] ?? []),
           onApprove: () => _approveVerification(verification['id']),
-          onReject: () =>
-              _showRejectDialog(verification['id'], verification['full_name'] ?? 'User'),
+          onReject: () => _showRejectDialog(
+              verification['id'], verification['full_name'] ?? 'User'),
         );
       },
     );
@@ -325,7 +326,8 @@ class _VerificationCard extends StatelessWidget {
           // User info
           ListTile(
             leading: CircleAvatar(
-              child: Text(userName.isNotEmpty ? userName[0].toUpperCase() : 'U'),
+              child:
+                  Text(userName.isNotEmpty ? userName[0].toUpperCase() : 'U'),
             ),
             title: Text(userName),
             subtitle: Text(phone),

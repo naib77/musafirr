@@ -42,8 +42,7 @@ void main() {
     notifier.dispose();
   });
 
-  testWidgets('notifies synchronously when not in build phase',
-      (tester) async {
+  testWidgets('notifies synchronously when not in build phase', (tester) async {
     // Bind so SchedulerBinding.instance is available.
     await tester.pumpWidget(const SizedBox());
 

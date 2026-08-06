@@ -14,8 +14,10 @@ import '../models/payment_record.dart';
 import '../models/booking_duration.dart';
 import '../models/booking_status.dart';
 import '../models/facility.dart';
+import '../models/landmark.dart';
 import '../models/leaderboard_entry.dart';
 import '../models/listing.dart';
+import '../models/listing_purpose.dart';
 import '../models/listing_type.dart';
 import '../models/owner_registration_draft.dart';
 import '../models/review.dart';
@@ -336,11 +338,17 @@ class SupabaseMusafirRepository extends ChangeNotifier
         'p_guest_count': filters.guestCount,
         'p_min_price': filters.minPrice,
         'p_max_price': filters.maxPrice,
-        'p_amenities':
-            filters.amenities.isEmpty ? null : filters.amenities,
+        'p_amenities': filters.amenities.isEmpty ? null : filters.amenities,
         'p_location': (location == null || location.isEmpty) ? null : location,
         'p_limit': limit,
         'p_offset': offset,
+        'p_purpose_tags': filters.purposeTags.isEmpty
+            ? null
+            : filters.purposeTags.map((p) => p.wireName).toList(),
+        'p_center_lat': filters.landmark?.latitude,
+        'p_center_lng': filters.landmark?.longitude,
+        'p_radius_m':
+            filters.landmark != null ? (filters.radiusMeters ?? 15000) : null,
       });
 
       return (rows as List)
@@ -348,6 +356,47 @@ class SupabaseMusafirRepository extends ChangeNotifier
           .toList();
     } catch (e) {
       debugPrint('Error searching listings: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<List<Landmark>> searchLandmarks({String? query, String? type}) async {
+    try {
+      final rows = await _client.rpc('search_landmarks', params: {
+        'p_query':
+            (query == null || query.trim().isEmpty) ? null : query.trim(),
+        'p_type': type,
+        'p_limit': 30,
+      });
+      return (rows as List)
+          .map((e) => Landmark.fromJson((e as Map).cast<String, dynamic>()))
+          .toList();
+    } catch (e) {
+      debugPrint('Error searching landmarks: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<List<Landmark>> nearbyLandmarks({
+    required double latitude,
+    required double longitude,
+    int limit = 5,
+    String? type,
+  }) async {
+    try {
+      final rows = await _client.rpc('nearby_landmarks', params: {
+        'p_lat': latitude,
+        'p_lng': longitude,
+        'p_limit': limit,
+        'p_type': type,
+      });
+      return (rows as List)
+          .map((e) => Landmark.fromJson((e as Map).cast<String, dynamic>()))
+          .toList();
+    } catch (e) {
+      debugPrint('Error fetching nearby landmarks: $e');
       return [];
     }
   }
@@ -394,6 +443,8 @@ class SupabaseMusafirRepository extends ChangeNotifier
       reviewCount: json['review_count'] as int? ?? 0,
       isSuperhost: json['is_superhost'] as bool? ?? false,
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? ''),
+      purposeTags: listingPurposesFromWire(json['purpose_tags']),
+      distanceMeters: (json['distance_m'] as num?)?.toDouble(),
       bookingLimits: BookingLimits(
         minHours: json['min_hours'] as int?,
         maxHours: json['max_hours'] as int?,
@@ -440,6 +491,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
       'area': listing.area,
       'postal_code': listing.postalCode,
       'landmark': listing.landmark,
+      'purpose_tags': listing.purposeTags.map((p) => p.wireName).toList(),
       'image_urls': listing.imageUrls,
       'max_guests': listing.maxGuests,
       'bedrooms': listing.bedrooms,
@@ -1467,7 +1519,8 @@ class SupabaseMusafirRepository extends ChangeNotifier
           .eq('user_id', userId)
           .order('created_at', ascending: false);
       return (rows as List)
-          .map((r) => PaymentRecord.fromJson((r as Map).cast<String, dynamic>()))
+          .map(
+              (r) => PaymentRecord.fromJson((r as Map).cast<String, dynamic>()))
           .toList();
     } catch (e) {
       debugPrint('Error fetching user payments: $e');
@@ -1631,14 +1684,15 @@ class SupabaseMusafirRepository extends ChangeNotifier
       'p_listing_id': booking.listingId,
       // Serialize as UTC — a naive local (UTC+6) string is read by the
       // timestamptz column as UTC, shifting every booking 6 hours ahead.
-      'p_starts_at': (booking.checkIn ?? booking.startAt).toUtc().toIso8601String(),
-      'p_ends_at': (booking.checkOut ?? booking.endAt).toUtc().toIso8601String(),
+      'p_starts_at':
+          (booking.checkIn ?? booking.startAt).toUtc().toIso8601String(),
+      'p_ends_at':
+          (booking.checkOut ?? booking.endAt).toUtc().toIso8601String(),
       'p_pricing_unit': booking.unitLabel,
       'p_guest_count': booking.guestCount,
       'p_tenant_name': booking.tenantName,
-      'p_coupon_code': (couponCode != null && couponCode.isNotEmpty)
-          ? couponCode
-          : null,
+      'p_coupon_code':
+          (couponCode != null && couponCode.isNotEmpty) ? couponCode : null,
       'p_listing_image_url': booking.listingImageUrl,
     });
 
@@ -1646,7 +1700,8 @@ class SupabaseMusafirRepository extends ChangeNotifier
     await _refreshBookings();
     return (
       id: data['id'] as String,
-      totalPrice: (data['total_price'] as num?)?.toDouble() ?? booking.totalPrice,
+      totalPrice:
+          (data['total_price'] as num?)?.toDouble() ?? booking.totalPrice,
       discountAmount: (data['discount_amount'] as num?)?.toDouble() ?? 0,
     );
   }

@@ -143,8 +143,7 @@ class LoyaltyTier {
   Color get color {
     if (badgeColor != null) {
       try {
-        return Color(
-            int.parse(badgeColor!.replaceFirst('#', '0xFF')));
+        return Color(int.parse(badgeColor!.replaceFirst('#', '0xFF')));
       } catch (_) {}
     }
     return tierLevel.color;
@@ -172,7 +171,8 @@ class LoyaltyTier {
     final benefits = <String>[];
 
     if (discountPercentage > 0) {
-      benefits.add('${discountPercentage.toStringAsFixed(0)}% discount on all bookings');
+      benefits.add(
+          '${discountPercentage.toStringAsFixed(0)}% discount on all bookings');
     }
 
     if (prioritySupport) {
@@ -182,9 +182,11 @@ class LoyaltyTier {
     if (freeCancellationWindow > 24) {
       final hours = freeCancellationWindow;
       if (hours >= 168) {
-        benefits.add('Free cancellation up to ${(hours / 24).round()} days before');
+        benefits
+            .add('Free cancellation up to ${(hours / 24).round()} days before');
       } else if (hours >= 24) {
-        benefits.add('Free cancellation up to ${(hours / 24).round()} days before');
+        benefits
+            .add('Free cancellation up to ${(hours / 24).round()} days before');
       } else {
         benefits.add('Free cancellation up to $hours hours before');
       }
@@ -192,7 +194,8 @@ class LoyaltyTier {
 
     if (earlyAccessHours > 0) {
       if (earlyAccessHours >= 24) {
-        benefits.add('${(earlyAccessHours / 24).round()}-day early access to new listings');
+        benefits.add(
+            '${(earlyAccessHours / 24).round()}-day early access to new listings');
       } else {
         benefits.add('$earlyAccessHours-hour early access to new listings');
       }
@@ -212,8 +215,7 @@ class LoyaltyTier {
       discountPercentage:
           (json['discount_percentage'] as num?)?.toDouble() ?? 0,
       prioritySupport: json['priority_support'] as bool? ?? false,
-      freeCancellationWindow:
-          json['free_cancellation_window'] as int? ?? 24,
+      freeCancellationWindow: json['free_cancellation_window'] as int? ?? 24,
       earlyAccessHours: json['early_access_hours'] as int? ?? 0,
       badgeColor: json['badge_color'] as String?,
       iconName: json['icon_name'] as String?,
@@ -320,8 +322,7 @@ class UserLoyalty {
       currentTierId: json['current_tier_id'] as String?,
       totalBookings: json['total_bookings'] as int? ?? 0,
       totalNightsStayed: json['total_nights_stayed'] as int? ?? 0,
-      totalAmountSpent:
-          (json['total_amount_spent'] as num?)?.toDouble() ?? 0,
+      totalAmountSpent: (json['total_amount_spent'] as num?)?.toDouble() ?? 0,
       loyaltyPoints: json['loyalty_points'] as int? ?? 0,
       creditsBalance: (json['credits_balance'] as num?)?.toDouble() ?? 0,
       tierUpgradedAt: json['tier_upgraded_at'] != null
@@ -462,13 +463,16 @@ class TierProgress {
   }
 
   /// Bookings remaining
-  int get bookingsRemaining => (bookingsRequired - bookingsProgress).clamp(0, bookingsRequired);
+  int get bookingsRemaining =>
+      (bookingsRequired - bookingsProgress).clamp(0, bookingsRequired);
 
   /// Nights remaining
-  int get nightsRemaining => (nightsRequired - nightsProgress).clamp(0, nightsRequired);
+  int get nightsRemaining =>
+      (nightsRequired - nightsProgress).clamp(0, nightsRequired);
 
   /// Amount remaining to spend
-  double get spentRemaining => (spentRequired - spentProgress).clamp(0, spentRequired);
+  double get spentRemaining =>
+      (spentRequired - spentProgress).clamp(0, spentRequired);
 
   factory TierProgress.fromUserLoyalty(
     UserLoyalty loyalty,

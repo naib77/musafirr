@@ -75,15 +75,20 @@ void main() {
     //   completed/cancelled/rejected -> Past
     test('pending request with a FUTURE date is Upcoming (host can act)', () {
       final b = _booking(
-          status: BookingStatus.pending, checkIn: futureIn, checkOut: futureOut);
+          status: BookingStatus.pending,
+          checkIn: futureIn,
+          checkOut: futureOut);
       expect(b.isUpcomingAt(_now), isTrue);
       expect(b.isPastAt(_now), isFalse);
     });
 
-    test('pending request whose date already ELAPSED is still Upcoming, '
+    test(
+        'pending request whose date already ELAPSED is still Upcoming, '
         'never buried in Past (this was the reported bug)', () {
       final b = _booking(
-          status: BookingStatus.pending, checkIn: elapsedIn, checkOut: elapsedOut);
+          status: BookingStatus.pending,
+          checkIn: elapsedIn,
+          checkOut: elapsedOut);
       expect(b.isUpcomingAt(_now), isTrue);
       expect(b.isPastAt(_now), isFalse);
       expect(b.isOngoingAt(_now), isFalse);
@@ -91,31 +96,41 @@ void main() {
 
     test('confirmed future booking is Upcoming', () {
       final b = _booking(
-          status: BookingStatus.confirmed, checkIn: futureIn, checkOut: futureOut);
+          status: BookingStatus.confirmed,
+          checkIn: futureIn,
+          checkOut: futureOut);
       expect(b.isUpcomingAt(_now), isTrue);
     });
 
-    test('confirmed booking is Upcoming regardless of date — it only becomes '
+    test(
+        'confirmed booking is Upcoming regardless of date — it only becomes '
         'Current when the host checks the guest in (status -> active). This is '
         'what keeps the dashboard and the Reservations tab in agreement.', () {
       // check-in date arrived but host has not checked the guest in yet
       final arrived = _booking(
-          status: BookingStatus.confirmed, checkIn: ongoingIn, checkOut: ongoingOut);
+          status: BookingStatus.confirmed,
+          checkIn: ongoingIn,
+          checkOut: ongoingOut);
       expect(arrived.isUpcomingAt(_now), isTrue);
       expect(arrived.isOngoingAt(_now), isFalse);
 
       // stay window fully elapsed but never checked in / completed — still a live
       // reservation the host must resolve, NOT silently filed under Past.
       final elapsed = _booking(
-          status: BookingStatus.confirmed, checkIn: elapsedIn, checkOut: elapsedOut);
+          status: BookingStatus.confirmed,
+          checkIn: elapsedIn,
+          checkOut: elapsedOut);
       expect(elapsed.isUpcomingAt(_now), isTrue);
       expect(elapsed.isPastAt(_now), isFalse);
     });
 
-    test('checked-in (active) booking is Current/Ongoing so host can mark '
+    test(
+        'checked-in (active) booking is Current/Ongoing so host can mark '
         'complete, even after checkout time passes', () {
       final b = _booking(
-          status: BookingStatus.active, checkIn: elapsedIn, checkOut: elapsedOut);
+          status: BookingStatus.active,
+          checkIn: elapsedIn,
+          checkOut: elapsedOut);
       expect(b.isOngoingAt(_now), isTrue);
       expect(b.isPastAt(_now), isFalse);
       expect(b.isUpcomingAt(_now), isFalse);
@@ -127,7 +142,8 @@ void main() {
         BookingStatus.cancelled,
         BookingStatus.rejected,
       ]) {
-        final b = _booking(status: status, checkIn: futureIn, checkOut: futureOut);
+        final b =
+            _booking(status: status, checkIn: futureIn, checkOut: futureOut);
         expect(b.isPastAt(_now), isTrue,
             reason: '${status.name} with future dates must still be Past');
         expect(b.isUpcomingAt(_now), isFalse);
@@ -175,8 +191,10 @@ void main() {
 
       // confirmed-ongoing is a confirmed booking the host hasn't checked in yet,
       // so it is Upcoming (not Current) until status flips to active.
-      expect(c.upcoming.map((b) => b.id),
-          containsAll(['pending-future', 'pending-elapsed', 'confirmed-ongoing']));
+      expect(
+          c.upcoming.map((b) => b.id),
+          containsAll(
+              ['pending-future', 'pending-elapsed', 'confirmed-ongoing']));
       expect(c.current.map((b) => b.id), containsAll(['active']));
       expect(c.past.map((b) => b.id), containsAll(['completed', 'rejected']));
 

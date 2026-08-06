@@ -1,83 +1,84 @@
-import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../config/api_keys.dart';
-
+/// Fetches driving/walking routes for the in-app map.
+///
+/// The request is proxied through the `google-directions` Supabase Edge
+/// Function so the Google Maps key stays a server-side secret and never ships in
+/// the app (web or native). The function returns Google's raw Directions JSON,
+/// which we parse here into a [DirectionsResult]. Works identically on all
+/// platforms — the browser calls the function too (it sets CORS headers),
+/// avoiding the CORS block that hitting Google's REST API directly would cause.
 class DirectionsService {
-  static String get _apiKey => googleMapsApiKey;
-
-  /// Get directions between two points
-  /// Returns a list of LatLng points for the route polyline
+  /// Get directions between two points, or null if no route / not configured.
   static Future<DirectionsResult?> getDirections({
     required LatLng origin,
     required LatLng destination,
     String mode = 'driving', // driving, walking, bicycling, transit
   }) async {
-    final url = Uri.parse(
-      'https://maps.googleapis.com/maps/api/directions/json'
-      '?origin=${origin.latitude},${origin.longitude}'
-      '&destination=${destination.latitude},${destination.longitude}'
-      '&mode=$mode'
-      '&key=$_apiKey',
-    );
-
     try {
-      final response = await http.get(url);
+      final res = await Supabase.instance.client.functions.invoke(
+        'google-directions',
+        body: {
+          'origin': '${origin.latitude},${origin.longitude}',
+          'destination': '${destination.latitude},${destination.longitude}',
+          'mode': mode,
+        },
+      );
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
-
-        if (data['status'] == 'OK') {
-          final routes = data['routes'] as List;
-          if (routes.isNotEmpty) {
-            final route = routes[0] as Map<String, dynamic>;
-            final legs = route['legs'] as List;
-            final leg = legs[0] as Map<String, dynamic>;
-
-            // Get overview polyline
-            final polyline = route['overview_polyline']['points'] as String;
-            final points = _decodePolyline(polyline);
-
-            // Get distance and duration
-            final distance = leg['distance']['text'] as String;
-            final duration = leg['duration']['text'] as String;
-
-            // Get bounds
-            final bounds = route['bounds'] as Map<String, dynamic>;
-            final northeast = bounds['northeast'] as Map<String, dynamic>;
-            final southwest = bounds['southwest'] as Map<String, dynamic>;
-
-            return DirectionsResult(
-              points: points,
-              distance: distance,
-              duration: duration,
-              bounds: LatLngBounds(
-                northeast: LatLng(
-                  (northeast['lat'] as num).toDouble(),
-                  (northeast['lng'] as num).toDouble(),
-                ),
-                southwest: LatLng(
-                  (southwest['lat'] as num).toDouble(),
-                  (southwest['lng'] as num).toDouble(),
-                ),
-              ),
-            );
-          }
-        } else {
-          debugPrint('Directions API error: ${data['status']}');
-        }
+      final data = res.data;
+      if (data is! Map) {
+        debugPrint('Directions: unexpected response: $data');
+        return null;
       }
-    } catch (e) {
-      debugPrint('Error fetching directions: $e');
-    }
+      if (data['status'] != 'OK') {
+        debugPrint(
+            'Directions error: ${data['status'] ?? data['error'] ?? 'unknown'}');
+        return null;
+      }
 
-    return null;
+      final routes = data['routes'] as List;
+      if (routes.isEmpty) return null;
+      final route = (routes[0] as Map).cast<String, dynamic>();
+      final legs = route['legs'] as List;
+      final leg = (legs[0] as Map).cast<String, dynamic>();
+
+      // Overview polyline for the route line.
+      final polyline = (route['overview_polyline'] as Map)['points'] as String;
+      final points = _decodePolyline(polyline);
+
+      final distance = (leg['distance'] as Map)['text'] as String;
+      final duration = (leg['duration'] as Map)['text'] as String;
+
+      final bounds = (route['bounds'] as Map).cast<String, dynamic>();
+      final northeast = (bounds['northeast'] as Map).cast<String, dynamic>();
+      final southwest = (bounds['southwest'] as Map).cast<String, dynamic>();
+
+      return DirectionsResult(
+        points: points,
+        distance: distance,
+        duration: duration,
+        bounds: LatLngBounds(
+          northeast: LatLng(
+            (northeast['lat'] as num).toDouble(),
+            (northeast['lng'] as num).toDouble(),
+          ),
+          southwest: LatLng(
+            (southwest['lat'] as num).toDouble(),
+            (southwest['lng'] as num).toDouble(),
+          ),
+        ),
+      );
+    } catch (e) {
+      // Non-2xx from the function (misconfig, no route) throws — degrade to null
+      // so callers fall back to showing both pins + "Open in Google Maps".
+      debugPrint('Error fetching directions: $e');
+      return null;
+    }
   }
 
-  /// Decode Google's encoded polyline string into a list of LatLng points
+  /// Decode Google's encoded polyline string into a list of LatLng points.
   static List<LatLng> _decodePolyline(String encoded) {
     final List<LatLng> points = [];
     int index = 0;

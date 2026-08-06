@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'app_colors.dart';
 import 'app_typography.dart';
 
-/// Assembles the Musafir [ThemeData]. Single source of truth for colors,
+/// Assembles the Musaafir [ThemeData]. Single source of truth for colors,
 /// typography, component shapes, and page transitions — every screen inherits
 /// this, so modernizing here lifts the whole app.
 class AppTheme {

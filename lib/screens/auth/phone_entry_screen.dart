@@ -35,7 +35,8 @@ class _PhoneEntryScreenState extends State<PhoneEntryScreen> {
     final success = await widget.otpState.sendOtp(_phoneController.text);
 
     if (!success && mounted) {
-      ModernBanner.showError(context, widget.otpState.error ?? 'Failed to send OTP');
+      ModernBanner.showError(
+          context, widget.otpState.error ?? 'Failed to send OTP');
     }
   }
 
@@ -49,100 +50,100 @@ class _PhoneEntryScreenState extends State<PhoneEntryScreen> {
           maxWidth: Responsive.formMaxWidth,
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 48),
-                // Logo/Brand
-                Icon(
-                  Icons.home_work_rounded,
-                  size: 80,
-                  color: theme.colorScheme.primary,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Musafir',
-                  style: theme.textTheme.headlineLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 48),
+                  // Logo/Brand
+                  Icon(
+                    Icons.home_work_rounded,
+                    size: 80,
                     color: theme.colorScheme.primary,
                   ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Log in with your phone number',
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                  const SizedBox(height: 16),
+                  Text(
+                    'Musaafir',
+                    style: theme.textTheme.headlineLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.primary,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 48),
-
-                // Phone number field
-                PhoneInputField(
-                  controller: _phoneController,
-                  textInputAction: TextInputAction.done,
-                  onFieldSubmitted: (_) => _handleSendOtp(),
-                  autofocus: true,
-                ),
-                const SizedBox(height: 24),
-
-                // Send OTP button
-                ListenableBuilder(
-                  listenable: widget.otpState,
-                  builder: (context, _) {
-                    return FilledButton(
-                      onPressed:
-                          widget.otpState.isLoading ? null : _handleSendOtp,
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      child: widget.otpState.isLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text('Send OTP'),
-                    );
-                  },
-                ),
-                const SizedBox(height: 24),
-
-                // Info text
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Log in with your phone number',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.info_outline,
-                        size: 20,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'We\'ll send a 4-digit verification code to your phone number.',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
+                  const SizedBox(height: 48),
+
+                  // Phone number field
+                  PhoneInputField(
+                    controller: _phoneController,
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: (_) => _handleSendOtp(),
+                    autofocus: true,
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Send OTP button
+                  ListenableBuilder(
+                    listenable: widget.otpState,
+                    builder: (context, _) {
+                      return FilledButton(
+                        onPressed:
+                            widget.otpState.isLoading ? null : _handleSendOtp,
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        child: widget.otpState.isLoading
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text('Send OTP'),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Info text
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 20,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'We\'ll send a 4-digit verification code to your phone number.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
           ),
         ),
       ),

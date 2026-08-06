@@ -27,20 +27,20 @@ class MockAuthService implements AuthService {
 
   // Mock users database (keyed by email)
   final Map<String, User> _users = {
-    'demo@musafir.com': const User(
+    'demo@musaafir.com': const User(
       id: 'user_1',
       name: 'Demo User',
-      email: 'demo@musafir.com',
+      email: 'demo@musaafir.com',
       avatarUrl:
           'https://ui-avatars.com/api/?name=Demo+User&background=0B7285&color=fff&size=150',
       role: UserRole.tenant,
       phone: '+880 1712345678',
       registrationMethod: RegistrationMethod.email,
     ),
-    'owner@musafir.com': User(
+    'owner@musaafir.com': User(
       id: 'user_2',
       name: 'Property Owner',
-      email: 'owner@musafir.com',
+      email: 'owner@musaafir.com',
       avatarUrl:
           'https://ui-avatars.com/api/?name=Property+Owner&background=1098AD&color=fff&size=150',
       role: UserRole.owner,
@@ -52,10 +52,10 @@ class MockAuthService implements AuthService {
       responseTime: 'within an hour',
       registrationMethod: RegistrationMethod.email,
     ),
-    'admin@musafir.com': const User(
+    'admin@musaafir.com': const User(
       id: 'user_3',
       name: 'Admin User',
-      email: 'admin@musafir.com',
+      email: 'admin@musaafir.com',
       avatarUrl:
           'https://ui-avatars.com/api/?name=Admin+User&background=7048E8&color=fff&size=150',
       role: UserRole.admin,

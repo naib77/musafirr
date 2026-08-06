@@ -457,7 +457,7 @@ async function sendWelcomeMessage(recipientId: string) {
     recipient: { id: recipientId },
     messaging_type: 'RESPONSE',
     message: {
-      text: "Welcome to Musafir! I'm here to help you find your perfect stay in Bangladesh. What would you like to do?",
+      text: "Welcome to Musaafir! I'm here to help you find your perfect stay in Bangladesh. What would you like to do?",
       quick_replies: [
         {
           content_type: 'text',

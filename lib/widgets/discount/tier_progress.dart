@@ -332,7 +332,8 @@ class TierProgressCard extends StatelessWidget {
       children: [
         Row(
           children: [
-            Icon(icon, size: 16, color: colorScheme.onSurface.withValues(alpha: 0.6)),
+            Icon(icon,
+                size: 16, color: colorScheme.onSurface.withValues(alpha: 0.6)),
             const SizedBox(width: 8),
             Text(
               label,
@@ -599,9 +600,8 @@ class TiersOverview extends StatelessWidget {
                         fontWeight: tier.level == currentTierLevel
                             ? FontWeight.bold
                             : null,
-                        color: tier.level == currentTierLevel
-                            ? tier.color
-                            : null,
+                        color:
+                            tier.level == currentTierLevel ? tier.color : null,
                       ),
                     ),
                   ],

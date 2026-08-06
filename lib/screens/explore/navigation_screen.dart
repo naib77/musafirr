@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../core/utils/external_launcher.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../models/listing.dart';
@@ -107,28 +107,17 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
       _currentLocation = LatLng(position.latitude, position.longitude);
 
-      // On web, we can't call Directions API directly due to CORS
-      // So we just show both locations and let user open Google Maps for navigation
-      if (kIsWeb) {
-        setState(() {
-          _isLoading = false;
-        });
-
-        // Fit map to show both markers
-        _fitMapToBothLocations();
-        return;
-      }
-
-      // On mobile, try to fetch an in-app route polyline. This needs a key
-      // that authorizes the Directions REST API; if it isn't available (empty
-      // key, REST not enabled, or an "Android apps" restriction that REST
-      // calls can't satisfy) we degrade gracefully rather than dead-end.
+      // Fetch the in-app route polyline. This is proxied through the
+      // google-directions Edge Function (key stays a server secret) and works on
+      // web and mobile alike. If it returns null (not configured / no route) we
+      // degrade to showing both pins + the "Open in Google Maps" button.
       final directions = await DirectionsService.getDirections(
         origin: _currentLocation!,
         destination: _destinationLocation,
         mode: _travelMode,
       );
 
+      if (!mounted) return;
       setState(() {
         _directions = directions;
         _isLoading = false;
@@ -194,7 +183,10 @@ class _NavigationScreenState extends State<NavigationScreen> {
     );
 
     try {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
+      final launched = await openExternalUrl(url.toString());
+      if (!launched && mounted) {
+        ModernBanner.showError(context, 'Could not open Google Maps');
+      }
     } catch (e) {
       if (mounted) {
         ModernBanner.showError(context, 'Could not open Google Maps: $e');

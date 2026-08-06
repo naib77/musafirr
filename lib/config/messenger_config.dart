@@ -281,7 +281,7 @@ class MessengerButtonTemplate {
   }
 }
 
-/// Pre-defined templates for Musafir
+/// Pre-defined templates for Musaafir
 class MusafirMessengerTemplates {
   /// Listing card template
   static MessengerGenericTemplate listingCard({
@@ -332,7 +332,8 @@ class MusafirMessengerTemplates {
       elements: [
         MessengerGenericElement(
           title: 'Booking Confirmed!',
-          subtitle: '$propertyName\n$checkInDate - $checkOutDate\nConf: $confirmationNumber',
+          subtitle:
+              '$propertyName\n$checkInDate - $checkOutDate\nConf: $confirmationNumber',
           imageUrl: propertyImageUrl,
           buttons: [
             MessengerButton(

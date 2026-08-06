@@ -30,9 +30,9 @@ class DiscountBadge extends StatelessWidget {
     this.showDescription = false,
     this.customColor,
     this.onTap,
-  }) : _percentage = null,
-       _fixedAmount = null,
-       _label = null;
+  })  : _percentage = null,
+        _fixedAmount = null,
+        _label = null;
 
   /// Create from discount value directly
   const DiscountBadge.percentage({
@@ -43,10 +43,10 @@ class DiscountBadge extends StatelessWidget {
     this.showDescription = false,
     this.customColor,
     this.onTap,
-  }) : discount = null,
-       _percentage = percentage,
-       _fixedAmount = null,
-       _label = null;
+  })  : discount = null,
+        _percentage = percentage,
+        _fixedAmount = null,
+        _label = null;
 
   const DiscountBadge.fixed({
     super.key,
@@ -56,10 +56,10 @@ class DiscountBadge extends StatelessWidget {
     this.showDescription = false,
     this.customColor,
     this.onTap,
-  }) : discount = null,
-       _percentage = null,
-       _fixedAmount = amount,
-       _label = null;
+  })  : discount = null,
+        _percentage = null,
+        _fixedAmount = amount,
+        _label = null;
 
   const DiscountBadge.custom({
     super.key,
@@ -69,10 +69,10 @@ class DiscountBadge extends StatelessWidget {
     this.showDescription = false,
     this.customColor,
     this.onTap,
-  }) : discount = null,
-       _percentage = null,
-       _fixedAmount = null,
-       _label = label;
+  })  : discount = null,
+        _percentage = null,
+        _fixedAmount = null,
+        _label = label;
 
   final Discount? discount;
   final DiscountBadgeStyle style;

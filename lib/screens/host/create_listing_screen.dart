@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/utils/responsive.dart';
 import '../../data/facility_catalog.dart';
 import '../../models/listing.dart';
+import '../../models/listing_purpose.dart';
 import '../../models/listing_type.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../services/image_upload_service.dart';
@@ -12,6 +13,7 @@ import '../../widgets/app_text_field.dart';
 import '../../widgets/image_picker_grid.dart';
 import '../../widgets/location_picker.dart';
 import '../../widgets/modern_banner.dart';
+import '../../widgets/purpose_selector.dart';
 import 'listing_pricing_fields.dart';
 
 class CreateListingScreen extends StatefulWidget {
@@ -35,6 +37,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
 
   // Form data
   ListingType _propertyType = ListingType.room;
+  final Set<ListingPurpose> _selectedPurposes = {ListingPurpose.general};
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   // Structured (Airbnb-style) address parts.
@@ -282,6 +285,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         postalCode: _emptyToNull(_postalCodeController.text),
         landmark: _emptyToNull(_landmarkController.text),
         type: _propertyType,
+        purposeTags: _selectedPurposes.toList(),
         latitude: _latitude,
         longitude: _longitude,
         hourlyRate: hourlyRate,
@@ -368,172 +372,184 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
       body: ResponsiveCenter(
         maxWidth: 760,
         child: Column(
-        children: [
-          // Progress indicator
-          LinearProgressIndicator(
-            value: (_currentStep + 1) / _totalSteps,
-            backgroundColor: theme.colorScheme.surfaceContainerHighest,
-          ),
-
-          // Page content
-          Expanded(
-            child: PageView(
-              controller: _pageController,
-              physics: const NeverScrollableScrollPhysics(),
-              onPageChanged: (index) {
-                setState(() => _currentStep = index);
-              },
-              children: [
-                _PropertyTypeStep(
-                  selectedType: _propertyType,
-                  onTypeSelected: (type) {
-                    setState(() => _propertyType = type);
-                  },
-                ),
-                _BasicsStep(
-                  titleController: _titleController,
-                  descriptionController: _descriptionController,
-                  onChanged: () => setState(() {}),
-                ),
-                _LocationStep(
-                  flatFloorController: _flatFloorController,
-                  houseNoController: _houseNoController,
-                  streetController: _streetController,
-                  areaController: _areaController,
-                  cityController: _cityController,
-                  postalCodeController: _postalCodeController,
-                  landmarkController: _landmarkController,
-                  latitude: _latitude,
-                  longitude: _longitude,
-                  onLocationChanged: (lat, lng, address) {
-                    setState(() {
-                      _latitude = lat;
-                      _longitude = lng;
-                      // Seed Road/Street from the reverse-geocoded address only
-                      // if the host hasn't typed one — a helpful starting point.
-                      if (address != null &&
-                          _streetController.text.trim().isEmpty) {
-                        _streetController.text = address;
-                      }
-                    });
-                  },
-                  onChanged: () => setState(() {}),
-                ),
-                _DetailsStep(
-                  maxGuests: _maxGuests,
-                  bedrooms: _bedrooms,
-                  beds: _beds,
-                  bathrooms: _bathrooms,
-                  selectedAmenities: _selectedAmenities,
-                  onGuestsChanged: (v) => setState(() => _maxGuests = v),
-                  onBedroomsChanged: (v) => setState(() => _bedrooms = v),
-                  onBedsChanged: (v) => setState(() => _beds = v),
-                  onBathroomsChanged: (v) => setState(() => _bathrooms = v),
-                  onAmenityToggled: (amenity) {
-                    setState(() {
-                      if (_selectedAmenities.contains(amenity)) {
-                        _selectedAmenities.remove(amenity);
-                      } else {
-                        _selectedAmenities.add(amenity);
-                      }
-                    });
-                  },
-                ),
-                _PricingStep(
-                  hourlyPriceController: _hourlyPriceController,
-                  dailyPriceController: _dailyPriceController,
-                  monthlyPriceController: _monthlyPriceController,
-                  hourlyEnabled: _hourlyEnabled,
-                  dailyEnabled: _dailyEnabled,
-                  monthlyEnabled: _monthlyEnabled,
-                  onHourlyToggled: (v) => setState(() => _hourlyEnabled = v),
-                  onDailyToggled: (v) => setState(() => _dailyEnabled = v),
-                  onMonthlyToggled: (v) => setState(() => _monthlyEnabled = v),
-                  onChanged: () => setState(() {}),
-                  errorText: _pricingError(),
-                  minHoursController: _minHoursController,
-                  maxHoursController: _maxHoursController,
-                  minNightsController: _minNightsController,
-                  maxNightsController: _maxNightsController,
-                  minMonthsController: _minMonthsController,
-                  maxMonthsController: _maxMonthsController,
-                ),
-                _HouseRulesStep(
-                  checkInTimeController: _checkInTimeController,
-                  checkOutTimeController: _checkOutTimeController,
-                  quietHoursController: _quietHoursController,
-                  additionalRulesController: _additionalRulesController,
-                  smokingAllowed: _smokingAllowed,
-                  petsAllowed: _petsAllowed,
-                  partiesAllowed: _partiesAllowed,
-                  onSmokingToggled: (v) => setState(() => _smokingAllowed = v),
-                  onPetsToggled: (v) => setState(() => _petsAllowed = v),
-                  onPartiesToggled: (v) => setState(() => _partiesAllowed = v),
-                ),
-                _CheckInAccessStep(
-                  directionsController: _directionsController,
-                  wifiNameController: _wifiNameController,
-                  wifiPasswordController: _wifiPasswordController,
-                  accessCodeController: _accessCodeController,
-                ),
-                _PhotosStep(
-                  images: _selectedImages,
-                  onImagesChanged: (images) {
-                    setState(() => _selectedImages = images);
-                  },
-                  isUploading: _isUploadingImages,
-                  error: _uploadError,
-                ),
-              ],
+          children: [
+            // Progress indicator
+            LinearProgressIndicator(
+              value: (_currentStep + 1) / _totalSteps,
+              backgroundColor: theme.colorScheme.surfaceContainerHighest,
             ),
-          ),
 
-          // Bottom navigation
-          Container(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              16,
-              16,
-              16 + MediaQuery.of(context).padding.bottom,
-            ),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
-              border: Border(
-                top: BorderSide(color: theme.colorScheme.outlineVariant),
+            // Page content
+            Expanded(
+              child: PageView(
+                controller: _pageController,
+                physics: const NeverScrollableScrollPhysics(),
+                onPageChanged: (index) {
+                  setState(() => _currentStep = index);
+                },
+                children: [
+                  _PropertyTypeStep(
+                    selectedType: _propertyType,
+                    onTypeSelected: (type) {
+                      setState(() => _propertyType = type);
+                    },
+                    selectedPurposes: _selectedPurposes,
+                    onPurposesChanged: (next) {
+                      setState(() {
+                        _selectedPurposes
+                          ..clear()
+                          ..addAll(next);
+                      });
+                    },
+                  ),
+                  _BasicsStep(
+                    titleController: _titleController,
+                    descriptionController: _descriptionController,
+                    onChanged: () => setState(() {}),
+                  ),
+                  _LocationStep(
+                    flatFloorController: _flatFloorController,
+                    houseNoController: _houseNoController,
+                    streetController: _streetController,
+                    areaController: _areaController,
+                    cityController: _cityController,
+                    postalCodeController: _postalCodeController,
+                    landmarkController: _landmarkController,
+                    latitude: _latitude,
+                    longitude: _longitude,
+                    onLocationChanged: (lat, lng, address) {
+                      setState(() {
+                        _latitude = lat;
+                        _longitude = lng;
+                        // Seed Road/Street from the reverse-geocoded address only
+                        // if the host hasn't typed one — a helpful starting point.
+                        if (address != null &&
+                            _streetController.text.trim().isEmpty) {
+                          _streetController.text = address;
+                        }
+                      });
+                    },
+                    onChanged: () => setState(() {}),
+                  ),
+                  _DetailsStep(
+                    maxGuests: _maxGuests,
+                    bedrooms: _bedrooms,
+                    beds: _beds,
+                    bathrooms: _bathrooms,
+                    selectedAmenities: _selectedAmenities,
+                    onGuestsChanged: (v) => setState(() => _maxGuests = v),
+                    onBedroomsChanged: (v) => setState(() => _bedrooms = v),
+                    onBedsChanged: (v) => setState(() => _beds = v),
+                    onBathroomsChanged: (v) => setState(() => _bathrooms = v),
+                    onAmenityToggled: (amenity) {
+                      setState(() {
+                        if (_selectedAmenities.contains(amenity)) {
+                          _selectedAmenities.remove(amenity);
+                        } else {
+                          _selectedAmenities.add(amenity);
+                        }
+                      });
+                    },
+                  ),
+                  _PricingStep(
+                    hourlyPriceController: _hourlyPriceController,
+                    dailyPriceController: _dailyPriceController,
+                    monthlyPriceController: _monthlyPriceController,
+                    hourlyEnabled: _hourlyEnabled,
+                    dailyEnabled: _dailyEnabled,
+                    monthlyEnabled: _monthlyEnabled,
+                    onHourlyToggled: (v) => setState(() => _hourlyEnabled = v),
+                    onDailyToggled: (v) => setState(() => _dailyEnabled = v),
+                    onMonthlyToggled: (v) =>
+                        setState(() => _monthlyEnabled = v),
+                    onChanged: () => setState(() {}),
+                    errorText: _pricingError(),
+                    minHoursController: _minHoursController,
+                    maxHoursController: _maxHoursController,
+                    minNightsController: _minNightsController,
+                    maxNightsController: _maxNightsController,
+                    minMonthsController: _minMonthsController,
+                    maxMonthsController: _maxMonthsController,
+                  ),
+                  _HouseRulesStep(
+                    checkInTimeController: _checkInTimeController,
+                    checkOutTimeController: _checkOutTimeController,
+                    quietHoursController: _quietHoursController,
+                    additionalRulesController: _additionalRulesController,
+                    smokingAllowed: _smokingAllowed,
+                    petsAllowed: _petsAllowed,
+                    partiesAllowed: _partiesAllowed,
+                    onSmokingToggled: (v) =>
+                        setState(() => _smokingAllowed = v),
+                    onPetsToggled: (v) => setState(() => _petsAllowed = v),
+                    onPartiesToggled: (v) =>
+                        setState(() => _partiesAllowed = v),
+                  ),
+                  _CheckInAccessStep(
+                    directionsController: _directionsController,
+                    wifiNameController: _wifiNameController,
+                    wifiPasswordController: _wifiPasswordController,
+                    accessCodeController: _accessCodeController,
+                  ),
+                  _PhotosStep(
+                    images: _selectedImages,
+                    onImagesChanged: (images) {
+                      setState(() => _selectedImages = images);
+                    },
+                    isUploading: _isUploadingImages,
+                    error: _uploadError,
+                  ),
+                ],
               ),
             ),
-            child: Row(
-              children: [
-                if (_currentStep > 0)
-                  TextButton(
-                    onPressed: _previousStep,
-                    child: const Text('Back'),
-                  ),
-                const Spacer(),
-                if (_currentStep < _totalSteps - 1)
-                  FilledButton(
-                    onPressed: _canProceed() ? _nextStep : null,
-                    child: const Text('Next'),
-                  )
-                else
-                  FilledButton(
-                    onPressed:
-                        _canProceed() && !_isSubmitting ? _submitListing : null,
-                    child: _isSubmitting
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text('Create Listing'),
-                  ),
-              ],
+
+            // Bottom navigation
+            Container(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                16,
+                16,
+                16 + MediaQuery.of(context).padding.bottom,
+              ),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                border: Border(
+                  top: BorderSide(color: theme.colorScheme.outlineVariant),
+                ),
+              ),
+              child: Row(
+                children: [
+                  if (_currentStep > 0)
+                    TextButton(
+                      onPressed: _previousStep,
+                      child: const Text('Back'),
+                    ),
+                  const Spacer(),
+                  if (_currentStep < _totalSteps - 1)
+                    FilledButton(
+                      onPressed: _canProceed() ? _nextStep : null,
+                      child: const Text('Next'),
+                    )
+                  else
+                    FilledButton(
+                      onPressed: _canProceed() && !_isSubmitting
+                          ? _submitListing
+                          : null,
+                      child: _isSubmitting
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('Create Listing'),
+                    ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
         ),
       ),
     );
@@ -570,10 +586,14 @@ class _PropertyTypeStep extends StatelessWidget {
   const _PropertyTypeStep({
     required this.selectedType,
     required this.onTypeSelected,
+    required this.selectedPurposes,
+    required this.onPurposesChanged,
   });
 
   final ListingType selectedType;
   final ValueChanged<ListingType> onTypeSelected;
+  final Set<ListingPurpose> selectedPurposes;
+  final ValueChanged<Set<ListingPurpose>> onPurposesChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -606,6 +626,13 @@ class _PropertyTypeStep extends StatelessWidget {
                   onTap: () => onTypeSelected(type),
                 ),
               )),
+          const SizedBox(height: 24),
+          const Divider(),
+          const SizedBox(height: 16),
+          PurposeSelector(
+            selected: selectedPurposes,
+            onChanged: onPurposesChanged,
+          ),
         ],
       ),
     );
@@ -1528,7 +1555,7 @@ class _CheckInAccessStep extends StatelessWidget {
           AppTextField(
             controller: wifiNameController,
             label: 'Wi-Fi network name (optional)',
-            hint: 'e.g. Musafir_5G',
+            hint: 'e.g. Musaafir_5G',
           ),
           const SizedBox(height: 16),
           AppTextField(

@@ -63,7 +63,8 @@ class BookingContactCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: AppColors.success.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.success.withValues(alpha: 0.25)),
+            border:
+                Border.all(color: AppColors.success.withValues(alpha: 0.25)),
           ),
           child: Row(
             children: [
@@ -81,7 +82,9 @@ class BookingContactCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      name != null && name.isNotEmpty ? '$name · $phone' : phone,
+                      name != null && name.isNotEmpty
+                          ? '$name · $phone'
+                          : phone,
                       style: theme.textTheme.bodyMedium
                           ?.copyWith(fontWeight: FontWeight.w600),
                     ),

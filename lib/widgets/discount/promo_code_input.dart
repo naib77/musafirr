@@ -66,7 +66,8 @@ class PromoCodeDisplayResult {
   static String _getSuccessMessage(Discount discount, double amount) {
     if (discount.type == DiscountType.percentage) {
       return 'You\'ll save ৳${amount.toStringAsFixed(0)} (${discount.value.toStringAsFixed(0)}% off)';
-    } else if (discount.type == DiscountType.freeNights && discount.freeNightsConfig != null) {
+    } else if (discount.type == DiscountType.freeNights &&
+        discount.freeNightsConfig != null) {
       return 'Stay ${discount.freeNightsConfig!.stayNights}, Pay ${discount.freeNightsConfig!.payNights}!';
     }
     return 'You\'ll save ৳${amount.toStringAsFixed(0)}';
@@ -74,14 +75,17 @@ class PromoCodeDisplayResult {
 
   bool get isValid => status == PromoCodeStatus.valid;
   bool get isValidating => status == PromoCodeStatus.validating;
-  bool get hasError => status == PromoCodeStatus.invalid || status == PromoCodeStatus.error;
+  bool get hasError =>
+      status == PromoCodeStatus.invalid || status == PromoCodeStatus.error;
 }
 
 /// Callback for promo code validation
-typedef PromoCodeValidator = Future<PromoCodeDisplayResult> Function(String code);
+typedef PromoCodeValidator = Future<PromoCodeDisplayResult> Function(
+    String code);
 
 /// Callback when a valid code is applied
-typedef OnPromoCodeApplied = void Function(Discount discount, double discountAmount);
+typedef OnPromoCodeApplied = void Function(
+    Discount discount, double discountAmount);
 
 /// Promo code input widget with validation
 class PromoCodeInput extends StatefulWidget {
@@ -129,7 +133,9 @@ class _PromoCodeInputState extends State<PromoCodeInput> {
     _controller = TextEditingController(text: widget.initialCode);
     _hasApplied = widget.appliedDiscount != null;
 
-    if (widget.autoValidate && widget.initialCode != null && widget.initialCode!.isNotEmpty) {
+    if (widget.autoValidate &&
+        widget.initialCode != null &&
+        widget.initialCode!.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _validateCode());
     }
   }
@@ -167,7 +173,9 @@ class _PromoCodeInputState extends State<PromoCodeInput> {
   }
 
   void _applyCode() {
-    if (_result.isValid && _result.discount != null && _result.discountAmount != null) {
+    if (_result.isValid &&
+        _result.discount != null &&
+        _result.discountAmount != null) {
       setState(() {
         _hasApplied = true;
       });
@@ -388,7 +396,8 @@ class _PromoCodeInputState extends State<PromoCodeInput> {
                     ),
                     const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: Colors.green,
                         borderRadius: BorderRadius.circular(4),

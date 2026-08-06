@@ -20,23 +20,19 @@ class BookingCategorizer {
   /// requests the host still needs to respond to (these are surfaced here even
   /// if their requested date has slipped, so they are never lost in Past).
   /// Sorted soonest check-in first.
-  List<Booking> get upcoming => allBookings
-      .where((b) => b.isUpcomingAt(now))
-      .toList()
-    ..sort((a, b) => a.effectiveCheckIn.compareTo(b.effectiveCheckIn));
+  List<Booking> get upcoming =>
+      allBookings.where((b) => b.isUpcomingAt(now)).toList()
+        ..sort((a, b) => a.effectiveCheckIn.compareTo(b.effectiveCheckIn));
 
   /// Bookings the guest is currently in: checked-in stays, plus confirmed
   /// bookings whose check-in date has arrived. Stay actionable until the host
   /// marks them complete. Sorted by soonest checkout first.
-  List<Booking> get current => allBookings
-      .where((b) => b.isOngoingAt(now))
-      .toList()
-    ..sort((a, b) => a.effectiveCheckOut.compareTo(b.effectiveCheckOut));
+  List<Booking> get current =>
+      allBookings.where((b) => b.isOngoingAt(now)).toList()
+        ..sort((a, b) => a.effectiveCheckOut.compareTo(b.effectiveCheckOut));
 
   /// Finished bookings: completed, cancelled, rejected, or a confirmed stay
   /// whose window fully elapsed without check-in. Sorted most recent first.
-  List<Booking> get past => allBookings
-      .where((b) => b.isPastAt(now))
-      .toList()
+  List<Booking> get past => allBookings.where((b) => b.isPastAt(now)).toList()
     ..sort((a, b) => b.effectiveCheckIn.compareTo(a.effectiveCheckIn));
 }

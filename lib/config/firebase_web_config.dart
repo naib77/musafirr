@@ -10,7 +10,7 @@ import 'package:firebase_core/firebase_core.dart';
 /// ── HOW TO FILL THIS IN (one-time) ────────────────────────────────────────
 /// Firebase console (project `musafir-200107`):
 ///   1. Project settings → General → Your apps → **Add app → Web (</>)**.
-///      Register it (e.g. "Musafir Web"). Copy the `firebaseConfig` values into
+///      Register it (e.g. "Musaafir Web"). Copy the `firebaseConfig` values into
 ///      [options] below — [apiKey] and [appId] are the two that are still
 ///      placeholders here (the rest are already filled from the Android config).
 ///   2. Project settings → **Cloud Messaging** → "Web configuration" →

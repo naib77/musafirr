@@ -132,8 +132,8 @@ class _ReviewPromptHandlerState extends State<ReviewPromptHandler>
         builder: (context) => GuestReviewScreen(
           booking: booking,
           onSubmit: (GuestReviewRatings ratings, String comment) async {
-            final hostId =
-                await widget.repository.fetchHostIdForListing(booking.listingId);
+            final hostId = await widget.repository
+                .fetchHostIdForListing(booking.listingId);
             if (!context.mounted) return false;
             if (hostId == null || hostId.isEmpty) {
               ModernBanner.showError(
@@ -332,8 +332,18 @@ class _ReviewPromptModal extends StatelessWidget {
 
   String _formatDate(DateTime date) {
     final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
