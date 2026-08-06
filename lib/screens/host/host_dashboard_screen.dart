@@ -17,6 +17,7 @@ import '../leaderboard/host_leaderboard_screen.dart';
 import 'create_listing_screen.dart';
 import 'host_listings_screen.dart';
 import 'host_reservations_screen.dart';
+import 'scheduled_messages_screen.dart';
 
 class HostDashboardScreen extends StatelessWidget {
   const HostDashboardScreen({
@@ -250,6 +251,14 @@ class HostDashboardScreen extends StatelessWidget {
                       : null,
                   theme: theme,
                 ),
+                const SizedBox(height: 8),
+                _ActionCard(
+                  icon: Icons.schedule_send,
+                  title: 'Scheduled messages',
+                  description: 'Automatic guest messages for each stay',
+                  onTap: () => _navigateToScheduledMessages(context),
+                  theme: theme,
+                ),
                 const SizedBox(height: 24),
 
                 // Recent activity
@@ -356,6 +365,17 @@ class HostDashboardScreen extends StatelessWidget {
           repository: repository,
           authState: authState,
         ),
+      ),
+    );
+  }
+
+  void _navigateToScheduledMessages(BuildContext context) {
+    final hostId = authState.currentUser?.id;
+    if (hostId == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ScheduledMessagesScreen(hostId: hostId),
       ),
     );
   }

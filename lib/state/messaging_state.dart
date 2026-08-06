@@ -237,6 +237,21 @@ class MessagingStateNotifier extends ChangeNotifier with SafeNotifier {
     );
   }
 
+  /// Send a file (document) message.
+  Future<bool> sendFileMessage({
+    required String url,
+    required String fileName,
+    required String mimeType,
+    required int sizeBytes,
+  }) {
+    return _activeChat.sendFileMessage(
+      url: url,
+      fileName: fileName,
+      mimeType: mimeType,
+      sizeBytes: sizeBytes,
+    );
+  }
+
   /// Send a location message.
   Future<bool> sendLocationMessage({
     required double latitude,

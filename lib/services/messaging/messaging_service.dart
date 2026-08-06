@@ -107,6 +107,21 @@ class SendMessageRequest {
     );
   }
 
+  /// Create a file message request
+  factory SendMessageRequest.file({
+    required String conversationId,
+    required FileMetadata metadata,
+    String? replyToId,
+  }) {
+    return SendMessageRequest(
+      conversationId: conversationId,
+      contentType: MessageContentType.file,
+      content: metadata.fileName,
+      metadata: metadata,
+      replyToId: replyToId,
+    );
+  }
+
   /// Create a booking card message request
   factory SendMessageRequest.bookingCard({
     required String conversationId,

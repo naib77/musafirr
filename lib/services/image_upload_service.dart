@@ -14,6 +14,7 @@ class StorageBuckets {
   static const String listingImages = 'listing-images';
   static const String avatars = 'avatars';
   static const String documents = 'documents';
+  static const String chatAttachments = 'chat-attachments';
 }
 
 /// Document types for owner verification

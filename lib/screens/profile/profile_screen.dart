@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../config/legal_links.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../services/image_upload_service.dart';
 import '../../state/auth_state.dart';
@@ -9,9 +11,11 @@ import '../../widgets/modern_banner.dart';
 import '../host/become_host_screen.dart';
 import '../host/create_listing_screen.dart';
 import '../host/host_dashboard_screen.dart';
-import '../host/scheduled_messages_screen.dart';
 import '../notifications/notification_settings_screen.dart';
 import '../verification/identity_verification_screen.dart';
+import 'edit_profile_screen.dart';
+import 'login_security_screen.dart';
+import 'payments_payouts_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
@@ -19,11 +23,21 @@ class ProfileScreen extends StatefulWidget {
     required this.authState,
     required this.repository,
     this.notificationState,
+    this.isHostContext = false,
+    this.onSwitchToHosting,
   });
 
   final AuthStateNotifier authState;
   final MusafirRepository repository;
   final NotificationStateNotifier? notificationState;
+
+  /// True when this profile is shown inside the HOST portal. Guest-side profile
+  /// (false) hides host tools and instead offers a link into the host portal;
+  /// host-side profile (true) shows the full hosting section.
+  final bool isHostContext;
+
+  /// Switches the app into host mode (guest-profile "Switch to hosting" link).
+  final VoidCallback? onSwitchToHosting;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -197,7 +211,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _SettingsItem(
                       icon: Icons.person_outline,
                       title: 'Personal information',
-                      onTap: () => _showComingSoon(context),
+                      onTap: () => _navigateToEditProfile(context),
                     ),
                     _SettingsItem(
                       icon: Icons.verified_user_outlined,
@@ -208,12 +222,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _SettingsItem(
                       icon: Icons.security_outlined,
                       title: 'Login & security',
-                      onTap: () => _showComingSoon(context),
+                      onTap: () => _navigateToLoginSecurity(context),
                     ),
                     _SettingsItem(
                       icon: Icons.payment_outlined,
                       title: 'Payments & payouts',
-                      onTap: () => _showComingSoon(context),
+                      onTap: () => _navigateToPayments(context),
                     ),
                     _SettingsItem(
                       icon: Icons.notifications_outlined,
@@ -224,18 +238,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // Hosting section
+                // Hosting section.
+                //
+                // Guest-side profile (isHostContext == false) must NOT contain
+                // host tools — it only offers a way INTO hosting: non-hosts get
+                // "Become a Host", existing hosts get "Switch to hosting" which
+                // flips the app into the host portal. All the actual host tools
+                // (dashboard, listings, scheduled messages, …) live in the host
+                // portal / host-side profile (isHostContext == true).
                 _SettingsSection(
                   title: 'Hosting',
                   items: [
-                    if (!user.isHost)
-                      _SettingsItem(
-                        icon: Icons.home_work_outlined,
-                        title: 'Become a Host',
-                        subtitle: 'Start earning by sharing your space',
-                        onTap: () => _navigateToBecomeHost(context),
-                      )
-                    else ...[
+                    if (!widget.isHostContext) ...[
+                      if (!user.isHost)
+                        _SettingsItem(
+                          icon: Icons.home_work_outlined,
+                          title: 'Become a Host',
+                          subtitle: 'Start earning by sharing your space',
+                          onTap: () => _navigateToBecomeHost(context),
+                        )
+                      else if (widget.onSwitchToHosting != null)
+                        _SettingsItem(
+                          icon: Icons.swap_horiz,
+                          title: 'Switch to hosting',
+                          subtitle: 'Go to your host dashboard',
+                          onTap: widget.onSwitchToHosting!,
+                        ),
+                    ] else ...[
                       _SettingsItem(
                         icon: Icons.dashboard_outlined,
                         title: 'Host Dashboard',
@@ -246,19 +275,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         icon: Icons.add_home_outlined,
                         title: 'Create New Listing',
                         onTap: () => _navigateToCreateListing(context),
-                      ),
-                      _SettingsItem(
-                        icon: Icons.schedule_send_outlined,
-                        title: 'Scheduled messages',
-                        subtitle: 'Automatic guest messages for each stay',
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => ScheduledMessagesScreen(
-                              hostId: user.id,
-                            ),
-                          ),
-                        ),
                       ),
                     ],
                   ],
@@ -272,17 +288,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _SettingsItem(
                       icon: Icons.help_outline,
                       title: 'Get help',
-                      onTap: () => _showComingSoon(context),
+                      onTap: () => _openExternalLink(context, LegalLinks.helpUrl),
                     ),
                     _SettingsItem(
                       icon: Icons.article_outlined,
                       title: 'Terms of service',
-                      onTap: () => _showComingSoon(context),
+                      onTap: () => _openExternalLink(context, LegalLinks.termsUrl),
                     ),
                     _SettingsItem(
                       icon: Icons.privacy_tip_outlined,
                       title: 'Privacy policy',
-                      onTap: () => _showComingSoon(context),
+                      onTap: () => _openExternalLink(context, LegalLinks.privacyUrl),
                     ),
                   ],
                 ),
@@ -428,6 +444,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
     );
+  }
+
+  void _navigateToEditProfile(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditProfileScreen(authState: authState),
+      ),
+    );
+  }
+
+  void _navigateToLoginSecurity(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => LoginSecurityScreen(authState: authState),
+      ),
+    );
+  }
+
+  void _navigateToPayments(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PaymentsPayoutsScreen(
+          repository: repository,
+          authState: authState,
+        ),
+      ),
+    );
+  }
+
+  /// Opens a Terms/Privacy/Help destination in the browser or mail client.
+  /// Empty config or a launch failure surfaces a graceful message rather than a
+  /// broken link.
+  Future<void> _openExternalLink(BuildContext context, String url) async {
+    if (url.trim().isEmpty) {
+      ModernBanner.showInfo(context, 'Not available yet.');
+      return;
+    }
+    final uri = Uri.tryParse(url);
+    final ok = uri != null &&
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) {
+      ModernBanner.showError(context, 'Could not open the link.');
+    }
   }
 
   void _confirmLogout(BuildContext context) {

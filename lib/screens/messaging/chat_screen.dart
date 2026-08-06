@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:mime/mime.dart';
 
 import '../../core/utils/responsive.dart';
 import '../../models/message.dart';
+import '../../services/image_compression_service.dart';
+import '../../services/image_upload_service.dart';
 import '../../services/messaging/message_router.dart';
 import '../../state/messaging_state.dart';
 import '../../widgets/messaging/channel_selector.dart';
@@ -43,9 +46,24 @@ class _ChatScreenState extends State<ChatScreen> {
   final ScrollController _scrollController = ScrollController();
   Message? _replyingTo;
 
+  // In-conversation search
+  bool _isSearching = false;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
   // Channel state
   MessagingChannel _selectedChannel = MessagingChannel.inApp;
   List<MessagingChannel> _availableChannels = [MessagingChannel.inApp];
+
+  void _startSearch() => setState(() => _isSearching = true);
+
+  void _stopSearch() {
+    _searchController.clear();
+    setState(() {
+      _isSearching = false;
+      _searchQuery = '';
+    });
+  }
 
   @override
   void initState() {
@@ -63,6 +81,7 @@ class _ChatScreenState extends State<ChatScreen> {
     widget.messagingState.removeListener(_onMessagesChanged);
     widget.messagingState.closeConversation();
     _scrollController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -82,6 +101,73 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendMessage(String text) async {
     await widget.messagingState.sendTextMessage(text);
     _cancelReply();
+  }
+
+  /// Pick an image from the gallery, upload it, and send it as an image message.
+  Future<void> _sendImage() async {
+    final picked = await ImageUploadService.instance.pickImageFromGallery();
+    if (picked == null || !mounted) return;
+
+    ModernBanner.showInfo(context, 'Sending photo…');
+    final path =
+        '${widget.conversationId}/${DateTime.now().microsecondsSinceEpoch}_${picked.name}';
+    final result = await ImageUploadService.instance.uploadXFile(
+      file: picked,
+      bucket: StorageBuckets.chatAttachments,
+      path: path,
+      compressionProfile: ImageCompressionProfile.listing,
+    );
+    if (!mounted) return;
+    if (!result.success || result.publicUrl == null) {
+      ModernBanner.showError(context, 'Could not send the photo. Please try again.');
+      return;
+    }
+    final sent =
+        await widget.messagingState.sendImageMessage(imageUrl: result.publicUrl!);
+    if (!sent && mounted) {
+      ModernBanner.showError(context, 'Could not send the photo. Please try again.');
+    }
+  }
+
+  /// Pick a document/file, upload it, and send it as a file message.
+  Future<void> _sendFile() async {
+    final picked = await ImageUploadService.instance.pickFile();
+    if (picked == null || !mounted) return;
+
+    ModernBanner.showInfo(context, 'Sending file…');
+    final path =
+        '${widget.conversationId}/${DateTime.now().microsecondsSinceEpoch}_${picked.name}';
+    final result = await ImageUploadService.instance.uploadPlatformFile(
+      file: picked,
+      bucket: StorageBuckets.chatAttachments,
+      path: path,
+    );
+    if (!mounted) return;
+    if (!result.success || result.publicUrl == null) {
+      ModernBanner.showError(context, 'Could not send the file. Please try again.');
+      return;
+    }
+    final sent = await widget.messagingState.sendFileMessage(
+      url: result.publicUrl!,
+      fileName: picked.name,
+      mimeType: lookupMimeType(picked.name) ?? 'application/octet-stream',
+      sizeBytes: picked.size,
+    );
+    if (!sent && mounted) {
+      ModernBanner.showError(context, 'Could not send the file. Please try again.');
+    }
+  }
+
+  /// Show a grid of all images shared in this conversation.
+  void _openMediaGallery() {
+    final images = widget.messagingState.messages
+        .where((m) => m.contentType == MessageContentType.image)
+        .map((m) => (m.metadata as ImageMetadata?)?.url)
+        .whereType<String>()
+        .toList();
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => _MediaGalleryScreen(imageUrls: images)),
+    );
   }
 
   /// Shares the sender's current location as a map message.
@@ -221,7 +307,23 @@ class _ChatScreenState extends State<ChatScreen> {
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
-        title: Row(
+        leading: _isSearching
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: _stopSearch,
+              )
+            : null,
+        title: _isSearching
+            ? TextField(
+                controller: _searchController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: 'Search this conversation',
+                  border: InputBorder.none,
+                ),
+                onChanged: (v) => setState(() => _searchQuery = v.trim()),
+              )
+            : Row(
           children: [
             // Avatar
             CircleAvatar(
@@ -323,7 +425,18 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
           ],
         ),
-        actions: [
+        actions: _isSearching
+            ? [
+                if (_searchQuery.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.clear),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _searchQuery = '');
+                    },
+                  ),
+              ]
+            : [
           IconButton(
             icon: const Icon(Icons.phone),
             onPressed: () {
@@ -340,10 +453,10 @@ class _ChatScreenState extends State<ChatScreen> {
             onSelected: (value) {
               switch (value) {
                 case 'search':
-                  ModernBanner.showInfo(context, 'Search coming soon');
+                  _startSearch();
                   break;
                 case 'media':
-                  ModernBanner.showInfo(context, 'Media gallery coming soon');
+                  _openMediaGallery();
                   break;
                 case 'channels':
                   _showChannelSettings();
@@ -411,17 +524,37 @@ class _ChatScreenState extends State<ChatScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final messages = widget.messagingState.messages;
+                final allMessages = widget.messagingState.messages;
 
-                if (messages.isEmpty) {
+                if (allMessages.isEmpty) {
                   return _EmptyChatState(
                     otherParticipantName: widget.otherParticipantName,
                     onSelectSuggestion: _sendMessage,
                   );
                 }
 
+                // In search mode, show only messages whose text matches.
+                if (_isSearching && _searchQuery.isNotEmpty) {
+                  final q = _searchQuery.toLowerCase();
+                  final matches = allMessages
+                      .where((m) => m.content.toLowerCase().contains(q))
+                      .toList();
+                  if (matches.isEmpty) {
+                    return _NoSearchResults(query: _searchQuery);
+                  }
+                  return _MessagesList(
+                    messages: matches,
+                    currentUserId: widget.messagingState.currentUserId ?? '',
+                    scrollController: _scrollController,
+                    onReply: _replyToMessage,
+                    onDelete: _deleteMessage,
+                    onCopy: _copyMessage,
+                    typingIndicator: const SizedBox.shrink(),
+                  );
+                }
+
                 return _MessagesList(
-                  messages: messages,
+                  messages: allMessages,
                   currentUserId: widget.messagingState.currentUserId ?? '',
                   scrollController: _scrollController,
                   onReply: _replyToMessage,
@@ -440,13 +573,9 @@ class _ChatScreenState extends State<ChatScreen> {
             builder: (context, _) {
               return MessageInput(
                 onSendMessage: _sendMessage,
-                onSendImage: () {
-                  ModernBanner.showInfo(context, 'Image sharing coming soon');
-                },
+                onSendImage: _sendImage,
                 onSendLocation: _sendLocation,
-                onSendFile: () {
-                  ModernBanner.showInfo(context, 'File sharing coming soon');
-                },
+                onSendFile: _sendFile,
                 onTextChanged: widget.messagingState.onTextChanged,
                 replyingTo: _replyingTo,
                 onCancelReply: _cancelReply,
@@ -681,6 +810,101 @@ class _EmptyChatState extends StatelessWidget {
             const SizedBox(height: 24),
             _SuggestedMessages(
               onSelect: onSelectSuggestion,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Grid of every image shared in a conversation; tap to view full-screen.
+class _MediaGalleryScreen extends StatelessWidget {
+  const _MediaGalleryScreen({required this.imageUrls});
+
+  final List<String> imageUrls;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(title: const Text('Shared media')),
+      body: imageUrls.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.photo_library_outlined,
+                      size: 48, color: theme.colorScheme.onSurfaceVariant),
+                  const SizedBox(height: 12),
+                  Text('No photos shared yet',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant)),
+                ],
+              ),
+            )
+          : GridView.builder(
+              padding: const EdgeInsets.all(4),
+              gridDelegate:
+                  const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                mainAxisSpacing: 4,
+                crossAxisSpacing: 4,
+              ),
+              itemCount: imageUrls.length,
+              itemBuilder: (context, i) {
+                final url = imageUrls[i];
+                return GestureDetector(
+                  onTap: () => showDialog<void>(
+                    context: context,
+                    builder: (_) => Dialog(
+                      backgroundColor: Colors.black,
+                      insetPadding: const EdgeInsets.all(12),
+                      child: InteractiveViewer(
+                        child: Image.network(url, fit: BoxFit.contain),
+                      ),
+                    ),
+                  ),
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      child: Icon(Icons.broken_image_outlined,
+                          color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+/// Shown when an in-conversation search matches nothing.
+class _NoSearchResults extends StatelessWidget {
+  const _NoSearchResults({required this.query});
+
+  final String query;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search_off_rounded,
+                size: 48, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(height: 12),
+            Text(
+              'No messages match "$query"',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
             ),
           ],
         ),
