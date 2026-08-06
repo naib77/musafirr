@@ -340,23 +340,19 @@ class SupabaseAuthService implements AuthService {
     debugPrint('[SupabaseAuthService] updateProfile: ${updatedUser.id}');
 
     try {
-      await _client.from('profiles').upsert({
-        'id': updatedUser.id,
+      // Only the fields users edit through profile flows (Personal information +
+      // the host availability toggle). Deliberately NOT role / is_host /
+      // host_since / nid / nid_verified / phone_verified / registration_method:
+      // those are owned by signup, becomeHost and verification. Letting a
+      // (possibly stale) client User overwrite them risks failing the entire
+      // write on one bad value AND is a privilege-escalation smell. The profile
+      // row always exists for a signed-in user, so UPDATE (not upsert) is right.
+      await _client.from('profiles').update({
         'full_name': updatedUser.name,
-        'mobile': updatedUser.phone,
         'avatar_url': updatedUser.avatarUrl,
-        'role': updatedUser.role.name,
         'bio': updatedUser.bio,
-        'is_host': updatedUser.isHost,
         'is_available': updatedUser.hostAvailable,
-        'host_since': updatedUser.hostSince?.toIso8601String(),
-        'response_rate': updatedUser.responseRate,
-        'response_time': updatedUser.responseTime,
-        'nid': updatedUser.nid,
-        'nid_verified': updatedUser.nidVerified,
-        'phone_verified': updatedUser.phoneVerified,
-        'registration_method': updatedUser.registrationMethod?.name,
-      });
+      }).eq('id', updatedUser.id);
 
       _userCache[updatedUser.id] = updatedUser;
       if (_currentUser?.id == updatedUser.id) {

@@ -77,15 +77,20 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
 
     setState(() => _saving = true);
-    widget.authState.updateUser(user.copyWith(
+    final ok = await widget.authState.updateUser(user.copyWith(
       name: name,
       bio: _bioController.text.trim(),
       avatarUrl: _avatarUrl,
     ));
-    // updateUser is fire-and-forget on the state; give it a beat, then close.
-    await Future<void>.delayed(const Duration(milliseconds: 150));
     if (!mounted) return;
     setState(() => _saving = false);
+    if (!ok) {
+      ModernBanner.showError(
+        context,
+        widget.authState.error ?? 'Could not save your profile. Try again.',
+      );
+      return;
+    }
     ModernBanner.showSuccess(context, 'Profile updated');
     Navigator.of(context).pop();
   }

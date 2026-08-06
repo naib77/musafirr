@@ -123,21 +123,37 @@ class AuthStateNotifier extends ChangeNotifier with SafeNotifier {
     return false;
   }
 
-  /// Update user profile
-  void updateUser(User updatedUser) {
-    _service.updateProfile(updatedUser);
-    if (_currentUser?.id == updatedUser.id) {
-      _currentUser = updatedUser;
+  /// Update user profile. Optimistically applies the change, then persists it;
+  /// on failure it reverts the optimistic update and sets [error]. Returns true
+  /// only if the write succeeded, so callers can surface a real result instead
+  /// of assuming success.
+  Future<bool> updateUser(User updatedUser) async {
+    final previous = _currentUser;
+    final isCurrent = _currentUser?.id == updatedUser.id;
+    if (isCurrent) {
+      _currentUser = updatedUser; // optimistic
+      _error = null;
+      notifyListeners();
     }
-    notifyListeners();
+
+    final result = await _service.updateProfile(updatedUser);
+    if (!result.success) {
+      if (isCurrent) {
+        _currentUser = previous; // revert
+        _error = result.error;
+        notifyListeners();
+      }
+      return false;
+    }
+    return true;
   }
 
   /// Update user avatar
-  void updateAvatar(String? avatarUrl) {
-    if (_currentUser == null) return;
+  Future<bool> updateAvatar(String? avatarUrl) {
+    if (_currentUser == null) return Future.value(false);
 
     final updatedUser = _currentUser!.copyWith(avatarUrl: avatarUrl);
-    updateUser(updatedUser);
+    return updateUser(updatedUser);
   }
 
   void logout() {
