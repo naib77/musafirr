@@ -210,6 +210,43 @@ class ActiveChatState extends ChangeNotifier with SafeNotifier {
     return false;
   }
 
+  /// Send a file (document) message.
+  Future<bool> sendFileMessage({
+    required String url,
+    required String fileName,
+    required String mimeType,
+    required int sizeBytes,
+  }) async {
+    if (_currentUserId == null || _conversation == null) return false;
+
+    _isSendingMessage = true;
+    notifyListeners();
+
+    final request = SendMessageRequest.file(
+      conversationId: _conversation!.id,
+      metadata: FileMetadata(
+        url: url,
+        fileName: fileName,
+        mimeType: mimeType,
+        sizeBytes: sizeBytes,
+      ),
+    );
+
+    final result = await _messagingService.sendMessage(request, _currentUserId!);
+
+    _isSendingMessage = false;
+
+    if (result.isSuccess && result.data != null) {
+      _addMessageIfNotExists(result.data!);
+      notifyListeners();
+      return true;
+    }
+
+    _error = result.error;
+    notifyListeners();
+    return false;
+  }
+
   /// Send a location message.
   Future<bool> sendLocationMessage({
     required double latitude,

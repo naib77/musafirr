@@ -555,6 +555,9 @@ class _MainShellState extends State<MainShell> {
               authState: widget.authState,
               repository: widget.repository,
               notificationState: widget.notificationState,
+              isHostContext: false,
+              onSwitchToHosting: () =>
+                  _appModeState.setMode(AppMode.host),
             ),
           ),
         ],
@@ -687,6 +690,7 @@ class _MainShellState extends State<MainShell> {
               authState: widget.authState,
               repository: widget.repository,
               notificationState: widget.notificationState,
+              isHostContext: true,
             ),
           ),
         ],

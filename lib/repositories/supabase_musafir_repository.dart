@@ -10,6 +10,7 @@ import '../data/facility_catalog.dart';
 import '../models/booking.dart';
 import '../models/booking_conflict_exception.dart';
 import '../models/booking_contacts.dart';
+import '../models/payment_record.dart';
 import '../models/booking_duration.dart';
 import '../models/booking_status.dart';
 import '../models/facility.dart';
@@ -1457,6 +1458,23 @@ class SupabaseMusafirRepository extends ChangeNotifier
   }
 
   @override
+  @override
+  Future<List<PaymentRecord>> fetchUserPayments(String userId) async {
+    try {
+      final rows = await _client
+          .from('payments')
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: false);
+      return (rows as List)
+          .map((r) => PaymentRecord.fromJson((r as Map).cast<String, dynamic>()))
+          .toList();
+    } catch (e) {
+      debugPrint('Error fetching user payments: $e');
+      return [];
+    }
+  }
+
   @override
   Future<bool> isBookingAvailable({
     required String listingId,

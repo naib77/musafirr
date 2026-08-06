@@ -8,6 +8,7 @@ import '../models/booking_duration.dart';
 import '../models/leaderboard_entry.dart';
 import '../models/listing.dart';
 import '../models/owner_registration_draft.dart';
+import '../models/payment_record.dart';
 import '../models/review.dart';
 import '../models/search_filters.dart';
 import '../models/user.dart';
@@ -183,6 +184,10 @@ abstract class MusafirRepository implements Listenable, BookingStore {
     required DateTime checkIn,
     required DateTime checkOut,
   });
+
+  /// The signed-in user's own payment history (payments they made as a guest),
+  /// most recent first. Backed by the `payments` table's own-row RLS.
+  Future<List<PaymentRecord>> fetchUserPayments(String userId);
 
   /// Authoritative, server-side availability check for a listing/interval.
   ///
