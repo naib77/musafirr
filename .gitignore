@@ -3,7 +3,6 @@
 .flutter-plugins
 .flutter-plugins-dependencies
 .packages
-build/
 
 # IDE
 .idea/
