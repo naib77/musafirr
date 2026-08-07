@@ -215,34 +215,30 @@ class _ListingCardModernState extends State<ListingCardModern>
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
-                  // Distance from a searched landmark (proximity search only).
-                  if (listing.distanceMeters != null) ...[
-                    Row(
-                      children: [
+                  // Place (with distance when a proximity search ran — shares
+                  // this line: the info area has a fixed height, an extra row
+                  // overflows it) and rating on the second line.
+                  Row(
+                    children: [
+                      if (listing.distanceMeters != null) ...[
                         Icon(Icons.near_me_rounded,
                             size: 12, color: theme.colorScheme.primary),
                         const SizedBox(width: 3),
-                        Text(
-                          formatDistanceMeters(listing.distanceMeters!),
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: theme.colorScheme.primary,
-                          ),
-                        ),
                       ],
-                    ),
-                    const SizedBox(height: 2),
-                  ],
-                  // Place and rating share the second line.
-                  Row(
-                    children: [
                       Expanded(
                         child: Text(
-                          listing.city ?? listing.address.split(',').first,
+                          listing.distanceMeters != null
+                              ? '${formatDistanceMeters(listing.distanceMeters!)} · ${listing.city ?? listing.address.split(',').first}'
+                              : listing.city ??
+                                  listing.address.split(',').first,
                           style: theme.textTheme.bodySmall?.copyWith(
                             fontSize: 11,
-                            color: theme.colorScheme.onSurfaceVariant,
+                            color: listing.distanceMeters != null
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onSurfaceVariant,
+                            fontWeight: listing.distanceMeters != null
+                                ? FontWeight.w600
+                                : null,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
