@@ -112,11 +112,48 @@ Then enable HTTPS:
 sudo certbot --nginx
 ```
 
-### Option C — Netlify / Vercel / Cloudflare Pages
+### Option C — Cloudflare Pages (recommended free option)
 
-- Build command: `flutter build web --release`
+Free tier has **unlimited bandwidth**, allows commercial use (Vercel's free Hobby
+plan does not), and deploys the committed `build/web/` folder straight from git —
+no Flutter needed in their CI.
+
+**One-time setup:**
+
+1. [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** →
+   **Create** → **Pages** → **Connect to Git** → authorize GitHub → pick `musafirr`.
+2. Configure the build:
+   - Framework preset: **None**
+   - Build command: *(leave empty)*
+   - Build output directory: **`build/web`**
+3. **Save and Deploy.** You get a `<project>.pages.dev` URL with HTTPS.
+4. (Optional) **Custom domains** tab → add your domain → follow the DNS prompt.
+   SSL is automatic.
+
+**Deploying updates** — your normal flow *is* the deploy pipeline:
+
+```bash
+./tool/build_web.sh     # NOT plain `flutter build web` — see note below
+git add build/web && git commit -m "web build" && git push
+```
+
+Every push to `main` auto-deploys.
+
+> **Always build with `./tool/build_web.sh`.** Flutter skips underscore-prefixed
+> files when copying `web/` into `build/web/`, so the script copies
+> [`web/_headers`](../web/_headers) in after the build. That file tells Cloudflare
+> not to cache `index.html` / `flutter_bootstrap.js` / `flutter_service_worker.js` —
+> without it, users can get stuck on stale builds after a deploy.
+
+SPA fallback is automatic on Pages (no 404.html present → unknown routes serve
+`index.html`), so deep links just work.
+
+### Option D — Netlify / Vercel
+
+- Build command: none (deploy the committed `build/web`)
 - Publish directory: `build/web`
 - SPA rewrite: `/*  →  /index.html`
+- ⚠️ Vercel's free Hobby plan prohibits commercial use — Musafir would need Pro.
 
 ---
 

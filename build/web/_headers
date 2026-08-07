@@ -1,0 +1,25 @@
+# Cloudflare Pages headers (this file is copied into build/web at build time).
+# Never cache the entry points or the service worker, or users get stuck on
+# stale builds after a deploy.
+
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/flutter_bootstrap.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/flutter_service_worker.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/manifest.json
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/version.json
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# Hashed/static build artifacts can be cached long-term.
+/assets/*
+  Cache-Control: public, max-age=2592000, immutable
+
+/canvaskit/*
+  Cache-Control: public, max-age=2592000, immutable
