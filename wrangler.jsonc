@@ -1,0 +1,14 @@
+// Cloudflare Workers config — deploys the committed Flutter web build
+// (build/web) as a static-assets site. Used by `npx wrangler deploy`,
+// which is what Cloudflare's git-connected Workers Builds runs.
+{
+  "name": "musafirr",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    // The deployable static site (already committed to the repo).
+    "directory": "./build/web",
+    // Flutter web is a single-page app: unknown routes serve index.html
+    // so deep links resolve instead of 404-ing.
+    "not_found_handling": "single-page-application"
+  }
+}

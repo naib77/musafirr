@@ -118,17 +118,20 @@ Free tier has **unlimited bandwidth**, allows commercial use (Vercel's free Hobb
 plan does not), and deploys the committed `build/web/` folder straight from git —
 no Flutter needed in their CI.
 
-**One-time setup:**
+**One-time setup** (the dashboard now routes git repos through the "Create a
+Worker" wizard — the repo's [`wrangler.jsonc`](../wrangler.jsonc) tells it to
+serve `build/web` as a static site with SPA fallback):
 
 1. [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** →
-   **Create** → **Pages** → **Connect to Git** → authorize GitHub → pick `musafirr`.
-2. Configure the build:
-   - Framework preset: **None**
+   **Create** → **Import a repository** → authorize GitHub → pick `musafirr`.
+2. Configure the build step:
    - Build command: *(leave empty)*
-   - Build output directory: **`build/web`**
-3. **Save and Deploy.** You get a `<project>.pages.dev` URL with HTTPS.
-4. (Optional) **Custom domains** tab → add your domain → follow the DNS prompt.
-   SSL is automatic.
+   - Deploy command: **`npx wrangler deploy`** (the default)
+   - Path: **`/`** (the default)
+   - API token: **Create new token** (automatic)
+3. **Deploy.** You get a `musafirr.<account>.workers.dev` URL with HTTPS.
+4. (Optional) Project → **Settings** → **Domains & Routes** → add your custom
+   domain. SSL is automatic.
 
 **Deploying updates** — your normal flow *is* the deploy pipeline:
 
