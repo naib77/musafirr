@@ -33,6 +33,13 @@ class _NavigationScreenState extends State<NavigationScreen> {
   String? _error;
   String _travelMode = 'driving';
 
+  // The bottom info panel overlays the map, so the map viewport must be
+  // padded by the panel's height — otherwise camera fits center the route on
+  // the full canvas and the destination ends up hidden behind the panel.
+  // Measured after layout because the panel's height varies with content.
+  final GlobalKey _panelKey = GlobalKey();
+  double _mapBottomPadding = 0;
+
   LatLng get _destinationLocation => LatLng(
         widget.listing.latitude,
         widget.listing.longitude,
@@ -123,22 +130,47 @@ class _NavigationScreenState extends State<NavigationScreen> {
         _isLoading = false;
       });
 
-      if (directions != null) {
-        // Fit map to show the entire route.
-        _mapController?.animateCamera(
-          CameraUpdate.newLatLngBounds(directions.bounds, 80),
-        );
-      } else {
-        // No in-app route — still useful: show both pins and let the user open
-        // the native Google Maps app for turn-by-turn navigation.
-        _fitMapToBothLocations();
-      }
+      _fitCamera();
     } catch (e) {
       setState(() {
         _error = 'Error: $e';
         _isLoading = false;
       });
     }
+  }
+
+  /// Fits the camera to whatever we have: the route, both pins, or just the
+  /// destination. Safe to call repeatedly (map creation, directions loaded,
+  /// panel height measured).
+  void _fitCamera() {
+    if (_mapController == null) return;
+    if (_directions != null) {
+      // Fit map to show the entire route.
+      _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(_directions!.bounds, 80),
+      );
+    } else if (_currentLocation != null) {
+      // No in-app route — still useful: show both pins and let the user open
+      // the native Google Maps app for turn-by-turn navigation.
+      _fitMapToBothLocations();
+    } else {
+      _mapController!.animateCamera(
+        CameraUpdate.newLatLngZoom(_destinationLocation, 15),
+      );
+    }
+  }
+
+  /// Measures the bottom panel after layout and re-pads/refits the map when
+  /// its height changes (panel content differs by state).
+  void _measurePanel() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final height = _panelKey.currentContext?.size?.height ?? 0;
+      if ((height - _mapBottomPadding).abs() > 1) {
+        setState(() => _mapBottomPadding = height);
+        _fitCamera();
+      }
+    });
   }
 
   void _fitMapToBothLocations() {
@@ -213,6 +245,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    _measurePanel();
 
     return Scaffold(
       appBar: AppBar(
@@ -230,14 +263,13 @@ class _NavigationScreenState extends State<NavigationScreen> {
               ),
               markers: _markers,
               polylines: _polylines,
+              // Keep camera fits/centering within the area not covered by the
+              // bottom info panel (ignored on web, where the panel is smaller).
+              padding: EdgeInsets.only(bottom: _mapBottomPadding),
               onMapCreated: (controller) {
                 _mapController = controller;
                 _mapCreated = true;
-                if (_directions != null) {
-                  controller.animateCamera(
-                    CameraUpdate.newLatLngBounds(_directions!.bounds, 80),
-                  );
-                }
+                _fitCamera();
               },
               myLocationEnabled: true,
               myLocationButtonEnabled: true,
@@ -304,6 +336,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
               left: 0,
               right: 0,
               child: Container(
+                key: _panelKey,
                 decoration: BoxDecoration(
                   color: theme.colorScheme.surface,
                   borderRadius: const BorderRadius.vertical(
