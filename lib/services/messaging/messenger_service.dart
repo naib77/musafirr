@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:http/http.dart' as http;
 
 import '../../config/messenger_config.dart';
@@ -330,16 +332,21 @@ class StubMessengerService implements MessengerService {
 
     final messageId = 'stub_msg_${DateTime.now().millisecondsSinceEpoch}';
 
-    print('╔══════════════════════════════════════════════════════════════╗');
-    print('║               MESSENGER - STUB MESSAGE SENT                  ║');
-    print('╠══════════════════════════════════════════════════════════════╣');
-    print('║ To PSID: $recipientId');
-    print('║ Text: $text');
+    debugPrint(
+        '╔══════════════════════════════════════════════════════════════╗');
+    debugPrint(
+        '║               MESSENGER - STUB MESSAGE SENT                  ║');
+    debugPrint(
+        '╠══════════════════════════════════════════════════════════════╣');
+    debugPrint('║ To PSID: $recipientId');
+    debugPrint('║ Text: $text');
     if (quickReplies != null && quickReplies.isNotEmpty) {
-      print('║ Quick Replies: ${quickReplies.map((q) => q.title).join(', ')}');
+      debugPrint(
+          '║ Quick Replies: ${quickReplies.map((q) => q.title).join(', ')}');
     }
-    print('║ Message ID: $messageId');
-    print('╚══════════════════════════════════════════════════════════════╝');
+    debugPrint('║ Message ID: $messageId');
+    debugPrint(
+        '╚══════════════════════════════════════════════════════════════╝');
 
     _sentMessages.add({
       'type': 'text',
@@ -361,13 +368,17 @@ class StubMessengerService implements MessengerService {
 
     final messageId = 'stub_img_${DateTime.now().millisecondsSinceEpoch}';
 
-    print('╔══════════════════════════════════════════════════════════════╗');
-    print('║               MESSENGER - STUB IMAGE SENT                    ║');
-    print('╠══════════════════════════════════════════════════════════════╣');
-    print('║ To PSID: $recipientId');
-    print('║ Image URL: $imageUrl');
-    print('║ Message ID: $messageId');
-    print('╚══════════════════════════════════════════════════════════════╝');
+    debugPrint(
+        '╔══════════════════════════════════════════════════════════════╗');
+    debugPrint(
+        '║               MESSENGER - STUB IMAGE SENT                    ║');
+    debugPrint(
+        '╠══════════════════════════════════════════════════════════════╣');
+    debugPrint('║ To PSID: $recipientId');
+    debugPrint('║ Image URL: $imageUrl');
+    debugPrint('║ Message ID: $messageId');
+    debugPrint(
+        '╚══════════════════════════════════════════════════════════════╝');
 
     _sentMessages.add({
       'type': 'image',
@@ -389,13 +400,17 @@ class StubMessengerService implements MessengerService {
 
     final messageId = 'stub_file_${DateTime.now().millisecondsSinceEpoch}';
 
-    print('╔══════════════════════════════════════════════════════════════╗');
-    print('║               MESSENGER - STUB FILE SENT                     ║');
-    print('╠══════════════════════════════════════════════════════════════╣');
-    print('║ To PSID: $recipientId');
-    print('║ File URL: $fileUrl');
-    print('║ Message ID: $messageId');
-    print('╚══════════════════════════════════════════════════════════════╝');
+    debugPrint(
+        '╔══════════════════════════════════════════════════════════════╗');
+    debugPrint(
+        '║               MESSENGER - STUB FILE SENT                     ║');
+    debugPrint(
+        '╠══════════════════════════════════════════════════════════════╣');
+    debugPrint('║ To PSID: $recipientId');
+    debugPrint('║ File URL: $fileUrl');
+    debugPrint('║ Message ID: $messageId');
+    debugPrint(
+        '╚══════════════════════════════════════════════════════════════╝');
 
     _sentMessages.add({
       'type': 'file',
@@ -417,19 +432,23 @@ class StubMessengerService implements MessengerService {
 
     final messageId = 'stub_tpl_${DateTime.now().millisecondsSinceEpoch}';
 
-    print('╔══════════════════════════════════════════════════════════════╗');
-    print('║           MESSENGER - STUB GENERIC TEMPLATE SENT             ║');
-    print('╠══════════════════════════════════════════════════════════════╣');
-    print('║ To PSID: $recipientId');
-    print('║ Elements: ${template.elements.length}');
+    debugPrint(
+        '╔══════════════════════════════════════════════════════════════╗');
+    debugPrint(
+        '║           MESSENGER - STUB GENERIC TEMPLATE SENT             ║');
+    debugPrint(
+        '╠══════════════════════════════════════════════════════════════╣');
+    debugPrint('║ To PSID: $recipientId');
+    debugPrint('║ Elements: ${template.elements.length}');
     for (final element in template.elements) {
-      print('║   - ${element.title}');
+      debugPrint('║   - ${element.title}');
       if (element.subtitle != null) {
-        print('║     ${element.subtitle}');
+        debugPrint('║     ${element.subtitle}');
       }
     }
-    print('║ Message ID: $messageId');
-    print('╚══════════════════════════════════════════════════════════════╝');
+    debugPrint('║ Message ID: $messageId');
+    debugPrint(
+        '╚══════════════════════════════════════════════════════════════╝');
 
     _sentMessages.add({
       'type': 'generic_template',
@@ -451,14 +470,18 @@ class StubMessengerService implements MessengerService {
 
     final messageId = 'stub_btn_${DateTime.now().millisecondsSinceEpoch}';
 
-    print('╔══════════════════════════════════════════════════════════════╗');
-    print('║           MESSENGER - STUB BUTTON TEMPLATE SENT              ║');
-    print('╠══════════════════════════════════════════════════════════════╣');
-    print('║ To PSID: $recipientId');
-    print('║ Text: ${template.text}');
-    print('║ Buttons: ${template.buttons.map((b) => b.title).join(', ')}');
-    print('║ Message ID: $messageId');
-    print('╚══════════════════════════════════════════════════════════════╝');
+    debugPrint(
+        '╔══════════════════════════════════════════════════════════════╗');
+    debugPrint(
+        '║           MESSENGER - STUB BUTTON TEMPLATE SENT              ║');
+    debugPrint(
+        '╠══════════════════════════════════════════════════════════════╣');
+    debugPrint('║ To PSID: $recipientId');
+    debugPrint('║ Text: ${template.text}');
+    debugPrint('║ Buttons: ${template.buttons.map((b) => b.title).join(', ')}');
+    debugPrint('║ Message ID: $messageId');
+    debugPrint(
+        '╚══════════════════════════════════════════════════════════════╝');
 
     _sentMessages.add({
       'type': 'button_template',
@@ -478,7 +501,8 @@ class StubMessengerService implements MessengerService {
   }) async {
     await Future.delayed(const Duration(milliseconds: 200));
 
-    print('║ MESSENGER STUB: Sender action ${action.apiValue} to $recipientId');
+    debugPrint(
+        '║ MESSENGER STUB: Sender action ${action.apiValue} to $recipientId');
 
     return const MessengerResult.success(null);
   }
@@ -488,7 +512,7 @@ class StubMessengerService implements MessengerService {
       String userId) async {
     await Future.delayed(const Duration(milliseconds: 300));
 
-    print('║ MESSENGER STUB: Getting profile for PSID $userId');
+    debugPrint('║ MESSENGER STUB: Getting profile for PSID $userId');
 
     // Return stub profile
     return MessengerResult.success(MessengerUserProfile(
@@ -503,7 +527,7 @@ class StubMessengerService implements MessengerService {
 
   @override
   void processWebhook(Map<String, dynamic> payload) {
-    print('║ MESSENGER STUB: Processing webhook payload');
+    debugPrint('║ MESSENGER STUB: Processing webhook payload');
 
     final entries = payload['entry'] as List<dynamic>?;
     if (entries == null) return;
@@ -517,12 +541,13 @@ class StubMessengerService implements MessengerService {
           final message = MessengerIncomingMessage.fromWebhook(
               event as Map<String, dynamic>);
           _messageController.add(message);
-          print('║ MESSENGER STUB: Received message: ${message.text}');
+          debugPrint('║ MESSENGER STUB: Received message: ${message.text}');
         } else if (event['postback'] != null) {
           final postback =
               MessengerPostback.fromWebhook(event as Map<String, dynamic>);
           _postbackController.add(postback);
-          print('║ MESSENGER STUB: Received postback: ${postback.payload}');
+          debugPrint(
+              '║ MESSENGER STUB: Received postback: ${postback.payload}');
         }
       }
     }
@@ -542,12 +567,16 @@ class StubMessengerService implements MessengerService {
     );
     _messageController.add(message);
 
-    print('╔══════════════════════════════════════════════════════════════╗');
-    print('║         MESSENGER - SIMULATED INCOMING MESSAGE               ║');
-    print('╠══════════════════════════════════════════════════════════════╣');
-    print('║ From PSID: $senderId');
-    print('║ Text: $text');
-    print('╚══════════════════════════════════════════════════════════════╝');
+    debugPrint(
+        '╔══════════════════════════════════════════════════════════════╗');
+    debugPrint(
+        '║         MESSENGER - SIMULATED INCOMING MESSAGE               ║');
+    debugPrint(
+        '╠══════════════════════════════════════════════════════════════╣');
+    debugPrint('║ From PSID: $senderId');
+    debugPrint('║ Text: $text');
+    debugPrint(
+        '╚══════════════════════════════════════════════════════════════╝');
   }
 
   /// Get sent messages (for testing)

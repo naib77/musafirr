@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import '../../models/discount.dart';
 import '../../models/loyalty_tier.dart';
 import 'loyalty_service.dart';
@@ -299,11 +300,9 @@ class InMemoryAutoDiscountService implements AutoDiscountService {
     ReferralService? referralService,
     AutoDiscountConfig config = AutoDiscountConfig.standard,
   })  : _loyaltyService = loyaltyService ?? InMemoryLoyaltyService(),
-        _referralService = referralService ?? InMemoryReferralService(),
         _config = config;
 
   final LoyaltyService _loyaltyService;
-  final ReferralService _referralService;
   final AutoDiscountConfig _config;
 
   @override
@@ -381,18 +380,24 @@ class InMemoryAutoDiscountService implements AutoDiscountService {
     // Find best combination (non-exclusive stackable discounts)
     final bestCombination = _findBestCombination(detected, context);
 
-    print('╔══════════════════════════════════════════════════════════════╗');
-    print('║              AUTO-DISCOUNTS DETECTED                         ║');
-    print('╠══════════════════════════════════════════════════════════════╣');
-    print('║ User: ${context.userId}');
-    print('║ Booking Amount: ৳${context.bookingAmount.toStringAsFixed(0)}');
-    print('║ Nights: ${context.nights}');
-    print('║ Discounts Found: ${detected.length}');
+    debugPrint(
+        '╔══════════════════════════════════════════════════════════════╗');
+    debugPrint(
+        '║              AUTO-DISCOUNTS DETECTED                         ║');
+    debugPrint(
+        '╠══════════════════════════════════════════════════════════════╣');
+    debugPrint('║ User: ${context.userId}');
+    debugPrint(
+        '║ Booking Amount: ৳${context.bookingAmount.toStringAsFixed(0)}');
+    debugPrint('║ Nights: ${context.nights}');
+    debugPrint('║ Discounts Found: ${detected.length}');
     for (final d in detected) {
-      print('║   - ${d.type.displayName}: ${d.discount.value}%');
+      debugPrint('║   - ${d.type.displayName}: ${d.discount.value}%');
     }
-    print('║ Total Potential Savings: ৳${totalSavings.toStringAsFixed(0)}');
-    print('╚══════════════════════════════════════════════════════════════╝');
+    debugPrint(
+        '║ Total Potential Savings: ৳${totalSavings.toStringAsFixed(0)}');
+    debugPrint(
+        '╚══════════════════════════════════════════════════════════════╝');
 
     return AutoDiscountResult(
       detectedDiscounts: detected,

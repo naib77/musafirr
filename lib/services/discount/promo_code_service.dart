@@ -148,23 +148,6 @@ class PromoCodeService {
     final discountsWithCodes =
         discountsResult.data!.where((d) => d.code != null);
 
-    // Check eligibility for first booking
-    final isFirstBookingResult =
-        await _discountService.isEligibleForFirstBookingDiscount(userId);
-    final isFirstBooking = isFirstBookingResult.data ?? false;
-
-    // Build context
-    final context = DiscountEligibilityContext(
-      userId: userId,
-      bookingAmount: bookingAmount,
-      nights: nights,
-      checkInDate: checkInDate,
-      listingId: listingId,
-      hostId: hostId,
-      isFirstBooking: isFirstBooking,
-      isNewUser: isFirstBooking,
-    );
-
     // Check each code
     for (final discount in discountsWithCodes) {
       final validation = await validateCode(

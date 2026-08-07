@@ -36,7 +36,7 @@ class Currency {
   });
 
   /// Bangladesh Taka
-  static const Currency BDT = Currency(
+  static const Currency bdt = Currency(
     code: 'BDT',
     symbol: '৳',
     name: 'Bangladeshi Taka',
@@ -48,7 +48,7 @@ class Currency {
   );
 
   /// US Dollar (for future use)
-  static const Currency USD = Currency(
+  static const Currency usd = Currency(
     code: 'USD',
     symbol: '\$',
     name: 'US Dollar',
@@ -63,9 +63,9 @@ class Currency {
   static Currency? fromCode(String code) {
     switch (code.toUpperCase()) {
       case 'BDT':
-        return BDT;
+        return bdt;
       case 'USD':
-        return USD;
+        return usd;
       default:
         return null;
     }

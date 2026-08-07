@@ -13,21 +13,19 @@ class PerformanceMonitor {
 
   final _metrics = <String, List<Duration>>{};
   final _traces = <String, _Trace>{};
-  bool _isEnabled = kDebugMode;
 
-  /// Enable or disable performance monitoring
-  set isEnabled(bool value) => _isEnabled = value;
-  bool get isEnabled => _isEnabled;
+  /// Whether performance monitoring is enabled
+  bool isEnabled = kDebugMode;
 
   /// Start a trace
   void startTrace(String name) {
-    if (!_isEnabled) return;
+    if (!isEnabled) return;
     _traces[name] = _Trace(name: name, startTime: DateTime.now());
   }
 
   /// Stop a trace and record the duration
   Duration? stopTrace(String name) {
-    if (!_isEnabled) return null;
+    if (!isEnabled) return null;
 
     final trace = _traces.remove(name);
     if (trace == null) return null;
@@ -39,7 +37,7 @@ class PerformanceMonitor {
 
   /// Measure an async operation
   Future<T> measureAsync<T>(String name, Future<T> Function() operation) async {
-    if (!_isEnabled) return operation();
+    if (!isEnabled) return operation();
 
     startTrace(name);
     try {
@@ -51,7 +49,7 @@ class PerformanceMonitor {
 
   /// Measure a sync operation
   T measureSync<T>(String name, T Function() operation) {
-    if (!_isEnabled) return operation();
+    if (!isEnabled) return operation();
 
     startTrace(name);
     try {
@@ -71,7 +69,7 @@ class PerformanceMonitor {
     }
 
     if (kDebugMode) {
-      print('⏱️ [$name] ${duration.inMilliseconds}ms');
+      debugPrint('⏱️ [$name] ${duration.inMilliseconds}ms');
     }
   }
 
@@ -88,10 +86,10 @@ class PerformanceMonitor {
   }
 
   /// Get all metrics
-  Map<String, _MetricSummary> getAllMetrics() {
+  Map<String, MetricSummary> getAllMetrics() {
     return _metrics.map((name, durations) {
       if (durations.isEmpty) {
-        return MapEntry(name, _MetricSummary.empty(name));
+        return MapEntry(name, MetricSummary.empty(name));
       }
 
       final sorted = List<Duration>.from(durations)
@@ -99,7 +97,7 @@ class PerformanceMonitor {
 
       return MapEntry(
         name,
-        _MetricSummary(
+        MetricSummary(
           name: name,
           count: durations.length,
           min: sorted.first,
@@ -129,21 +127,21 @@ class PerformanceMonitor {
   void printMetrics() {
     if (!kDebugMode) return;
 
-    print('═══════════════════════════════════════════════════════');
-    print('                  PERFORMANCE METRICS                   ');
-    print('═══════════════════════════════════════════════════════');
+    debugPrint('═══════════════════════════════════════════════════════');
+    debugPrint('                  PERFORMANCE METRICS                   ');
+    debugPrint('═══════════════════════════════════════════════════════');
 
     final metrics = getAllMetrics();
     for (final entry in metrics.entries) {
       final m = entry.value;
-      print('📊 ${m.name}:');
-      print('   Count: ${m.count}');
-      print('   Min: ${m.min.inMilliseconds}ms');
-      print('   Max: ${m.max.inMilliseconds}ms');
-      print('   Avg: ${m.average.inMilliseconds}ms');
-      print('   P50: ${m.p50.inMilliseconds}ms');
-      print('   P95: ${m.p95.inMilliseconds}ms');
-      print('───────────────────────────────────────────────────────');
+      debugPrint('📊 ${m.name}:');
+      debugPrint('   Count: ${m.count}');
+      debugPrint('   Min: ${m.min.inMilliseconds}ms');
+      debugPrint('   Max: ${m.max.inMilliseconds}ms');
+      debugPrint('   Avg: ${m.average.inMilliseconds}ms');
+      debugPrint('   P50: ${m.p50.inMilliseconds}ms');
+      debugPrint('   P95: ${m.p95.inMilliseconds}ms');
+      debugPrint('───────────────────────────────────────────────────────');
     }
   }
 }
@@ -154,8 +152,8 @@ class _Trace {
   final DateTime startTime;
 }
 
-class _MetricSummary {
-  const _MetricSummary({
+class MetricSummary {
+  const MetricSummary({
     required this.name,
     required this.count,
     required this.min,
@@ -165,7 +163,7 @@ class _MetricSummary {
     required this.p95,
   });
 
-  factory _MetricSummary.empty(String name) => _MetricSummary(
+  factory MetricSummary.empty(String name) => MetricSummary(
         name: name,
         count: 0,
         min: Duration.zero,
@@ -191,11 +189,10 @@ class FrameMonitor {
   static final _instance = FrameMonitor._();
   static FrameMonitor get instance => _instance;
 
-  static const _targetFrameTime = Duration(milliseconds: 16); // 60fps
   static const _slowFrameThreshold = Duration(milliseconds: 32); // 30fps
 
   final _frameTimes = Queue<Duration>();
-  final _slowFrames = <_FrameInfo>[];
+  final _slowFrames = <FrameInfo>[];
   bool _isMonitoring = false;
   int _frameCount = 0;
 
@@ -233,7 +230,7 @@ class FrameMonitor {
       _frameCount++;
 
       if (totalDuration > _slowFrameThreshold) {
-        _slowFrames.add(_FrameInfo(
+        _slowFrames.add(FrameInfo(
           frameNumber: _frameCount,
           buildTime: buildDuration,
           rasterTime: rasterDuration,
@@ -247,7 +244,7 @@ class FrameMonitor {
         }
 
         if (kDebugMode) {
-          print(
+          debugPrint(
               '⚠️ Slow frame #$_frameCount: ${totalDuration.inMilliseconds}ms '
               '(build: ${buildDuration.inMilliseconds}ms, '
               'raster: ${rasterDuration.inMilliseconds}ms)');
@@ -283,19 +280,20 @@ class FrameMonitor {
   }
 
   /// Get recent slow frames
-  List<_FrameInfo> get recentSlowFrames => List.unmodifiable(_slowFrames);
+  List<FrameInfo> get recentSlowFrames => List.unmodifiable(_slowFrames);
 
   /// Print frame statistics
   void printStats() {
     if (!kDebugMode) return;
 
-    print('═══════════════════════════════════════════════════════');
-    print('                    FRAME STATISTICS                    ');
-    print('═══════════════════════════════════════════════════════');
-    print('📊 Total frames: $_frameCount');
-    print('📊 Average frame time: ${averageFrameTime.inMicroseconds / 1000}ms');
-    print('📊 Estimated FPS: ${estimatedFps.toStringAsFixed(1)}');
-    print(
+    debugPrint('═══════════════════════════════════════════════════════');
+    debugPrint('                    FRAME STATISTICS                    ');
+    debugPrint('═══════════════════════════════════════════════════════');
+    debugPrint('📊 Total frames: $_frameCount');
+    debugPrint(
+        '📊 Average frame time: ${averageFrameTime.inMicroseconds / 1000}ms');
+    debugPrint('📊 Estimated FPS: ${estimatedFps.toStringAsFixed(1)}');
+    debugPrint(
         '⚠️ Slow frames: $slowFrameCount (${slowFramePercentage.toStringAsFixed(1)}%)');
   }
 
@@ -307,8 +305,8 @@ class FrameMonitor {
   }
 }
 
-class _FrameInfo {
-  const _FrameInfo({
+class FrameInfo {
+  const FrameInfo({
     required this.frameNumber,
     required this.buildTime,
     required this.rasterTime,
@@ -381,20 +379,21 @@ class MemoryMonitor {
   void printStats() {
     if (!kDebugMode || _snapshots.isEmpty) return;
 
-    print('═══════════════════════════════════════════════════════');
-    print('                   MEMORY STATISTICS                    ');
-    print('═══════════════════════════════════════════════════════');
-    print('📊 Snapshots: ${_snapshots.length}');
+    debugPrint('═══════════════════════════════════════════════════════');
+    debugPrint('                   MEMORY STATISTICS                    ');
+    debugPrint('═══════════════════════════════════════════════════════');
+    debugPrint('📊 Snapshots: ${_snapshots.length}');
     if (_snapshots.isNotEmpty) {
       final latest = _snapshots.last;
-      print(
+      debugPrint(
           '📊 Latest heap: ${(latest.heapUsage / 1024 / 1024).toStringAsFixed(2)}MB');
-      print(
+      debugPrint(
           '📊 Latest external: ${(latest.externalUsage / 1024 / 1024).toStringAsFixed(2)}MB');
     }
     final trend = getMemoryTrend();
     if (trend != null) {
-      print('📊 Trend: ${trend >= 0 ? '+' : ''}${trend.toStringAsFixed(1)}%');
+      debugPrint(
+          '📊 Trend: ${trend >= 0 ? '+' : ''}${trend.toStringAsFixed(1)}%');
     }
   }
 

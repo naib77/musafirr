@@ -88,7 +88,7 @@ class HostDashboardScreen extends StatelessWidget {
         // pending/cancelled/rejected money is still excluded.
         final totalEarnings =
             hostBookings.where((b) => b.isEarnedRevenue).fold<Money>(
-                  Money.zero(Currency.BDT),
+                  Money.zero(Currency.bdt),
                   (sum, b) => sum.add(b.totalPriceMoney),
                 );
 

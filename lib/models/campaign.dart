@@ -415,8 +415,9 @@ class CampaignDisplay {
   /// Get discount display
   String? get discountDisplay {
     if (discountLabel != null) return discountLabel;
-    if (discountValue != null)
+    if (discountValue != null) {
       return '${discountValue!.toStringAsFixed(0)}% OFF';
+    }
     return null;
   }
 }

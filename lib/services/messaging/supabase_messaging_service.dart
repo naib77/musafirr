@@ -363,8 +363,6 @@ class SupabaseMessagingService implements MessagingService {
     String senderId,
   ) async {
     try {
-      final now = DateTime.now();
-
       final messageData = {
         'conversation_id': request.conversationId,
         'sender_id': senderId,

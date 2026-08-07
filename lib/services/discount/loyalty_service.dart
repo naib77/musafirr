@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import '../../models/discount.dart';
 import '../../models/loyalty_tier.dart';
 
@@ -259,16 +260,20 @@ class InMemoryLoyaltyService implements LoyaltyService {
 
     _userLoyalty[userId] = updatedLoyalty;
 
-    print('╔══════════════════════════════════════════════════════════════╗');
-    print('║              LOYALTY STATS UPDATED                           ║');
-    print('╠══════════════════════════════════════════════════════════════╣');
-    print('║ User: $userId');
-    print('║ Total Bookings: ${updatedLoyalty.totalBookings}');
-    print('║ Total Nights: ${updatedLoyalty.totalNightsStayed}');
-    print(
+    debugPrint(
+        '╔══════════════════════════════════════════════════════════════╗');
+    debugPrint(
+        '║              LOYALTY STATS UPDATED                           ║');
+    debugPrint(
+        '╠══════════════════════════════════════════════════════════════╣');
+    debugPrint('║ User: $userId');
+    debugPrint('║ Total Bookings: ${updatedLoyalty.totalBookings}');
+    debugPrint('║ Total Nights: ${updatedLoyalty.totalNightsStayed}');
+    debugPrint(
         '║ Total Spent: ৳${updatedLoyalty.totalAmountSpent.toStringAsFixed(0)}');
-    print('║ Points: ${updatedLoyalty.loyaltyPoints}');
-    print('╚══════════════════════════════════════════════════════════════╝');
+    debugPrint('║ Points: ${updatedLoyalty.loyaltyPoints}');
+    debugPrint(
+        '╚══════════════════════════════════════════════════════════════╝');
 
     return LoyaltyResult.success(updatedLoyalty);
   }
@@ -316,13 +321,17 @@ class InMemoryLoyaltyService implements LoyaltyService {
       upgradedAt: DateTime.now(),
     );
 
-    print('╔══════════════════════════════════════════════════════════════╗');
-    print('║              TIER UPGRADE!                                   ║');
-    print('╠══════════════════════════════════════════════════════════════╣');
-    print('║ User: $userId');
-    print('║ ${currentTier.name} → ${eligibleTier.name}');
-    print('║ New Discount: ${eligibleTier.discountPercentage}%');
-    print('╚══════════════════════════════════════════════════════════════╝');
+    debugPrint(
+        '╔══════════════════════════════════════════════════════════════╗');
+    debugPrint(
+        '║              TIER UPGRADE!                                   ║');
+    debugPrint(
+        '╠══════════════════════════════════════════════════════════════╣');
+    debugPrint('║ User: $userId');
+    debugPrint('║ ${currentTier.name} → ${eligibleTier.name}');
+    debugPrint('║ New Discount: ${eligibleTier.discountPercentage}%');
+    debugPrint(
+        '╚══════════════════════════════════════════════════════════════╝');
 
     return LoyaltyResult.success(upgradeEvent);
   }

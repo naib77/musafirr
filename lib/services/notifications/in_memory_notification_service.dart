@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import '../../models/notification.dart';
 import '../../models/notification_preferences.dart';
 import 'notification_service.dart';
@@ -99,9 +101,9 @@ class InMemoryNotificationService implements NotificationService {
     _emitUnreadCount(notification.userId);
 
     // Log for development
-    print('📬 Notification created: ${notification.title}');
-    print('   Type: ${notification.type.name}');
-    print('   Body: ${notification.body}');
+    debugPrint('📬 Notification created: ${notification.title}');
+    debugPrint('   Type: ${notification.type.name}');
+    debugPrint('   Body: ${notification.body}');
 
     return NotificationResult.success(notification);
   }
@@ -210,7 +212,7 @@ class InMemoryNotificationService implements NotificationService {
       lastUsedAt: DateTime.now(),
     );
 
-    print('📱 Push token registered for device: ${token.deviceId}');
+    debugPrint('📱 Push token registered for device: ${token.deviceId}');
 
     return true;
   }

@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
+
 import '../../models/referral.dart';
 
 /// Result wrapper for referral operations
@@ -276,14 +278,18 @@ class InMemoryReferralService implements ReferralService {
       totalReferrals: referral.totalReferrals + 1,
     );
 
-    print('╔══════════════════════════════════════════════════════════════╗');
-    print('║              REFERRAL CODE APPLIED                           ║');
-    print('╠══════════════════════════════════════════════════════════════╣');
-    print('║ Referee: $refereeId');
-    print('║ Referrer: ${referral.referrerId}');
-    print('║ Code: ${referral.referralCode}');
-    print('║ Discount: ৳${referral.refereeDiscountAmount}');
-    print('╚══════════════════════════════════════════════════════════════╝');
+    debugPrint(
+        '╔══════════════════════════════════════════════════════════════╗');
+    debugPrint(
+        '║              REFERRAL CODE APPLIED                           ║');
+    debugPrint(
+        '╠══════════════════════════════════════════════════════════════╣');
+    debugPrint('║ Referee: $refereeId');
+    debugPrint('║ Referrer: ${referral.referrerId}');
+    debugPrint('║ Code: ${referral.referralCode}');
+    debugPrint('║ Discount: ৳${referral.refereeDiscountAmount}');
+    debugPrint(
+        '╚══════════════════════════════════════════════════════════════╝');
 
     return ReferralResult.success(completion);
   }
@@ -343,13 +349,17 @@ class InMemoryReferralService implements ReferralService {
       updatedAt: DateTime.now(),
     );
 
-    print('╔══════════════════════════════════════════════════════════════╗');
-    print('║              REFERRAL COMPLETED                              ║');
-    print('╠══════════════════════════════════════════════════════════════╣');
-    print(
+    debugPrint(
+        '╔══════════════════════════════════════════════════════════════╗');
+    debugPrint(
+        '║              REFERRAL COMPLETED                              ║');
+    debugPrint(
+        '╠══════════════════════════════════════════════════════════════╣');
+    debugPrint(
         '║ Referrer ${referral.referrerId} earned ৳${referral.referrerRewardAmount}');
-    print('║ Booking ID: $bookingId');
-    print('╚══════════════════════════════════════════════════════════════╝');
+    debugPrint('║ Booking ID: $bookingId');
+    debugPrint(
+        '╚══════════════════════════════════════════════════════════════╝');
 
     return const ReferralResult.success(null);
   }

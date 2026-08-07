@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import '../../models/conversation.dart';
 import '../../models/message.dart';
 import '../../models/user.dart';
@@ -37,7 +39,7 @@ class InMemoryMessagingService implements MessagingService {
     _createSampleData();
 
     _initialized = true;
-    print('[InMemoryMessagingService] Initialized with sample data');
+    debugPrint('[InMemoryMessagingService] Initialized with sample data');
   }
 
   void _createSampleUsers() {
@@ -364,7 +366,7 @@ class InMemoryMessagingService implements MessagingService {
     _conversations[id] = conversation;
     _messages[id] = [];
 
-    print('[InMemoryMessagingService] Created conversation: $id');
+    debugPrint('[InMemoryMessagingService] Created conversation: $id');
     return MessagingResult.success(conversation);
   }
 
@@ -538,7 +540,7 @@ class InMemoryMessagingService implements MessagingService {
     _notifyNewMessage(message);
     _notifyConversationUpdate(request.conversationId);
 
-    print('[InMemoryMessagingService] Sent message: ${message.content}');
+    debugPrint('[InMemoryMessagingService] Sent message: ${message.content}');
     return MessagingResult.success(message);
   }
 
@@ -840,6 +842,7 @@ class InMemoryMessagingService implements MessagingService {
     _notifyNewMessage(message);
     _notifyConversationUpdate(conversationId);
 
-    print('[InMemoryMessagingService] Simulated incoming message: $content');
+    debugPrint(
+        '[InMemoryMessagingService] Simulated incoming message: $content');
   }
 }

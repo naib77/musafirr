@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import '../../config/messenger_config.dart';
 import '../../config/whatsapp_config.dart';
 import '../../models/message.dart';
@@ -299,7 +301,7 @@ class MessageRouter {
     } else {
       // Need to use template message - outside 24-hour window
       // For now, fallback to in-app and notify user
-      print(
+      debugPrint(
           '║ MessageRouter: WhatsApp session expired, falling back to in-app');
     }
 
@@ -438,9 +440,9 @@ class MessageRouter {
   }) async {
     // Update session timestamp
     // Note: In production, you'd need to map WhatsApp number to user ID
-    print('║ MessageRouter: Processing incoming WhatsApp message');
-    print('║   From: ${message.from}');
-    print('║   Text: ${message.text ?? "[media]"}');
+    debugPrint('║ MessageRouter: Processing incoming WhatsApp message');
+    debugPrint('║   From: ${message.from}');
+    debugPrint('║   Text: ${message.text ?? "[media]"}');
 
     // Convert to in-app message for storage
     // TODO: Implement full conversion and storage
@@ -451,9 +453,9 @@ class MessageRouter {
     MessengerIncomingMessage message, {
     required String conversationId,
   }) async {
-    print('║ MessageRouter: Processing incoming Messenger message');
-    print('║   From PSID: ${message.senderId}');
-    print('║   Text: ${message.text ?? "[attachment]"}');
+    debugPrint('║ MessageRouter: Processing incoming Messenger message');
+    debugPrint('║   From PSID: ${message.senderId}');
+    debugPrint('║   Text: ${message.text ?? "[attachment]"}');
 
     // Convert to in-app message for storage
     // TODO: Implement full conversion and storage

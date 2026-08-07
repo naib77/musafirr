@@ -69,9 +69,6 @@ class _TripsScreenState extends State<TripsScreen> {
   late final ScrollController _currentScrollController;
   late final ScrollController _pastScrollController;
 
-  // Refresh state
-  bool _isRefreshing = false;
-
   @override
   void initState() {
     super.initState();
@@ -130,13 +127,11 @@ class _TripsScreenState extends State<TripsScreen> {
     final user = widget.authState.currentUser;
     if (user == null) return;
 
-    setState(() => _isRefreshing = true);
     // Refresh both counts and bookings
     await Future.wait([
       widget.repository.getBookingCounts(user.id),
       widget.repository.resetBookingsPagination(user.id),
     ]);
-    setState(() => _isRefreshing = false);
   }
 
   /// Called when user taps the Trips tab while already on it

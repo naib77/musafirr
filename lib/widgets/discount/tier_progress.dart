@@ -400,8 +400,6 @@ class TierBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     double iconSize;
     double padding;
     double fontSize;
@@ -477,7 +475,6 @@ class TierBenefitsList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     final benefits = tier.benefitsList;
 
     final previousBenefits = previousTier?.benefitsList.toSet() ?? {};

@@ -23,7 +23,7 @@ class CurrencyFormatter {
   }
 
   /// Default currency for the app
-  Currency _defaultCurrency = Currency.BDT;
+  Currency _defaultCurrency = Currency.bdt;
 
   /// Set default currency
   void setDefaultCurrency(Currency currency) {

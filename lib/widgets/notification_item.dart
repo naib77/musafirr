@@ -390,42 +390,6 @@ class NotificationIcon extends StatelessWidget {
   }
 }
 
-Color _getLegacyColor(NotificationType type, ThemeData theme) {
-  switch (type) {
-    case NotificationType.bookingRequest:
-    case NotificationType.bookingReminder:
-      return Colors.blue;
-    case NotificationType.bookingConfirmed:
-      return Colors.green;
-    case NotificationType.bookingCancelled:
-      return Colors.red;
-    case NotificationType.checkInReminder:
-    case NotificationType.checkOutReminder:
-      return Colors.orange;
-    case NotificationType.paymentReceived:
-    case NotificationType.refundProcessed:
-      return Colors.green;
-    case NotificationType.paymentFailed:
-      return Colors.red;
-    case NotificationType.reviewReceived:
-    case NotificationType.reviewReminder:
-      return Colors.amber;
-    case NotificationType.promotionAvailable:
-    case NotificationType.discountExpiring:
-      return Colors.purple;
-    case NotificationType.referralReward:
-      return Colors.teal;
-    case NotificationType.newMessage:
-    case NotificationType.messageRead:
-      return theme.colorScheme.primary;
-    case NotificationType.systemAlert:
-    case NotificationType.accountUpdate:
-      return Colors.grey;
-    case NotificationType.securityAlert:
-      return Colors.red;
-  }
-}
-
 /// Badge for high priority notifications with modern glassmorphism style
 class NotificationPriorityBadge extends StatelessWidget {
   const NotificationPriorityBadge({super.key, required this.priority});
@@ -644,7 +608,6 @@ class NotificationEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     return Center(
       child: Padding(

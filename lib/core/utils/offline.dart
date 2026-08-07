@@ -66,7 +66,7 @@ class SimpleConnectivityMonitor implements ConnectivityMonitor {
       _statusController.add(status);
 
       if (kDebugMode) {
-        print('📡 Connectivity: $status');
+        debugPrint('📡 Connectivity: $status');
       }
     }
   }
@@ -163,7 +163,7 @@ class OfflineQueue {
     await _saveToStorage();
 
     if (kDebugMode) {
-      print('📥 Queued operation: ${operation.type} (${operation.id})');
+      debugPrint('📥 Queued operation: ${operation.type} (${operation.id})');
     }
   }
 
@@ -189,7 +189,7 @@ class OfflineQueue {
     _isProcessing = true;
 
     if (kDebugMode) {
-      print('🔄 Processing offline queue (${_queue.length} items)...');
+      debugPrint('🔄 Processing offline queue (${_queue.length} items)...');
     }
 
     final toRemove = <QueuedOperation>[];
@@ -199,7 +199,7 @@ class OfflineQueue {
       final handler = _handlers[operation.type];
       if (handler == null) {
         if (kDebugMode) {
-          print('⚠️ No handler for operation type: ${operation.type}');
+          debugPrint('⚠️ No handler for operation type: ${operation.type}');
         }
         continue;
       }
@@ -211,7 +211,7 @@ class OfflineQueue {
         if (success) {
           toRemove.add(operation);
           if (kDebugMode) {
-            print('✅ Processed: ${operation.type} (${operation.id})');
+            debugPrint('✅ Processed: ${operation.type} (${operation.id})');
           }
         } else {
           operation.retryCount++;
@@ -225,7 +225,7 @@ class OfflineQueue {
           failed.add(operation);
         }
         if (kDebugMode) {
-          print('❌ Failed: ${operation.type} (${operation.id}) - $e');
+          debugPrint('❌ Failed: ${operation.type} (${operation.id}) - $e');
         }
       }
     }
@@ -237,7 +237,7 @@ class OfflineQueue {
     _isProcessing = false;
 
     if (kDebugMode) {
-      print('📤 Queue processing complete. Remaining: ${_queue.length}');
+      debugPrint('📤 Queue processing complete. Remaining: ${_queue.length}');
     }
   }
 
@@ -272,7 +272,7 @@ class OfflineQueue {
       _sortQueue();
     } catch (e) {
       if (kDebugMode) {
-        print('⚠️ Failed to load offline queue: $e');
+        debugPrint('⚠️ Failed to load offline queue: $e');
       }
     }
   }
@@ -444,7 +444,7 @@ class OfflineFirstManager<T> {
     if (!forceRefresh && cacheKey != null && cache != null) {
       final cached = cache!.get(cacheKey);
       if (cached != null) {
-        if (kDebugMode) print('📦 Cache hit: $cacheKey');
+        if (kDebugMode) debugPrint('📦 Cache hit: $cacheKey');
         return cached;
       }
     }
@@ -458,10 +458,10 @@ class OfflineFirstManager<T> {
         cache!.set(cacheKey, data, ttl: cacheTtl);
       }
 
-      if (kDebugMode) print('🌐 Network fetch successful');
+      if (kDebugMode) debugPrint('🌐 Network fetch successful');
       return data;
     } catch (e) {
-      if (kDebugMode) print('⚠️ Network fetch failed: $e');
+      if (kDebugMode) debugPrint('⚠️ Network fetch failed: $e');
     }
 
     // 3. Fall back to local storage
@@ -470,7 +470,7 @@ class OfflineFirstManager<T> {
       if (cacheKey != null && cache != null) {
         cache!.set(cacheKey, local, ttl: cacheTtl);
       }
-      if (kDebugMode) print('💾 Loaded from local storage');
+      if (kDebugMode) debugPrint('💾 Loaded from local storage');
     }
 
     return local;
@@ -548,12 +548,12 @@ class SyncManager<T> {
       onSyncComplete?.call(uploaded, downloaded);
 
       if (kDebugMode) {
-        print('🔄 Sync complete: ↑$uploaded ↓$downloaded');
+        debugPrint('🔄 Sync complete: ↑$uploaded ↓$downloaded');
       }
     } catch (e) {
       onSyncError?.call(e);
       if (kDebugMode) {
-        print('❌ Sync failed: $e');
+        debugPrint('❌ Sync failed: $e');
       }
     } finally {
       _isSyncing = false;

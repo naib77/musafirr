@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:http/http.dart' as http;
 
 import '../../config/whatsapp_config.dart';
@@ -304,10 +306,8 @@ class WhatsAppStatusUpdate {
 
 /// Stub implementation for development
 class StubWhatsAppService implements WhatsAppService {
-  StubWhatsAppService({WhatsAppConfig? config})
-      : _config = config ?? WhatsAppConfig.stub;
+  StubWhatsAppService({WhatsAppConfig? config});
 
-  final WhatsAppConfig _config;
   final _incomingController =
       StreamController<WhatsAppIncomingMessage>.broadcast();
   final _statusController = StreamController<WhatsAppStatusUpdate>.broadcast();
@@ -326,7 +326,7 @@ class StubWhatsAppService implements WhatsAppService {
     required String text,
     String? replyToMessageId,
   }) async {
-    print('[StubWhatsAppService] Sending text to $to: $text');
+    debugPrint('[StubWhatsAppService] Sending text to $to: $text');
 
     // Simulate network delay
     await Future.delayed(const Duration(milliseconds: 500));
@@ -352,7 +352,7 @@ class StubWhatsAppService implements WhatsAppService {
     required String mediaUrl,
     String? caption,
   }) async {
-    print('[StubWhatsAppService] Sending image to $to: $mediaUrl');
+    debugPrint('[StubWhatsAppService] Sending image to $to: $mediaUrl');
 
     await Future.delayed(const Duration(milliseconds: 800));
 
@@ -376,7 +376,7 @@ class StubWhatsAppService implements WhatsAppService {
     String? name,
     String? address,
   }) async {
-    print(
+    debugPrint(
         '[StubWhatsAppService] Sending location to $to: ($latitude, $longitude)');
 
     await Future.delayed(const Duration(milliseconds: 500));
@@ -398,7 +398,8 @@ class StubWhatsAppService implements WhatsAppService {
     required String to,
     required WhatsAppTemplate template,
   }) async {
-    print('[StubWhatsAppService] Sending template ${template.name} to $to');
+    debugPrint(
+        '[StubWhatsAppService] Sending template ${template.name} to $to');
 
     await Future.delayed(const Duration(milliseconds: 500));
 
@@ -410,7 +411,7 @@ class StubWhatsAppService implements WhatsAppService {
 
   @override
   Future<WhatsAppResult<void>> markAsRead(String messageId) async {
-    print('[StubWhatsAppService] Marking message as read: $messageId');
+    debugPrint('[StubWhatsAppService] Marking message as read: $messageId');
 
     await Future.delayed(const Duration(milliseconds: 200));
     return const WhatsAppResult.success(null);
@@ -418,7 +419,7 @@ class StubWhatsAppService implements WhatsAppService {
 
   @override
   Future<WhatsAppResult<String>> getMediaUrl(String mediaId) async {
-    print('[StubWhatsAppService] Getting media URL for: $mediaId');
+    debugPrint('[StubWhatsAppService] Getting media URL for: $mediaId');
 
     await Future.delayed(const Duration(milliseconds: 300));
     return WhatsAppResult.success('https://example.com/media/$mediaId');
@@ -439,7 +440,7 @@ class StubWhatsAppService implements WhatsAppService {
 
   @override
   Future<void> handleWebhook(Map<String, dynamic> payload) async {
-    print('[StubWhatsAppService] Received webhook: $payload');
+    debugPrint('[StubWhatsAppService] Received webhook: $payload');
     // In a real implementation, parse and emit to streams
   }
 
@@ -719,7 +720,7 @@ class CloudWhatsAppService implements WhatsAppService {
         }
       }
     } catch (e) {
-      print('[CloudWhatsAppService] Error handling webhook: $e');
+      debugPrint('[CloudWhatsAppService] Error handling webhook: $e');
     }
   }
 
@@ -751,11 +752,11 @@ class WhatsAppServiceFactory {
     final effectiveConfig = config ?? WhatsAppConfig.fromEnv();
 
     if (effectiveConfig.isStub) {
-      print('[WhatsAppServiceFactory] Using stub WhatsApp service');
+      debugPrint('[WhatsAppServiceFactory] Using stub WhatsApp service');
       return StubWhatsAppService(config: effectiveConfig);
     }
 
-    print('[WhatsAppServiceFactory] Using Cloud API WhatsApp service');
+    debugPrint('[WhatsAppServiceFactory] Using Cloud API WhatsApp service');
     return CloudWhatsAppService(config: effectiveConfig);
   }
 }

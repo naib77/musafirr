@@ -237,9 +237,6 @@ class _ReferralScreenState extends State<ReferralScreen>
   }
 
   Widget _buildStatsHeader(ReferralStats stats) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(20),

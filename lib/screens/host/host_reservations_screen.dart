@@ -1195,25 +1195,6 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
     };
   }
 
-  String _formatFullDate(DateTime date) {
-    final weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    final months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec'
-    ];
-    return '${weekdays[date.weekday - 1]}, ${months[date.month - 1]} ${date.day}';
-  }
-
   String _formatDateTimeForBooking(DateTime date, String unitLabel) {
     // Timestamps are stored/parsed as UTC — show them in local time.
     date = date.toLocal();

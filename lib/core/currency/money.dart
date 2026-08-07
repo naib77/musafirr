@@ -39,7 +39,7 @@ class Money implements Comparable<Money> {
   }
 
   /// Create Money in BDT from a decimal amount
-  factory Money.bdt(double amount) => Money(amount, Currency.BDT);
+  factory Money.bdt(double amount) => Money(amount, Currency.bdt);
 
   /// Create Money from minor units (e.g., paisa)
   factory Money.fromMinorUnits(int minorUnits, Currency currency) {
@@ -57,7 +57,7 @@ class Money implements Comparable<Money> {
       Money._(amountInMinorUnits: 0, currency: currency);
 
   /// Create zero BDT
-  static Money get zeroBdt => Money.zero(Currency.BDT);
+  static Money get zeroBdt => Money.zero(Currency.bdt);
 
   /// Get amount as decimal (e.g., 150.50)
   double get amount => amountInMinorUnits / currency.subunitsPerUnit;
@@ -204,7 +204,7 @@ class Money implements Comparable<Money> {
   /// Create from Map (for JSON deserialization)
   factory Money.fromJson(Map<String, dynamic> json) {
     final currencyCode = json['currency'] as String? ?? 'BDT';
-    final currency = Currency.fromCode(currencyCode) ?? Currency.BDT;
+    final currency = Currency.fromCode(currencyCode) ?? Currency.bdt;
 
     if (json.containsKey('minorUnits')) {
       return Money.fromMinorUnits(json['minorUnits'] as int, currency);

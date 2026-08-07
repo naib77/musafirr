@@ -105,8 +105,8 @@ Future<T> retry<T>(
       final delay = config.getDelayForAttempt(attempt);
 
       if (kDebugMode) {
-        print('⚠️ Retry attempt $attempt failed: $e');
-        print('   Retrying in ${delay.inMilliseconds}ms...');
+        debugPrint('⚠️ Retry attempt $attempt failed: $e');
+        debugPrint('   Retrying in ${delay.inMilliseconds}ms...');
       }
 
       onRetry?.call(attempt, e, delay);
@@ -116,7 +116,7 @@ Future<T> retry<T>(
 
   stopwatch.stop();
   if (kDebugMode) {
-    print(
+    debugPrint(
         '❌ All $attempt retry attempts failed after ${stopwatch.elapsed.inMilliseconds}ms');
   }
 
@@ -205,7 +205,7 @@ class CircuitBreaker {
       }
 
       if (kDebugMode) {
-        print('🔌 Circuit breaker: $oldState → $newState');
+        debugPrint('🔌 Circuit breaker: $oldState → $newState');
       }
 
       onStateChange?.call(oldState, newState);

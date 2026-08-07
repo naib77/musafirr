@@ -50,7 +50,7 @@ class Listing {
     // owns the listing; never exposed to guests via the listing row.
     this.checkInDetails,
     // Currency
-    this.currency = Currency.BDT,
+    this.currency = Currency.bdt,
     // When the listing was created (server timestamp). Used to surface
     // "Newly available" stays. Null for locally-built/mock listings.
     this.createdAt,

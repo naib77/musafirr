@@ -825,6 +825,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     }
 
     // Show dialog
+    if (!mounted) return;
     final result = await showAcceptBookingDialog(context, guestName: guestName);
     if (result == null || !result.confirmed) return;
 
@@ -933,6 +934,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     }
 
     // Show dialog
+    if (!mounted) return;
     final result =
         await showDeclineBookingDialog(context, guestName: guestName);
     if (result == null || !result.confirmed) return;

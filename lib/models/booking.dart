@@ -25,7 +25,7 @@ class Booking {
     this.listingCity,
     this.listingType,
     // Currency and pricing
-    this.currency = Currency.BDT,
+    this.currency = Currency.bdt,
     this.serviceFee,
     this.discount,
     // Lifecycle fields

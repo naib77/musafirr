@@ -6,12 +6,12 @@ class CurrencyConfig {
   CurrencyConfig._();
 
   /// Default currency for the application
-  static const Currency defaultCurrency = Currency.BDT;
+  static const Currency defaultCurrency = Currency.bdt;
 
   /// Supported currencies
   static const List<Currency> supportedCurrencies = [
-    Currency.BDT,
-    // Currency.USD, // Enable when multi-currency is needed
+    Currency.bdt,
+    // Currency.usd, // Enable when multi-currency is needed
   ];
 
   /// Maximum allowed amount (999 Crore in paisa)

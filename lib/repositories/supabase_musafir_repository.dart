@@ -56,8 +56,6 @@ class SupabaseMusafirRepository extends ChangeNotifier
   // Realtime subscription for bookings
   RealtimeChannel? _bookingsChannel;
 
-  bool _initialized = false;
-
   // Pagination state - Listings
   static const int _pageSize = 10;
   int _listingsOffset = 0;
@@ -90,7 +88,6 @@ class SupabaseMusafirRepository extends ChangeNotifier
 
   Future<void> _initialize() async {
     await _refreshAll();
-    _initialized = true;
     _setupBookingsRealtimeSubscription();
     notifyListeners();
   }
@@ -112,7 +109,6 @@ class SupabaseMusafirRepository extends ChangeNotifier
     _hasMoreBookings = true;
     _isLoadingBookings = false;
     _currentBookingsUserId = null;
-    _initialized = false;
   }
 
   /// Clear all cached data on logout.

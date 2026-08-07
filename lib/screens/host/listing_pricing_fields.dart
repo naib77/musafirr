@@ -124,7 +124,7 @@ class PlanPriceRow extends StatelessWidget {
                   const TextInputType.numberWithOptions(decimal: true),
               prefix: Padding(
                 padding: const EdgeInsets.only(left: 12),
-                child: Text(Currency.BDT.symbol),
+                child: Text(Currency.bdt.symbol),
               ),
               onChanged: (_) => onChanged(),
             ),

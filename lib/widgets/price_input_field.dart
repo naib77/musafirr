@@ -45,7 +45,7 @@ class PriceInputField extends StatefulWidget {
   const PriceInputField({
     super.key,
     this.controller,
-    this.currency = Currency.BDT,
+    this.currency = Currency.bdt,
     required this.label,
     this.hint,
     this.onChanged,
@@ -220,7 +220,7 @@ class PriceRateInputs extends StatelessWidget {
     this.hourlyController,
     this.dailyController,
     this.monthlyController,
-    this.currency = Currency.BDT,
+    this.currency = Currency.bdt,
     this.hourlyEnabled = true,
     this.dailyEnabled = true,
     this.monthlyEnabled = true,

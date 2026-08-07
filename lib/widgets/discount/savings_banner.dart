@@ -196,7 +196,6 @@ class SavingsBanner extends StatelessWidget {
 
   Widget _buildExpandedBanner(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
 
     return Container(
       decoration: BoxDecoration(

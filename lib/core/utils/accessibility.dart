@@ -7,7 +7,11 @@ class A11y {
 
   /// Announce a message to screen readers
   static void announce(BuildContext context, String message) {
-    SemanticsService.announce(message, Directionality.of(context));
+    SemanticsService.sendAnnouncement(
+      View.of(context),
+      message,
+      Directionality.of(context),
+    );
   }
 
   /// Check if screen reader is active
@@ -361,9 +365,9 @@ class ContrastChecker {
 
   /// Calculate relative luminance
   static double relativeLuminance(Color color) {
-    double r = color.red / 255;
-    double g = color.green / 255;
-    double b = color.blue / 255;
+    double r = color.r;
+    double g = color.g;
+    double b = color.b;
 
     r = r <= 0.03928 ? r / 12.92 : ((r + 0.055) / 1.055).pow(2.4);
     g = g <= 0.03928 ? g / 12.92 : ((g + 0.055) / 1.055).pow(2.4);

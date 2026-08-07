@@ -265,7 +265,7 @@ class _OptimizedImageState extends State<OptimizedImage>
           widget.onError?.call(error);
 
           if (kDebugMode) {
-            print('❌ Image load error: $error');
+            debugPrint('❌ Image load error: $error');
           }
         }
       },
@@ -484,7 +484,7 @@ class ImagePreloader {
       _preloaded.add(url);
     } catch (e) {
       if (kDebugMode) {
-        print('⚠️ Failed to preload image: $url');
+        debugPrint('⚠️ Failed to preload image: $url');
       }
     } finally {
       _preloading.remove(url);

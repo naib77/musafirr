@@ -23,64 +23,49 @@ Future<BookingActionResult?> showAcceptBookingDialog(
   required String guestName,
 }) async {
   final messageController = TextEditingController();
-  var isLoading = false;
 
   return showDialog<BookingActionResult>(
     context: context,
     barrierDismissible: false,
-    builder: (dialogContext) => StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
-        title: const Text('Accept Booking'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Accept booking from $guestName?'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: messageController,
-              enabled: !isLoading,
-              decoration: const InputDecoration(
-                labelText: 'Welcome message (optional)',
-                hintText: 'e.g., Looking forward to hosting you!',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Accept Booking'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Accept booking from $guestName?'),
+          const SizedBox(height: 16),
+          TextField(
+            controller: messageController,
+            decoration: const InputDecoration(
+              labelText: 'Welcome message (optional)',
+              hintText: 'e.g., Looking forward to hosting you!',
+              border: OutlineInputBorder(),
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: isLoading ? null : () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: isLoading
-                ? null
-                : () {
-                    Navigator.pop(
-                      dialogContext,
-                      BookingActionResult(
-                        confirmed: true,
-                        message: messageController.text.isNotEmpty
-                            ? messageController.text
-                            : null,
-                      ),
-                    );
-                  },
-            child: isLoading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
-                  )
-                : const Text('Accept'),
+            maxLines: 3,
           ),
         ],
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            Navigator.pop(
+              dialogContext,
+              BookingActionResult(
+                confirmed: true,
+                message: messageController.text.isNotEmpty
+                    ? messageController.text
+                    : null,
+              ),
+            );
+          },
+          child: const Text('Accept'),
+        ),
+      ],
     ),
   );
 }
@@ -94,67 +79,52 @@ Future<BookingActionResult?> showDeclineBookingDialog(
   required String guestName,
 }) async {
   final reasonController = TextEditingController();
-  var isLoading = false;
 
   return showDialog<BookingActionResult>(
     context: context,
     barrierDismissible: false,
-    builder: (dialogContext) => StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
-        title: const Text('Decline Booking'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Decline booking from $guestName?'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: reasonController,
-              enabled: !isLoading,
-              decoration: const InputDecoration(
-                labelText: 'Reason (optional)',
-                hintText: 'e.g., Dates not available',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 2,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Decline Booking'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Decline booking from $guestName?'),
+          const SizedBox(height: 16),
+          TextField(
+            controller: reasonController,
+            decoration: const InputDecoration(
+              labelText: 'Reason (optional)',
+              hintText: 'e.g., Dates not available',
+              border: OutlineInputBorder(),
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: isLoading ? null : () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: isLoading
-                ? null
-                : () {
-                    Navigator.pop(
-                      dialogContext,
-                      BookingActionResult(
-                        confirmed: true,
-                        message: reasonController.text.isNotEmpty
-                            ? reasonController.text
-                            : null,
-                      ),
-                    );
-                  },
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            child: isLoading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
-                  )
-                : const Text('Decline'),
+            maxLines: 2,
           ),
         ],
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            Navigator.pop(
+              dialogContext,
+              BookingActionResult(
+                confirmed: true,
+                message: reasonController.text.isNotEmpty
+                    ? reasonController.text
+                    : null,
+              ),
+            );
+          },
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.red,
+          ),
+          child: const Text('Decline'),
+        ),
+      ],
     ),
   );
 }
