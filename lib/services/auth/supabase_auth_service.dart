@@ -52,6 +52,20 @@ class SupabaseAuthService implements AuthService {
     debugPrint('[SupabaseAuthService] Auth state changed: ${state.event}');
 
     switch (state.event) {
+      case AuthChangeEvent.initialSession:
+        // Fired once at startup after the persisted session (if any) is
+        // restored. On web the restore is asynchronous, so initialize()'s
+        // direct currentSession check can run too early and find nothing —
+        // this event is the reliable signal. Ignoring it meant web reloads
+        // always landed on the login screen despite a valid stored session.
+        if (state.session?.user != null) {
+          _loadUserProfile(state.session!.user);
+        } else {
+          // Definitively no persisted session — let the app leave the
+          // splash screen for the login flow without waiting on timeouts.
+          _setCurrentUser(null);
+        }
+        break;
       case AuthChangeEvent.signedIn:
       case AuthChangeEvent.tokenRefreshed:
       case AuthChangeEvent.userUpdated:
