@@ -62,24 +62,38 @@ class AuthStateNotifier extends ChangeNotifier with SafeNotifier {
   ///   marks the user authenticated even if the profile fetch stalls.
   /// - No session -> mark unauthenticated after a brief grace period that
   ///   lets the auth service emit its first event.
+  ///
+  /// Web caveat: the persisted session is restored ASYNCHRONOUSLY during
+  /// `Supabase.initialize()`, so [AuthService.hasActiveSession] can still be
+  /// false here for a logged-in user — the real answer only arrives with the
+  /// `initialSession` auth event a moment later. If we assumed "no session"
+  /// from the too-short grace we'd flash the login screen before that event
+  /// lands. So on web we (a) wait a bit longer for the event, and (b) re-read
+  /// the session AFTER the wait, once the async restore has had time to finish.
+  /// A genuinely logged-out user still leaves the splash promptly because
+  /// `initialSession` fires with a null session almost immediately.
   Future<void> _initializeAuthState() async {
     final hasSession = _service.hasActiveSession;
 
     // A session that exists means a logged-in user; give the profile fetch a
-    // generous window. Without a session, only a short grace period is needed.
+    // generous window. Without one, a short grace on mobile (restore is
+    // synchronous there) but a longer one on web (async restore, see above).
     await Future.delayed(
       hasSession
           ? const Duration(seconds: 8)
-          : const Duration(milliseconds: 400),
+          : (kIsWeb
+              ? const Duration(seconds: 2)
+              : const Duration(milliseconds: 400)),
     );
 
-    // If the profile already loaded, _onAuthChange has set the status.
+    // If the first auth event already arrived, _onAuthChange set the status.
     if (_hasReceivedFirstAuthEvent) return;
 
     _hasReceivedFirstAuthEvent = true;
-    // Trust the session: if one exists, the user is authenticated even if the
-    // profile fetch hasn't completed yet.
-    _status = (hasSession || _currentUser != null)
+    // Trust the session: if one exists — including a web session that only
+    // finished restoring during the wait above — the user is authenticated
+    // even if the profile fetch hasn't completed yet.
+    _status = (hasSession || _service.hasActiveSession || _currentUser != null)
         ? AuthStatus.authenticated
         : AuthStatus.unauthenticated;
     notifyListeners();

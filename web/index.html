@@ -19,6 +19,98 @@
   <title>Musaafir</title>
   <link rel="manifest" href="manifest.json">
 
+  <!-- WebGL context-loss recovery.
+       Flutter web (CanvasKit) renders through a WebGL context. On mobile
+       Chrome/Safari, backgrounding the tab lets the browser discard the GPU
+       context to reclaim memory; on return the canvas stays BLACK because the
+       lost context is never repainted. CanvasKit renders via an OffscreenCanvas
+       whose context-loss events never reach the DOM, so we patch getContext
+       (BEFORE the engine boots) to attach the loss listener to the REAL context
+       and reload once to reinitialise cleanly when it isn't restored.
+       Append ?gldebug=1 to the URL to see an on-screen event log on a device. -->
+  <script>
+    (function () {
+      var DEBUG = location.search.indexOf('gldebug') !== -1;
+      var panel;
+      function log(msg) {
+        try { console.warn('[webgl-recovery] ' + msg); } catch (e) {}
+        if (!DEBUG) return;
+        if (!panel) {
+          panel = document.createElement('pre');
+          panel.style.cssText = 'position:fixed;left:0;bottom:0;right:0;z-index:2147483647;' +
+            'max-height:45%;overflow:auto;margin:0;padding:6px 8px;background:rgba(0,0,0,.82);' +
+            'color:#31d158;font:11px/1.35 monospace;white-space:pre-wrap;pointer-events:none';
+          (document.body || document.documentElement).appendChild(panel);
+        }
+        var t = (performance.now() / 1000).toFixed(1);
+        panel.textContent += t + 's  ' + msg + '\n';
+        panel.scrollTop = panel.scrollHeight;
+      }
+
+      // Reload to recover, but only while the user is actually looking (so we
+      // never reload in the background — we recover the moment they return).
+      var reloadArmed = false;
+      function recover(reason, delay) {
+        if (reloadArmed) return;
+        reloadArmed = true;
+        log('WILL RECOVER (' + reason + ') in ' + delay + 'ms');
+        setTimeout(function () {
+          if (document.visibilityState === 'visible') { location.reload(); return; }
+          document.addEventListener('visibilitychange', function once() {
+            if (document.visibilityState === 'visible') {
+              document.removeEventListener('visibilitychange', once);
+              location.reload();
+            }
+          });
+        }, delay);
+      }
+
+      function watch(canvas, label) {
+        if (!canvas || canvas.__glWatched) return;
+        canvas.__glWatched = true;
+        try {
+          canvas.addEventListener('webglcontextlost', function () {
+            log('CONTEXT LOST (' + label + ')');
+            // The engine's own restore is unreliable on mobile resume; a short
+            // grace lets a genuine restore paint first, then we reload.
+            recover('contextlost', 1200);
+          });
+          canvas.addEventListener('webglcontextrestored', function () {
+            log('CONTEXT RESTORED (' + label + ')');
+          });
+        } catch (e) { log('watch error: ' + e.message); }
+      }
+
+      // Patch getContext so we catch the WebGL context CanvasKit creates —
+      // including the OffscreenCanvas one, whose events never reach the DOM.
+      function patch(proto, label) {
+        if (!proto || !proto.getContext || proto.__glPatched) return;
+        proto.__glPatched = true;
+        var orig = proto.getContext;
+        proto.getContext = function (type) {
+          var ctx = orig.apply(this, arguments);
+          if (ctx && (type === 'webgl' || type === 'webgl2')) watch(this, label + ':' + type);
+          return ctx;
+        };
+      }
+      patch(window.HTMLCanvasElement && HTMLCanvasElement.prototype, 'canvas');
+      patch(window.OffscreenCanvas && OffscreenCanvas.prototype, 'offscreen');
+
+      if (DEBUG) {
+        log('gldebug on');
+        log(navigator.userAgent);
+        var hiddenAt = 0;
+        document.addEventListener('visibilitychange', function () {
+          if (document.visibilityState === 'hidden') { hiddenAt = performance.now(); log('HIDDEN'); }
+          else log('VISIBLE (was hidden ' + Math.round(performance.now() - hiddenAt) + 'ms)');
+        });
+        window.addEventListener('pagehide', function (e) { log('pagehide persisted=' + e.persisted); });
+        window.addEventListener('pageshow', function (e) { log('pageshow persisted=' + e.persisted); });
+        window.addEventListener('flutter-first-frame', function () { log('flutter-first-frame'); });
+      }
+    })();
+  </script>
+
   <!-- Preload the splash logo so it paints on the very first frame. -->
   <link rel="preload" as="image" href="icons/Icon-192.png">
 
