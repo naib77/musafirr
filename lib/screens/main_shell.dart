@@ -248,15 +248,35 @@ class _MainShellState extends State<MainShell> {
         }
 
         // Wrap with review prompt handler if repository supports it
+        Widget result = scaffold;
         if (widget.repository is SupabaseMusafirRepository) {
-          return ReviewPromptHandler(
+          result = ReviewPromptHandler(
             repository: widget.repository as SupabaseMusafirRepository,
             authState: widget.authState,
             child: scaffold,
           );
         }
 
-        return scaffold;
+        // Android system back on a non-first tab returns to the first tab
+        // (Explore for guests, dashboard for hosts) instead of exiting the
+        // app; pressing back again on the first tab exits. Pushed routes on
+        // top of the shell are unaffected — this PopScope only applies when
+        // the shell itself is the top route.
+        final int currentTab = isGuest ? _guestTabIndex : _hostTabIndex;
+        return PopScope(
+          canPop: currentTab == 0,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) return;
+            setState(() {
+              if (isGuest) {
+                _guestTabIndex = 0;
+              } else {
+                _hostTabIndex = 0;
+              }
+            });
+          },
+          child: result,
+        );
       },
     );
   }
