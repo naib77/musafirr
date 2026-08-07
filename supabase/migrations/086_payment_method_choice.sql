@@ -1,4 +1,4 @@
--- 085_payment_method_choice.sql
+-- 086_payment_method_choice.sql
 -- Guest chooses a payment method at the pay step (after the host accepts):
 --   • 'online' — pay now via SSLCommerz (existing flow), or
 --   • 'cash'   — "hand cash": pay the host directly; the host later confirms
