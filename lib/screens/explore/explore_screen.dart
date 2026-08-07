@@ -9,6 +9,8 @@ import '../../repositories/musafir_repository.dart';
 import '../leaderboard/host_leaderboard_screen.dart';
 import '../../services/booking/booking_lifecycle_service.dart';
 import '../../services/booking/booking_messaging_coordinator.dart';
+import '../../services/geocoding_service.dart';
+import '../../services/location_service.dart';
 import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
 import '../../state/messaging_state.dart';
@@ -472,6 +474,20 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       controller: _scrollController,
                       physics: const AlwaysScrollableScrollPhysics(),
                       slivers: [
+                        // Proximity banner: which ring the results came from,
+                        // or that we fell back to the nearest stays.
+                        if (widget.searchState.matchedRadiusMeters != null ||
+                            widget.searchState.usedNearestFallback)
+                          SliverToBoxAdapter(
+                            child: _ProximityBanner(
+                              count: listings.length,
+                              radiusMeters:
+                                  widget.searchState.matchedRadiusMeters,
+                              usedNearestFallback:
+                                  widget.searchState.usedNearestFallback,
+                              placeLabel: widget.searchState.filters.location,
+                            ),
+                          ),
                         SliverPadding(
                           padding: const EdgeInsets.all(16),
                           sliver: SliverGrid(
@@ -634,6 +650,72 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 }
 
+/// Tells the guest how the proximity results were found: the radius ring that
+/// matched ("12 stays within 3 km of Dakshinkhan"), or that no ring matched
+/// and these are simply the nearest stays.
+class _ProximityBanner extends StatelessWidget {
+  const _ProximityBanner({
+    required this.count,
+    required this.radiusMeters,
+    required this.usedNearestFallback,
+    required this.placeLabel,
+  });
+
+  final int count;
+  final int? radiusMeters;
+  final bool usedNearestFallback;
+  final String? placeLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final place = (placeLabel == null || placeLabel!.trim().isEmpty)
+        ? 'the selected location'
+        : placeLabel!.trim();
+
+    final String text;
+    if (usedNearestFallback) {
+      text = 'No stays close to $place — showing the nearest ones instead';
+    } else {
+      final km = radiusMeters! / 1000;
+      final kmLabel =
+          km == km.roundToDouble() ? km.round().toString() : km.toString();
+      text =
+          '$count ${count == 1 ? 'stay' : 'stays'} within $kmLabel km of $place';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.secondaryContainer.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              usedNearestFallback ? Icons.explore_outlined : Icons.near_me,
+              size: 18,
+              color: theme.colorScheme.onSecondaryContainer,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                text,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSecondaryContainer,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// A single Airbnb-style category: a heading with a "See all" action and a
 /// horizontal, left-to-right scrolling list of listing cards.
 class _CategorySection extends StatelessWidget {
@@ -752,6 +834,15 @@ class _SearchSheetState extends State<_SearchSheet> {
   List<_CitySuggestion> _suggestions = [];
   bool _showSuggestions = false;
 
+  // A resolved center point for proximity search ("use my location" or a
+  // previously geocoded place). Cleared whenever the guest edits the text —
+  // the point belonged to the old text.
+  double? _pickedLat;
+  double? _pickedLng;
+  bool _settingTextProgrammatically = false;
+  bool _locatingMe = false;
+  bool _resolvingPlace = false;
+
   @override
   void initState() {
     super.initState();
@@ -759,7 +850,11 @@ class _SearchSheetState extends State<_SearchSheet> {
     _guestCount = filters.guestCount;
     _selectedTypes = List.from(filters.propertyTypes);
     _dateMode = filters.dateMode;
+    _settingTextProgrammatically = true;
     widget.searchController.text = filters.location ?? '';
+    _settingTextProgrammatically = false;
+    _pickedLat = filters.latitude;
+    _pickedLng = filters.longitude;
 
     if (filters.checkIn != null && filters.checkOut != null) {
       _dateRange = DateTimeRange(
@@ -783,6 +878,10 @@ class _SearchSheetState extends State<_SearchSheet> {
   }
 
   void _onLocationChanged() {
+    if (_settingTextProgrammatically) return;
+    // Manual edit: any previously resolved point no longer matches the text.
+    _pickedLat = null;
+    _pickedLng = null;
     final query = widget.searchController.text.toLowerCase();
     if (query.isEmpty) {
       setState(() {
@@ -825,6 +924,46 @@ class _SearchSheetState extends State<_SearchSheet> {
     setState(() {
       _showSuggestions = false;
     });
+  }
+
+  Future<void> _useCurrentLocation() async {
+    setState(() => _locatingMe = true);
+    final position = await LocationService().getCurrentLocation();
+    if (!mounted) return;
+    if (position == null) {
+      setState(() => _locatingMe = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Couldn't get your location — check permission."),
+        ),
+      );
+      return;
+    }
+    // Nicer label than raw coordinates where the platform can reverse-geocode
+    // (mobile); web just shows "Current location".
+    final label = await LocationService()
+            .getAddressFromCoordinates(position.latitude, position.longitude) ??
+        'Current location';
+    if (!mounted) return;
+    _settingTextProgrammatically = true;
+    widget.searchController.text = label;
+    _settingTextProgrammatically = false;
+    setState(() {
+      _pickedLat = position.latitude;
+      _pickedLng = position.longitude;
+      _locatingMe = false;
+      _suggestions = [];
+      _showSuggestions = false;
+    });
+  }
+
+  /// Whether the query matches a city we already know listings for — then a
+  /// classic text search (all stays in that city) beats a 1 km proximity ring
+  /// centered on the city's geometric center.
+  bool _isKnownCity(String query) {
+    final q = query.trim().toLowerCase();
+    return widget.repository.listings
+        .any((l) => (l.city ?? '').trim().toLowerCase() == q);
   }
 
   Future<void> _selectDateRange() async {
@@ -881,12 +1020,33 @@ class _SearchSheetState extends State<_SearchSheet> {
     });
   }
 
-  void _applySearch() {
+  Future<void> _applySearch() async {
+    final text = widget.searchController.text.trim();
+    double? lat = _pickedLat;
+    double? lng = _pickedLng;
+
+    // No point yet and the text isn't a known listing city → try to resolve
+    // it to coordinates so the search runs by expanding proximity rings.
+    // If geocoding finds nothing, fall through to the classic text search.
+    if (lat == null && text.isNotEmpty && !_isKnownCity(text)) {
+      setState(() => _resolvingPlace = true);
+      final place = await GeocodingService().geocode(text);
+      if (!mounted) return;
+      setState(() => _resolvingPlace = false);
+      if (place != null) {
+        lat = place.latitude;
+        lng = place.longitude;
+      }
+    }
+
     widget.searchState.updateFilters(
       widget.searchState.filters.copyWith(
         location: widget.searchController.text.isEmpty
             ? null
             : widget.searchController.text,
+        latitude: lat,
+        longitude: lng,
+        clearCoordinates: lat == null || lng == null,
         checkIn:
             _dateMode == SearchDateMode.dateRange ? _dateRange?.start : null,
         checkOut:
@@ -984,11 +1144,25 @@ class _SearchSheetState extends State<_SearchSheet> {
                   controller: widget.searchController,
                   decoration: InputDecoration(
                     labelText: 'Where',
-                    hintText: 'Search destinations',
+                    hintText: 'Area, address or place — e.g. Dakshinkhan',
                     prefixIcon: const Icon(Icons.search),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: _locatingMe ? null : _useCurrentLocation,
+                    icon: _locatingMe
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.my_location, size: 18),
+                    label: const Text('Use my current location'),
                   ),
                 ),
                 // Suggestions dropdown
@@ -1298,17 +1472,27 @@ class _SearchSheetState extends State<_SearchSheet> {
 
             // Search button
             FilledButton(
-              onPressed: _applySearch,
+              onPressed: _resolvingPlace ? null : _applySearch,
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.search),
-                  SizedBox(width: 8),
-                  Text('Search'),
-                ],
+                children: _resolvingPlace
+                    ? const [
+                        SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        SizedBox(width: 8),
+                        Text('Finding place…'),
+                      ]
+                    : const [
+                        Icon(Icons.search),
+                        SizedBox(width: 8),
+                        Text('Search'),
+                      ],
               ),
             ),
             const SizedBox(height: 16),

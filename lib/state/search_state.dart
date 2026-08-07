@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../models/listing.dart';
 import '../models/listing_type.dart';
 import '../models/search_filters.dart';
+import '../repositories/musafir_repository.dart' show ListingSearchResult;
 
 /// Drives Explore search. Filtering and ranking happen server-side (the
 /// `search_listings` RPC via [attachSearcher]) so search covers the FULL
@@ -14,10 +15,12 @@ class SearchStateNotifier extends ChangeNotifier with SafeNotifier {
   List<Listing> _results = [];
   bool _isSearching = false;
   String? _error;
+  int? _matchedRadiusMeters;
+  bool _usedNearestFallback = false;
 
   /// Full-catalog search backend, injected at startup
   /// (repository.searchListingsFromDb).
-  Future<List<Listing>> Function(SearchFilters filters)? _searcher;
+  Future<ListingSearchResult> Function(SearchFilters filters)? _searcher;
 
   /// Guards against out-of-order responses: only the newest search may write.
   int _searchToken = 0;
@@ -28,9 +31,17 @@ class SearchStateNotifier extends ChangeNotifier with SafeNotifier {
   String? get error => _error;
   bool get hasResults => _results.isNotEmpty;
 
+  /// The radius tier (meters) the current proximity results came from, or
+  /// null when the search wasn't a proximity search (or fell back to nearest).
+  int? get matchedRadiusMeters => _matchedRadiusMeters;
+
+  /// True when no radius tier matched and [results] are simply the nearest
+  /// stays to the searched point.
+  bool get usedNearestFallback => _usedNearestFallback;
+
   /// Wire the server-side searcher. Called once during app startup.
   void attachSearcher(
-      Future<List<Listing>> Function(SearchFilters filters) searcher) {
+      Future<ListingSearchResult> Function(SearchFilters filters) searcher) {
     _searcher = searcher;
   }
 
@@ -40,7 +51,8 @@ class SearchStateNotifier extends ChangeNotifier with SafeNotifier {
     _runSearch();
   }
 
-  // Update location filter
+  // Update location filter. Passing no coordinates makes this a text-only
+  // search — any previously resolved center point is dropped, not kept.
   void updateLocation({
     required String location,
     double? latitude,
@@ -50,6 +62,7 @@ class SearchStateNotifier extends ChangeNotifier with SafeNotifier {
       location: location,
       latitude: latitude,
       longitude: longitude,
+      clearCoordinates: latitude == null || longitude == null,
     );
     _runSearch();
   }
@@ -150,6 +163,8 @@ class SearchStateNotifier extends ChangeNotifier with SafeNotifier {
     _results = [];
     _error = null;
     _isSearching = false;
+    _matchedRadiusMeters = null;
+    _usedNearestFallback = false;
     notifyListeners();
   }
 
@@ -182,6 +197,8 @@ class SearchStateNotifier extends ChangeNotifier with SafeNotifier {
       _results = [];
       _error = null;
       _isSearching = false;
+      _matchedRadiusMeters = null;
+      _usedNearestFallback = false;
       notifyListeners();
       return;
     }
@@ -192,13 +209,17 @@ class SearchStateNotifier extends ChangeNotifier with SafeNotifier {
     notifyListeners();
 
     try {
-      final results = await searcher(_filters);
+      final result = await searcher(_filters);
       if (token != _searchToken) return; // a newer search superseded this one
-      _results = results;
+      _results = result.listings;
+      _matchedRadiusMeters = result.matchedRadiusMeters;
+      _usedNearestFallback = result.usedNearestFallback;
       _error = null;
     } catch (e) {
       if (token != _searchToken) return;
       _results = [];
+      _matchedRadiusMeters = null;
+      _usedNearestFallback = false;
       _error = e.toString();
     }
 

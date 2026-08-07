@@ -8,6 +8,7 @@ import '../../models/booking_categorizer.dart';
 import '../../models/booking_status.dart';
 import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
+import '../../services/app_settings_service.dart';
 import '../../services/booking/booking_lifecycle_service.dart'
     show InvalidBookingStateException;
 import '../../services/booking/booking_messaging_coordinator.dart';
@@ -618,10 +619,90 @@ class _TripsScreenState extends State<TripsScreen> {
     }
   }
 
-  /// Guest payment flow: start an SSLCommerz session, open the hosted gateway
+  /// Entry point for the "Pay" button. If the admin has enabled hand cash, the
+  /// guest first chooses online vs cash; otherwise it goes straight to the
+  /// online gateway (unchanged behaviour).
+  Future<void> _payForBooking(Booking booking) async {
+    if (!AppSettingsService.instance.cashPaymentEnabled) {
+      await _payOnline(booking);
+      return;
+    }
+
+    final method = await _choosePaymentMethod(booking);
+    if (!mounted || method == null) return; // dismissed
+    switch (method) {
+      case _PayMethod.online:
+        await _payOnline(booking);
+      case _PayMethod.cash:
+        await _chooseCashPayment(booking);
+    }
+  }
+
+  /// Bottom sheet letting the guest pick how to pay. Returns null if dismissed.
+  Future<_PayMethod?> _choosePaymentMethod(Booking booking) {
+    final amount = '৳${booking.totalPrice.toStringAsFixed(0)}';
+    return showModalBottomSheet<_PayMethod>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+              child: Text('How would you like to pay?',
+                  style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      )),
+            ),
+            ListTile(
+              leading: const Icon(Icons.lock_outline, color: AppColors.brand),
+              title: const Text('Pay online'),
+              subtitle: Text('Card, bKash, or bank — pay $amount now'),
+              onTap: () => Navigator.pop(ctx, _PayMethod.online),
+            ),
+            ListTile(
+              leading:
+                  const Icon(Icons.payments_outlined, color: AppColors.brand),
+              title: const Text('Hand cash'),
+              subtitle:
+                  const Text('Pay the host directly; they confirm receipt'),
+              onTap: () => Navigator.pop(ctx, _PayMethod.cash),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Guest chose hand cash: record the choice (server re-checks the toggle and
+  /// that the guest owns the booking). This does NOT mark the booking paid —
+  /// the host confirms once they physically receive the cash.
+  Future<void> _chooseCashPayment(Booking booking) async {
+    final ok = await SslcommerzService.instance.chooseCashPayment(booking.id);
+    if (!mounted) return;
+    if (!ok) {
+      ModernBanner.showError(
+          context, 'Could not select cash payment. Please try again.');
+      return;
+    }
+    final user = widget.authState.currentUser;
+    if (user != null) {
+      await widget.repository.resetBookingsPagination(user.id);
+    }
+    if (!mounted) return;
+    ModernBanner.showSuccess(
+      context,
+      'Pay the host in cash — they\'ll confirm it and your booking updates.',
+    );
+  }
+
+  /// Online payment flow: start an SSLCommerz session, open the hosted gateway
   /// in a WebView, then confirm settlement (the server validates the payment)
   /// and refresh the booking list.
-  Future<void> _payForBooking(Booking booking) async {
+  Future<void> _payOnline(Booking booking) async {
     final init = await SslcommerzService.instance.initiate(booking.id);
     if (!mounted) return;
     if (!init.success || init.gatewayUrl == null) {
@@ -717,6 +798,9 @@ class _TripsScreenState extends State<TripsScreen> {
 }
 
 enum _TabType { upcoming, current, past }
+
+/// How the guest chose to pay at the pay step.
+enum _PayMethod { online, cash }
 
 class _TabData {
   final String label;
@@ -873,7 +957,34 @@ class _EnhancedBookingCard extends StatelessWidget {
                         ],
                       ),
                     ],
-                    if (showPay) ...[
+                    if (showPay && booking.isCashChosen) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Icon(Icons.payments_outlined,
+                              size: 15, color: AppColors.brand),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Cash selected — pay the host; they\'ll confirm it',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.brand,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: onPay,
+                            style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
+                            ),
+                            child: const Text('Change'),
+                          ),
+                        ],
+                      ),
+                    ] else if (showPay) ...[
                       const SizedBox(height: 8),
                       SizedBox(
                         width: double.infinity,

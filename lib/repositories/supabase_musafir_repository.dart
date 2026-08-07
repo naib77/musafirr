@@ -289,11 +289,12 @@ class SupabaseMusafirRepository extends ChangeNotifier
     try {
       // The default feed is an unfiltered search: server-side ranked (rating,
       // reviews, recency), host_available enforced in SQL, offset-paginated.
-      final newListings = await searchListingsFromDb(
+      final page = await searchListingsFromDb(
         const SearchFilters(),
         limit: _pageSize,
         offset: _listingsOffset,
       );
+      final newListings = page.listings;
       _listingsOffset += newListings.length;
 
       // Add to accumulated list (skip ids already cached, e.g. the user's own
@@ -316,17 +317,29 @@ class SupabaseMusafirRepository extends ChangeNotifier
     }
   }
 
+  /// Expanding proximity rings for point searches: try the nearest first,
+  /// widen until something matches (the RPC falls back to nearest-N beyond).
+  static const List<int> _radiusTiers = [1000, 3000, 5000, 10000];
+
   /// Full-catalog listing search via the `search_listings` RPC. Every filter is
   /// applied server-side and results are ranked (rating desc, reviews desc,
   /// newest). Used both for the default feed (empty filters) and Explore search.
   @override
-  Future<List<Listing>> searchListingsFromDb(
+  Future<ListingSearchResult> searchListingsFromDb(
     SearchFilters filters, {
     int limit = 50,
     int offset = 0,
   }) async {
     try {
       final location = filters.location?.trim();
+      // A purpose landmark keeps its single fixed ring; a free center point
+      // (geocoded place / current location) searches by expanding tiers, and
+      // then the typed text is only a display label — geocoding already
+      // resolved it, so it must not also be AND-ed against city/address/title.
+      final landmark = filters.landmark;
+      final useTiers = landmark == null &&
+          filters.latitude != null &&
+          filters.longitude != null;
       final rows = await _client.rpc('search_listings', params: {
         'p_property_types': filters.propertyTypes.isEmpty
             ? null
@@ -335,24 +348,31 @@ class SupabaseMusafirRepository extends ChangeNotifier
         'p_min_price': filters.minPrice,
         'p_max_price': filters.maxPrice,
         'p_amenities': filters.amenities.isEmpty ? null : filters.amenities,
-        'p_location': (location == null || location.isEmpty) ? null : location,
+        'p_location': (useTiers || location == null || location.isEmpty)
+            ? null
+            : location,
         'p_limit': limit,
         'p_offset': offset,
         'p_purpose_tags': filters.purposeTags.isEmpty
             ? null
             : filters.purposeTags.map((p) => p.wireName).toList(),
-        'p_center_lat': filters.landmark?.latitude,
-        'p_center_lng': filters.landmark?.longitude,
-        'p_radius_m':
-            filters.landmark != null ? (filters.radiusMeters ?? 15000) : null,
+        'p_center_lat': landmark?.latitude ?? filters.latitude,
+        'p_center_lng': landmark?.longitude ?? filters.longitude,
+        'p_radius_m': landmark != null ? (filters.radiusMeters ?? 15000) : null,
+        'p_radii': useTiers ? _radiusTiers : null,
       });
 
-      return (rows as List)
-          .map((e) => _listingFromJson(e as Map<String, dynamic>))
-          .toList();
+      final list = (rows as List).cast<Map<String, dynamic>>();
+      final listings = list.map(_listingFromJson).toList();
+      final first = list.isEmpty ? null : list.first;
+      return ListingSearchResult(
+        listings: listings,
+        matchedRadiusMeters: (first?['search_radius_m'] as num?)?.toInt(),
+        usedNearestFallback: first?['radius_fallback'] as bool? ?? false,
+      );
     } catch (e) {
       debugPrint('Error searching listings: $e');
-      return [];
+      return const ListingSearchResult(listings: []);
     }
   }
 
@@ -669,6 +689,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
       paidAt: json['paid_at'] != null
           ? DateTime.parse(json['paid_at'] as String)
           : null,
+      paymentMethod: json['payment_method'] as String?,
     );
   }
 

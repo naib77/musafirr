@@ -145,11 +145,19 @@ class SearchFilters {
     bool clearPriceRange = false,
     bool clearTime = false,
     bool clearLandmark = false,
+    bool clearCoordinates = false,
   }) {
     return SearchFilters(
       location: clearLocation ? null : (location ?? this.location),
-      latitude: clearLocation ? null : (latitude ?? this.latitude),
-      longitude: clearLocation ? null : (longitude ?? this.longitude),
+      // clearCoordinates drops a previously resolved center point while
+      // keeping the location text — needed when a new search resolves to
+      // text-only (otherwise the old point would silently keep applying).
+      latitude: (clearLocation || clearCoordinates)
+          ? null
+          : (latitude ?? this.latitude),
+      longitude: (clearLocation || clearCoordinates)
+          ? null
+          : (longitude ?? this.longitude),
       checkIn: clearDates ? null : (checkIn ?? this.checkIn),
       checkOut: clearDates ? null : (checkOut ?? this.checkOut),
       guestCount: guestCount ?? this.guestCount,

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_colors.dart';
 import '../../models/booking.dart';
 import '../../models/booking_categorizer.dart';
 import '../../models/booking_status.dart';
@@ -895,15 +896,47 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
   }
 
   /// Shown on an unpaid booking so the host can confirm a hand-cash payment,
-  /// which unlocks "Service Complete" (SSLCommerz can't process cash).
+  /// which unlocks "Service Complete" (SSLCommerz can't process cash). When the
+  /// guest explicitly chose "hand cash" at the pay step, a note tells the host
+  /// to expect it.
   Widget _buildCashReceivedButton(BuildContext context, Booking booking) {
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        onPressed: () => _confirmCashReceived(context, booking),
-        icon: const Icon(Icons.payments_outlined),
-        label: const Text('Mark cash received'),
-      ),
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (booking.isCashChosen) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.brand.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.payments_outlined,
+                    size: 16, color: AppColors.brand),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Guest chose to pay in cash. Confirm once you receive it.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.brand,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        OutlinedButton.icon(
+          onPressed: () => _confirmCashReceived(context, booking),
+          icon: const Icon(Icons.payments_outlined),
+          label: const Text('Mark cash received'),
+        ),
+      ],
     );
   }
 

@@ -19,9 +19,18 @@ class AppSettingsService {
   // and explicitly enabled.
   bool _requireListingAddressProof = false;
 
+  // Default false: only offer "hand cash" at the pay step if the admin has
+  // explicitly enabled it (and the row is missing/unreadable → hide it, the
+  // safe default for a payment option).
+  bool _cashPaymentEnabled = false;
+
   /// Whether a host must upload a proof-of-address document before adding a
   /// listing.
   bool get requireListingAddressProof => _requireListingAddressProof;
+
+  /// Whether guests may choose to pay in "hand cash" (paid directly to the
+  /// host) instead of online. Toggled by an admin in the admin portal.
+  bool get cashPaymentEnabled => _cashPaymentEnabled;
 
   /// Fetch settings from Supabase. Safe to call multiple times.
   Future<void> load() async {
@@ -33,6 +42,9 @@ class AppSettingsService {
         switch (key) {
           case 'require_listing_address_proof':
             _requireListingAddressProof = value == 'true';
+            break;
+          case 'cash_payment_enabled':
+            _cashPaymentEnabled = value == 'true';
             break;
         }
       }

@@ -28,6 +28,28 @@ class BookingUpdateError {
   final Booking? originalBooking;
 }
 
+/// Result of a full-catalog listing search: the listings plus proximity
+/// metadata when the search ran with a center point and expanding radius
+/// tiers (see [MusafirRepository.searchListingsFromDb]).
+class ListingSearchResult {
+  const ListingSearchResult({
+    required this.listings,
+    this.matchedRadiusMeters,
+    this.usedNearestFallback = false,
+  });
+
+  final List<Listing> listings;
+
+  /// The smallest radius tier (in meters) that contained results, when a
+  /// tiered proximity search ran. Null for non-proximity searches and for the
+  /// nearest fallback.
+  final int? matchedRadiusMeters;
+
+  /// True when no tier contained a match and [listings] are simply the
+  /// nearest stays regardless of distance.
+  final bool usedNearestFallback;
+}
+
 /// Abstract repository interface for Musafir data operations.
 ///
 /// Extends [Listenable] to support reactive UI updates via [ListenableBuilder].
@@ -89,7 +111,12 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   /// Applies every filter in SQL and returns results ranked by rating, then
   /// review count, then recency. Unlike [searchListings] (which only filters
   /// listings already paginated into memory) this searches the whole catalog.
-  Future<List<Listing>> searchListingsFromDb(
+  ///
+  /// When the filters carry a center point (a geocoded place or the guest's
+  /// current location, without a purpose landmark) the search expands through
+  /// radius tiers (1 → 3 → 5 → 10 km) and returns the first tier with matches,
+  /// falling back to the nearest stays — the result's metadata says which.
+  Future<ListingSearchResult> searchListingsFromDb(
     SearchFilters filters, {
     int limit,
     int offset,

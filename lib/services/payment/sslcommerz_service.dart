@@ -64,6 +64,24 @@ class SslcommerzService {
     }
   }
 
+  /// Guest-only: records the payment method the guest chose at the pay step
+  /// ('online' or 'cash'). The server RPC verifies the caller owns the booking,
+  /// that it's accepted-and-unpaid, and (for 'cash') that the admin toggle is
+  /// on. Returns true on success. Choosing 'cash' does NOT mark the booking
+  /// paid — the host confirms receipt later via [markCashReceived].
+  Future<bool> chooseCashPayment(String bookingId) async {
+    try {
+      await _client.rpc('set_booking_payment_method', params: {
+        'p_booking_id': bookingId,
+        'p_method': 'cash',
+      });
+      return true;
+    } catch (e) {
+      debugPrint('[SslcommerzService] chooseCashPayment failed: $e');
+      return false;
+    }
+  }
+
   /// Host-only: confirms a booking was paid in cash. The server RPC verifies the
   /// caller owns the listing, records an auditable cash payment, flips the
   /// booking to paid, and notifies the guest. Returns true on success.

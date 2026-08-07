@@ -39,6 +39,7 @@ class Booking {
     // Payment
     this.paymentStatus = 'unpaid',
     this.paidAt,
+    this.paymentMethod,
   });
 
   final String id;
@@ -97,6 +98,14 @@ class Booking {
   /// When the guest's payment was collected (payment_status → 'paid'). Null while
   /// unpaid. Used to attribute realized earnings to the month payment landed.
   final DateTime? paidAt;
+
+  /// The payment method the guest chose at the pay step: 'online' | 'cash'.
+  /// Null until chosen (treated as online-by-default). 'cash' means the guest
+  /// will pay the host directly and the host confirms receipt.
+  final String? paymentMethod;
+
+  /// Whether the guest chose to pay in hand cash (host confirms receipt).
+  bool get isCashChosen => paymentMethod == 'cash';
 
   /// Whether the guest has paid for this booking.
   bool get isPaid => paymentStatus == 'paid';
@@ -233,6 +242,7 @@ class Booking {
     DateTime? cancelledAt,
     String? paymentStatus,
     DateTime? paidAt,
+    String? paymentMethod,
   }) {
     return Booking(
       id: id ?? this.id,
@@ -265,6 +275,7 @@ class Booking {
       cancelledAt: cancelledAt ?? this.cancelledAt,
       paymentStatus: paymentStatus ?? this.paymentStatus,
       paidAt: paidAt ?? this.paidAt,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
     );
   }
 }
