@@ -48,8 +48,13 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   final _cityController = TextEditingController(text: 'Dhaka');
   final _postalCodeController = TextEditingController();
   final _landmarkController = TextEditingController();
+  // Default map-picker starting point (Dhaka). NOT a valid listing location —
+  // the host must set the pin (_pinConfirmed) before the Location step passes,
+  // otherwise every skipped pin stores these exact coordinates and directions/
+  // distance search send guests to the wrong place.
   double _latitude = 23.7806;
   double _longitude = 90.4070;
+  bool _pinConfirmed = false;
   int _maxGuests = 2;
   int _bedrooms = 1;
   int _beds = 1;
@@ -154,7 +159,8 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
       case 2: // Location
         return _streetController.text.trim().isNotEmpty &&
             _areaController.text.trim().isNotEmpty &&
-            _cityController.text.trim().isNotEmpty;
+            _cityController.text.trim().isNotEmpty &&
+            _pinConfirmed;
       case 3: // Details
         return _maxGuests > 0 && _bedrooms > 0 && _beds > 0 && _bathrooms > 0;
       case 4: // Pricing
@@ -417,10 +423,12 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                     landmarkController: _landmarkController,
                     latitude: _latitude,
                     longitude: _longitude,
+                    pinConfirmed: _pinConfirmed,
                     onLocationChanged: (lat, lng, address) {
                       setState(() {
                         _latitude = lat;
                         _longitude = lng;
+                        _pinConfirmed = true;
                         // Seed Road/Street from the reverse-geocoded address only
                         // if the host hasn't typed one — a helpful starting point.
                         if (address != null &&
@@ -785,6 +793,7 @@ class _LocationStep extends StatelessWidget {
     required this.landmarkController,
     required this.latitude,
     required this.longitude,
+    required this.pinConfirmed,
     required this.onLocationChanged,
     required this.onChanged,
   });
@@ -798,9 +807,25 @@ class _LocationStep extends StatelessWidget {
   final TextEditingController landmarkController;
   final double latitude;
   final double longitude;
+  final bool pinConfirmed;
   final void Function(double lat, double lng, String? address)
       onLocationChanged;
   final VoidCallback onChanged;
+
+  Future<void> _pickOnMap(BuildContext context) async {
+    final result = await LocationPicker.show(
+      context,
+      initialLatitude: latitude,
+      initialLongitude: longitude,
+    );
+    if (result != null) {
+      onLocationChanged(
+        result.latitude,
+        result.longitude,
+        result.address,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -874,31 +899,41 @@ class _LocationStep extends StatelessWidget {
             onChanged: (_) => onChanged(),
           ),
           const SizedBox(height: 16),
-          OutlinedButton.icon(
-            onPressed: () async {
-              final result = await LocationPicker.show(
-                context,
-                initialLatitude: latitude,
-                initialLongitude: longitude,
-              );
-              if (result != null) {
-                onLocationChanged(
-                  result.latitude,
-                  result.longitude,
-                  result.address,
-                );
-              }
-            },
-            icon: const Icon(Icons.map),
-            label: const Text('Pick on Map'),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Location: ${latitude.toStringAsFixed(4)}, ${longitude.toStringAsFixed(4)}',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+          if (pinConfirmed)
+            OutlinedButton.icon(
+              onPressed: () => _pickOnMap(context),
+              icon: const Icon(Icons.map),
+              label: const Text('Change location on map'),
+            )
+          else
+            FilledButton.icon(
+              onPressed: () => _pickOnMap(context),
+              icon: const Icon(Icons.map),
+              label: const Text('Set location on map'),
             ),
-          ),
+          const SizedBox(height: 8),
+          if (pinConfirmed)
+            Row(
+              children: [
+                Icon(Icons.check_circle,
+                    size: 16, color: theme.colorScheme.primary),
+                const SizedBox(width: 6),
+                Text(
+                  'Location set: ${latitude.toStringAsFixed(4)}, ${longitude.toStringAsFixed(4)}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            )
+          else
+            Text(
+              'Required — pin your exact location so guests can find your '
+              'place and get accurate directions.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
         ],
       ),
     );
