@@ -75,10 +75,14 @@
 
   <!-- Google Maps JavaScript API -->
   <!-- For production: Replace API key during CI/CD build or use environment-specific builds -->
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBw1uyOoZ2tS8-NS_83ov8rE3OusmmDWRM"></script>
+  <!-- `defer`: download in parallel but run AFTER the HTML parses, so these
+       never block first paint (the splash). Both are consumed only later, once
+       Flutter boots a map or a passkey flow — so deferring is safe. Without it
+       these render-blocking <head> scripts delay FCP by seconds on slow mobile. -->
+  <script defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBw1uyOoZ2tS8-NS_83ov8rE3OusmmDWRM"></script>
 
   <!-- Corbado Passkeys Web SDK (flutter-passkeys 2.4.0) -->
-  <script src="passkeys_bundle.js"></script>
+  <script defer src="passkeys_bundle.js"></script>
 </head>
 <body>
   <div id="splash">

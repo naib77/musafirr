@@ -205,6 +205,13 @@ a multi-MB bundle downloads and boots (`main.dart.js` ≈ 1.8 MB gzip + `canvask
 ~50–75 range is normal for Flutter web and is **not** a server misconfiguration. The
 items below are the wins that are actually in your control.
 
+> **If you deploy on Cloudflare (Option C — the current production path):** Brotli,
+> HTTP/2 and HTTP/3 are applied **automatically** at the edge, and caching is handled
+> by [`web/_headers`](../web/_headers). So §6.2 (Brotli), §6.3 (HTTP/2) and the nginx
+> config in §6.5 **do not apply to you** — they're only for the self-hosted nginx
+> option (§3 Option B). The code-level wins (§6.1 splash, §6.1b `defer`) still apply
+> and ship by rebuilding with `./tool/build_web.sh` and pushing to git.
+
 ### 6.1 Instant-paint splash (done — biggest FCP win)
 
 [`web/index.html`](../web/index.html) now renders a static logo + spinner splash that
@@ -212,6 +219,18 @@ paints on the first frame and is removed on Flutter's `flutter-first-frame` even
 Without it the browser (and Lighthouse's FCP/LCP timers) saw a blank white page for
 several seconds. No rebuild of app logic needed — just `flutter build web --release`
 and redeploy.
+
+### 6.1b Defer render-blocking `<head>` scripts (done — big mobile FCP win)
+
+[`web/index.html`](../web/index.html) loaded the external Google Maps API and
+`passkeys_bundle.js` as **synchronous** `<head>` scripts, so the browser had to fetch
+and execute both *before parsing `<body>`* — i.e. before the splash could paint. On
+Slow-4G mobile that external Maps fetch alone added several seconds to FCP. Both now
+carry `defer`, so they download in parallel and run after parse; Flutter still finds
+them ready seconds later when it boots a map or passkey flow.
+
+Measured impact (mobile Lighthouse, Slow-4G/Moto-G): **FCP 9.6 s → 0.6 s**, and
+Lighthouse no longer reports any render-blocking resources.
 
 ### 6.2 Enable Brotli in nginx
 
@@ -266,6 +285,79 @@ A `flutter build web --wasm` (skwasm) build can shrink the JS side, but it requi
 cross-origin-isolation headers (`COOP: same-origin` + `COEP: require-corp`), which can
 **break the inline Google Maps and Corbado passkey scripts** in `index.html`. Only
 pursue this with a dedicated test pass.
+
+### 6.5 Deploy + ready-to-paste production config
+
+**1. Push the freshly built `build/web/` to the server** (adjust user / host / path
+to yours). `--delete` removes files from old builds so no stale assets linger:
+
+```bash
+flutter build web --release
+rsync -avz --delete build/web/ USER@app.musaafir.io:/var/www/musafir/
+```
+
+**2. Full nginx config for `app.musaafir.io`** — the SPA fallback, cache rules,
+Brotli, and HTTP/2 from §6.2–6.3 combined into one block. Paste over your existing
+`server {}` (keep the `ssl_certificate` lines certbot already wrote):
+
+```nginx
+# HTTP → HTTPS redirect
+server {
+    listen 80;
+    server_name app.musaafir.io;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;                         # nginx 1.24: use `listen 443 ssl http2;` instead
+    server_name app.musaafir.io;
+
+    root /var/www/musafir;
+    index index.html;
+
+    # --- certbot-managed (leave as certbot wrote them) ---
+    ssl_certificate     /etc/letsencrypt/live/app.musaafir.io/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/app.musaafir.io/privkey.pem;
+
+    # --- compression: brotli first, gzip fallback for old clients ---
+    brotli on;
+    brotli_comp_level 6;
+    brotli_types text/plain text/css application/javascript application/json
+                 application/wasm image/svg+xml application/manifest+json;
+    gzip on;
+    gzip_types text/plain text/css application/javascript application/json
+               application/wasm image/svg+xml application/manifest+json;
+
+    # SPA fallback — deep links resolve to the app shell.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Never cache the entry points / SW, or users get stuck on stale builds.
+    location = /index.html                { add_header Cache-Control "no-cache, no-store, must-revalidate" always; }
+    location = /flutter_bootstrap.js      { add_header Cache-Control "no-cache, no-store, must-revalidate" always; }
+    location = /flutter_service_worker.js { add_header Cache-Control "no-cache, no-store, must-revalidate" always; }
+    location = /manifest.json             { add_header Cache-Control "no-cache, no-store, must-revalidate" always; }
+    location = /version.json              { add_header Cache-Control "no-cache, no-store, must-revalidate" always; }
+
+    # Hashed build artifacts are safe to cache hard.
+    location ~* \.(?:js|css|wasm|png|jpg|jpeg|gif|svg|ico|webp|woff2?)$ {
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000, immutable";
+    }
+}
+```
+
+**3. Install Brotli (once), test, reload, verify:**
+
+```bash
+sudo apt install -y libnginx-mod-http-brotli-filter libnginx-mod-http-brotli-static
+sudo nginx -t && sudo systemctl reload nginx
+
+curl -sI --http2 https://app.musaafir.io/main.dart.js | grep -i "^HTTP/"                 # want HTTP/2 200
+curl -sI -H "Accept-Encoding: br" https://app.musaafir.io/main.dart.js | grep -i content-encoding  # want br
+```
 
 ---
 
