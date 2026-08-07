@@ -5,6 +5,8 @@ import 'package:mime/mime.dart';
 
 import '../../core/utils/responsive.dart';
 import '../../models/message.dart';
+import '../../repositories/musafir_repository.dart';
+import '../../widgets/report_sheet.dart';
 import '../../services/image_compression_service.dart';
 import '../../services/image_upload_service.dart';
 import '../../services/messaging/message_router.dart';
@@ -25,12 +27,19 @@ class ChatScreen extends StatefulWidget {
     this.otherParticipantAvatarUrl,
     this.bookingContextSubtitle,
     this.isArchived = false,
+    this.repository,
+    this.otherParticipantId,
   });
 
   final String conversationId;
   final MessagingStateNotifier messagingState;
   final String otherParticipantName;
   final String? otherParticipantAvatarUrl;
+
+  /// When both are provided, the overflow menu offers Report / Block for the
+  /// other participant.
+  final MusafirRepository? repository;
+  final String? otherParticipantId;
 
   /// Booking context subtitle (e.g., "Room • Jan 1-5")
   final String? bookingContextSubtitle;
@@ -54,6 +63,41 @@ class _ChatScreenState extends State<ChatScreen> {
   // Channel state
   MessagingChannel _selectedChannel = MessagingChannel.inApp;
   List<MessagingChannel> _availableChannels = [MessagingChannel.inApp];
+
+  Future<void> _confirmBlock() async {
+    final repository = widget.repository;
+    final otherId = widget.otherParticipantId;
+    if (repository == null || otherId == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Block ${widget.otherParticipantName}?'),
+        content: const Text(
+            'You won\'t see their listings or messages anymore. You can '
+            'unblock them later by contacting support.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Block'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final ok = await repository.blockUser(otherId);
+    if (!mounted) return;
+    if (ok) {
+      Navigator.of(context).pop(); // leave the conversation
+    } else {
+      ModernBanner.showError(context, 'Could not block. Please try again.');
+    }
+  }
 
   void _startSearch() => setState(() => _isSearching = true);
 
@@ -476,6 +520,18 @@ class _ChatScreenState extends State<ChatScreen> {
                         ModernBanner.showSuccess(
                             context, 'Notifications muted');
                         break;
+                      case 'report':
+                        showReportSheet(
+                          context,
+                          repository: widget.repository!,
+                          reportedUserId: widget.otherParticipantId,
+                          subjectLabel: widget.otherParticipantName,
+                          offerBlock: true,
+                        );
+                        break;
+                      case 'block':
+                        _confirmBlock();
+                        break;
                     }
                   },
                   itemBuilder: (context) => [
@@ -519,6 +575,29 @@ class _ChatScreenState extends State<ChatScreen> {
                         ],
                       ),
                     ),
+                    if (widget.repository != null &&
+                        widget.otherParticipantId != null) ...[
+                      const PopupMenuItem(
+                        value: 'report',
+                        child: Row(
+                          children: [
+                            Icon(Icons.flag_outlined),
+                            SizedBox(width: 12),
+                            Text('Report'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'block',
+                        child: Row(
+                          children: [
+                            Icon(Icons.block),
+                            SizedBox(width: 12),
+                            Text('Block'),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ],

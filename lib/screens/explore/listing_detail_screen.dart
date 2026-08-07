@@ -29,6 +29,7 @@ import 'listing_gallery_screen.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/price_breakdown_card.dart';
 import '../../widgets/price_display.dart';
+import '../../widgets/report_sheet.dart';
 import '../../widgets/web_deferred_mount.dart';
 import '../../widgets/success_sheet.dart';
 import 'navigation_screen.dart';
@@ -110,6 +111,8 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
               ? widget.listing.ownerName
               : conversation.displayName,
           otherParticipantAvatarUrl: widget.listing.hostAvatarUrl,
+          repository: widget.repository,
+          otherParticipantId: hostId,
         ),
       ),
     );
@@ -343,6 +346,27 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                           // Reviews
                           if (reviews.isNotEmpty)
                             _ReviewsSection(reviews: reviews),
+
+                          // Report entry — hidden on the host's own listing.
+                          if (!_isOwnListing)
+                            Center(
+                              child: TextButton.icon(
+                                onPressed: () => showReportSheet(
+                                  context,
+                                  repository: widget.repository,
+                                  listingId: listing.id,
+                                  reportedUserId: listing.hostId,
+                                  subjectLabel: listing.title,
+                                  offerBlock: true,
+                                ),
+                                icon: const Icon(Icons.flag_outlined, size: 18),
+                                label: const Text('Report this listing'),
+                                style: TextButton.styleFrom(
+                                  foregroundColor:
+                                      theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
                           SizedBox(height: _isOwnListing ? 24 : 120),
                         ],
                       ),

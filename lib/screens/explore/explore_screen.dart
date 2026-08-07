@@ -159,6 +159,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
     if (currentUserId != null) {
       listings = listings.where((l) => l.hostId != currentUserId).toList();
     }
+    // Hide listings from hosts this user has blocked.
+    final blocked = widget.repository.blockedUserIds;
+    if (blocked.isNotEmpty) {
+      listings = listings.where((l) => !blocked.contains(l.hostId)).toList();
+    }
     return listings;
   }
 

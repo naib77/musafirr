@@ -224,7 +224,96 @@ class SupabaseMusafirRepository extends ChangeNotifier
       _loadOwnListings(),
       _refreshBookings(),
       _refreshReviews(),
+      _refreshBlockedUsers(),
     ]);
+  }
+
+  // ============== Safety: reports & blocks ==============
+
+  final Set<String> _blockedUserIds = {};
+
+  @override
+  Set<String> get blockedUserIds => Set.unmodifiable(_blockedUserIds);
+
+  Future<void> _refreshBlockedUsers() async {
+    final userId = _client.auth.currentUser?.id;
+    _blockedUserIds.clear();
+    if (userId == null) return;
+    try {
+      final rows = await _client
+          .from('user_blocks')
+          .select('blocked_id')
+          .eq('blocker_id', userId);
+      _blockedUserIds
+          .addAll((rows as List).map((e) => e['blocked_id'] as String));
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading blocked users: $e');
+    }
+  }
+
+  @override
+  Future<bool> submitReport({
+    String? reportedUserId,
+    String? listingId,
+    String? bookingId,
+    required String category,
+    String? details,
+  }) async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return false;
+    try {
+      await _client.from('reports').insert({
+        'reporter_id': userId,
+        'reported_user_id': reportedUserId,
+        'listing_id': listingId,
+        'booking_id': bookingId,
+        'category': category,
+        'details':
+            (details == null || details.trim().isEmpty) ? null : details.trim(),
+      });
+      return true;
+    } catch (e) {
+      debugPrint('Error submitting report: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> blockUser(String userId) async {
+    final me = _client.auth.currentUser?.id;
+    if (me == null || me == userId) return false;
+    try {
+      await _client.from('user_blocks').upsert(
+        {'blocker_id': me, 'blocked_id': userId},
+        onConflict: 'blocker_id,blocked_id',
+      );
+      _blockedUserIds.add(userId);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('Error blocking user: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> unblockUser(String userId) async {
+    final me = _client.auth.currentUser?.id;
+    if (me == null) return false;
+    try {
+      await _client
+          .from('user_blocks')
+          .delete()
+          .eq('blocker_id', me)
+          .eq('blocked_id', userId);
+      _blockedUserIds.remove(userId);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('Error unblocking user: $e');
+      return false;
+    }
   }
 
   /// Loads ALL of the signed-in user's own listings into the cache.

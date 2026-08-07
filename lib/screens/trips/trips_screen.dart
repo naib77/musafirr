@@ -24,6 +24,7 @@ import '../../widgets/modern_banner.dart';
 import '../../widgets/notification_bell.dart';
 import '../messaging/chat_screen.dart';
 import '../payment/payment_webview_screen.dart';
+import '../safety/safety_screen.dart';
 import '../review/guest_review_screen.dart';
 
 class TripsScreen extends StatefulWidget {
@@ -613,6 +614,11 @@ class _TripsScreenState extends State<TripsScreen> {
             messagingState: widget.messagingState!,
             otherParticipantName: conversation.displayName,
             otherParticipantAvatarUrl: conversation.avatarUrl,
+            repository: widget.repository,
+            otherParticipantId: widget.messagingState!.currentUserId == null
+                ? null
+                : conversation.getOtherParticipantId(
+                    widget.messagingState!.currentUserId!),
           ),
         ),
       );
@@ -1563,6 +1569,24 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
 
             // Actions
             _buildActions(context, theme),
+            const SizedBox(height: 12),
+
+            // Safety center: emergency call, share-my-stay, report.
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => SafetyScreen(
+                      repository: repository,
+                      booking: booking,
+                    ),
+                  ),
+                ),
+                icon: const Icon(Icons.health_and_safety_outlined),
+                label: const Text('Safety & help'),
+              ),
+            ),
             SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
           ],
         ),

@@ -1211,6 +1211,8 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
             messagingState: widget.messagingState!,
             otherParticipantName: booking.tenantName,
             otherParticipantAvatarUrl: null,
+            repository: widget.repository,
+            otherParticipantId: booking.userId,
           ),
         ),
       );

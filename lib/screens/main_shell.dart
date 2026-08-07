@@ -560,6 +560,7 @@ class _MainShellState extends State<MainShell> {
           Expanded(
             child: InboxScreen(
               messagingState: widget.messagingState,
+              repository: widget.repository,
               embedded: true,
             ),
           ),
@@ -694,6 +695,7 @@ class _MainShellState extends State<MainShell> {
           Expanded(
             child: InboxScreen(
               messagingState: widget.messagingState,
+              repository: widget.repository,
               embedded: true,
             ),
           ),

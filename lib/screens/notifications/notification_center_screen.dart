@@ -566,6 +566,11 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           otherParticipantName: conversation!.displayName,
           otherParticipantAvatarUrl: conversation.avatarUrl,
           bookingContextSubtitle: conversation.bookingContextSubtitle,
+          repository: widget.repository,
+          otherParticipantId: messagingState.currentUserId == null
+              ? null
+              : conversation
+                  .getOtherParticipantId(messagingState.currentUserId!),
         ),
       ),
     );

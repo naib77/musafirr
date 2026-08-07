@@ -12,6 +12,7 @@ import '../host/become_host_screen.dart';
 import '../host/create_listing_screen.dart';
 import '../host/host_dashboard_screen.dart';
 import '../notifications/notification_settings_screen.dart';
+import '../safety/safety_screen.dart';
 import '../verification/identity_verification_screen.dart';
 import 'edit_profile_screen.dart';
 import 'login_security_screen.dart';
@@ -231,6 +232,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     icon: Icons.notifications_outlined,
                     title: 'Notifications',
                     onTap: () => _navigateToNotificationSettings(context),
+                  ),
+                  _SettingsItem(
+                    icon: Icons.health_and_safety_outlined,
+                    title: 'Safety',
+                    subtitle: 'Emergency help, safety tips, report a problem',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => SafetyScreen(repository: repository),
+                      ),
+                    ),
                   ),
                 ],
               ),

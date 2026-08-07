@@ -144,6 +144,24 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   /// SECURITY DEFINER RPC, which enforces those rules.
   Future<BookingContacts?> fetchBookingContacts(String bookingId);
 
+  // Safety: reports & blocks (migration 088)
+
+  /// Files a report against a user / listing / booking for the admin safety
+  /// queue. Returns true on success.
+  Future<bool> submitReport({
+    String? reportedUserId,
+    String? listingId,
+    String? bookingId,
+    required String category,
+    String? details,
+  });
+
+  /// User ids the signed-in user has blocked. Loaded at startup; the app
+  /// hides blocked users' listings and conversations.
+  Set<String> get blockedUserIds;
+  Future<bool> blockUser(String userId);
+  Future<bool> unblockUser(String userId);
+
   // Review methods (legacy - for simple listing reviews)
   List<Review> getReviewsForListing(String listingId);
   void addReview(Review review);

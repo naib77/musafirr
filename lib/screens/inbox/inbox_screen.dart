@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/conversation.dart';
+import '../../repositories/musafir_repository.dart';
 import '../../state/messaging_state.dart';
 import '../../widgets/messaging/conversation_tile.dart';
 import '../messaging/chat_screen.dart';
@@ -11,10 +12,15 @@ class InboxScreen extends StatefulWidget {
   const InboxScreen({
     super.key,
     this.messagingState,
+    this.repository,
     this.embedded = false,
   });
 
   final MessagingStateNotifier? messagingState;
+
+  /// Enables safety actions (report/block in chat) and hides conversations
+  /// with blocked users.
+  final MusafirRepository? repository;
 
   /// When true the screen renders without its own AppBar, for use as a
   /// bottom-navigation tab where the shell provides the header.
@@ -38,6 +44,11 @@ class _InboxScreenState extends State<InboxScreen> {
           otherParticipantAvatarUrl: conversation.avatarUrl,
           bookingContextSubtitle: conversation.bookingContextSubtitle,
           isArchived: conversation.isArchived,
+          repository: widget.repository,
+          otherParticipantId: widget.messagingState!.currentUserId == null
+              ? null
+              : conversation
+                  .getOtherParticipantId(widget.messagingState!.currentUserId!),
         ),
       ),
     );
@@ -67,7 +78,16 @@ class _InboxScreenState extends State<InboxScreen> {
       listenable: messagingState,
       builder: (context, _) {
         // One unified list: every conversation, newest activity first.
-        final conversations = [...messagingState.conversations]..sort((a, b) {
+        // Conversations with users this account has blocked are hidden
+        // (my own id is never in my blocked set, so checking both
+        // participants is safe without knowing which one is me).
+        final blocked = widget.repository?.blockedUserIds ?? const <String>{};
+        final conversations = messagingState.conversations
+            .where((c) =>
+                !blocked.contains(c.participantOneId) &&
+                !blocked.contains(c.participantTwoId))
+            .toList()
+          ..sort((a, b) {
             final aTime = a.lastMessageAt ?? a.updatedAt;
             final bTime = b.lastMessageAt ?? b.updatedAt;
             return bTime.compareTo(aTime);
