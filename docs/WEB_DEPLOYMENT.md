@@ -95,10 +95,12 @@ server {
       add_header Cache-Control "no-cache, no-store, must-revalidate" always;
    }
 
-   # Static build artifacts can be cached normally.
+   # IMPORTANT: no long-lived/immutable caching. Flutter's output URLs are
+   # NOT content-hashed (assets/fonts/MaterialIcons-Regular.otf changes every
+   # build under the same name), and current Flutter ships no caching service
+   # worker to version them — so everything must revalidate (ETag → cheap 304s).
    location ~* \.(?:js|css|wasm|png|jpg|jpeg|gif|svg|ico|webp)$ {
-      expires 30d;
-      add_header Cache-Control "public, max-age=2592000, immutable";
+      add_header Cache-Control "no-cache, must-revalidate" always;
    }
 
    gzip on;
@@ -348,10 +350,10 @@ server {
     location = /manifest.json             { add_header Cache-Control "no-cache, no-store, must-revalidate" always; }
     location = /version.json              { add_header Cache-Control "no-cache, no-store, must-revalidate" always; }
 
-    # Hashed build artifacts are safe to cache hard.
+    # No immutable caching — Flutter output URLs are not content-hashed, so
+    # every file must revalidate (ETag → cheap 304s). See section 3, Option B.
     location ~* \.(?:js|css|wasm|png|jpg|jpeg|gif|svg|ico|webp|woff2?)$ {
-        expires 30d;
-        add_header Cache-Control "public, max-age=2592000, immutable";
+        add_header Cache-Control "no-cache, must-revalidate" always;
     }
 }
 ```
