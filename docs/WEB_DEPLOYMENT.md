@@ -147,6 +147,13 @@ Every push to `main` auto-deploys.
 > [`web/_headers`](../web/_headers) in after the build. That file tells Cloudflare
 > not to cache `index.html` / `flutter_bootstrap.js` / `flutter_service_worker.js` —
 > without it, users can get stuck on stale builds after a deploy.
+>
+> The script also writes `build/web/build_stamp.json` (git commit + build time,
+> served no-cache). Open tabs poll it every 5 minutes and on re-focus
+> (`lib/services/web_update_service.dart`); when the stamp changes after a
+> deploy, the app shows a "new version available — Refresh" banner. Page
+> reloads always get the newest build regardless — the stamp only exists for
+> tabs that never reload.
 
 SPA fallback is automatic on Pages (no 404.html present → unknown routes serve
 `index.html`), so deep links just work.

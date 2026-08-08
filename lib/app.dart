@@ -17,6 +17,7 @@ import 'repositories/supabase_message_template_repository.dart';
 import 'services/messaging/booking_conversation_service.dart';
 import 'services/messaging/supabase_messaging_service.dart';
 import 'services/notifications/fcm_token_service.dart';
+import 'services/web_update_service.dart';
 import 'services/notifications/notification_service_factory.dart';
 import 'state/auth_state.dart';
 import 'state/favorites_state.dart';
@@ -38,6 +39,11 @@ class _MusafirAppState extends State<MusafirApp> {
   /// handler) can surface an in-app toast without a widget context.
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
+  /// App-wide messenger so the web update check can show its banner from
+  /// outside any screen's context.
+  final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
+
   late final SupabaseMusafirRepository repository;
   final AuthStateNotifier authState = AuthStateNotifier();
   final FavoritesStateNotifier favoritesState = FavoritesStateNotifier();
@@ -51,6 +57,10 @@ class _MusafirAppState extends State<MusafirApp> {
   @override
   void initState() {
     super.initState();
+
+    // Web only: offer a refresh when a newer build is deployed while this
+    // tab stays open (reloads always get the newest build; idle tabs don't).
+    WebUpdateService.instance.start(onUpdateAvailable: _showUpdateBanner);
 
     // Initialize Supabase repository
     repository = SupabaseMusafirRepository();
@@ -193,8 +203,31 @@ class _MusafirAppState extends State<MusafirApp> {
     // itself via the repository's own listeners, so nothing to sync here.
   }
 
+  /// A newer build was deployed while this tab was open — offer a refresh.
+  void _showUpdateBanner() {
+    final messenger = _scaffoldMessengerKey.currentState;
+    if (messenger == null) return;
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        leading: const Icon(Icons.system_update_alt_rounded),
+        content: const Text('A new version of Musafir is available.'),
+        actions: [
+          TextButton(
+            onPressed: () => WebUpdateService.instance.reloadForUpdate(),
+            child: const Text('Refresh'),
+          ),
+          TextButton(
+            onPressed: messenger.hideCurrentMaterialBanner,
+            child: const Text('Later'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
+    WebUpdateService.instance.stop();
     authState.removeListener(_onAuthStateChanged);
     repository.removeListener(_onRepositoryChange);
     authState.dispose();
@@ -210,6 +243,7 @@ class _MusafirAppState extends State<MusafirApp> {
     return MaterialApp(
       title: 'Musaafir',
       navigatorKey: _navigatorKey,
+      scaffoldMessengerKey: _scaffoldMessengerKey,
       debugShowCheckedModeBanner: false,
       // The design system is light-only; pinning themeMode (plus
       // forceDarkAllowed=false in the Android styles) stops OEM "force dark"

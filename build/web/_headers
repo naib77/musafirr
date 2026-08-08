@@ -17,6 +17,9 @@
 /version.json
   Cache-Control: no-cache, no-store, must-revalidate
 
+/build_stamp.json
+  Cache-Control: no-cache, no-store, must-revalidate
+
 # Hashed/static build artifacts can be cached long-term.
 /assets/*
   Cache-Control: public, max-age=2592000, immutable
