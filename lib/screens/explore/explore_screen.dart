@@ -189,6 +189,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      // Cap the height so a tappable scrim always remains above the sheet
+      // (tap-outside to dismiss), even with the keyboard open.
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.9,
+      ),
       builder: (context) => _SearchSheet(
         searchController: _searchController,
         searchState: widget.searchState,
@@ -1100,6 +1105,20 @@ class _SearchSheetState extends State<_SearchSheet> {
     });
   }
 
+  /// Compact chip for the single-line property-type row under the search field.
+  Widget _buildTypeChip(String label, bool selected, VoidCallback onTap) {
+    return FilterChip(
+      label: Text(label, style: const TextStyle(fontSize: 12)),
+      selected: selected,
+      onSelected: (_) => onTap(),
+      showCheckmark: false,
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    );
+  }
+
   Future<void> _applySearch() async {
     final text = widget.searchController.text.trim();
     double? lat = _pickedLat;
@@ -1166,55 +1185,32 @@ class _SearchSheetState extends State<_SearchSheet> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Handle
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Title
-            Text(
-              'Search',
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Property Type Filter
-            Text(
-              'Property Type',
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            // Drag handle + explicit close button, so the sheet is always easy
+            // to dismiss on mobile (drag-to-dismiss can be swallowed by the
+            // scrollable content). No title — the search field is the header.
+            Stack(
+              alignment: Alignment.center,
               children: [
-                FilterChip(
-                  label: const Text('All'),
-                  selected: _selectedTypes.isEmpty,
-                  onSelected: (_) {
-                    setState(() => _selectedTypes.clear());
-                  },
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-                ...ListingType.values.map((type) => FilterChip(
-                      label: Text(type.title),
-                      selected: _selectedTypes.contains(type),
-                      onSelected: (_) => _togglePropertyType(type),
-                    )),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                    tooltip: 'Close',
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
 
             // Location with suggestions
             Column(
@@ -1369,6 +1365,33 @@ class _SearchSheetState extends State<_SearchSheet> {
                     ),
                   ),
               ],
+            ),
+            const SizedBox(height: 16),
+
+            // Property type — a single compact line directly under the search
+            // field (small text; scrolls horizontally if it can't all fit).
+            SizedBox(
+              height: 36,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _buildTypeChip(
+                      'All',
+                      _selectedTypes.isEmpty,
+                      () => setState(() => _selectedTypes.clear()),
+                    ),
+                    for (final type in ListingType.values) ...[
+                      const SizedBox(width: 8),
+                      _buildTypeChip(
+                        type.title,
+                        _selectedTypes.contains(type),
+                        () => _togglePropertyType(type),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 20),
 
