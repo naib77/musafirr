@@ -1,6 +1,14 @@
-# Cloudflare Pages headers (this file is copied into build/web at build time).
-# Never cache the entry points or the service worker, or users get stuck on
-# stale builds after a deploy.
+# Cloudflare headers (this file is copied into build/web at build time).
+#
+# Flutter web no longer ships a caching service worker (the generated
+# flutter_service_worker.js only unregisters older ones), so HTTP caching is
+# the ONLY cache layer — and none of Flutter's output URLs are content-hashed.
+# Therefore: nothing may be cached without revalidation. `must-revalidate` +
+# ETags keep repeat loads cheap (304s) while guaranteeing every deploy is
+# picked up on the next page load.
+
+/
+  Cache-Control: no-cache, no-store, must-revalidate
 
 /index.html
   Cache-Control: no-cache, no-store, must-revalidate
@@ -11,6 +19,9 @@
 /flutter_service_worker.js
   Cache-Control: no-cache, no-store, must-revalidate
 
+/main.dart.js
+  Cache-Control: no-cache, must-revalidate
+
 /manifest.json
   Cache-Control: no-cache, no-store, must-revalidate
 
@@ -20,9 +31,11 @@
 /build_stamp.json
   Cache-Control: no-cache, no-store, must-revalidate
 
-# Hashed/static build artifacts can be cached long-term.
+# NOT immutable: these URLs are stable across builds while their content
+# changes (MaterialIcons-Regular.otf is re-tree-shaken every build). A
+# long-lived immutable cache here strands users on stale assets for a month.
 /assets/*
-  Cache-Control: public, max-age=2592000, immutable
+  Cache-Control: no-cache, must-revalidate
 
 /canvaskit/*
-  Cache-Control: public, max-age=2592000, immutable
+  Cache-Control: no-cache, must-revalidate
