@@ -10,7 +10,7 @@ RPC that powers all of it.
 |---|---|---|
 | UI (screen) | `lib/screens/explore/explore_screen.dart` | Search bar, category & purpose chips, curated rows / results grid, infinite scroll |
 | UI (sheet) | `_SearchSheet` in `explore_screen.dart` | Filter form: location, dates/time, guests, property types |
-| UI (picker) | `lib/widgets/landmark_picker_sheet.dart` | Landmark chooser for purpose search (hospital, exam center, …) |
+| UI (picker) | `lib/widgets/landmark_picker_sheet.dart` | Landmark chooser for purpose search — curated `landmarks` rows plus live Google Places matches (`lib/services/places_service.dart` → `places-search` edge function), so any place findable on Google Maps can anchor the search |
 | State | `lib/state/search_state.dart` (`SearchStateNotifier`) | Holds `SearchFilters` + results; debounces stale responses via a search token |
 | Model | `lib/models/search_filters.dart` (`SearchFilters`) | Immutable filter set; `hasActiveFilters` decides feed vs search mode |
 | Repository | `lib/repositories/supabase_musafir_repository.dart` → `searchListingsFromDb()` | Maps filters → RPC params, parses rows → `ListingSearchResult` |
@@ -55,7 +55,7 @@ flowchart TD
     SHEET -- taps Search --> APPLY[searchState.updateFilters]
 
     A -- taps purpose chip\nmedical / exam / tourism… --> LM{Purpose needs\na landmark?}
-    LM -- yes --> PICK[Landmark picker sheet\nsearch_landmarks RPC]
+    LM -- yes --> PICK[Landmark picker sheet\nsearch_landmarks RPC\n+ live Google Places\nvia places-search edge fn]
     PICK -- chosen --> APPLY2[updateFilters:\npurposeTags + landmark\n+ radius 15 km]
     PICK -- dismissed --> A
     LM -- no --> APPLY2

@@ -442,7 +442,10 @@ class SupabaseMusafirRepository extends ChangeNotifier
             : location,
         'p_limit': limit,
         'p_offset': offset,
-        'p_purpose_tags': filters.purposeTags.isEmpty
+        // With a landmark anchor the guest wants everything AROUND the place,
+        // distance-ranked — not only listings the host happened to tag with
+        // that purpose. Tags only filter when no landmark is set.
+        'p_purpose_tags': (landmark != null || filters.purposeTags.isEmpty)
             ? null
             : filters.purposeTags.map((p) => p.wireName).toList(),
         'p_center_lat': landmark?.latitude ?? filters.latitude,
