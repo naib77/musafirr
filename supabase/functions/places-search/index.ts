@@ -9,6 +9,8 @@
 // secrets, verify_jwt is ON.
 //
 // Input:  { query: "lub" }         → suggestions (no coordinates)
+//           + scope: "all" widens beyond establishments (areas, addresses) —
+//             used by the main search bar; the landmark picker wants POIs only
 //         { place_id: "ChIJ…" }    → coordinates for a chosen suggestion
 // Output: { results: [{ name, label, place_id }] }
 //         { found: true, name, label, lat, lng } | { found: false }
@@ -23,14 +25,15 @@ const SERVER_KEY = Deno.env.get("GOOGLE_MAPS_SERVER_KEY") ?? "";
 
 const BD = { latMin: 20.5, latMax: 26.7, lngMin: 88.0, lngMax: 92.8 };
 
-async function suggest(query: string): Promise<Response> {
+async function suggest(query: string, scope?: string): Promise<Response> {
   const url = new URL(
     "https://maps.googleapis.com/maps/api/place/autocomplete/json",
   );
   url.searchParams.set("input", query.slice(0, 120));
   url.searchParams.set("components", "country:BD");
-  // POIs only — plain areas/addresses are the geocode function's job.
-  url.searchParams.set("types", "establishment");
+  // Default is POIs only (landmark picker); scope "all" also predicts areas,
+  // localities and addresses for the main search bar.
+  if (scope !== "all") url.searchParams.set("types", "establishment");
   url.searchParams.set("key", SERVER_KEY);
 
   const data = await (await fetch(url.toString())).json();
@@ -98,12 +101,15 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { query, place_id } = await req.json();
+    const { query, place_id, scope } = await req.json();
     if (typeof place_id === "string" && place_id.length > 0) {
       return await resolve(place_id);
     }
     if (typeof query === "string" && query.trim().length >= 2) {
-      return await suggest(query.trim());
+      return await suggest(
+        query.trim(),
+        typeof scope === "string" ? scope : undefined,
+      );
     }
     return jsonResponse(400, { error: "query or place_id is required" });
   } catch (e) {

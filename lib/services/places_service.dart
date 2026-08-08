@@ -31,13 +31,18 @@ class PlacesService {
   factory PlacesService() => _instance;
   PlacesService._internal();
 
-  Future<List<PlaceSuggestion>> suggest(String query) async {
+  /// [establishmentsOnly] limits predictions to POIs (landmark picker); the
+  /// main search bar passes false so areas and addresses predict too.
+  Future<List<PlaceSuggestion>> suggest(
+    String query, {
+    bool establishmentsOnly = true,
+  }) async {
     final q = query.trim();
     if (q.length < 2) return const [];
     try {
       final res = await Supabase.instance.client.functions.invoke(
         'places-search',
-        body: {'query': q},
+        body: {'query': q, if (!establishmentsOnly) 'scope': 'all'},
       );
       final data = res.data;
       if (data is! Map || data['results'] is! List) return const [];

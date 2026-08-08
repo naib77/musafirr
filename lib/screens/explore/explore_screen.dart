@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/utils/responsive.dart';
@@ -11,6 +13,7 @@ import '../../services/booking/booking_lifecycle_service.dart';
 import '../../services/booking/booking_messaging_coordinator.dart';
 import '../../services/geocoding_service.dart';
 import '../../services/location_service.dart';
+import '../../services/places_service.dart';
 import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
 import '../../state/messaging_state.dart';
@@ -835,9 +838,16 @@ class _SearchSheetState extends State<_SearchSheet> {
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
 
-  // Location suggestions
+  // Location suggestions: instant city matches from loaded listings, plus
+  // debounced Google Places type-ahead (any area / address / POI in BD).
   List<_CitySuggestion> _suggestions = [];
+  List<PlaceSuggestion> _placeSuggestions = [];
   bool _showSuggestions = false;
+  bool _searchingPlaces = false;
+  String? _resolvingSuggestionId;
+  Timer? _placeDebounce;
+  // Guards against out-of-order autocomplete responses while typing.
+  int _placeRequestId = 0;
 
   // A resolved center point for proximity search ("use my location" or a
   // previously geocoded place). Cleared whenever the guest edits the text —
@@ -878,6 +888,7 @@ class _SearchSheetState extends State<_SearchSheet> {
 
   @override
   void dispose() {
+    _placeDebounce?.cancel();
     widget.searchController.removeListener(_onLocationChanged);
     super.dispose();
   }
@@ -888,9 +899,12 @@ class _SearchSheetState extends State<_SearchSheet> {
     _pickedLat = null;
     _pickedLng = null;
     final query = widget.searchController.text.toLowerCase();
+    _placeDebounce?.cancel();
     if (query.isEmpty) {
       setState(() {
         _suggestions = [];
+        _placeSuggestions = [];
+        _searchingPlaces = false;
         _showSuggestions = false;
       });
       return;
@@ -915,19 +929,80 @@ class _SearchSheetState extends State<_SearchSheet> {
     filtered.sort((a, b) => b.count.compareTo(a.count));
     final limited = filtered.take(5).toList();
 
+    // Google type-ahead from 3 letters, debounced; city matches stay instant.
+    final raw = widget.searchController.text.trim();
+    final wantPlaces = raw.length >= 3;
+    if (wantPlaces) {
+      _placeDebounce =
+          Timer(const Duration(milliseconds: 300), () => _fetchPlaces(raw));
+    }
+
     setState(() {
       _suggestions = limited;
-      _showSuggestions = limited.isNotEmpty;
+      _searchingPlaces = wantPlaces;
+      if (!wantPlaces) _placeSuggestions = [];
+      _showSuggestions =
+          limited.isNotEmpty || _placeSuggestions.isNotEmpty || wantPlaces;
+    });
+  }
+
+  Future<void> _fetchPlaces(String query) async {
+    final id = ++_placeRequestId;
+    final results =
+        await PlacesService().suggest(query, establishmentsOnly: false);
+    if (!mounted || id != _placeRequestId) return;
+    // Drop predictions that duplicate a listing-city row already shown.
+    final cityNames =
+        _suggestions.map((c) => c.city.toLowerCase().trim()).toSet();
+    setState(() {
+      _placeSuggestions = results
+          .where((s) => !cityNames.contains(s.name.toLowerCase().trim()))
+          .toList();
+      _searchingPlaces = false;
+      _showSuggestions =
+          _suggestions.isNotEmpty || _placeSuggestions.isNotEmpty;
     });
   }
 
   void _selectSuggestion(_CitySuggestion suggestion) {
+    _placeDebounce?.cancel();
+    _placeRequestId++; // invalidate any in-flight autocomplete
     widget.searchController.text = suggestion.city;
     widget.searchController.selection = TextSelection.fromPosition(
       TextPosition(offset: suggestion.city.length),
     );
     setState(() {
       _showSuggestions = false;
+      _placeSuggestions = [];
+      _searchingPlaces = false;
+    });
+  }
+
+  /// A Google prediction was tapped: put its name in the field and resolve it
+  /// to coordinates so Search runs the expanding-ring proximity search.
+  Future<void> _selectPlaceSuggestion(PlaceSuggestion s) async {
+    if (_resolvingSuggestionId != null) return;
+    _placeDebounce?.cancel();
+    _placeRequestId++;
+    _settingTextProgrammatically = true;
+    widget.searchController.text = s.name;
+    widget.searchController.selection = TextSelection.fromPosition(
+      TextPosition(offset: s.name.length),
+    );
+    _settingTextProgrammatically = false;
+    setState(() => _resolvingSuggestionId = s.placeId);
+    final place = await PlacesService().resolve(s, type: '');
+    if (!mounted) return;
+    setState(() {
+      _resolvingSuggestionId = null;
+      _showSuggestions = false;
+      _placeSuggestions = [];
+      _searchingPlaces = false;
+      // If resolving failed, _applySearch will geocode the text as fallback.
+      if (place != null) {
+        _pickedLat = place.latitude;
+        _pickedLng = place.longitude;
+      }
     });
   }
 
@@ -1170,8 +1245,12 @@ class _SearchSheetState extends State<_SearchSheet> {
                     label: const Text('Use my current location'),
                   ),
                 ),
-                // Suggestions dropdown
-                if (_showSuggestions && _suggestions.isNotEmpty)
+                // Suggestions dropdown: listing cities first (instant), then
+                // Google type-ahead predictions (any area / address / POI).
+                if (_showSuggestions &&
+                    (_suggestions.isNotEmpty ||
+                        _placeSuggestions.isNotEmpty ||
+                        _searchingPlaces))
                   Container(
                     margin: const EdgeInsets.only(top: 4),
                     decoration: BoxDecoration(
@@ -1188,34 +1267,105 @@ class _SearchSheetState extends State<_SearchSheet> {
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: _suggestions.map((suggestion) {
-                        return InkWell(
-                          onTap: () => _selectSuggestion(suggestion),
-                          borderRadius: BorderRadius.circular(8),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.location_on_outlined,
-                                  color: theme.colorScheme.primary,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    '${suggestion.city} (${suggestion.count} listing${suggestion.count > 1 ? 's' : ''})',
-                                    style: theme.textTheme.bodyMedium,
+                      children: [
+                        ..._suggestions.map((suggestion) {
+                          return InkWell(
+                            onTap: () => _selectSuggestion(suggestion),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.location_on_outlined,
+                                    color: theme.colorScheme.primary,
+                                    size: 20,
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      '${suggestion.city} (${suggestion.count} listing${suggestion.count > 1 ? 's' : ''})',
+                                      style: theme.textTheme.bodyMedium,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }),
+                        if (_suggestions.isNotEmpty &&
+                            (_placeSuggestions.isNotEmpty || _searchingPlaces))
+                          const Divider(height: 1),
+                        if (_searchingPlaces && _placeSuggestions.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             ),
                           ),
-                        );
-                      }).toList(),
+                        ..._placeSuggestions.map((s) {
+                          final resolving = _resolvingSuggestionId == s.placeId;
+                          return InkWell(
+                            onTap: _resolvingSuggestionId != null
+                                ? null
+                                : () => _selectPlaceSuggestion(s),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.travel_explore_rounded,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          s.name,
+                                          style: theme.textTheme.bodyMedium,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        if (s.label.isNotEmpty)
+                                          Text(
+                                            s.label,
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                              color: theme
+                                                  .colorScheme.onSurfaceVariant,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (resolving)
+                                    const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }),
+                      ],
                     ),
                   ),
               ],
