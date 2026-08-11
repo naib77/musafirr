@@ -223,36 +223,34 @@ class _ListingCardModernState extends State<ListingCardModern>
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 3),
+                  // Rate and rating read as one phrase, so they sit next to
+                  // each other. Nothing is Expanded here — that stretched the
+                  // gap to the full card width and left the rating stranded
+                  // on the far edge.
                   Row(
                     children: [
-                      Expanded(
-                        child: Row(
-                          children: [
-                            Flexible(child: _buildHeadlineRate(theme)),
-                            // Distance only exists after a proximity search,
-                            // and it's the reason those results are ordered
-                            // the way they are — worth the space when present.
-                            if (listing.distanceMeters != null) ...[
-                              const SizedBox(width: 5),
-                              Icon(Icons.near_me_rounded,
-                                  size: 11, color: theme.colorScheme.primary),
-                              const SizedBox(width: 2),
-                              Flexible(
-                                child: Text(
-                                  formatDistanceMeters(listing.distanceMeters!),
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: theme.colorScheme.primary,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ],
+                      Flexible(child: _buildHeadlineRate(theme)),
+                      // Distance only exists after a proximity search, and
+                      // it's the reason those results are ordered the way they
+                      // are — worth the space when present.
+                      if (listing.distanceMeters != null) ...[
+                        const SizedBox(width: 5),
+                        Icon(Icons.near_me_rounded,
+                            size: 11, color: theme.colorScheme.primary),
+                        const SizedBox(width: 2),
+                        Flexible(
+                          child: Text(
+                            formatDistanceMeters(listing.distanceMeters!),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.primary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                      ),
+                      ],
                       if (hasReviews) ...[
                         const SizedBox(width: 6),
                         Icon(

@@ -177,10 +177,17 @@ void main() {
       );
 
       final rate = tester.getRect(find.text('৳500/hr'));
+      final star = tester.getRect(find.byIcon(Icons.star_rounded));
       final rating = tester.getRect(find.text('4.8'));
-      // Same row, rating to the right.
+      // Same row, rating to the right of the rate.
       expect((rate.center.dy - rating.center.dy).abs(), lessThan(4));
       expect(rating.left, greaterThan(rate.right));
+      // Directly beside the rate, not pushed to the far edge by a stretched
+      // gap. Only the spacing is asserted, never absolute positions: the test
+      // font sizes every glyph as a fixed square, so text boxes here are much
+      // wider than on a device.
+      expect(star.left - rate.right, lessThan(10));
+      expect(rating.left - star.right, lessThan(6));
     });
 
     testWidgets('city and bed/guest counts are gone', (tester) async {
