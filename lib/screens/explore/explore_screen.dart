@@ -25,6 +25,7 @@ import '../../widgets/landmark_picker_sheet.dart';
 import '../../widgets/purpose_scroll.dart';
 import '../../widgets/hover_lift.dart';
 import '../../widgets/listing_card_modern.dart';
+import '../../widgets/listing_price_map.dart';
 import '../../widgets/notification_bell.dart';
 import '../notifications/notification_center_screen.dart';
 import 'listing_detail_screen.dart';
@@ -423,6 +424,21 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       controller: _scrollController,
                       physics: const AlwaysScrollableScrollPhysics(),
                       slivers: [
+                        // Where the results are, before the guest scrolls a
+                        // single card — a price pill per stay, Airbnb-style.
+                        // Only for searches: the browse feed is curated rows,
+                        // which have no single area to frame.
+                        if (mappableListings(listings).isNotEmpty)
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                              child: ListingPriceMap(
+                                listings: listings,
+                                onListingTap: _openListingDetail,
+                                height: wide ? 320 : 240,
+                              ),
+                            ),
+                          ),
                         // Proximity banner: which ring the results came from,
                         // or that we fell back to the nearest stays.
                         if (widget.searchState.matchedRadiusMeters != null ||
@@ -517,9 +533,22 @@ class _ExploreScreenState extends State<ExploreScreen> {
     );
   }
 
+  /// The city most of these listings are in, used to name the first curated
+  /// row. Null when none of them carry a city.
+  String? _dominantCity(List<Listing> listings) {
+    final counts = <String, int>{};
+    for (final l in listings) {
+      final city = l.city?.trim();
+      if (city == null || city.isEmpty) continue;
+      counts[city] = (counts[city] ?? 0) + 1;
+    }
+    if (counts.isEmpty) return null;
+    return counts.entries.reduce((a, b) => b.value > a.value ? b : a).key;
+  }
+
   /// Airbnb-style curated rows shown while browsing (no search, no single
-  /// category filter): Popular, Featured, Top rated, Budget-friendly, and
-  /// location-wise sections — each a horizontal, left-to-right scrolling list.
+  /// category filter): Popular stays in {city}, Featured, Top rated,
+  /// Budget-friendly, and other cities — each a horizontal, scrolling list.
   Widget _buildCategoryRows(List<Listing> listings) {
     final sections = <Widget>[];
 
@@ -536,15 +565,27 @@ class _ExploreScreenState extends State<ExploreScreen> {
       );
     }
 
-    // Popular — most reviewed, then highest rated.
+    // Popular — most reviewed, then highest rated. Named after the city most
+    // of the catalogue is in ("Popular stays in Dhaka"), which reads as a place
+    // to start rather than an unexplained ranking.
     final popular = [...listings]..sort((a, b) {
         final byReviews = b.reviewCount.compareTo(a.reviewCount);
         if (byReviews != 0) return byReviews;
         return (b.rating ?? 0).compareTo(a.rating ?? 0);
       });
+    final mainCity = _dominantCity(listings);
     add(
-      'Popular',
+      mainCity == null ? 'Popular stays' : 'Popular stays in $mainCity',
       popular.where((l) => l.reviewCount > 0 || (l.rating ?? 0) > 0).toList(),
+      // "See all" searches that city, so this row doubles as the entry point
+      // its "Stays in {city}" row used to be (which is now skipped below,
+      // rather than repeating the same city twice on one screen).
+      onSeeAll: mainCity == null
+          ? null
+          : () {
+              widget.searchState.updateLocation(location: mainCity);
+              setState(() {});
+            },
     );
 
     // Budget-friendly — cheapest first (surfaced right after Popular).
@@ -575,8 +616,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
     final cities = byCity.keys.toList()
       ..sort((a, b) => byCity[b]!.length.compareTo(byCity[a]!.length));
-    for (final city in cities.take(3)) {
+    for (final city in cities.take(4)) {
       if (byCity[city]!.length < 2) continue;
+      // The first row already covers this one.
+      if (city == mainCity) continue;
       add(
         'Stays in $city',
         byCity[city]!,
