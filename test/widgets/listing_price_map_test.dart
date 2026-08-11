@@ -31,10 +31,20 @@ void main() {
   }
 
   group('listingPriceLabel', () {
-    test('shows the cheapest rate, compacted, with the taka sign', () {
+    test('shows the cheapest rate in full, with the taka sign', () {
       expect(listingPriceLabel(listingOf(hourly: 500, daily: 3000)), '৳500');
-      expect(listingPriceLabel(listingOf(daily: 1500)), '৳1.5K');
-      expect(listingPriceLabel(listingOf(monthly: 35000)), '৳35K');
+      // Exact, never compacted: "৳1.5K" and "৳1.6K" would look like the same
+      // price on two neighbouring pins.
+      expect(listingPriceLabel(listingOf(daily: 1500)), '৳1,500');
+      expect(listingPriceLabel(listingOf(monthly: 35000)), '৳35,000');
+    });
+
+    test('shows whole taka, truncating paisa like every other price', () {
+      // The shared formatter truncates rather than rounds, so 499.5 reads as
+      // ৳499 here exactly as it does on the card and the detail screen.
+      // Consistency beats rounding this one surface differently.
+      expect(listingPriceLabel(listingOf(hourly: 499.5)), '৳499');
+      expect(listingPriceLabel(listingOf(hourly: 1250.25)), '৳1,250');
     });
 
     test('never leaves the pill blank when a listing has no rate', () {

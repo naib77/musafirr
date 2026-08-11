@@ -7,13 +7,15 @@ import '../core/theme/app_colors.dart';
 import '../models/listing.dart';
 import 'web_deferred_mount.dart';
 
-/// The price shown on a listing's map marker: its cheapest rate, compacted
-/// ("৳500", "৳1.5K"). No unit — a marker has room for a figure, not a phrase,
-/// and the card below spells the units out.
+/// The price on a listing's map marker: its cheapest rate in full — "৳500",
+/// "৳1,500", "৳35,000". Exact, not compacted to "৳1.5K": on a map a guest is
+/// comparing one pin against another, and rounded figures make two different
+/// prices look identical. No unit and no paisa — a pill has room for a figure,
+/// not a phrase, and the card below spells the units out.
 String listingPriceLabel(Listing listing) {
   final money = listing.cheapestRateMoney;
   if (money == null || money.amount <= 0) return '—';
-  return money.format(useCompact: true);
+  return money.format(showDecimal: false);
 }
 
 /// Listings that can appear on a map. A listing with no coordinates (0,0 is
@@ -175,18 +177,13 @@ class _ListingPriceMapState extends State<ListingPriceMap> {
 
     final rect = Rect.fromLTWH(0, 0, width, height);
     final rrect = RRect.fromRectAndRadius(rect, Radius.circular(height / 2));
+    // Shadow only, no outline: it's what lifts the pill off the map without
+    // the boxed-in look an outline gives at this size.
     canvas
       ..drawShadow(Path()..addRRect(rrect), Colors.black54, 1.5, false)
       ..drawRRect(
         rrect,
         Paint()..color = selected ? AppColors.brand : Colors.white,
-      )
-      ..drawRRect(
-        rrect,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 0.8
-          ..color = selected ? AppColors.brand : Colors.black26,
       );
     painter.paint(canvas, const Offset(padH, padV));
 
