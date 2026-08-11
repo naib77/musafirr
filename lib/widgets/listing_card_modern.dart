@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../core/theme/app_colors.dart';
 import '../core/utils/distance_format.dart';
 import 'app_network_image.dart';
 import '../models/listing.dart';
@@ -118,20 +117,26 @@ class _ListingCardModernState extends State<ListingCardModern>
                       ),
                     ),
 
-                    // Compact price pill
+                    // Compact price pill. Bounded on the right so a long unit
+                    // ("/mo/full house") ellipsizes inside the pill instead of
+                    // running under the favourite button and being clipped.
                     Positioned(
                       bottom: 6,
                       left: 6,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 3,
+                      right: 6,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.95),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: _buildPriceTeaser(theme),
                         ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.95),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: _buildPriceTeaser(theme),
                       ),
                     ),
 
@@ -168,28 +173,25 @@ class _ListingCardModernState extends State<ListingCardModern>
                       ),
                     ),
 
-                    // Tiny type / status pills
-                    Positioned(
-                      top: 6,
-                      left: 6,
-                      child: Row(
-                        children: [
-                          _CategoryChip(type: listing.type),
-                          const SizedBox(width: 4),
-                          if (listing.isSuperhost)
-                            _MiniPill(
-                              label: 'Superhost',
-                              icon: Icons.workspace_premium,
-                              background: Colors.orange.shade600,
-                            )
-                          else if (!hasReviews)
-                            _MiniPill(
-                              label: 'New',
-                              background: theme.colorScheme.primary,
-                            ),
-                        ],
+                    // Status pill only. The listing type is NOT badged here —
+                    // a coloured seat/room/full-house chip on every card made
+                    // the grid noisy; the type now reads as part of the price
+                    // ("from ৳500/hr/seat"), where it actually means something.
+                    if (listing.isSuperhost || !hasReviews)
+                      Positioned(
+                        top: 6,
+                        left: 6,
+                        child: listing.isSuperhost
+                            ? _MiniPill(
+                                label: 'Superhost',
+                                icon: Icons.workspace_premium,
+                                background: Colors.orange.shade600,
+                              )
+                            : _MiniPill(
+                                label: 'New',
+                                background: theme.colorScheme.primary,
+                              ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -293,8 +295,9 @@ class _ListingCardModernState extends State<ListingCardModern>
     );
   }
 
-  /// Compact "from ৳X/unit" teaser for the cheapest offered plan.
-  /// "from" only appears when more than one plan is offered.
+  /// Compact "from ৳X/hr/seat" teaser for the cheapest offered plan: the rate,
+  /// the time unit, and what you get for it. "from" only appears when more
+  /// than one plan is offered.
   Widget _buildPriceTeaser(ThemeData theme) {
     final listing = widget.listing;
     final cheapest = listing.cheapestPlan;
@@ -326,11 +329,17 @@ class _ListingCardModernState extends State<ListingCardModern>
             color: Colors.black87,
           ),
         ),
-        Text(
-          '/${cheapest.shortUnit}',
-          style: const TextStyle(
-            fontSize: 9,
-            color: Colors.black54,
+        // Flexible so the longest unit ("/mo/full house") shortens rather than
+        // pushing the pill past the photo on a narrow two-column grid.
+        Flexible(
+          child: Text(
+            '/${cheapest.shortUnit}/${listing.type.priceUnit}',
+            style: const TextStyle(
+              fontSize: 9,
+              color: Colors.black54,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
@@ -444,51 +453,6 @@ class _MiniPill extends StatelessWidget {
           ],
           Text(
             label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 9,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Small colorful pill identifying the listing type, shown on the card image.
-class _CategoryChip extends StatelessWidget {
-  const _CategoryChip({required this.type});
-
-  final ListingType type;
-
-  Color get _color => switch (type) {
-        ListingType.seat => AppColors.seat,
-        ListingType.room => AppColors.room,
-        ListingType.fullHouse => AppColors.fullHouse,
-      };
-
-  IconData get _icon => switch (type) {
-        ListingType.seat => Icons.event_seat_rounded,
-        ListingType.room => Icons.meeting_room_rounded,
-        ListingType.fullHouse => Icons.home_rounded,
-      };
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(
-        color: _color.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(_icon, size: 9, color: Colors.white),
-          const SizedBox(width: 3),
-          Text(
-            type.title,
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w700,
