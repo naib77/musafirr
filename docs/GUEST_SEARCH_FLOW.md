@@ -245,3 +245,30 @@ location** in the search sheet:
 Caveats: listings without a map pin are invisible to proximity search, and
 listings pinned at the old default coordinates (Mohakhali) rank wrongly —
 they need re-pinning via Edit listing.
+
+## How search results are laid out
+
+| Screen | Layout |
+| --- | --- |
+| Phone, results have pins | `ResultsMapSheet` — the map fills the area, the results ride over it in a `DraggableScrollableSheet` snapping to 15% / 45% / 95% |
+| Wide, results have pins | The map is a 320px banner above the card grid (a draggable sheet over a 1400px map reads badly) |
+| No pins anywhere | The card grid alone |
+
+All three build their content from `_resultSlivers()` in `explore_screen.dart`,
+so the banner, cards and footer can't drift apart.
+
+Two traps live in that sheet, both already paid for:
+
+- **A `DraggableScrollableSheet` is dragged by its scrollable and nothing
+  else.** The grab handle has to be *inside* the `CustomScrollView` (it's a
+  pinned `SliverPersistentHeader`), or it looks draggable and does nothing.
+- **On web a Google map is a DOM element that wins the browser's hit-test over
+  anything Flutter paints on top of it.** Drags and wheel events meant for the
+  sheet reached the map as well, so it panned and zoomed while the sheet stayed
+  still. Anything drawn over a map — the sheet, the expand button — must be
+  wrapped in `PointerInterceptor`, which puts a real DOM blocker in front of
+  the map. It is a no-op off web.
+
+`ResultsMapSheet` takes the map as a plain widget so it can be tested
+(`test/widgets/results_map_sheet_test.dart`); `ExploreScreen` itself still
+can't be built in a test.

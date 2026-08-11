@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:pointer_interceptor/pointer_interceptor.dart';
 
 import '../core/theme/app_colors.dart';
 import '../models/listing.dart';
@@ -316,27 +317,33 @@ class _ListingPriceMapState extends State<ListingPriceMap> {
           children: [
             Positioned.fill(child: map),
             // The inline map can't be panned, so offer the one that can.
+            // Wrapped in a PointerInterceptor because on web the map is a DOM
+            // element that wins the browser's hit-test over anything Flutter
+            // paints on top of it — without this the tap lands on the map and
+            // the button never fires.
             Positioned(
               right: 10,
               bottom: 10,
-              child: Material(
-                color: Colors.white,
-                shape: const CircleBorder(),
-                elevation: 2,
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => ListingsMapScreen(
-                        listings: widget.listings,
-                        onListingTap: widget.onListingTap,
+              child: PointerInterceptor(
+                child: Material(
+                  color: Colors.white,
+                  shape: const CircleBorder(),
+                  elevation: 2,
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => ListingsMapScreen(
+                          listings: widget.listings,
+                          onListingTap: widget.onListingTap,
+                        ),
                       ),
                     ),
-                  ),
-                  child: const Padding(
-                    padding: EdgeInsets.all(9),
-                    child: Icon(Icons.open_in_full_rounded,
-                        size: 18, color: AppColors.ink),
+                    child: const Padding(
+                      padding: EdgeInsets.all(9),
+                      child: Icon(Icons.open_in_full_rounded,
+                          size: 18, color: AppColors.ink),
+                    ),
                   ),
                 ),
               ),

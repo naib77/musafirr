@@ -27,6 +27,7 @@ import '../../widgets/hover_lift.dart';
 import '../../widgets/listing_card_modern.dart';
 import '../../widgets/listing_price_map.dart';
 import '../../widgets/notification_bell.dart';
+import '../../widgets/results_map_sheet.dart';
 import '../notifications/notification_center_screen.dart';
 import 'listing_detail_screen.dart';
 
@@ -513,70 +514,16 @@ class _ExploreScreenState extends State<ExploreScreen> {
       );
     }
 
-    return Stack(
-      children: [
-        // Full-bleed and fully interactive: with the sheet handling the list,
-        // nothing competes with the map for drags any more.
-        Positioned.fill(
-          child: ListingPriceMap(
-            listings: listings,
-            onListingTap: _openListingDetail,
-            height: null,
-            interactive: true,
-          ),
-        ),
-        DraggableScrollableSheet(
-          initialChildSize: 0.45,
-          minChildSize: 0.15,
-          maxChildSize: 0.95,
-          // Rests at a few sensible heights instead of wherever the finger
-          // stopped: mostly-map, half-and-half, or mostly-list.
-          snap: true,
-          snapSizes: const [0.15, 0.45, 0.95],
-          builder: (context, sheetController) {
-            return DecoratedBox(
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(20),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.16),
-                    blurRadius: 16,
-                    offset: const Offset(0, -4),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  // Grab handle — the only cue that the sheet moves.
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.outlineVariant,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    // No RefreshIndicator here: pulling down is how the sheet
-                    // is collapsed, and search results come from a single
-                    // query that a pull could not refresh anyway.
-                    child: CustomScrollView(
-                      controller: sheetController,
-                      slivers: _resultSlivers(listings, theme),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-      ],
+    return ResultsMapSheet(
+      // Full-bleed and fully interactive: with the sheet handling the list,
+      // nothing competes with the map for drags any more.
+      map: ListingPriceMap(
+        listings: listings,
+        onListingTap: _openListingDetail,
+        height: null,
+        interactive: true,
+      ),
+      slivers: _resultSlivers(listings, theme),
     );
   }
 
