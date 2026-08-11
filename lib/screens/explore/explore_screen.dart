@@ -140,20 +140,20 @@ class _ExploreScreenState extends State<ExploreScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      // Full-screen sheet: only the status bar stays visible above it. With
+      // no scrim left to tap, dismissal is the ✕ button or drag-down.
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
-      // Cap the height so a tappable scrim always remains above the sheet
-      // (tap-outside to dismiss), even with the keyboard open.
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.9,
-      ),
-      builder: (context) => _SearchSheet(
-        searchController: _searchController,
-        searchState: widget.searchState,
-        onSearch: () {
-          Navigator.pop(context);
-          setState(() {});
-        },
-        repository: widget.repository,
+      builder: (context) => SizedBox.expand(
+        child: _SearchSheet(
+          searchController: _searchController,
+          searchState: widget.searchState,
+          onSearch: () {
+            Navigator.pop(context);
+            setState(() {});
+          },
+          repository: widget.repository,
+        ),
       ),
     );
   }
