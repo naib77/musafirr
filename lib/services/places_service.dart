@@ -33,16 +33,24 @@ class PlacesService {
 
   /// [establishmentsOnly] limits predictions to POIs (landmark picker); the
   /// main search bar passes false so areas and addresses predict too.
+  /// [types] narrows further to specific Google place types (e.g.
+  /// `['hospital', 'doctor']` for the Medical picker) so only places of that
+  /// category are suggested.
   Future<List<PlaceSuggestion>> suggest(
     String query, {
     bool establishmentsOnly = true,
+    List<String>? types,
   }) async {
     final q = query.trim();
     if (q.length < 2) return const [];
     try {
       final res = await Supabase.instance.client.functions.invoke(
         'places-search',
-        body: {'query': q, if (!establishmentsOnly) 'scope': 'all'},
+        body: {
+          'query': q,
+          if (!establishmentsOnly) 'scope': 'all',
+          if (types != null && types.isNotEmpty) 'types': types,
+        },
       );
       final data = res.data;
       if (data is! Map || data['results'] is! List) return const [];
