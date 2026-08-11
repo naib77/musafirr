@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../core/theme/app_colors.dart';
 import '../core/utils/distance_format.dart';
 import 'app_network_image.dart';
 import '../models/listing.dart';
@@ -98,40 +97,51 @@ class _ListingCardModernState extends State<ListingCardModern>
                     else
                       _buildPlaceholder(theme),
 
-                    // Bottom scrim so the price pill always reads.
+                    // Top scrim — sits behind the price pill and the favourite
+                    // button, which share the top edge.
                     Positioned(
-                      bottom: 0,
+                      top: 0,
                       left: 0,
                       right: 0,
                       child: Container(
                         height: 44,
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
+                            begin: Alignment.bottomCenter,
+                            end: Alignment.topCenter,
                             colors: [
                               Colors.transparent,
-                              Colors.black.withValues(alpha: 0.45),
+                              Colors.black.withValues(alpha: 0.35),
                             ],
                           ),
                         ),
                       ),
                     ),
 
-                    // Compact price pill
+                    // What this listing is, top-left — prefixed with "Guest
+                    // favorite" when it has genuinely earned it. Rates are not
+                    // shown on the photo: they live under it, where two of
+                    // them can be compared.
+                    // Stops short of the favourite button so a long label
+                    // ("Guest favorite | Full House") ellipsizes inside the
+                    // pill instead of running under the heart.
                     Positioned(
-                      bottom: 6,
+                      top: 6,
                       left: 6,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 3,
+                      right: 40,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.95),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: _buildTypeBadge(),
                         ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.95),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: _buildPriceTeaser(theme),
                       ),
                     ),
 
@@ -168,35 +178,36 @@ class _ListingCardModernState extends State<ListingCardModern>
                       ),
                     ),
 
-                    // Tiny type / status pills
-                    Positioned(
-                      top: 6,
-                      left: 6,
-                      child: Row(
-                        children: [
-                          _CategoryChip(type: listing.type),
-                          const SizedBox(width: 4),
-                          if (listing.isSuperhost)
-                            _MiniPill(
-                              label: 'Superhost',
-                              icon: Icons.workspace_premium,
-                              background: Colors.orange.shade600,
-                            )
-                          else if (!hasReviews)
-                            _MiniPill(
-                              label: 'New',
-                              background: theme.colorScheme.primary,
-                            ),
-                        ],
+                    // Status pill, bottom-left — the top-left slot belongs to
+                    // the price. The listing type is NOT badged anywhere here:
+                    // a coloured seat/room/full-house chip on every card made
+                    // the grid noisy; the type now reads as part of the price
+                    // ("from ৳500/hr/seat"), where it actually means something.
+                    if (listing.isSuperhost || !hasReviews)
+                      Positioned(
+                        bottom: 6,
+                        left: 6,
+                        child: listing.isSuperhost
+                            ? _MiniPill(
+                                label: 'Superhost',
+                                icon: Icons.workspace_premium,
+                                background: Colors.orange.shade600,
+                              )
+                            : _MiniPill(
+                                label: 'New',
+                                background: theme.colorScheme.primary,
+                              ),
                       ),
-                    ),
                   ],
                 ),
               ),
             ),
           ),
 
-          // ── Compact info below, no box — Airbnb style ──
+          // ── Two lines below the photo, nothing more: the name, then the
+          // headline rate with the rating. Secondary rates, bed/guest counts
+          // and the city used to sit here too, which made the grid busy
+          // without helping anyone choose. ──
           Expanded(
             flex: 2,
             child: Padding(
@@ -214,36 +225,40 @@ class _ListingCardModernState extends State<ListingCardModern>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 2),
-                  // Place (with distance when a proximity search ran — shares
-                  // this line: the info area has a fixed height, an extra row
-                  // overflows it) and rating on the second line.
+                  const SizedBox(height: 3),
+                  // Rate and rating read as one phrase, so they sit next to
+                  // each other. Nothing is Expanded here — that stretched the
+                  // gap to the full card width and left the rating stranded
+                  // on the far edge.
                   Row(
                     children: [
-                      if (listing.distanceMeters != null) ...[
-                        Icon(Icons.near_me_rounded,
-                            size: 12, color: theme.colorScheme.primary),
-                        const SizedBox(width: 3),
-                      ],
-                      Expanded(
-                        child: Text(
-                          listing.distanceMeters != null
-                              ? '${formatDistanceMeters(listing.distanceMeters!)} · ${listing.city ?? listing.address.split(',').first}'
-                              : listing.city ??
-                                  listing.address.split(',').first,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontSize: 11,
-                            color: listing.distanceMeters != null
-                                ? theme.colorScheme.primary
-                                : theme.colorScheme.onSurfaceVariant,
-                            fontWeight: listing.distanceMeters != null
-                                ? FontWeight.w600
-                                : null,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                      Flexible(
+                        child: _buildRates(
+                          theme,
+                          compact: listing.distanceMeters != null,
                         ),
                       ),
+                      // Distance only exists after a proximity search, and
+                      // it's the reason those results are ordered the way they
+                      // are — worth the space when present.
+                      if (listing.distanceMeters != null) ...[
+                        const SizedBox(width: 5),
+                        Icon(Icons.near_me_rounded,
+                            size: 11, color: theme.colorScheme.primary),
+                        const SizedBox(width: 2),
+                        Flexible(
+                          child: Text(
+                            formatDistanceMeters(listing.distanceMeters!),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.primary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                       if (hasReviews) ...[
                         const SizedBox(width: 6),
                         Icon(
@@ -262,28 +277,6 @@ class _ListingCardModernState extends State<ListingCardModern>
                       ],
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  // Secondary rates + quick stats on one muted line.
-                  Row(
-                    children: [
-                      Expanded(child: _buildSecondaryRates(theme)),
-                      if (listing.bedrooms > 0) ...[
-                        _buildStatChip(
-                          Icons.bed_outlined,
-                          '${listing.bedrooms}',
-                          theme,
-                        ),
-                        const SizedBox(width: 6),
-                      ],
-                      if (listing.maxGuests > 0)
-                        _buildStatChip(
-                          Icons.person_outline,
-                          '${listing.maxGuests}',
-                          theme,
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
                 ],
               ),
             ),
@@ -293,95 +286,68 @@ class _ListingCardModernState extends State<ListingCardModern>
     );
   }
 
-  /// Compact "from ৳X/unit" teaser for the cheapest offered plan.
-  /// "from" only appears when more than one plan is offered.
-  Widget _buildPriceTeaser(ThemeData theme) {
+  /// The photo pill: what you're booking ("Room"), with a "Guest favorite"
+  /// prefix only when the listing has actually earned it.
+  ///
+  /// One rich Text rather than a Row of parts, so the ellipsis applies to the
+  /// whole phrase — with separate children only the last one can shrink, which
+  /// overflows a narrow two-column card by a few pixels instead of trimming.
+  Widget _buildTypeBadge() {
     final listing = widget.listing;
-    final cheapest = listing.cheapestPlan;
-    if (cheapest == null) {
-      return const SizedBox.shrink();
-    }
-    final money = listing.moneyFor(cheapest)!;
-    final hasMore = listing.offeredPlans.length > 1;
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.baseline,
-      textBaseline: TextBaseline.alphabetic,
-      children: [
-        if (hasMore)
-          const Text(
-            'from ',
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w500,
-              color: Colors.black54,
+    return Text.rich(
+      TextSpan(
+        children: [
+          if (listing.isGuestFavorite)
+            const TextSpan(
+              text: 'Guest favorite  |  ',
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                color: Colors.black54,
+              ),
+            ),
+          TextSpan(
+            text: listing.type.title,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: Colors.black87,
             ),
           ),
-        Text(
-          money.format(useCompact: true),
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            color: Colors.black87,
-          ),
-        ),
-        Text(
-          '/${cheapest.shortUnit}',
-          style: const TextStyle(
-            fontSize: 9,
-            color: Colors.black54,
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// One compact, de-emphasized line listing the non-cheapest offered plans,
-  /// e.g. "৳1.5k/day · ৳35k/mo". Hidden when only one plan is offered.
-  Widget _buildSecondaryRates(ThemeData theme) {
-    final listing = widget.listing;
-    final cheapest = listing.cheapestPlan;
-    final others = listing.offeredPlans.where((p) => p != cheapest).toList();
-    if (others.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    final text = others
-        .map((p) =>
-            '${listing.moneyFor(p)!.format(useCompact: true)}/${p.shortUnit}')
-        .join(' · ');
-
-    return Text(
-      text,
-      style: theme.textTheme.labelSmall?.copyWith(
-        fontSize: 10,
-        color: theme.colorScheme.onSurfaceVariant,
+        ],
       ),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
     );
   }
 
-  Widget _buildStatChip(IconData icon, String label, ThemeData theme) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          icon,
-          size: 12,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-        const SizedBox(width: 2),
-        Text(
-          label,
-          style: theme.textTheme.bodySmall?.copyWith(
-            fontSize: 11,
-            color: theme.colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
+  /// Up to two rates, so a guest can weigh a short stay against a longer one
+  /// without opening the listing: "৳500/hr · ৳3K/day". See
+  /// [Listing.headlinePlans] for which two.
+  ///
+  /// A proximity search adds a distance to this line, and three figures plus a
+  /// rating do not fit a grid cell — so one rate is dropped there rather than
+  /// letting everything ellipsize into nonsense.
+  Widget _buildRates(ThemeData theme, {required bool compact}) {
+    final listing = widget.listing;
+    var plans = listing.headlinePlans;
+    if (compact && plans.length > 1) plans = plans.take(1).toList();
+    if (plans.isEmpty) return const SizedBox.shrink();
+
+    final text = plans
+        .map((p) =>
+            '${listing.moneyFor(p)!.format(useCompact: true)}/${p.shortUnit}')
+        .join(' · ');
+
+    return Text(
+      text,
+      style: theme.textTheme.bodySmall?.copyWith(
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
     );
   }
 
@@ -444,51 +410,6 @@ class _MiniPill extends StatelessWidget {
           ],
           Text(
             label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 9,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Small colorful pill identifying the listing type, shown on the card image.
-class _CategoryChip extends StatelessWidget {
-  const _CategoryChip({required this.type});
-
-  final ListingType type;
-
-  Color get _color => switch (type) {
-        ListingType.seat => AppColors.seat,
-        ListingType.room => AppColors.room,
-        ListingType.fullHouse => AppColors.fullHouse,
-      };
-
-  IconData get _icon => switch (type) {
-        ListingType.seat => Icons.event_seat_rounded,
-        ListingType.room => Icons.meeting_room_rounded,
-        ListingType.fullHouse => Icons.home_rounded,
-      };
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(
-        color: _color.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(_icon, size: 9, color: Colors.white),
-          const SizedBox(width: 3),
-          Text(
-            type.title,
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w700,

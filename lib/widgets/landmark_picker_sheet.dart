@@ -95,8 +95,10 @@ class _LandmarkPickerSheetState extends State<_LandmarkPickerSheet> {
 
     final seedFuture =
         widget.repository.searchLandmarks(query: q, type: widget.type);
+    // The category ('hospital', 'exam_center', …) keeps map suggestions to
+    // places of the kind being picked.
     final placesFuture = wantPlaces
-        ? _places.suggest(q)
+        ? _places.suggest(q, category: widget.type)
         : Future.value(const <PlaceSuggestion>[]);
 
     final seeds = await seedFuture;
