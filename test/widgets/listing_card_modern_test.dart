@@ -13,6 +13,7 @@ void main() {
     double? hourly,
     double? daily,
     double? monthly,
+    double? rating,
   }) {
     return Listing(
       id: 'l1',
@@ -28,6 +29,10 @@ void main() {
       facilities: const [],
       available: true,
       city: 'Dhaka',
+      rating: rating,
+      reviewCount: rating == null ? 0 : 12,
+      bedrooms: 2,
+      maxGuests: 4,
     );
   }
 
@@ -66,9 +71,8 @@ void main() {
       wrap(listingOf(ListingType.room, hourly: 300, daily: 1500)),
     );
 
-    expect(find.text('from '), findsOneWidget);
-    // Cheapest plan drives the teaser.
-    expect(find.textContaining('/hr/room'), findsOneWidget);
+    // Cheapest plan drives the teaser, prefixed with "from".
+    expect(find.textContaining('from ৳300/hr/room'), findsOneWidget);
   });
 
   testWidgets('longest unit still renders without overflow', (tester) async {
@@ -78,12 +82,12 @@ void main() {
 
     expect(find.textContaining('/mo/full house'), findsOneWidget);
     expect(tester.takeException(), isNull);
-    // Worst case for width: must still stop short of the favourite button.
+    // Worst case for width: the pill must still stop short of the heart.
     final price = tester.getRect(
       find
           .ancestor(
             of: find.textContaining('/mo/full house'),
-            matching: find.byType(Row),
+            matching: find.byType(Container),
           )
           .first,
     );
@@ -101,12 +105,12 @@ void main() {
     await tester.pumpWidget(wrap(listingOf(ListingType.seat, hourly: 500)));
 
     final card = tester.getRect(find.byType(ListingCardModern));
-    // The teaser Row is the pill's content, so its edges are the pill's.
+    // The pill Container is the closest ancestor of the teaser text.
     final price = tester.getRect(
       find
           .ancestor(
             of: find.textContaining('/hr/seat'),
-            matching: find.byType(Row),
+            matching: find.byType(Container),
           )
           .first,
     );
@@ -130,5 +134,65 @@ void main() {
     expect(find.text('Seat'), findsNothing);
     expect(find.text('Room'), findsNothing);
     expect(find.text('Full House'), findsNothing);
+  });
+
+  group('two lines under the photo', () {
+    // The line-2 rate is an exact string ("৳300/hr"); the pill on the photo
+    // carries the unit type too ("৳300/hr/room"), so exact-vs-containing
+    // matching keeps the two apart.
+    testWidgets('headline rate is the hourly one when let by the hour',
+        (tester) async {
+      await tester.pumpWidget(wrap(
+        listingOf(ListingType.room, hourly: 300, daily: 1500, monthly: 35000),
+      ));
+
+      expect(find.text('৳300/hr'), findsOneWidget);
+      // The other offered rates are no longer listed anywhere on the card.
+      expect(find.textContaining('1.5K'), findsNothing);
+      expect(find.textContaining('35K'), findsNothing);
+    });
+
+    testWidgets('falls back to monthly when there is no hourly rate',
+        (tester) async {
+      await tester.pumpWidget(wrap(
+        listingOf(ListingType.room, daily: 1500, monthly: 35000),
+      ));
+
+      expect(find.text('৳35K/mo'), findsOneWidget);
+      // The pill keeps showing the cheapest plan, which here is the daily one.
+      expect(find.textContaining('৳1.5K/day/room'), findsOneWidget);
+    });
+
+    testWidgets('a daily-only listing still shows a rate', (tester) async {
+      await tester.pumpWidget(
+        wrap(listingOf(ListingType.fullHouse, daily: 1500)),
+      );
+
+      expect(find.text('৳1.5K/day'), findsOneWidget);
+    });
+
+    testWidgets('rate shares the line with the rating', (tester) async {
+      await tester.pumpWidget(
+        wrap(listingOf(ListingType.seat, hourly: 500, rating: 4.8)),
+      );
+
+      final rate = tester.getRect(find.text('৳500/hr'));
+      final rating = tester.getRect(find.text('4.8'));
+      // Same row, rating to the right.
+      expect((rate.center.dy - rating.center.dy).abs(), lessThan(4));
+      expect(rating.left, greaterThan(rate.right));
+    });
+
+    testWidgets('city and bed/guest counts are gone', (tester) async {
+      await tester.pumpWidget(
+        wrap(listingOf(ListingType.room, hourly: 300, monthly: 35000)),
+      );
+
+      expect(find.text('Dhaka'), findsNothing);
+      expect(find.byIcon(Icons.bed_outlined), findsNothing);
+      expect(find.byIcon(Icons.person_outline), findsNothing);
+      // Title plus the rate line, and no third line of text.
+      expect(find.text('A place'), findsOneWidget);
+    });
   });
 }

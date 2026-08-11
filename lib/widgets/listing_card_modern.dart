@@ -201,7 +201,10 @@ class _ListingCardModernState extends State<ListingCardModern>
             ),
           ),
 
-          // ── Compact info below, no box — Airbnb style ──
+          // ── Two lines below the photo, nothing more: the name, then the
+          // headline rate with the rating. Secondary rates, bed/guest counts
+          // and the city used to sit here too, which made the grid busy
+          // without helping anyone choose. ──
           Expanded(
             flex: 2,
             child: Padding(
@@ -219,34 +222,35 @@ class _ListingCardModernState extends State<ListingCardModern>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 2),
-                  // Place (with distance when a proximity search ran — shares
-                  // this line: the info area has a fixed height, an extra row
-                  // overflows it) and rating on the second line.
+                  const SizedBox(height: 3),
                   Row(
                     children: [
-                      if (listing.distanceMeters != null) ...[
-                        Icon(Icons.near_me_rounded,
-                            size: 12, color: theme.colorScheme.primary),
-                        const SizedBox(width: 3),
-                      ],
                       Expanded(
-                        child: Text(
-                          listing.distanceMeters != null
-                              ? '${formatDistanceMeters(listing.distanceMeters!)} · ${listing.city ?? listing.address.split(',').first}'
-                              : listing.city ??
-                                  listing.address.split(',').first,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontSize: 11,
-                            color: listing.distanceMeters != null
-                                ? theme.colorScheme.primary
-                                : theme.colorScheme.onSurfaceVariant,
-                            fontWeight: listing.distanceMeters != null
-                                ? FontWeight.w600
-                                : null,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        child: Row(
+                          children: [
+                            Flexible(child: _buildHeadlineRate(theme)),
+                            // Distance only exists after a proximity search,
+                            // and it's the reason those results are ordered
+                            // the way they are — worth the space when present.
+                            if (listing.distanceMeters != null) ...[
+                              const SizedBox(width: 5),
+                              Icon(Icons.near_me_rounded,
+                                  size: 11, color: theme.colorScheme.primary),
+                              const SizedBox(width: 2),
+                              Flexible(
+                                child: Text(
+                                  formatDistanceMeters(listing.distanceMeters!),
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                       if (hasReviews) ...[
@@ -267,28 +271,6 @@ class _ListingCardModernState extends State<ListingCardModern>
                       ],
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  // Secondary rates + quick stats on one muted line.
-                  Row(
-                    children: [
-                      Expanded(child: _buildSecondaryRates(theme)),
-                      if (listing.bedrooms > 0) ...[
-                        _buildStatChip(
-                          Icons.bed_outlined,
-                          '${listing.bedrooms}',
-                          theme,
-                        ),
-                        const SizedBox(width: 6),
-                      ],
-                      if (listing.maxGuests > 0)
-                        _buildStatChip(
-                          Icons.person_outline,
-                          '${listing.maxGuests}',
-                          theme,
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
                 ],
               ),
             ),
@@ -310,90 +292,68 @@ class _ListingCardModernState extends State<ListingCardModern>
     final money = listing.moneyFor(cheapest)!;
     final hasMore = listing.offeredPlans.length > 1;
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.baseline,
-      textBaseline: TextBaseline.alphabetic,
-      children: [
-        if (hasMore)
-          const Text(
-            'from ',
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w500,
-              color: Colors.black54,
+    // One rich Text rather than a Row of three: ellipsis then applies to the
+    // whole phrase. With separate children only the last one could shrink, so
+    // "from ৳1.5K/day/room" overflowed a narrow two-column card by a few
+    // pixels instead of trimming.
+    return Text.rich(
+      TextSpan(
+        children: [
+          if (hasMore)
+            const TextSpan(
+              text: 'from ',
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.w500,
+                color: Colors.black54,
+              ),
+            ),
+          TextSpan(
+            text: money.format(useCompact: true),
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Colors.black87,
             ),
           ),
-        Text(
-          money.format(useCompact: true),
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            color: Colors.black87,
-          ),
-        ),
-        // Flexible so the longest unit ("/mo/full house") shortens rather than
-        // pushing the pill past the photo on a narrow two-column grid.
-        Flexible(
-          child: Text(
-            '/${cheapest.shortUnit}/${listing.type.priceUnit}',
+          TextSpan(
+            text: '/${cheapest.shortUnit}/${listing.type.priceUnit}',
             style: const TextStyle(
               fontSize: 9,
               color: Colors.black54,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
-        ),
-      ],
-    );
-  }
-
-  /// One compact, de-emphasized line listing the non-cheapest offered plans,
-  /// e.g. "৳1.5k/day · ৳35k/mo". Hidden when only one plan is offered.
-  Widget _buildSecondaryRates(ThemeData theme) {
-    final listing = widget.listing;
-    final cheapest = listing.cheapestPlan;
-    final others = listing.offeredPlans.where((p) => p != cheapest).toList();
-    if (others.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    final text = others
-        .map((p) =>
-            '${listing.moneyFor(p)!.format(useCompact: true)}/${p.shortUnit}')
-        .join(' · ');
-
-    return Text(
-      text,
-      style: theme.textTheme.labelSmall?.copyWith(
-        fontSize: 10,
-        color: theme.colorScheme.onSurfaceVariant,
+        ],
       ),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
     );
   }
 
-  Widget _buildStatChip(IconData icon, String label, ThemeData theme) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          icon,
-          size: 12,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-        const SizedBox(width: 2),
-        Text(
-          label,
-          style: theme.textTheme.bodySmall?.copyWith(
-            fontSize: 11,
-            color: theme.colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
+  /// The one rate shown under the photo: the hourly rate, or the monthly rate
+  /// when the listing isn't let by the hour. A listing offering only a daily
+  /// rate falls back to that, so the line is never blank.
+  ///
+  /// Every offered rate used to be listed here; a single figure is easier to
+  /// compare across a grid, and the detail screen shows the full set.
+  Widget _buildHeadlineRate(ThemeData theme) {
+    final listing = widget.listing;
+    final offered = listing.offeredPlans;
+    final plan = offered.contains(DurationType.hourly)
+        ? DurationType.hourly
+        : offered.contains(DurationType.monthly)
+            ? DurationType.monthly
+            : (offered.isEmpty ? null : offered.first);
+    if (plan == null) return const SizedBox.shrink();
+
+    return Text(
+      '${listing.moneyFor(plan)!.format(useCompact: true)}/${plan.shortUnit}',
+      style: theme.textTheme.bodySmall?.copyWith(
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
     );
   }
 
