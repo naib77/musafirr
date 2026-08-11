@@ -49,25 +49,6 @@ class _LandmarkPickerSheetState extends State<_LandmarkPickerSheet> {
   final _controller = TextEditingController();
   final _places = PlacesService();
 
-  /// Google Places types matching each landmark category, so the live
-  /// type-ahead only suggests places of the picked kind — a Medical search
-  /// must suggest hospitals and clinics, not restaurants that share the
-  /// letters. An unmapped category falls back to any establishment.
-  static const _googleTypesByCategory = <String, List<String>>{
-    'hospital': ['hospital', 'doctor', 'health'],
-    'exam_center': ['school', 'secondary_school', 'university'],
-    'university': ['university'],
-    'tourist_spot': [
-      'tourist_attraction',
-      'museum',
-      'park',
-      'zoo',
-      'amusement_park',
-    ],
-    // Business hubs (commercial areas, office districts) have no reliable
-    // Google type — leave unrestricted.
-  };
-
   List<Landmark> _seedResults = [];
   List<PlaceSuggestion> _suggestions = [];
   bool _loading = true;
@@ -114,8 +95,10 @@ class _LandmarkPickerSheetState extends State<_LandmarkPickerSheet> {
 
     final seedFuture =
         widget.repository.searchLandmarks(query: q, type: widget.type);
+    // The category ('hospital', 'exam_center', …) keeps map suggestions to
+    // places of the kind being picked.
     final placesFuture = wantPlaces
-        ? _places.suggest(q, types: _googleTypesByCategory[widget.type])
+        ? _places.suggest(q, category: widget.type)
         : Future.value(const <PlaceSuggestion>[]);
 
     final seeds = await seedFuture;

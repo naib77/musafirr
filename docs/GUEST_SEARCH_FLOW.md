@@ -170,6 +170,47 @@ facilities, and `distance_m` — so the client does no joins.
   (logged via `debugPrint`); the state also stores `error`, but the screen
   currently renders the empty state rather than an error message.
 
+## Landmark suggestions are restricted to the picked category
+
+The landmark picker's live map suggestions come from the `places-search` edge
+function, which takes the **landmark category** (`hospital`, `exam_center`,
+`university`, `tourist_spot`, `business_hub`) — not a list of Google types.
+The category → Google-place-type mapping lives in that function on purpose:
+Android guests run whatever APK they last installed, so mapping fixes must not
+need a client release.
+
+Two lists per category, and they are deliberately different:
+
+| | meaning | limits |
+|---|---|---|
+| `request` | what Google Autocomplete is *asked* to restrict to | ≤ 5 types from place-types Table 1/2 joined by `\|`, **or** exactly one Table 3 filter (`(regions)`, `establishment`) which cannot be mixed with anything — otherwise `INVALID_REQUEST` |
+| `accept` | what a returned prediction must carry to be shown | no limit; may be wider than `request` |
+
+Current mapping (verified against the live API for Bangladesh, Aug 2026):
+
+| Category | request | notes |
+|---|---|---|
+| `hospital` | `hospital\|doctor` | `health` is deliberately excluded — it's a broad Table 2 umbrella that also covers pharmacies (a "FARMECY" leaked in under it) |
+| `exam_center` | `school\|primary_school\|secondary_school\|university` + `library` | BD colleges are typed `university`, not `school` |
+| `university` | `university` | |
+| `tourist_spot` | `tourist_attraction\|museum\|park\|natural_feature\|zoo` | `natural_feature` is essential — Cox's Bazar Sea Beach is *only* that. `accept` additionally allows places of worship, since historic mosques/temples (Sixty Dome Mosque) are often typed only that way |
+| `business_hub` | `(regions)` | business hubs here are **areas** (Motijheel, Gulshan, Karwan Bazar), not businesses, so this asks for localities/sublocalities rather than establishments |
+
+**Two passes, because a narrow filter costs recall.** Google applies the
+request-level type filter over a limited candidate set, so a narrow filter can
+return nothing even when a matching place exists — `lalbagh` finds no
+`tourist_attraction` although Lalbagh Kellah is one, and `karwan` finds no
+region although Karwan Bazar is one. So: pass 1 asks for the category
+(precision, and the only call for a typical query); if it yields nothing,
+pass 2 re-asks unrestricted and keeps only predictions whose own types are in
+`accept`. Recall returns without losing precision — `kfc` under Medical still
+comes back empty.
+
+Curated `landmarks` rows are matched separately by the `search_landmarks` RPC
+and are *not* subject to any of this, which is what keeps un-taggable venues
+reachable: British Council and IDP IELTS carry no educational Google type at
+all, but they are seeded exam centers.
+
 ## Known limitations
 
 1. **Dates/times are not filtered server-side.** `checkIn` / `checkOut` /

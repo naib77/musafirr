@@ -33,13 +33,17 @@ class PlacesService {
 
   /// [establishmentsOnly] limits predictions to POIs (landmark picker); the
   /// main search bar passes false so areas and addresses predict too.
-  /// [types] narrows further to specific Google place types (e.g.
-  /// `['hospital', 'doctor']` for the Medical picker) so only places of that
-  /// category are suggested.
+  ///
+  /// [category] is the landmark category being picked (`hospital`,
+  /// `exam_center`, `university`, `tourist_spot`, `business_hub`) and limits
+  /// suggestions to places of that kind — a Medical search never suggests
+  /// restaurants. Which Google place types each category means is decided by
+  /// the `places-search` function, so it can be corrected without an app
+  /// release; the client only names the category.
   Future<List<PlaceSuggestion>> suggest(
     String query, {
     bool establishmentsOnly = true,
-    List<String>? types,
+    String? category,
   }) async {
     final q = query.trim();
     if (q.length < 2) return const [];
@@ -49,7 +53,7 @@ class PlacesService {
         body: {
           'query': q,
           if (!establishmentsOnly) 'scope': 'all',
-          if (types != null && types.isNotEmpty) 'types': types,
+          if (category != null && category.isNotEmpty) 'category': category,
         },
       );
       final data = res.data;
