@@ -100,6 +100,15 @@ class _ExploreScreenState extends State<ExploreScreen> {
   /// Whether a server-side search is currently driving the results.
   bool get _searchActive => widget.searchState.filters.hasActiveFilters;
 
+  /// Drops the search and returns to the browse feed. Shared by the back
+  /// button, the ✕ inside the search bar, and the system/browser back gesture,
+  /// so all three leave the results the same way.
+  void _clearSearch() {
+    widget.searchState.clearFilters();
+    _searchController.clear();
+    setState(() {});
+  }
+
   List<Listing> get _filteredListings {
     // When a search is active, show its server-side results (already ranked and
     // filtered to available + host_available) — even if empty, so a no-match
@@ -183,6 +192,20 @@ class _ExploreScreenState extends State<ExploreScreen> {
     final theme = Theme.of(context);
     final wide = Responsive.isWide(context);
 
+    // System back / browser back leaves the results instead of leaving the app.
+    // The shell's own PopScope only knows about tabs, and Explore is the first
+    // tab, so without this a back press on a results page exits.
+    return PopScope(
+      canPop: !_searchActive,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_searchActive) _clearSearch();
+      },
+      child: _buildScaffold(context, theme, wide),
+    );
+  }
+
+  Widget _buildScaffold(BuildContext context, ThemeData theme, bool wide) {
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -219,6 +242,23 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   : const EdgeInsets.fromLTRB(16, 10, 16, 8),
               child: Row(
                 children: [
+                  // Leaving the results is a navigation, so it gets the
+                  // affordance guests look for. Only shown once a search is
+                  // running — while browsing there is nothing to go back to.
+                  if (_searchActive) ...[
+                    IconButton(
+                      onPressed: _clearSearch,
+                      icon: const Icon(Icons.arrow_back),
+                      tooltip: 'Back to browsing',
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 40,
+                        minHeight: 40,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
                   Expanded(
                     child: GestureDetector(
                       onTap: _openSearch,
@@ -271,11 +311,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                             ),
                             if (widget.searchState.filters.hasActiveFilters)
                               GestureDetector(
-                                onTap: () {
-                                  widget.searchState.clearFilters();
-                                  _searchController.clear();
-                                  setState(() {});
-                                },
+                                onTap: _clearSearch,
                                 child: Icon(
                                   Icons.close,
                                   size: 18,
