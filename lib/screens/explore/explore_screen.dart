@@ -454,112 +454,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     );
                   }
 
-                  return RefreshIndicator(
-                    onRefresh: _onRefresh,
-                    child: CustomScrollView(
-                      controller: _scrollController,
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      slivers: [
-                        // Where the results are, before the guest scrolls a
-                        // single card — a price pill per stay, Airbnb-style.
-                        // Only for searches: the browse feed is curated rows,
-                        // which have no single area to frame.
-                        if (mappableListings(listings).isNotEmpty)
-                          SliverToBoxAdapter(
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                              child: ListingPriceMap(
-                                listings: listings,
-                                onListingTap: _openListingDetail,
-                                height: wide ? 320 : 240,
-                              ),
-                            ),
-                          ),
-                        // Proximity banner: which ring the results came from,
-                        // or that we fell back to the nearest stays.
-                        if (widget.searchState.matchedRadiusMeters != null ||
-                            widget.searchState.usedNearestFallback)
-                          SliverToBoxAdapter(
-                            child: _ProximityBanner(
-                              count: listings.length,
-                              radiusMeters:
-                                  widget.searchState.matchedRadiusMeters,
-                              usedNearestFallback:
-                                  widget.searchState.usedNearestFallback,
-                              placeLabel: widget.searchState.filters.location,
-                            ),
-                          ),
-                        SliverPadding(
-                          padding: const EdgeInsets.all(16),
-                          sliver: SliverGrid(
-                            // Max-extent so the column count grows with width:
-                            // 2 on phones, 3–4 across the desktop content panel,
-                            // with cards kept a consistent, readable size.
-                            gridDelegate:
-                                const SliverGridDelegateWithMaxCrossAxisExtent(
-                              maxCrossAxisExtent: 300,
-                              mainAxisSpacing: 16,
-                              crossAxisSpacing: 12,
-                              // ~square photo like Airbnb (the photo takes
-                              // 5/7 of the cell height in ListingCardModern).
-                              childAspectRatio: 0.72,
-                            ),
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index) {
-                                final listing = listings[index];
-                                // Staggered entrance; modulo keeps the delay
-                                // small for items revealed far down on scroll.
-                                return FadeSlideIn(
-                                  delay:
-                                      Duration(milliseconds: 45 * (index % 6)),
-                                  child: HoverLift(
-                                    child: ListingCardModern(
-                                      listing: listing,
-                                      isFavorite: widget.favoritesState
-                                          .isFavorite(listing.id),
-                                      onTap: () => _openListingDetail(listing),
-                                      onFavoriteTap: () {
-                                        widget.favoritesState
-                                            .toggleFavorite(listing.id);
-                                      },
-                                    ),
-                                  ),
-                                );
-                              },
-                              childCount: listings.length,
-                            ),
-                          ),
-                        ),
-                        // Loading indicator or end message
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Center(
-                              child: widget.repository.isLoadingListings
-                                  ? const SizedBox(
-                                      height: 32,
-                                      width: 32,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : !widget.repository.hasMoreListings &&
-                                          listings.isNotEmpty
-                                      ? Text(
-                                          'No more listings',
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                            color: theme
-                                                .colorScheme.onSurfaceVariant,
-                                          ),
-                                        )
-                                      : const SizedBox.shrink(),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
+                  return _buildSearchResults(listings, theme, wide);
                 },
               ),
             ),
@@ -567,6 +462,199 @@ class _ExploreScreenState extends State<ExploreScreen> {
         ),
       ),
     );
+  }
+
+  /// Search results, laid out around the map.
+  ///
+  /// On a phone the map fills the area and the results ride over it in a
+  /// draggable sheet (Airbnb's pattern): the map is the context, the sheet is
+  /// the answer, and the guest chooses how much of each to see. On a wide
+  /// screen a sheet over a 1400px map reads badly, so the map stays a banner
+  /// above the grid. With no coordinates anywhere there is nothing to put
+  /// behind a sheet, so the grid stands alone.
+  Widget _buildSearchResults(
+    List<Listing> listings,
+    ThemeData theme,
+    bool wide,
+  ) {
+    final hasMap = mappableListings(listings).isNotEmpty;
+
+    if (!hasMap) {
+      return RefreshIndicator(
+        onRefresh: _onRefresh,
+        child: CustomScrollView(
+          controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: _resultSlivers(listings, theme),
+        ),
+      );
+    }
+
+    if (wide) {
+      return RefreshIndicator(
+        onRefresh: _onRefresh,
+        child: CustomScrollView(
+          controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: ListingPriceMap(
+                  listings: listings,
+                  onListingTap: _openListingDetail,
+                  height: 320,
+                ),
+              ),
+            ),
+            ..._resultSlivers(listings, theme),
+          ],
+        ),
+      );
+    }
+
+    return Stack(
+      children: [
+        // Full-bleed and fully interactive: with the sheet handling the list,
+        // nothing competes with the map for drags any more.
+        Positioned.fill(
+          child: ListingPriceMap(
+            listings: listings,
+            onListingTap: _openListingDetail,
+            height: null,
+            interactive: true,
+          ),
+        ),
+        DraggableScrollableSheet(
+          initialChildSize: 0.45,
+          minChildSize: 0.15,
+          maxChildSize: 0.95,
+          // Rests at a few sensible heights instead of wherever the finger
+          // stopped: mostly-map, half-and-half, or mostly-list.
+          snap: true,
+          snapSizes: const [0.15, 0.45, 0.95],
+          builder: (context, sheetController) {
+            return DecoratedBox(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(20),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.16),
+                    blurRadius: 16,
+                    offset: const Offset(0, -4),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  // Grab handle — the only cue that the sheet moves.
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.outlineVariant,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    // No RefreshIndicator here: pulling down is how the sheet
+                    // is collapsed, and search results come from a single
+                    // query that a pull could not refresh anyway.
+                    child: CustomScrollView(
+                      controller: sheetController,
+                      slivers: _resultSlivers(listings, theme),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  /// The result content itself — proximity banner, card grid, footer — shared
+  /// by every layout above so they can't drift apart.
+  List<Widget> _resultSlivers(List<Listing> listings, ThemeData theme) {
+    return [
+      // Which radius ring the results came from, or that we fell back to the
+      // nearest stays.
+      if (widget.searchState.matchedRadiusMeters != null ||
+          widget.searchState.usedNearestFallback)
+        SliverToBoxAdapter(
+          child: _ProximityBanner(
+            count: listings.length,
+            radiusMeters: widget.searchState.matchedRadiusMeters,
+            usedNearestFallback: widget.searchState.usedNearestFallback,
+            placeLabel: widget.searchState.filters.location,
+          ),
+        ),
+      SliverPadding(
+        padding: const EdgeInsets.all(16),
+        sliver: SliverGrid(
+          // Max-extent so the column count grows with width: 2 on phones,
+          // 3–4 across the desktop content panel, with cards kept a
+          // consistent, readable size.
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 300,
+            mainAxisSpacing: 16,
+            crossAxisSpacing: 12,
+            // ~square photo like Airbnb (the photo takes 5/7 of the cell
+            // height in ListingCardModern).
+            childAspectRatio: 0.72,
+          ),
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final listing = listings[index];
+              // Staggered entrance; modulo keeps the delay small for items
+              // revealed far down on scroll.
+              return FadeSlideIn(
+                delay: Duration(milliseconds: 45 * (index % 6)),
+                child: HoverLift(
+                  child: ListingCardModern(
+                    listing: listing,
+                    isFavorite: widget.favoritesState.isFavorite(listing.id),
+                    onTap: () => _openListingDetail(listing),
+                    onFavoriteTap: () {
+                      widget.favoritesState.toggleFavorite(listing.id);
+                    },
+                  ),
+                ),
+              );
+            },
+            childCount: listings.length,
+          ),
+        ),
+      ),
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Center(
+            child: widget.repository.isLoadingListings
+                ? const SizedBox(
+                    height: 32,
+                    width: 32,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : !widget.repository.hasMoreListings && listings.isNotEmpty
+                    ? Text(
+                        'No more listings',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+          ),
+        ),
+      ),
+    ];
   }
 
   /// The city most of these listings are in, used to name the first curated
