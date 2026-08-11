@@ -4,9 +4,13 @@ import 'package:musafir/models/listing.dart';
 import 'package:musafir/models/listing_type.dart';
 import 'package:musafir/widgets/listing_card_modern.dart';
 
-/// The Explore card shows the listing type as part of the price
-/// ("from ৳500/hr/seat") and deliberately carries NO coloured type badge —
-/// a badge on every card made the grid noisy.
+/// The Explore card carries the listing type (plus "Guest favorite" when
+/// earned) on the photo, and up to two rates with the rating underneath.
+/// A rate is never shown in both places.
+///
+/// Positions are only ever asserted *relative to each other*: the test font
+/// draws every glyph as a fixed-width square, so text boxes measure far wider
+/// here than on a device and edge-relative assertions would be meaningless.
 void main() {
   Listing listingOf(
     ListingType type, {
@@ -14,6 +18,8 @@ void main() {
     double? daily,
     double? monthly,
     double? rating,
+    int reviewCount = 0,
+    double? distanceMeters,
   }) {
     return Listing(
       id: 'l1',
@@ -30,17 +36,18 @@ void main() {
       available: true,
       city: 'Dhaka',
       rating: rating,
-      reviewCount: rating == null ? 0 : 12,
+      reviewCount: reviewCount,
       bedrooms: 2,
       maxGuests: 4,
+      distanceMeters: distanceMeters,
     );
   }
 
   Widget wrap(Listing listing) {
     return MaterialApp(
       home: Scaffold(
-        // A realistic two-column grid cell, so a long unit would have to fit
-        // the same width it does on a phone.
+        // A realistic two-column grid cell, so long labels have to fit the
+        // same width they do on a phone.
         body: Center(
           child: SizedBox(
             width: 160,
@@ -57,113 +64,94 @@ void main() {
     );
   }
 
-  testWidgets('price teaser names the unit sold: hourly seat', (tester) async {
-    await tester.pumpWidget(wrap(listingOf(ListingType.seat, hourly: 500)));
+  group('photo badge', () {
+    testWidgets('names the listing type', (tester) async {
+      await tester.pumpWidget(wrap(listingOf(ListingType.room, hourly: 300)));
 
-    expect(find.textContaining('/hr/seat'), findsOneWidget);
-    // Single plan offered → no "from" prefix.
-    expect(find.textContaining('from'), findsNothing);
-  });
+      expect(find.textContaining('Room'), findsOneWidget);
+      // Exactly once on the whole card: the rate used to appear both on the
+      // photo and under it, which is what this badge replaced.
+      expect(find.textContaining('৳300'), findsOneWidget);
+    });
 
-  testWidgets('shows "from" only when several plans are offered',
-      (tester) async {
-    await tester.pumpWidget(
-      wrap(listingOf(ListingType.room, hourly: 300, daily: 1500)),
-    );
+    testWidgets('adds "Guest favorite" only when earned', (tester) async {
+      await tester.pumpWidget(wrap(
+        listingOf(ListingType.room, hourly: 300, rating: 4.9, reviewCount: 20),
+      ));
 
-    // Cheapest plan drives the teaser, prefixed with "from".
-    expect(find.textContaining('from ৳300/hr/room'), findsOneWidget);
-  });
+      expect(find.textContaining('Guest favorite'), findsOneWidget);
+      expect(find.textContaining('Room'), findsOneWidget);
+    });
 
-  testWidgets('longest unit still renders without overflow', (tester) async {
-    await tester.pumpWidget(
-      wrap(listingOf(ListingType.fullHouse, monthly: 45000)),
-    );
+    testWidgets('a great rating from too few reviews does not earn it',
+        (tester) async {
+      await tester.pumpWidget(wrap(
+        listingOf(ListingType.room, hourly: 300, rating: 5.0, reviewCount: 2),
+      ));
 
-    expect(find.textContaining('/mo/full house'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-    // Worst case for width: the pill must still stop short of the heart.
-    final price = tester.getRect(
-      find
-          .ancestor(
-            of: find.textContaining('/mo/full house'),
-            matching: find.byType(Container),
-          )
-          .first,
-    );
-    expect(
-        price.right,
-        lessThan(tester
-            .getRect(
-              find.byIcon(Icons.favorite_border),
+      expect(find.textContaining('Guest favorite'), findsNothing);
+      expect(find.textContaining('Room'), findsOneWidget);
+    });
+
+    testWidgets('many reviews at a mediocre rating do not earn it',
+        (tester) async {
+      await tester.pumpWidget(wrap(
+        listingOf(ListingType.seat, hourly: 300, rating: 4.4, reviewCount: 90),
+      ));
+
+      expect(find.textContaining('Guest favorite'), findsNothing);
+    });
+
+    testWidgets('longest label still clears the favourite button',
+        (tester) async {
+      await tester.pumpWidget(wrap(listingOf(
+        ListingType.fullHouse,
+        monthly: 45000,
+        rating: 4.9,
+        reviewCount: 30,
+      )));
+
+      expect(tester.takeException(), isNull);
+      final badge = tester.getRect(
+        find
+            .ancestor(
+              of: find.textContaining('Guest favorite'),
+              matching: find.byType(Container),
             )
-            .left));
-  });
-
-  testWidgets('price sits top-left, above the status pill', (tester) async {
-    // A listing with no reviews renders the "New" pill, so both are on screen.
-    await tester.pumpWidget(wrap(listingOf(ListingType.seat, hourly: 500)));
-
-    final card = tester.getRect(find.byType(ListingCardModern));
-    // The pill Container is the closest ancestor of the teaser text.
-    final price = tester.getRect(
-      find
-          .ancestor(
-            of: find.textContaining('/hr/seat'),
-            matching: find.byType(Container),
-          )
-          .first,
-    );
-    final heart = tester.getRect(find.byIcon(Icons.favorite_border));
-    final status = tester.getRect(find.text('New'));
-
-    // Upper portion of the photo, not the bottom edge it used to sit on.
-    expect(price.top, lessThan(card.center.dy));
-    expect(price.top - card.top, lessThan(30));
-    // Hugging the left edge, and never running under the favourite button.
-    expect(price.left - card.left, lessThan(20));
-    expect(price.right, lessThan(heart.left));
-    // The status pill moved out of the way, below the price.
-    expect(status.top, greaterThan(price.bottom));
-  });
-
-  testWidgets('no coloured listing-type badge on the card', (tester) async {
-    await tester.pumpWidget(wrap(listingOf(ListingType.seat, hourly: 500)));
-
-    // The badge used to render the capitalised title ("Seat") on the photo.
-    expect(find.text('Seat'), findsNothing);
-    expect(find.text('Room'), findsNothing);
-    expect(find.text('Full House'), findsNothing);
+            .first,
+      );
+      final heart = tester.getRect(find.byIcon(Icons.favorite_border));
+      expect(badge.right, lessThan(heart.left));
+    });
   });
 
   group('two lines under the photo', () {
-    // The line-2 rate is an exact string ("৳300/hr"); the pill on the photo
-    // carries the unit type too ("৳300/hr/room"), so exact-vs-containing
-    // matching keeps the two apart.
-    testWidgets('headline rate is the hourly one when let by the hour',
-        (tester) async {
+    testWidgets('all three rates offered → hourly and daily', (tester) async {
       await tester.pumpWidget(wrap(
         listingOf(ListingType.room, hourly: 300, daily: 1500, monthly: 35000),
       ));
 
-      expect(find.text('৳300/hr'), findsOneWidget);
-      // The other offered rates are no longer listed anywhere on the card.
-      expect(find.textContaining('1.5K'), findsNothing);
+      expect(find.text('৳300/hr · ৳1.5K/day'), findsOneWidget);
       expect(find.textContaining('35K'), findsNothing);
     });
 
-    testWidgets('falls back to monthly when there is no hourly rate',
-        (tester) async {
+    testWidgets('no daily → hourly and monthly', (tester) async {
+      await tester.pumpWidget(wrap(
+        listingOf(ListingType.room, hourly: 300, monthly: 35000),
+      ));
+
+      expect(find.text('৳300/hr · ৳35K/mo'), findsOneWidget);
+    });
+
+    testWidgets('no hourly → daily and monthly', (tester) async {
       await tester.pumpWidget(wrap(
         listingOf(ListingType.room, daily: 1500, monthly: 35000),
       ));
 
-      expect(find.text('৳35K/mo'), findsOneWidget);
-      // The pill keeps showing the cheapest plan, which here is the daily one.
-      expect(find.textContaining('৳1.5K/day/room'), findsOneWidget);
+      expect(find.text('৳1.5K/day · ৳35K/mo'), findsOneWidget);
     });
 
-    testWidgets('a daily-only listing still shows a rate', (tester) async {
+    testWidgets('a single offered rate shows alone', (tester) async {
       await tester.pumpWidget(
         wrap(listingOf(ListingType.fullHouse, daily: 1500)),
       );
@@ -171,23 +159,38 @@ void main() {
       expect(find.text('৳1.5K/day'), findsOneWidget);
     });
 
-    testWidgets('rate shares the line with the rating', (tester) async {
-      await tester.pumpWidget(
-        wrap(listingOf(ListingType.seat, hourly: 500, rating: 4.8)),
-      );
+    testWidgets('rates sit right beside the rating', (tester) async {
+      await tester.pumpWidget(wrap(listingOf(
+        ListingType.seat,
+        hourly: 500,
+        daily: 3000,
+        rating: 4.8,
+        reviewCount: 30,
+      )));
 
-      final rate = tester.getRect(find.text('৳500/hr'));
+      final rates = tester.getRect(find.text('৳500/hr · ৳3K/day'));
       final star = tester.getRect(find.byIcon(Icons.star_rounded));
       final rating = tester.getRect(find.text('4.8'));
-      // Same row, rating to the right of the rate.
-      expect((rate.center.dy - rating.center.dy).abs(), lessThan(4));
-      expect(rating.left, greaterThan(rate.right));
-      // Directly beside the rate, not pushed to the far edge by a stretched
-      // gap. Only the spacing is asserted, never absolute positions: the test
-      // font sizes every glyph as a fixed square, so text boxes here are much
-      // wider than on a device.
-      expect(star.left - rate.right, lessThan(10));
+
+      expect((rates.center.dy - rating.center.dy).abs(), lessThan(4));
+      expect(star.left - rates.right, lessThan(10));
       expect(rating.left - star.right, lessThan(6));
+    });
+
+    testWidgets('a proximity search trades the second rate for the distance',
+        (tester) async {
+      await tester.pumpWidget(wrap(listingOf(
+        ListingType.room,
+        hourly: 300,
+        daily: 1500,
+        distanceMeters: 2300,
+      )));
+
+      // One rate only, so rate + distance + rating still fit one line.
+      expect(find.text('৳300/hr'), findsOneWidget);
+      expect(find.textContaining('1.5K'), findsNothing);
+      expect(find.byIcon(Icons.near_me_rounded), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('city and bed/guest counts are gone', (tester) async {
@@ -198,7 +201,6 @@ void main() {
       expect(find.text('Dhaka'), findsNothing);
       expect(find.byIcon(Icons.bed_outlined), findsNothing);
       expect(find.byIcon(Icons.person_outline), findsNothing);
-      // Title plus the rate line, and no third line of text.
       expect(find.text('A place'), findsOneWidget);
     });
   });

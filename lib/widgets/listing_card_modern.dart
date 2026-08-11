@@ -118,10 +118,13 @@ class _ListingCardModernState extends State<ListingCardModern>
                       ),
                     ),
 
-                    // Price pill, top-left: the first thing read on the card.
-                    // Stops short of the favourite button so a long unit
-                    // ("/mo/full house") ellipsizes inside the pill instead of
-                    // running under the heart.
+                    // What this listing is, top-left — prefixed with "Guest
+                    // favorite" when it has genuinely earned it. Rates are not
+                    // shown on the photo: they live under it, where two of
+                    // them can be compared.
+                    // Stops short of the favourite button so a long label
+                    // ("Guest favorite | Full House") ellipsizes inside the
+                    // pill instead of running under the heart.
                     Positioned(
                       top: 6,
                       left: 6,
@@ -137,7 +140,7 @@ class _ListingCardModernState extends State<ListingCardModern>
                             color: Colors.white.withValues(alpha: 0.95),
                             borderRadius: BorderRadius.circular(20),
                           ),
-                          child: _buildPriceTeaser(theme),
+                          child: _buildTypeBadge(),
                         ),
                       ),
                     ),
@@ -229,7 +232,12 @@ class _ListingCardModernState extends State<ListingCardModern>
                   // on the far edge.
                   Row(
                     children: [
-                      Flexible(child: _buildHeadlineRate(theme)),
+                      Flexible(
+                        child: _buildRates(
+                          theme,
+                          compact: listing.distanceMeters != null,
+                        ),
+                      ),
                       // Distance only exists after a proximity search, and
                       // it's the reason those results are ordered the way they
                       // are — worth the space when present.
@@ -278,47 +286,33 @@ class _ListingCardModernState extends State<ListingCardModern>
     );
   }
 
-  /// Compact "from ৳X/hr/seat" teaser for the cheapest offered plan: the rate,
-  /// the time unit, and what you get for it. "from" only appears when more
-  /// than one plan is offered.
-  Widget _buildPriceTeaser(ThemeData theme) {
+  /// The photo pill: what you're booking ("Room"), with a "Guest favorite"
+  /// prefix only when the listing has actually earned it.
+  ///
+  /// One rich Text rather than a Row of parts, so the ellipsis applies to the
+  /// whole phrase — with separate children only the last one can shrink, which
+  /// overflows a narrow two-column card by a few pixels instead of trimming.
+  Widget _buildTypeBadge() {
     final listing = widget.listing;
-    final cheapest = listing.cheapestPlan;
-    if (cheapest == null) {
-      return const SizedBox.shrink();
-    }
-    final money = listing.moneyFor(cheapest)!;
-    final hasMore = listing.offeredPlans.length > 1;
 
-    // One rich Text rather than a Row of three: ellipsis then applies to the
-    // whole phrase. With separate children only the last one could shrink, so
-    // "from ৳1.5K/day/room" overflowed a narrow two-column card by a few
-    // pixels instead of trimming.
     return Text.rich(
       TextSpan(
         children: [
-          if (hasMore)
+          if (listing.isGuestFavorite)
             const TextSpan(
-              text: 'from ',
+              text: 'Guest favorite  |  ',
               style: TextStyle(
                 fontSize: 9,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w700,
                 color: Colors.black54,
               ),
             ),
           TextSpan(
-            text: money.format(useCompact: true),
+            text: listing.type.title,
             style: const TextStyle(
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: FontWeight.w700,
               color: Colors.black87,
-            ),
-          ),
-          TextSpan(
-            text: '/${cheapest.shortUnit}/${listing.type.priceUnit}',
-            style: const TextStyle(
-              fontSize: 9,
-              color: Colors.black54,
             ),
           ),
         ],
@@ -328,24 +322,26 @@ class _ListingCardModernState extends State<ListingCardModern>
     );
   }
 
-  /// The one rate shown under the photo: the hourly rate, or the monthly rate
-  /// when the listing isn't let by the hour. A listing offering only a daily
-  /// rate falls back to that, so the line is never blank.
+  /// Up to two rates, so a guest can weigh a short stay against a longer one
+  /// without opening the listing: "৳500/hr · ৳3K/day". See
+  /// [Listing.headlinePlans] for which two.
   ///
-  /// Every offered rate used to be listed here; a single figure is easier to
-  /// compare across a grid, and the detail screen shows the full set.
-  Widget _buildHeadlineRate(ThemeData theme) {
+  /// A proximity search adds a distance to this line, and three figures plus a
+  /// rating do not fit a grid cell — so one rate is dropped there rather than
+  /// letting everything ellipsize into nonsense.
+  Widget _buildRates(ThemeData theme, {required bool compact}) {
     final listing = widget.listing;
-    final offered = listing.offeredPlans;
-    final plan = offered.contains(DurationType.hourly)
-        ? DurationType.hourly
-        : offered.contains(DurationType.monthly)
-            ? DurationType.monthly
-            : (offered.isEmpty ? null : offered.first);
-    if (plan == null) return const SizedBox.shrink();
+    var plans = listing.headlinePlans;
+    if (compact && plans.length > 1) plans = plans.take(1).toList();
+    if (plans.isEmpty) return const SizedBox.shrink();
+
+    final text = plans
+        .map((p) =>
+            '${listing.moneyFor(p)!.format(useCompact: true)}/${p.shortUnit}')
+        .join(' · ');
 
     return Text(
-      '${listing.moneyFor(plan)!.format(useCompact: true)}/${plan.shortUnit}',
+      text,
       style: theme.textTheme.bodySmall?.copyWith(
         fontSize: 12,
         fontWeight: FontWeight.w700,
