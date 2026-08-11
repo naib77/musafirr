@@ -70,10 +70,11 @@ void main() {
     await tester.pump();
   }
 
-  Future<Set<Marker>> pumpMap(
+  Future<GoogleMap> pumpMapWidget(
     WidgetTester tester,
-    List<Listing> listings,
-  ) async {
+    List<Listing> listings, {
+    bool interactive = false,
+  }) async {
     await mountAndSettle(
       tester,
       MaterialApp(
@@ -81,11 +82,20 @@ void main() {
           body: ListingPriceMap(
             listings: listings,
             onListingTap: (_) {},
+            height: interactive ? null : 240,
+            interactive: interactive,
           ),
         ),
       ),
     );
-    return tester.widget<GoogleMap>(find.byType(GoogleMap)).markers;
+    return tester.widget<GoogleMap>(find.byType(GoogleMap));
+  }
+
+  Future<Set<Marker>> pumpMap(
+    WidgetTester tester,
+    List<Listing> listings,
+  ) async {
+    return (await pumpMapWidget(tester, listings)).markers;
   }
 
   testWidgets('a price marker is placed for every listing', (tester) async {
@@ -100,6 +110,41 @@ void main() {
       expect(marker.icon, isNot(BitmapDescriptor.defaultMarker),
           reason: 'should be a painted price pill, not a stock pin');
     }
+  });
+
+  group('the guest can always zoom', () {
+    // The plugin collapses `scrollGesturesEnabled: false` into
+    // `gestureHandling: none` on web, which kills EVERY gesture — zoom
+    // included — unless webGestureHandling is passed explicitly. That is how
+    // zoom came to be dead on the results map, so both halves are asserted
+    // here.
+    testWidgets('inline map keeps zoom available', (tester) async {
+      final map = await pumpMapWidget(
+        tester,
+        [listingOf('a', 23.8103, 90.4125, 150)],
+      );
+
+      expect(map.zoomGesturesEnabled, isTrue);
+      expect(map.zoomControlsEnabled, isTrue,
+          reason: 'the +/- control is the only mouse-only way to zoom');
+      expect(map.webGestureHandling, WebGestureHandling.cooperative,
+          reason: 'must be set explicitly, or web disables all gestures');
+      expect(map.webGestureHandling, isNot(WebGestureHandling.none));
+      // Panning stays off inline so the results list can still be scrolled.
+      expect(map.scrollGesturesEnabled, isFalse);
+    });
+
+    testWidgets('full-screen map takes every gesture', (tester) async {
+      final map = await pumpMapWidget(
+        tester,
+        [listingOf('a', 23.8103, 90.4125, 150)],
+        interactive: true,
+      );
+
+      expect(map.scrollGesturesEnabled, isTrue);
+      expect(map.zoomGesturesEnabled, isTrue);
+      expect(map.webGestureHandling, WebGestureHandling.greedy);
+    });
   });
 
   // Not covered here: markers refreshing when the result set changes while the

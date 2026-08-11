@@ -285,9 +285,24 @@ class _ListingPriceMapState extends State<ListingPriceMap> {
         },
         markers: _markers,
         myLocationButtonEnabled: false,
-        zoomControlsEnabled: false,
         mapToolbarEnabled: false,
+        // Zoom must always be possible. The +/- control is the only way to
+        // zoom with a plain mouse once wheel-zoom is held back below, and it
+        // costs nothing on touch.
+        zoomControlsEnabled: true,
+        // Mobile: an inline map that pans would swallow the results list's
+        // vertical drags. Pinch-zoom is a separate flag and stays on.
         scrollGesturesEnabled: widget.interactive,
+        // Web reads its own flag and ignores the one above. `cooperative`
+        // is the behaviour wanted inline: the page keeps scrolling, while
+        // ctrl/⌘+wheel and two-finger gestures zoom the map. Passing this
+        // explicitly is also the actual fix for zoom being dead — the plugin
+        // collapses `scrollGesturesEnabled: false` into
+        // `gestureHandling: none`, which disables *every* gesture including
+        // zoom, unless webGestureHandling says otherwise.
+        webGestureHandling: widget.interactive
+            ? WebGestureHandling.greedy
+            : WebGestureHandling.cooperative,
       ),
     );
 
