@@ -15,7 +15,7 @@ import '../state/notification_state.dart';
 import '../state/search_state.dart';
 import '../state/shell_nav_state.dart';
 import '../widgets/app_page_header.dart';
-import '../widgets/guest_host_switcher.dart';
+import '../widgets/modern_banner.dart';
 import '../widgets/notification_bell.dart';
 import '../widgets/review_prompt_handler.dart';
 import 'explore/explore_screen.dart';
@@ -124,6 +124,30 @@ class _MainShellState extends State<MainShell> {
     return pendingRequests.isNotEmpty;
   }
 
+  /// Flips between the guest and host portals. With the top tab strip gone,
+  /// this is only reachable from the Profile tab ("Switch to hosting" /
+  /// "Switch to travelling"). Lands on the target portal's first tab and
+  /// confirms with a toast. [AppModeStateNotifier] persists the choice
+  /// per-user, so the app reopens in whichever portal was used last.
+  void _switchMode(AppMode target) {
+    if (_appModeState.mode == target) return;
+    setState(() {
+      if (target == AppMode.host) {
+        _hostTabIndex = 0;
+      } else {
+        _guestTabIndex = 0;
+      }
+    });
+    _appModeState.setMode(target);
+    ModernBanner.showSuccess(
+      context,
+      target == AppMode.host
+          ? 'Switched to hosting — manage your listings & bookings.'
+          : 'Switched to travelling — find & book stays.',
+      duration: const Duration(seconds: 2),
+    );
+  }
+
   void _openNotificationCenter() {
     if (widget.notificationState == null) return;
     if (widget.bookingLifecycleService == null) return;
@@ -170,30 +194,20 @@ class _MainShellState extends State<MainShell> {
 
         final isGuest = _appModeState.isGuestMode || !_isLoggedIn;
 
-        // Guest/Host switcher (only when logged in). Shared by both the mobile
-        // (bottom-bar) and desktop (side-rail) framings below.
-        final Widget? switcher = _isLoggedIn
-            ? GuestHostSwitcher(
-                mode: _appModeState.mode,
-                onModeChanged: (mode) => _appModeState.setMode(mode),
-                hasHostNotification: _hasHostNotification,
-              )
-            : null;
+        // The shell is the single top-inset consumer (the removed Guest/Host
+        // tab strip used to play this role): a surface-coloured shim spans the
+        // status bar, and the inset is stripped from everything below it so
+        // the per-tab slim headers render flush underneath. Any descendant
+        // SafeArea then sees a zero top inset and adds nothing.
+        final Widget statusBarShim = Container(
+          color: AppColors.surface,
+          height: MediaQuery.paddingOf(context).top,
+        );
 
         // Main content.
-        //
-        // When the GuestHostSwitcher is shown it already consumes the top
-        // safe-area inset (status bar). Content below it must NOT consume that
-        // inset again — a sibling lower in the Column still sees the full
-        // MediaQuery.padding.top, so any descendant SafeArea/AppBar would inject
-        // the status-bar height a second time (invisible on web where the inset
-        // is 0, a large gap on Android). Strip the top inset here so descendants
-        // match the slim-header tabs that render directly below the switcher.
-        // When logged out there is no switcher, so the inset is left intact for
-        // the child's own SafeArea to handle.
         final Widget content = MediaQuery.removePadding(
           context: context,
-          removeTop: _isLoggedIn,
+          removeTop: true,
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
             child: isGuest ? _buildGuestContent() : _buildHostContent(),
@@ -220,11 +234,7 @@ class _MainShellState extends State<MainShell> {
                 Expanded(
                   child: Column(
                     children: [
-                      if (switcher != null)
-                        ResponsiveCenter(
-                          maxWidth: Responsive.contentMaxWidth,
-                          child: switcher,
-                        ),
+                      statusBarShim,
                       Expanded(child: content),
                     ],
                   ),
@@ -237,7 +247,7 @@ class _MainShellState extends State<MainShell> {
           scaffold = Scaffold(
             body: Column(
               children: [
-                if (switcher != null) switcher,
+                statusBarShim,
                 Expanded(child: content),
               ],
             ),
@@ -576,7 +586,8 @@ class _MainShellState extends State<MainShell> {
               repository: widget.repository,
               notificationState: widget.notificationState,
               isHostContext: false,
-              onSwitchToHosting: () => _appModeState.setMode(AppMode.host),
+              onSwitchToHosting: () => _switchMode(AppMode.host),
+              hostHasPendingRequests: _hasHostNotification,
             ),
           ),
         ],
@@ -711,6 +722,7 @@ class _MainShellState extends State<MainShell> {
               repository: widget.repository,
               notificationState: widget.notificationState,
               isHostContext: true,
+              onSwitchToTravelling: () => _switchMode(AppMode.guest),
             ),
           ),
         ],
@@ -731,8 +743,8 @@ class _MainShellState extends State<MainShell> {
   // ============================================================
 
   /// The unified page header shown at the top of every primary tab. Sits
-  /// directly below the Guest/Host switcher (which is the single top-inset
-  /// consumer, so this adds no SafeArea of its own).
+  /// directly below the shell's status-bar shim (which is the single
+  /// top-inset consumer, so this adds no SafeArea of its own).
   ///
   /// Messages has its own bottom-navigation tab (with unread badge), so the
   /// header carries no chat shortcut.
