@@ -72,11 +72,31 @@ class _ListingPriceMapState extends State<ListingPriceMap> {
   String? _selectedId;
   List<Listing> _mappable = const [];
 
+  /// Device pixel ratio the pills were painted at. Read in
+  /// [didChangeDependencies], never in [initState]: MediaQuery is an inherited
+  /// widget, and reading one during initState throws — which silently left the
+  /// map with no markers at all.
+  double _dpr = 0;
+
+  bool _fittedOnce = false;
+
   @override
   void initState() {
     super.initState();
     _mappable = mappableListings(widget.listings);
-    _rebuildMarkers();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 2.0;
+    if (dpr != _dpr) {
+      // Also covers a window dragged to a screen of a different density: the
+      // cached pills were rasterised for the old ratio.
+      _dpr = dpr;
+      _pills.clear();
+      _rebuildMarkers();
+    }
   }
 
   @override
@@ -109,7 +129,7 @@ class _ListingPriceMapState extends State<ListingPriceMap> {
   }
 
   Future<void> _rebuildMarkers() async {
-    final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 2.0;
+    final dpr = _dpr == 0 ? 2.0 : _dpr;
     final markers = <Marker>{};
 
     for (final listing in _mappable) {
@@ -192,8 +212,12 @@ class _ListingPriceMapState extends State<ListingPriceMap> {
           (height * dpr).ceil(),
         );
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    // A renderer that can't hand back PNG bytes shouldn't cost the guest every
+    // marker: fall back to a stock pin so the stays are still on the map.
+    if (bytes == null) return BitmapDescriptor.defaultMarker;
+
     final descriptor = BytesMapBitmap(
-      bytes!.buffer.asUint8List(),
+      bytes.buffer.asUint8List(),
       imagePixelRatio: dpr,
     );
     _pills[key] = descriptor;
@@ -248,6 +272,15 @@ class _ListingPriceMapState extends State<ListingPriceMap> {
         onMapCreated: (controller) {
           _controller = controller;
           _mapCreated = true;
+          _fitToListings();
+        },
+        // On web the map is sometimes still sizing itself when onMapCreated
+        // fires, and a bounds fit applied then lands on the wrong zoom. Fit
+        // once more when the camera first settles; after that this is inert,
+        // so panning the full-screen map is never yanked back.
+        onCameraIdle: () {
+          if (_fittedOnce) return;
+          _fittedOnce = true;
           _fitToListings();
         },
         markers: _markers,
