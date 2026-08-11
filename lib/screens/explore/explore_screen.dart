@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/utils/responsive.dart';
 import '../../models/listing.dart';
@@ -25,6 +26,7 @@ import '../../widgets/landmark_picker_sheet.dart';
 import '../../widgets/purpose_scroll.dart';
 import '../../widgets/hover_lift.dart';
 import '../../widgets/listing_card_modern.dart';
+import '../../widgets/listing_card_wide.dart';
 import '../../widgets/listing_price_map.dart';
 import '../../widgets/notification_bell.dart';
 import '../../widgets/results_map_sheet.dart';
@@ -486,7 +488,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
         child: CustomScrollView(
           controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
-          slivers: _resultSlivers(listings, theme),
+          slivers: _resultSlivers(listings, theme, singleColumn: !wide),
         ),
       );
     }
@@ -508,7 +510,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 ),
               ),
             ),
-            ..._resultSlivers(listings, theme),
+            ..._resultSlivers(listings, theme, singleColumn: false),
           ],
         ),
       );
@@ -523,13 +525,46 @@ class _ExploreScreenState extends State<ExploreScreen> {
         height: null,
         interactive: true,
       ),
-      slivers: _resultSlivers(listings, theme),
+      slivers: _resultSlivers(listings, theme, singleColumn: true),
     );
   }
 
-  /// The result content itself — proximity banner, card grid, footer — shared
-  /// by every layout above so they can't drift apart.
-  List<Widget> _resultSlivers(List<Listing> listings, ThemeData theme) {
+  /// The dates the guest searched for, for the result rows to be priced
+  /// against: "21 – 23 Aug", "2 Sep – 4 Oct", or "21 Aug, 10:00 AM – 2:00 PM"
+  /// for an hourly search. Null when no dates were picked, in which case the
+  /// row simply doesn't claim any.
+  String? _stayLabel(BuildContext context) {
+    final filters = widget.searchState.filters;
+    if (!filters.hasDateSelection) return null;
+
+    if (filters.dateMode == SearchDateMode.singleDateWithTime) {
+      final day = DateFormat('d MMM').format(filters.singleDate!);
+      final from = filters.startTime!.format(context);
+      final to = filters.endTime!.format(context);
+      return '$day, $from – $to';
+    }
+
+    final checkIn = filters.checkIn!;
+    final checkOut = filters.checkOut!;
+    // Same month reads better without repeating it: "21 – 23 Aug".
+    final sameMonth =
+        checkIn.year == checkOut.year && checkIn.month == checkOut.month;
+    final start = DateFormat(sameMonth ? 'd' : 'd MMM').format(checkIn);
+    final end = DateFormat('d MMM').format(checkOut);
+    return '$start – $end';
+  }
+
+  /// The result content itself — proximity banner, cards, footer — shared by
+  /// every layout above so they can't drift apart.
+  ///
+  /// [singleColumn] switches between the two card shapes. Results on a phone
+  /// get one listing per row with the detail to judge it by ([ListingCardWide]);
+  /// a wide screen has room for a real grid, where the compact card is right.
+  List<Widget> _resultSlivers(
+    List<Listing> listings,
+    ThemeData theme, {
+    required bool singleColumn,
+  }) {
     return [
       // Which radius ring the results came from, or that we fell back to the
       // nearest stays.
@@ -543,43 +578,64 @@ class _ExploreScreenState extends State<ExploreScreen> {
             placeLabel: widget.searchState.filters.location,
           ),
         ),
-      SliverPadding(
-        padding: const EdgeInsets.all(16),
-        sliver: SliverGrid(
-          // Max-extent so the column count grows with width: 2 on phones,
-          // 3–4 across the desktop content panel, with cards kept a
-          // consistent, readable size.
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 300,
-            mainAxisSpacing: 16,
-            crossAxisSpacing: 12,
-            // ~square photo like Airbnb (the photo takes 5/7 of the cell
-            // height in ListingCardModern).
-            childAspectRatio: 0.72,
-          ),
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
+      if (singleColumn)
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          sliver: SliverList.separated(
+            itemCount: listings.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 26),
+            itemBuilder: (context, index) {
               final listing = listings[index];
-              // Staggered entrance; modulo keeps the delay small for items
-              // revealed far down on scroll.
-              return FadeSlideIn(
-                delay: Duration(milliseconds: 45 * (index % 6)),
-                child: HoverLift(
-                  child: ListingCardModern(
-                    listing: listing,
-                    isFavorite: widget.favoritesState.isFavorite(listing.id),
-                    onTap: () => _openListingDetail(listing),
-                    onFavoriteTap: () {
-                      widget.favoritesState.toggleFavorite(listing.id);
-                    },
-                  ),
-                ),
+              return ListingCardWide(
+                listing: listing,
+                isFavorite: widget.favoritesState.isFavorite(listing.id),
+                onTap: () => _openListingDetail(listing),
+                onFavoriteTap: () {
+                  widget.favoritesState.toggleFavorite(listing.id);
+                },
+                stayLabel: _stayLabel(context),
               );
             },
-            childCount: listings.length,
+          ),
+        )
+      else
+        SliverPadding(
+          padding: const EdgeInsets.all(16),
+          sliver: SliverGrid(
+            // Max-extent so the column count grows with width: 3–4 across the
+            // desktop content panel, with cards kept a consistent, readable
+            // size.
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 300,
+              mainAxisSpacing: 16,
+              crossAxisSpacing: 12,
+              // ~square photo like Airbnb (the photo takes 5/7 of the cell
+              // height in ListingCardModern).
+              childAspectRatio: 0.72,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final listing = listings[index];
+                // Staggered entrance; modulo keeps the delay small for items
+                // revealed far down on scroll.
+                return FadeSlideIn(
+                  delay: Duration(milliseconds: 45 * (index % 6)),
+                  child: HoverLift(
+                    child: ListingCardModern(
+                      listing: listing,
+                      isFavorite: widget.favoritesState.isFavorite(listing.id),
+                      onTap: () => _openListingDetail(listing),
+                      onFavoriteTap: () {
+                        widget.favoritesState.toggleFavorite(listing.id);
+                      },
+                    ),
+                  ),
+                );
+              },
+              childCount: listings.length,
+            ),
           ),
         ),
-      ),
       SliverToBoxAdapter(
         child: Padding(
           padding: const EdgeInsets.all(16),
