@@ -97,33 +97,35 @@ class _ListingCardModernState extends State<ListingCardModern>
                     else
                       _buildPlaceholder(theme),
 
-                    // Bottom scrim so the price pill always reads.
+                    // Top scrim — sits behind the price pill and the favourite
+                    // button, which share the top edge.
                     Positioned(
-                      bottom: 0,
+                      top: 0,
                       left: 0,
                       right: 0,
                       child: Container(
                         height: 44,
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
+                            begin: Alignment.bottomCenter,
+                            end: Alignment.topCenter,
                             colors: [
                               Colors.transparent,
-                              Colors.black.withValues(alpha: 0.45),
+                              Colors.black.withValues(alpha: 0.35),
                             ],
                           ),
                         ),
                       ),
                     ),
 
-                    // Compact price pill. Bounded on the right so a long unit
+                    // Price pill, top-left: the first thing read on the card.
+                    // Stops short of the favourite button so a long unit
                     // ("/mo/full house") ellipsizes inside the pill instead of
-                    // running under the favourite button and being clipped.
+                    // running under the heart.
                     Positioned(
-                      bottom: 6,
+                      top: 6,
                       left: 6,
-                      right: 6,
+                      right: 40,
                       child: Align(
                         alignment: Alignment.centerLeft,
                         child: Container(
@@ -173,13 +175,14 @@ class _ListingCardModernState extends State<ListingCardModern>
                       ),
                     ),
 
-                    // Status pill only. The listing type is NOT badged here —
+                    // Status pill, bottom-left — the top-left slot belongs to
+                    // the price. The listing type is NOT badged anywhere here:
                     // a coloured seat/room/full-house chip on every card made
                     // the grid noisy; the type now reads as part of the price
                     // ("from ৳500/hr/seat"), where it actually means something.
                     if (listing.isSuperhost || !hasReviews)
                       Positioned(
-                        top: 6,
+                        bottom: 6,
                         left: 6,
                         child: listing.isSuperhost
                             ? _MiniPill(

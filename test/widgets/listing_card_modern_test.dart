@@ -78,6 +78,49 @@ void main() {
 
     expect(find.textContaining('/mo/full house'), findsOneWidget);
     expect(tester.takeException(), isNull);
+    // Worst case for width: must still stop short of the favourite button.
+    final price = tester.getRect(
+      find
+          .ancestor(
+            of: find.textContaining('/mo/full house'),
+            matching: find.byType(Row),
+          )
+          .first,
+    );
+    expect(
+        price.right,
+        lessThan(tester
+            .getRect(
+              find.byIcon(Icons.favorite_border),
+            )
+            .left));
+  });
+
+  testWidgets('price sits top-left, above the status pill', (tester) async {
+    // A listing with no reviews renders the "New" pill, so both are on screen.
+    await tester.pumpWidget(wrap(listingOf(ListingType.seat, hourly: 500)));
+
+    final card = tester.getRect(find.byType(ListingCardModern));
+    // The teaser Row is the pill's content, so its edges are the pill's.
+    final price = tester.getRect(
+      find
+          .ancestor(
+            of: find.textContaining('/hr/seat'),
+            matching: find.byType(Row),
+          )
+          .first,
+    );
+    final heart = tester.getRect(find.byIcon(Icons.favorite_border));
+    final status = tester.getRect(find.text('New'));
+
+    // Upper portion of the photo, not the bottom edge it used to sit on.
+    expect(price.top, lessThan(card.center.dy));
+    expect(price.top - card.top, lessThan(30));
+    // Hugging the left edge, and never running under the favourite button.
+    expect(price.left - card.left, lessThan(20));
+    expect(price.right, lessThan(heart.left));
+    // The status pill moved out of the way, below the price.
+    expect(status.top, greaterThan(price.bottom));
   });
 
   testWidgets('no coloured listing-type badge on the card', (tester) async {
