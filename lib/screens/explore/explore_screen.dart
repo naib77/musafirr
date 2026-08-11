@@ -19,8 +19,8 @@ import '../../state/favorites_state.dart';
 import '../../state/messaging_state.dart';
 import '../../state/notification_state.dart';
 import '../../state/search_state.dart';
+import '../../models/landmark.dart';
 import '../../widgets/animations/fade_slide_in.dart';
-import '../../widgets/category_scroll.dart';
 import '../../widgets/landmark_picker_sheet.dart';
 import '../../widgets/purpose_scroll.dart';
 import '../../widgets/hover_lift.dart';
@@ -56,7 +56,6 @@ class ExploreScreen extends StatefulWidget {
 }
 
 class _ExploreScreenState extends State<ExploreScreen> {
-  ListingType? _selectedType;
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
@@ -100,50 +99,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
   /// Whether a server-side search is currently driving the results.
   bool get _searchActive => widget.searchState.filters.hasActiveFilters;
 
-  /// The active guest-facing purpose (null for "Any purpose"; general is a host
-  /// default, not a guest filter, so it reads as "Any").
-  ListingPurpose? get _selectedPurpose {
-    final tags = widget.searchState.filters.purposeTags;
-    final p = tags.isEmpty ? null : tags.first;
-    return (p == null || p == ListingPurpose.general) ? null : p;
-  }
-
-  Future<void> _onPurposeSelected(ListingPurpose? purpose) async {
-    final filters = widget.searchState.filters;
-    if (purpose == null) {
-      widget.searchState.updateFilters(
-          filters.copyWith(purposeTags: const [], clearLandmark: true));
-      return;
-    }
-    final type = purpose.landmarkType;
-    if (type == null) {
-      widget.searchState.updateFilters(
-          filters.copyWith(purposeTags: [purpose], clearLandmark: true));
-      return;
-    }
-    // Purpose needs a landmark to rank distance from — let the guest pick one.
-    final title = switch (purpose) {
-      ListingPurpose.medical => 'Choose a hospital',
-      ListingPurpose.exam => 'Choose an exam center',
-      ListingPurpose.tourism => 'Choose an attraction',
-      ListingPurpose.business => 'Choose a business hub',
-      ListingPurpose.student => 'Choose a university',
-      ListingPurpose.general => '',
-    };
-    final chosen = await showLandmarkPicker(
-      context,
-      repository: widget.repository,
-      type: type,
-      title: title,
-    );
-    if (chosen == null) return; // dismissed — leave current filters untouched
-    widget.searchState.updateFilters(filters.copyWith(
-      purposeTags: [purpose],
-      landmark: chosen,
-      radiusMeters: 15000,
-    ));
-  }
-
   List<Listing> get _filteredListings {
     // When a search is active, show its server-side results (already ranked and
     // filtered to available + host_available) — even if empty, so a no-match
@@ -154,9 +109,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
         : widget.repository.listings
             .where((l) => l.available && l.hostAvailable)
             .toList();
-    if (_selectedType != null) {
-      listings = listings.where((l) => l.type == _selectedType).toList();
-    }
     // Exclude own listings when logged in
     final currentUserId = widget.authState.currentUser?.id;
     if (currentUserId != null) {
@@ -391,23 +343,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
               ),
             ),
 
-            // Category scroll
-            CategoryScroll(
-              selectedType: _selectedType,
-              onTypeSelected: (type) {
-                setState(() => _selectedType = type);
-              },
-            ),
-
-            // Purpose scroll (stay near a hospital / exam center / …).
-            ListenableBuilder(
-              listenable: widget.searchState,
-              builder: (context, _) => PurposeScroll(
-                selected: _selectedPurpose,
-                onSelected: _onPurposeSelected,
-              ),
-            ),
-
+            // Property-type and purpose filters live inside the search sheet
+            // (_SearchSheet) — the page itself stays a clean browse feed.
             const Divider(height: 1),
 
             // Listings grid with pull-to-refresh
@@ -470,10 +407,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   }
 
                   // Airbnb-style curated rows whenever browsing (no active
-                  // search). `listings` is already filtered by the selected
-                  // category chip, so picking Room/Seat/Full house re-curates
-                  // the same rows within that type. Only an explicit search
-                  // (incl. a city "See all") falls back to the grid.
+                  // search). Only an explicit search (incl. a city "See all")
+                  // falls back to the grid; type/purpose filters are part of
+                  // the search sheet.
                   if (!_searchActive) {
                     return RefreshIndicator(
                       onRefresh: _onRefresh,
@@ -843,6 +779,11 @@ class _SearchSheetState extends State<_SearchSheet> {
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
 
+  // Purpose of stay (Medical, Exam, …) with its optional landmark anchor
+  // (the chosen hospital / exam center / …) — applied on Search.
+  ListingPurpose? _selectedPurpose;
+  Landmark? _pickedLandmark;
+
   // Location suggestions: instant city matches from loaded listings, plus
   // debounced Google Places type-ahead (any area / address / POI in BD).
   List<_CitySuggestion> _suggestions = [];
@@ -869,6 +810,12 @@ class _SearchSheetState extends State<_SearchSheet> {
     final filters = widget.searchState.filters;
     _guestCount = filters.guestCount;
     _selectedTypes = List.from(filters.propertyTypes);
+    // General is a host default, not a guest search intent — reads as "Any".
+    final activePurpose =
+        filters.purposeTags.isEmpty ? null : filters.purposeTags.first;
+    _selectedPurpose =
+        activePurpose == ListingPurpose.general ? null : activePurpose;
+    _pickedLandmark = filters.landmark;
     _dateMode = filters.dateMode;
     _settingTextProgrammatically = true;
     widget.searchController.text = filters.location ?? '';
@@ -900,9 +847,12 @@ class _SearchSheetState extends State<_SearchSheet> {
 
   void _onLocationChanged() {
     if (_settingTextProgrammatically) return;
-    // Manual edit: any previously resolved point no longer matches the text.
+    // Manual edit: any previously resolved point (or landmark anchor) no
+    // longer matches the text. The purpose itself stays selected — it still
+    // applies as a tag filter without a landmark.
     _pickedLat = null;
     _pickedLng = null;
+    _pickedLandmark = null;
     final query = widget.searchController.text.toLowerCase();
     _placeDebounce?.cancel();
     if (query.isEmpty) {
@@ -1095,6 +1045,58 @@ class _SearchSheetState extends State<_SearchSheet> {
     }
   }
 
+  /// Picking a purpose that needs an anchor (all guest-facing ones do) opens
+  /// the landmark picker on top of this sheet; the chosen place fills the
+  /// Where field and becomes the proximity center. "Any purpose" clears both.
+  Future<void> _onPurposeSelected(ListingPurpose? purpose) async {
+    if (purpose == null) {
+      setState(() {
+        _selectedPurpose = null;
+        _pickedLandmark = null;
+      });
+      return;
+    }
+    final type = purpose.landmarkType;
+    if (type == null) {
+      setState(() {
+        _selectedPurpose = purpose;
+        _pickedLandmark = null;
+      });
+      return;
+    }
+    final title = switch (purpose) {
+      ListingPurpose.medical => 'Choose a hospital',
+      ListingPurpose.exam => 'Choose an exam center',
+      ListingPurpose.tourism => 'Choose an attraction',
+      ListingPurpose.business => 'Choose a business hub',
+      ListingPurpose.student => 'Choose a university',
+      ListingPurpose.general => '',
+    };
+    final chosen = await showLandmarkPicker(
+      context,
+      repository: widget.repository,
+      type: type,
+      title: title,
+    );
+    if (!mounted || chosen == null) {
+      return; // dismissed — leave the current selection untouched
+    }
+    setState(() {
+      _selectedPurpose = purpose;
+      _pickedLandmark = chosen;
+      // The landmark anchors the search: show it in the Where field and use
+      // its coordinates (the text is only a display label server-side).
+      _settingTextProgrammatically = true;
+      widget.searchController.text = chosen.name;
+      _settingTextProgrammatically = false;
+      _pickedLat = chosen.latitude;
+      _pickedLng = chosen.longitude;
+      _suggestions = [];
+      _placeSuggestions = [];
+      _showSuggestions = false;
+    });
+  }
+
   void _togglePropertyType(ListingType type) {
     setState(() {
       if (_selectedTypes.contains(type)) {
@@ -1152,6 +1154,12 @@ class _SearchSheetState extends State<_SearchSheet> {
             _dateMode == SearchDateMode.dateRange ? _dateRange?.end : null,
         guestCount: _guestCount,
         propertyTypes: _selectedTypes,
+        purposeTags: _selectedPurpose == null
+            ? const <ListingPurpose>[]
+            : [_selectedPurpose!],
+        landmark: _pickedLandmark,
+        radiusMeters: _pickedLandmark == null ? null : 15000,
+        clearLandmark: _pickedLandmark == null,
         dateMode: _dateMode,
         singleDate:
             _dateMode == SearchDateMode.singleDateWithTime ? _singleDate : null,
@@ -1393,6 +1401,46 @@ class _SearchSheetState extends State<_SearchSheet> {
                 ),
               ),
             ),
+            const SizedBox(height: 16),
+
+            // Purpose of stay (near a hospital / exam center / …) — moved in
+            // from the Explore page so every filter lives in this sheet.
+            Text(
+              'Purpose of stay',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            PurposeScroll(
+              selected: _selectedPurpose,
+              onSelected: _onPurposeSelected,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+            ),
+            if (_pickedLandmark != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.place_outlined,
+                      size: 16,
+                      color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Near ${_pickedLandmark!.name}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             const SizedBox(height: 20),
 
             // Date Mode Toggle

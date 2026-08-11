@@ -2,18 +2,23 @@ import 'package:flutter/material.dart';
 
 import '../models/listing_purpose.dart';
 
-/// Horizontal purpose pills on Explore ("Any purpose", Medical, Exam, …).
-/// Excludes [ListingPurpose.general] — that's a host default, not a guest
-/// search intent; "Any purpose" already means no filter.
+/// Horizontal purpose pills ("Any purpose", Medical, Exam, …) — shown in the
+/// Explore search sheet. Excludes [ListingPurpose.general] — that's a host
+/// default, not a guest search intent; "Any purpose" already means no filter.
 class PurposeScroll extends StatelessWidget {
   const PurposeScroll({
     super.key,
     required this.selected,
     required this.onSelected,
+    this.padding = const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
   });
 
   final ListingPurpose? selected;
   final ValueChanged<ListingPurpose?> onSelected;
+
+  /// Outer inset of the scrolling row — override where the parent already
+  /// provides its own horizontal padding (e.g. inside the search sheet).
+  final EdgeInsetsGeometry padding;
 
   static final _purposes =
       ListingPurpose.values.where((p) => p != ListingPurpose.general).toList();
@@ -24,7 +29,7 @@ class PurposeScroll extends StatelessWidget {
       height: 40,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        padding: padding,
         children: [
           _PurposePill(
             icon: Icons.tune_rounded,

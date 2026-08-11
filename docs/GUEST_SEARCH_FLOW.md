@@ -1,15 +1,15 @@
 # Guest Listing Search — Explore Tab
 
 How a guest finds listings in the Explore tab: the default browse feed, the
-search sheet, category/purpose chips, and the server-side `search_listings`
-RPC that powers all of it.
+search sheet (location, dates, guests, property types, purpose), and the
+server-side `search_listings` RPC that powers all of it.
 
 ## Key components
 
 | Layer | File | Role |
 |---|---|---|
-| UI (screen) | `lib/screens/explore/explore_screen.dart` | Search bar, category & purpose chips, curated rows / results grid, infinite scroll |
-| UI (sheet) | `_SearchSheet` in `explore_screen.dart` | Filter form: location, dates/time, guests, property types |
+| UI (screen) | `lib/screens/explore/explore_screen.dart` | Search bar, curated rows / results grid, infinite scroll |
+| UI (sheet) | `_SearchSheet` in `explore_screen.dart` | Filter form: location, property types, purpose of stay (opens the landmark picker), dates/time, guests — ALL filters live here, the page has no chip rows |
 | UI (picker) | `lib/widgets/landmark_picker_sheet.dart` | Landmark chooser for purpose search — curated `landmarks` rows plus live Google Places matches (`lib/services/places_service.dart` → `places-search` edge function), so any place findable on Google Maps can anchor the search |
 | State | `lib/state/search_state.dart` (`SearchStateNotifier`) | Holds `SearchFilters` + results; debounces stale responses via a search token |
 | Model | `lib/models/search_filters.dart` (`SearchFilters`) | Immutable filter set; `hasActiveFilters` decides feed vs search mode |
@@ -50,19 +50,18 @@ flowchart TD
     FEED --> ROWS[Curated rows:\nPopular / Budget / Newest /\nFeatured / Top rated / Stays in city]
     ROWS -- "scroll ≥ 80%" --> FEED
 
-    A -- taps search bar --> SHEET[Search sheet opens\nlocation, dates or single day + time,\nguests, property types]
+    A -- taps search bar --> SHEET[Search sheet opens\nlocation, property types,\npurpose of stay, dates or\nsingle day + time, guests]
     SHEET -- types location --> SUGG[City suggestions\nfrom already-loaded listings,\ntop 5 by listing count]
-    SHEET -- taps Search --> APPLY[searchState.updateFilters]
 
-    A -- taps purpose chip\nmedical / exam / tourism… --> LM{Purpose needs\na landmark?}
-    LM -- yes --> PICK[Landmark picker sheet\nsearch_landmarks RPC\n+ live Google Places\nvia places-search edge fn]
-    PICK -- chosen --> APPLY2[updateFilters:\npurposeTags + landmark\n+ radius 15 km]
-    PICK -- dismissed --> A
-    LM -- no --> APPLY2
+    SHEET -- taps purpose pill\nmedical / exam / tourism… --> PICK[Landmark picker sheet\nsearch_landmarks RPC\n+ live Google Places\nvia places-search edge fn]
+    PICK -- chosen --> ANCHOR[Landmark fills the Where\nfield + center coordinates]
+    PICK -- dismissed --> SHEET
+    ANCHOR --> SHEET
+
+    SHEET -- taps Search --> APPLY[searchState.updateFilters\nincl. purposeTags + landmark\n+ radius 15 km when anchored]
 
     A -- taps 'See all' on a city row --> CITY[updateLocation city] --> RUN
     APPLY --> RUN[_runSearch]
-    APPLY2 --> RUN
 
     RUN --> TOK[token = ++_searchToken\nisSearching = true]
     TOK --> RPC[repository.searchListingsFromDb\nsupabase.rpc 'search_listings'\nlimit 50]
@@ -70,7 +69,7 @@ flowchart TD
     CHK -- no --> DROP[Drop stale response]
     CHK -- yes --> RES[results stored\nnotifyListeners]
 
-    RES --> POST[Client-side post-filters:\ncategory chip type,\nexclude guest's own listings]
+    RES --> POST[Client-side post-filter:\nexclude guest's own listings]
     POST --> GRID{Results empty?}
     GRID -- yes --> EMPTY[No listings found\nTry adjusting your filters]
     GRID -- no --> SHOW[Responsive grid\nof ListingCardModern]
@@ -113,7 +112,7 @@ sequenceDiagram
     RP-->>SN: List<Listing>
     SN->>SN: token unchanged? → store results,<br/>isSearching = false, notify
     SN-->>ES: notifyListeners
-    ES->>ES: post-filter (category chip,<br/>hide own listings)
+    ES->>ES: post-filter (hide own listings)
     ES-->>G: results grid / empty state
 
     Note over G,PG: Guest clears search
@@ -158,10 +157,9 @@ facilities, and `distance_m` — so the client does no joins.
 - **Stale-response guard** — every `_runSearch()` increments `_searchToken`;
   a response is discarded unless its token is still the newest. Rapid filter
   changes can't render out of order.
-- **Post-filters in the UI** — two filters are applied on the client after
-  results arrive ([explore_screen.dart:142](lib/screens/explore/explore_screen.dart#L142-L161)):
-  the category chip (Room / Seat / Full house scroll) and *exclude the signed-in
-  user's own listings*.
+- **Post-filter in the UI** — after results arrive the client only *excludes
+  the signed-in user's own listings* (and blocked hosts); property type and
+  purpose are server-side filters set from the search sheet.
 - **City suggestions are local** — the search sheet's location autocomplete is
   built from cities of listings already loaded in memory, not from a server
   query. Cities that only appear on unfetched feed pages won't be suggested.

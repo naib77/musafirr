@@ -437,7 +437,14 @@ class SupabaseMusafirRepository extends ChangeNotifier
         'p_min_price': filters.minPrice,
         'p_max_price': filters.maxPrice,
         'p_amenities': filters.amenities.isEmpty ? null : filters.amenities,
-        'p_location': (useTiers || location == null || location.isEmpty)
+        // Any anchored search (landmark ring or tiered center point) already
+        // has its geography — the typed text (e.g. the landmark's own name)
+        // is only a display label and must not also be AND-ed against
+        // city/address/title, or it would zero out the results.
+        'p_location': (landmark != null ||
+                useTiers ||
+                location == null ||
+                location.isEmpty)
             ? null
             : location,
         'p_limit': limit,
