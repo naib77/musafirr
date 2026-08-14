@@ -9,7 +9,8 @@
 // Results are biased to Bangladesh (region + country component filter) since
 // the marketplace is BD-only — "banani" should resolve to Dhaka, not elsewhere.
 //
-// Input:  { query: "dakshinkhan" }
+// Input:  { query: "dakshinkhan" }            — forward: name → coordinates
+//         { lat: 23.81, lng: 90.41 }          — reverse: coordinates → address
 // Output: { found: true, lat, lng, label } | { found: false } | { error }
 //
 // Deploy: supabase functions deploy geocode
@@ -32,15 +33,23 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { query } = await req.json();
-    if (typeof query !== "string" || query.trim().length === 0) {
-      return jsonResponse(400, { error: "query is required" });
+    const { query, lat, lng } = await req.json();
+    const reverse = typeof lat === "number" && typeof lng === "number" &&
+      Number.isFinite(lat) && Number.isFinite(lng);
+    if (!reverse && (typeof query !== "string" || query.trim().length === 0)) {
+      return jsonResponse(400, { error: "query or lat/lng is required" });
     }
 
     const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
-    url.searchParams.set("address", query.trim().slice(0, 200));
+    if (reverse) {
+      // Reverse: the pin a host dropped on the map → a readable address. Web
+      // has no platform reverse-geocoder either, so it lands here too.
+      url.searchParams.set("latlng", `${lat},${lng}`);
+    } else {
+      url.searchParams.set("address", query.trim().slice(0, 200));
+      url.searchParams.set("components", "country:BD");
+    }
     url.searchParams.set("region", "bd");
-    url.searchParams.set("components", "country:BD");
     url.searchParams.set("key", SERVER_KEY);
 
     const resp = await fetch(url.toString());
@@ -59,7 +68,8 @@ serve(async (req: Request) => {
       found: true,
       lat: first.geometry.location.lat,
       lng: first.geometry.location.lng,
-      label: first.formatted_address ?? query.trim(),
+      label: first.formatted_address ??
+        (reverse ? `${lat}, ${lng}` : query.trim()),
     });
   } catch (e) {
     return jsonResponse(500, { error: String(e) });

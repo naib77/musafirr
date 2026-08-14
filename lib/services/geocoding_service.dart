@@ -49,6 +49,48 @@ class GeocodingService {
     }
   }
 
+  /// The other direction: coordinates → a readable address, for the pin the
+  /// host drops on the map. Same split as [geocode] — platform geocoder on
+  /// mobile, `geocode` edge function on web and as the mobile fallback.
+  Future<String?> reverse(double latitude, double longitude) async {
+    if (kIsWeb) return _reverseViaEdgeFunction(latitude, longitude);
+    try {
+      final placemarks = await geo.placemarkFromCoordinates(
+        latitude,
+        longitude,
+      );
+      if (placemarks.isNotEmpty) {
+        final place = placemarks.first;
+        // Country is left off: the marketplace is Bangladesh-only, so
+        // ", Bangladesh" on every address is noise.
+        final parts = <String>[
+          if (place.street?.isNotEmpty == true) place.street!,
+          if (place.subLocality?.isNotEmpty == true) place.subLocality!,
+          if (place.locality?.isNotEmpty == true) place.locality!,
+        ];
+        if (parts.isNotEmpty) return parts.join(', ');
+      }
+    } catch (_) {
+      // Fall through to the server-side geocoder.
+    }
+    return _reverseViaEdgeFunction(latitude, longitude);
+  }
+
+  Future<String?> _reverseViaEdgeFunction(double lat, double lng) async {
+    try {
+      final res = await Supabase.instance.client.functions.invoke(
+        'geocode',
+        body: {'lat': lat, 'lng': lng},
+      );
+      final data = res.data;
+      if (data is! Map || data['found'] != true) return null;
+      final label = data['label'] as String?;
+      return (label != null && label.isNotEmpty) ? label : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<GeocodeResult?> _geocodeViaEdgeFunction(String q) async {
     try {
       final res = await Supabase.instance.client.functions.invoke(

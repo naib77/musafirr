@@ -18,6 +18,24 @@ class PlaceSuggestion {
   final String label;
 }
 
+/// A chosen prediction resolved to coordinates — enough to move a map there.
+class PlaceLocation {
+  const PlaceLocation({
+    required this.name,
+    required this.latitude,
+    required this.longitude,
+    this.label,
+  });
+
+  final String name;
+
+  /// Secondary line ("Garib-E-Newaz Avenue, Dhaka"), when Google gives one.
+  final String? label;
+
+  final double latitude;
+  final double longitude;
+}
+
 /// Google-Maps-style type-ahead for the landmark picker (via the
 /// `places-search` edge function): three letters of "lub" already suggest
 /// Lubana General Hospital — guests aren't limited to seeded `landmarks` rows.
@@ -72,7 +90,9 @@ class PlacesService {
     }
   }
 
-  Future<Landmark?> resolve(PlaceSuggestion s, {required String type}) async {
+  /// Coordinates for a chosen prediction. The picker on the host's listing
+  /// form needs only this much; [resolve] wraps it as a searchable [Landmark].
+  Future<PlaceLocation?> locate(PlaceSuggestion s) async {
     try {
       final res = await Supabase.instance.client.functions.invoke(
         'places-search',
@@ -80,13 +100,11 @@ class PlacesService {
       );
       final data = res.data;
       if (data is! Map || data['found'] != true) return null;
-      return Landmark(
-        id: 'google:${s.placeId}',
+      return PlaceLocation(
         name: (data['name'] as String?)?.isNotEmpty == true
             ? data['name'] as String
             : s.name,
-        type: type,
-        area: (data['label'] as String?)?.isNotEmpty == true
+        label: (data['label'] as String?)?.isNotEmpty == true
             ? data['label'] as String?
             : (s.label.isEmpty ? null : s.label),
         latitude: (data['lat'] as num).toDouble(),
@@ -95,5 +113,18 @@ class PlacesService {
     } catch (_) {
       return null;
     }
+  }
+
+  Future<Landmark?> resolve(PlaceSuggestion s, {required String type}) async {
+    final place = await locate(s);
+    if (place == null) return null;
+    return Landmark(
+      id: 'google:${s.placeId}',
+      name: place.name,
+      type: type,
+      area: place.label,
+      latitude: place.latitude,
+      longitude: place.longitude,
+    );
   }
 }
