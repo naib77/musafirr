@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_colors.dart';
@@ -63,6 +64,7 @@ class _MainShellState extends State<MainShell> {
   late AppModeStateNotifier _appModeState;
 
   // GlobalKey to access TripsScreen state for tap-to-refresh
+  final GlobalKey<dynamic> _exploreScreenKey = GlobalKey();
   final GlobalKey<dynamic> _tripsScreenKey = GlobalKey();
 
   // GlobalKey to drive the host Reservations screen's inner tab from elsewhere.
@@ -274,7 +276,11 @@ class _MainShellState extends State<MainShell> {
         // the shell itself is the top route.
         final int currentTab = isGuest ? _guestTabIndex : _hostTabIndex;
         return PopScope(
-          canPop: currentTab == 0,
+          // On native, allowing the first-tab pop lets a second back press exit
+          // the app (intended). On web there is nothing beneath this sole root
+          // route, so popping it empties the Navigator and shows a blank/black
+          // page — never allow it there; back on the first tab is simply inert.
+          canPop: currentTab == 0 && !kIsWeb,
           onPopInvokedWithResult: (didPop, _) {
             if (didPop) return;
             setState(() {
@@ -379,9 +385,11 @@ class _MainShellState extends State<MainShell> {
         leading: _railBrandHeader(),
         selectedIndex: _guestTabIndex,
         onDestinationSelected: (index) {
-          // Re-tapping Trips (index 2) refreshes it, matching the bottom bar.
-          if (index == _guestTabIndex && index == 2) {
-            _tripsScreenKey.currentState?.refreshFromTabTap();
+          // Re-tapping the active tab, matching the bottom bar: Explore (0)
+          // drops any active search back to the feed; Trips (2) refreshes.
+          if (index == _guestTabIndex) {
+            if (index == 0) _exploreScreenKey.currentState?.resetFromTabTap();
+            if (index == 2) _tripsScreenKey.currentState?.refreshFromTabTap();
           }
           setState(() => _guestTabIndex = index);
         },
@@ -478,9 +486,12 @@ class _MainShellState extends State<MainShell> {
     return _navBarShell(NavigationBar(
       selectedIndex: _guestTabIndex,
       onDestinationSelected: (index) {
-        // If tapping the same tab (Trips = 2), trigger refresh
-        if (index == _guestTabIndex && index == 2) {
-          _tripsScreenKey.currentState?.refreshFromTabTap();
+        // Re-tapping the already-selected tab: Explore (0) drops any active
+        // search back to the feed — its results render inline, so switching
+        // tabs can't escape them; Trips (2) refreshes.
+        if (index == _guestTabIndex) {
+          if (index == 0) _exploreScreenKey.currentState?.resetFromTabTap();
+          if (index == 2) _tripsScreenKey.currentState?.refreshFromTabTap();
         }
         setState(() => _guestTabIndex = index);
       },
@@ -528,6 +539,8 @@ class _MainShellState extends State<MainShell> {
     final tabs = <Widget>[
       // Explore
       ExploreScreen(
+        key: _exploreScreenKey,
+        isActiveTab: _guestTabIndex == 0,
         repository: widget.repository,
         authState: widget.authState,
         favoritesState: widget.favoritesState,

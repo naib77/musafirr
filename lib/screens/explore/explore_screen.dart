@@ -27,6 +27,7 @@ import '../../widgets/purpose_scroll.dart';
 import '../../widgets/hover_lift.dart';
 import '../../widgets/listing_card_modern.dart';
 import '../../widgets/listing_card_wide.dart';
+import 'show_all_listings_screen.dart';
 import '../../widgets/listing_price_map.dart';
 import '../../widgets/notification_bell.dart';
 import '../../widgets/results_map_sheet.dart';
@@ -44,7 +45,15 @@ class ExploreScreen extends StatefulWidget {
     this.bookingLifecycleService,
     this.bookingMessagingCoordinator,
     this.messagingState,
+    this.isActiveTab = true,
   });
+
+  /// Whether Explore is the currently-shown shell tab. Explore is kept alive in
+  /// the shell's IndexedStack, so its [PopScope] stays registered on the shell
+  /// route even while another tab is on screen. Gating the back interception on
+  /// this flag stops a back press on some OTHER tab from also clearing an active
+  /// Explore search (a single back press must do one thing).
+  final bool isActiveTab;
 
   final MusafirRepository repository;
   final AuthStateNotifier authState;
@@ -62,6 +71,14 @@ class ExploreScreen extends StatefulWidget {
 class _ExploreScreenState extends State<ExploreScreen> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+
+  // When a category's "See all" is tapped, its full list is shown inline (so
+  // the shell's bottom nav stays) instead of pushing a route. Non-null title +
+  // list means the show-all view is on screen.
+  String? _showAllTitle;
+  List<Listing>? _showAllItems;
+
+  bool get _showAllActive => _showAllItems != null;
 
   @override
   void initState() {
@@ -110,6 +127,15 @@ class _ExploreScreenState extends State<ExploreScreen> {
     widget.searchState.clearFilters();
     _searchController.clear();
     setState(() {});
+  }
+
+  /// Called by [MainShell] when the Explore tab is re-tapped while it is
+  /// already selected. Search results render inline inside this tab, so a
+  /// re-tap can't switch tabs to escape them — instead it drops any active
+  /// search and returns to the main feed. No-op when no search is active.
+  void resetFromTabTap() {
+    if (_showAllActive) _closeShowAll();
+    if (_searchActive) _clearSearch();
   }
 
   List<Listing> get _filteredListings {
@@ -198,11 +224,19 @@ class _ExploreScreenState extends State<ExploreScreen> {
     // System back / browser back leaves the results instead of leaving the app.
     // The shell's own PopScope only knows about tabs, and Explore is the first
     // tab, so without this a back press on a results page exits.
+    // Back leaves the See-all grid or the search results (in that order) rather
+    // than exiting, but only while Explore is the tab on screen — otherwise the
+    // shell handles back (see [isActiveTab]).
+    final intercept = (_showAllActive || _searchActive) && widget.isActiveTab;
     return PopScope(
-      canPop: !_searchActive,
+      canPop: !intercept,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        if (_searchActive) _clearSearch();
+        if (_showAllActive) {
+          _closeShowAll();
+        } else if (_searchActive) {
+          _clearSearch();
+        }
       },
       child: _buildScaffold(context, theme, wide),
     );
@@ -396,6 +430,19 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   widget.searchState,
                 ]),
                 builder: (context, _) {
+                  // A category's "See all" grid takes over just the content
+                  // area — the search bar, notification bell and leaderboard
+                  // above it, and the shell's bottom nav below, all stay.
+                  if (_showAllActive) {
+                    return ShowAllListingsView(
+                      title: _showAllTitle!,
+                      listings: _showAllItems!,
+                      favoritesState: widget.favoritesState,
+                      onOpenListing: _openListingDetail,
+                      onBack: _closeShowAll,
+                    );
+                  }
+
                   final listings = _filteredListings;
                   final isLoading = _searchActive
                       ? widget.searchState.isSearching
@@ -673,13 +720,32 @@ class _ExploreScreenState extends State<ExploreScreen> {
     return counts.entries.reduce((a, b) => b.value > a.value ? b : a).key;
   }
 
+  /// Shows the full curated list behind a category row's "See all" arrow.
+  /// Rendered inline (see [_showAllItems]) so the shell's bottom nav stays.
+  void _openShowAll(String title, List<Listing> items) {
+    setState(() {
+      _showAllTitle = title;
+      _showAllItems = items;
+    });
+  }
+
+  /// Returns from the "See all" grid to the browse feed.
+  void _closeShowAll() {
+    setState(() {
+      _showAllTitle = null;
+      _showAllItems = null;
+    });
+  }
+
   /// Airbnb-style curated rows shown while browsing (no search, no single
   /// category filter): Popular stays in {city}, Featured, Top rated,
   /// Budget-friendly, and other cities — each a horizontal, scrolling list.
   Widget _buildCategoryRows(List<Listing> listings) {
     final sections = <Widget>[];
 
-    void add(String title, List<Listing> items, {VoidCallback? onSeeAll}) {
+    // Every category's "See all" arrow opens the full curated list (the row
+    // itself only shows the first 12) as a client-side grid.
+    void add(String title, List<Listing> items) {
       if (items.isEmpty) return;
       sections.add(
         _CategorySection(
@@ -687,7 +753,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
           listings: items.take(12).toList(),
           favoritesState: widget.favoritesState,
           onOpen: _openListingDetail,
-          onSeeAll: onSeeAll,
+          onSeeAll: () => _openShowAll(title, items),
         ),
       );
     }
@@ -704,15 +770,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
     add(
       mainCity == null ? 'Popular stays' : 'Popular stays in $mainCity',
       popular.where((l) => l.reviewCount > 0 || (l.rating ?? 0) > 0).toList(),
-      // "See all" searches that city, so this row doubles as the entry point
-      // its "Stays in {city}" row used to be (which is now skipped below,
-      // rather than repeating the same city twice on one screen).
-      onSeeAll: mainCity == null
-          ? null
-          : () {
-              widget.searchState.updateLocation(location: mainCity);
-              setState(() {});
-            },
     );
 
     // Budget-friendly — cheapest first (surfaced right after Popular).
@@ -733,8 +790,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       ..sort((a, b) => (b.rating ?? 0).compareTo(a.rating ?? 0));
     add('Top rated', topRated);
 
-    // Location-wise — the busiest cities, "Stays in {city}". "See all" runs a
-    // location search so the grid shows every stay there.
+    // Location-wise — the busiest cities, "Stays in {city}".
     final byCity = <String, List<Listing>>{};
     for (final l in listings) {
       final c = l.city?.trim();
@@ -747,14 +803,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       if (byCity[city]!.length < 2) continue;
       // The first row already covers this one.
       if (city == mainCity) continue;
-      add(
-        'Stays in $city',
-        byCity[city]!,
-        onSeeAll: () {
-          widget.searchState.updateLocation(location: city);
-          setState(() {});
-        },
-      );
+      add('Stays in $city', byCity[city]!);
     }
 
     // Fallback so the screen is never blank when nothing matched a curation.
@@ -880,13 +929,13 @@ class _CategorySection extends StatelessWidget {
                 ),
               ),
               if (onSeeAll != null)
-                TextButton(
+                IconButton(
                   onPressed: onSeeAll,
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: const Text('See all'),
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.all(6),
+                  constraints: const BoxConstraints(),
+                  tooltip: 'See all',
+                  icon: const Icon(Icons.arrow_forward, size: 20),
                 ),
             ],
           ),
