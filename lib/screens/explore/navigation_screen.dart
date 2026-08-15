@@ -104,6 +104,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
       final position = await _locationService.getCurrentLocation();
 
       if (position == null) {
+        if (!mounted) return;
         setState(() {
           _error =
               'Could not get your location. Please enable location services.';
@@ -132,6 +133,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
       _fitCamera();
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = 'Error: $e';
         _isLoading = false;

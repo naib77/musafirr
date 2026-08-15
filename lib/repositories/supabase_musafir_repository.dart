@@ -421,12 +421,20 @@ class SupabaseMusafirRepository extends ChangeNotifier
   }) async {
     try {
       final location = filters.location?.trim();
-      // A purpose landmark keeps its single fixed ring; a free center point
-      // (geocoded place / current location) searches by expanding tiers, and
-      // then the typed text is only a display label — geocoding already
-      // resolved it, so it must not also be AND-ed against city/address/title.
+      // Three anchored modes, in priority order:
+      //  1. A purpose landmark → single fixed ring around the place.
+      //  2. A geocoded place with a known extent (bounds) → cover exactly that
+      //     box, so "Uttara" stays within Uttara and never spills into Tongi.
+      //  3. A bare center point (current location, or a place with no box) →
+      //     expanding proximity tiers.
+      // In every anchored mode the typed text is only a display label —
+      // geocoding already resolved it, so it must not also be AND-ed against
+      // city/address/title.
       final landmark = filters.landmark;
+      final bounds = landmark == null ? filters.bounds : null;
+      final hasBounds = bounds != null && bounds.isValid;
       final useTiers = landmark == null &&
+          !hasBounds &&
           filters.latitude != null &&
           filters.longitude != null;
       final rows = await _client.rpc('search_listings', params: {
@@ -443,6 +451,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
         // city/address/title, or it would zero out the results.
         'p_location': (landmark != null ||
                 useTiers ||
+                hasBounds ||
                 location == null ||
                 location.isEmpty)
             ? null
@@ -459,6 +468,12 @@ class SupabaseMusafirRepository extends ChangeNotifier
         'p_center_lng': landmark?.longitude ?? filters.longitude,
         'p_radius_m': landmark != null ? (filters.radiusMeters ?? 15000) : null,
         'p_radii': useTiers ? _radiusTiers : null,
+        // The place's box. When set, the RPC filters to listings inside it
+        // (distance-ranked to the center) and ignores the radius paths.
+        'p_ne_lat': hasBounds ? bounds.neLat : null,
+        'p_ne_lng': hasBounds ? bounds.neLng : null,
+        'p_sw_lat': hasBounds ? bounds.swLat : null,
+        'p_sw_lng': hasBounds ? bounds.swLng : null,
       });
 
       final list = (rows as List).cast<Map<String, dynamic>>();

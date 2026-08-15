@@ -932,7 +932,8 @@ graph TD
 | `ListingCardModern` | Grid card for listing display |
 | `CategoryScroll` | Horizontal property type filter |
 | `AreaMapPreview` | Static map preview |
-| `LocationPicker` | Full-screen map selection |
+| `LocationPicker` | Full-screen map selection (host "Pick on Map") |
+| `MapPlaceSearchBar` | Type-ahead place search floating over a map |
 | `AppTextField` | Styled text input |
 | `PhoneInputField` | BD phone input with +880 prefix & flag |
 | `OtpInputField` | 4-digit OTP boxes with auto-focus |
@@ -942,7 +943,23 @@ graph TD
 
 | Service | Capabilities |
 |---------|--------------|
-| `LocationService` | GPS position, reverse geocoding, address search |
+| `LocationService` | GPS position (geolocator — works on web too) |
+| `GeocodingService` | Place name ⇄ coordinates, web-safe (see below) |
+| `PlacesService` | Google Places type-ahead + place → coordinates |
+
+#### Two traps when a screen sits on a map
+
+1. **The `geocoding` package is Android/iOS only.** It ships no web
+   implementation, so `locationFromAddress` / `placemarkFromCoordinates` throw
+   from a browser — and both call sites caught the error and returned nothing,
+   which is why the host's map search looked dead rather than broken. Anything
+   that resolves a place must go through `GeocodingService` or `PlacesService`,
+   which fall back to the `geocode` / `places-search` edge functions.
+2. **On web a Google map is a DOM element that wins the browser's hit-test.**
+   Flutter controls painted over it — search bars, buttons, even the app bar —
+   never receive the tap unless they are wrapped in a `PointerInterceptor`.
+   The centre pin is the exception: it must stay `IgnorePointer` so the map can
+   still be panned under it.
 | `OtpService` | OTP generation, storage, verification with expiry & attempt tracking |
 | `SmsGateway` | SMS sending interface (Console, BulkSMS BD, Alpha SMS, Zaman IT) |
 | `NidVerificationService` | NID verification interface (Bypass for dev) |

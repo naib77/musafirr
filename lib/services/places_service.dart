@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/geo_bounds.dart';
 import '../models/landmark.dart';
 
 /// A Google Places Autocomplete prediction — a name to show in the picker.
@@ -16,6 +17,30 @@ class PlaceSuggestion {
 
   /// Secondary line ("Garib-E-Newaz Avenue, Dhaka").
   final String label;
+}
+
+/// A chosen prediction resolved to coordinates — enough to move a map there.
+class PlaceLocation {
+  const PlaceLocation({
+    required this.name,
+    required this.latitude,
+    required this.longitude,
+    this.label,
+    this.bounds,
+  });
+
+  final String name;
+
+  /// Secondary line ("Garib-E-Newaz Avenue, Dhaka"), when Google gives one.
+  final String? label;
+
+  final double latitude;
+  final double longitude;
+
+  /// The place's extent, when it's an area (a thana, a residential block)
+  /// rather than a precise point. Present → the search bar covers exactly this
+  /// area instead of a fixed radius ring around its center.
+  final GeoBounds? bounds;
 }
 
 /// Google-Maps-style type-ahead for the landmark picker (via the
@@ -72,7 +97,9 @@ class PlacesService {
     }
   }
 
-  Future<Landmark?> resolve(PlaceSuggestion s, {required String type}) async {
+  /// Coordinates for a chosen prediction. The picker on the host's listing
+  /// form needs only this much; [resolve] wraps it as a searchable [Landmark].
+  Future<PlaceLocation?> locate(PlaceSuggestion s) async {
     try {
       final res = await Supabase.instance.client.functions.invoke(
         'places-search',
@@ -80,20 +107,32 @@ class PlacesService {
       );
       final data = res.data;
       if (data is! Map || data['found'] != true) return null;
-      return Landmark(
-        id: 'google:${s.placeId}',
+      return PlaceLocation(
         name: (data['name'] as String?)?.isNotEmpty == true
             ? data['name'] as String
             : s.name,
-        type: type,
-        area: (data['label'] as String?)?.isNotEmpty == true
+        label: (data['label'] as String?)?.isNotEmpty == true
             ? data['label'] as String?
             : (s.label.isEmpty ? null : s.label),
         latitude: (data['lat'] as num).toDouble(),
         longitude: (data['lng'] as num).toDouble(),
+        bounds: GeoBounds.fromJson(data['bounds']),
       );
     } catch (_) {
       return null;
     }
+  }
+
+  Future<Landmark?> resolve(PlaceSuggestion s, {required String type}) async {
+    final place = await locate(s);
+    if (place == null) return null;
+    return Landmark(
+      id: 'google:${s.placeId}',
+      name: place.name,
+      type: type,
+      area: place.label,
+      latitude: place.latitude,
+      longitude: place.longitude,
+    );
   }
 }
