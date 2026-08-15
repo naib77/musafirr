@@ -55,6 +55,7 @@ class _AvatarUploadState extends State<AvatarUpload> {
 
     // Show local preview immediately
     final bytes = await file.readAsBytes();
+    if (!mounted) return;
     setState(() {
       _localImagePath = file!.path;
       _localImageBytes = bytes;
@@ -146,6 +147,7 @@ class _AvatarUploadState extends State<AvatarUpload> {
     if (confirmed == true) {
       await _uploadService.deleteAvatar(widget.userId);
       widget.onAvatarChanged(null);
+      if (!mounted) return;
       setState(() {
         _localImagePath = null;
         _localImageBytes = null;

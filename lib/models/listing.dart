@@ -161,6 +161,19 @@ class Listing {
         if (monthlyRate != null) DurationType.monthly,
       ];
 
+  /// The first two offered plans, in ascending unit order — what a card shows
+  /// so a guest can compare a short and a longer stay at a glance. All three
+  /// offered → hourly + daily; no daily → hourly + monthly; no hourly →
+  /// daily + monthly. A listing with a single plan yields just that one.
+  List<DurationType> get headlinePlans => offeredPlans.take(2).toList();
+
+  /// Whether this listing reads as a guest favourite. Derived, because there
+  /// is no such column yet: a high rating alone isn't enough — one five-star
+  /// review must not earn the badge — so a meaningful number of reviews is
+  /// required too. Move this to the database if the bar ever needs tuning per
+  /// market or campaign.
+  bool get isGuestFavorite => (rating ?? 0) >= 4.8 && reviewCount >= 5;
+
   /// The cheapest offered plan by rate. Null only when no plan is offered.
   ///
   /// Rates are constrained hourly < daily < monthly, so this is normally the

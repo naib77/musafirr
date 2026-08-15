@@ -638,6 +638,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
                     initialLatitude: _latitude,
                     initialLongitude: _longitude,
                   );
+                  if (!mounted) return;
                   if (result != null) {
                     setState(() {
                       _latitude = result.latitude;

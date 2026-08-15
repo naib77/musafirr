@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/utils/responsive.dart';
+import '../../models/geo_bounds.dart';
 import '../../models/listing.dart';
 import '../../models/listing_type.dart';
 import '../../models/listing_purpose.dart';
@@ -19,13 +21,17 @@ import '../../state/favorites_state.dart';
 import '../../state/messaging_state.dart';
 import '../../state/notification_state.dart';
 import '../../state/search_state.dart';
+import '../../models/landmark.dart';
 import '../../widgets/animations/fade_slide_in.dart';
-import '../../widgets/category_scroll.dart';
 import '../../widgets/landmark_picker_sheet.dart';
 import '../../widgets/purpose_scroll.dart';
 import '../../widgets/hover_lift.dart';
 import '../../widgets/listing_card_modern.dart';
+import '../../widgets/listing_card_wide.dart';
+import 'show_all_listings_screen.dart';
+import '../../widgets/listing_price_map.dart';
 import '../../widgets/notification_bell.dart';
+import '../../widgets/results_map_sheet.dart';
 import '../notifications/notification_center_screen.dart';
 import 'listing_detail_screen.dart';
 
@@ -40,7 +46,15 @@ class ExploreScreen extends StatefulWidget {
     this.bookingLifecycleService,
     this.bookingMessagingCoordinator,
     this.messagingState,
+    this.isActiveTab = true,
   });
+
+  /// Whether Explore is the currently-shown shell tab. Explore is kept alive in
+  /// the shell's IndexedStack, so its [PopScope] stays registered on the shell
+  /// route even while another tab is on screen. Gating the back interception on
+  /// this flag stops a back press on some OTHER tab from also clearing an active
+  /// Explore search (a single back press must do one thing).
+  final bool isActiveTab;
 
   final MusafirRepository repository;
   final AuthStateNotifier authState;
@@ -56,9 +70,16 @@ class ExploreScreen extends StatefulWidget {
 }
 
 class _ExploreScreenState extends State<ExploreScreen> {
-  ListingType? _selectedType;
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+
+  // When a category's "See all" is tapped, its full list is shown inline (so
+  // the shell's bottom nav stays) instead of pushing a route. Non-null title +
+  // list means the show-all view is on screen.
+  String? _showAllTitle;
+  List<Listing>? _showAllItems;
+
+  bool get _showAllActive => _showAllItems != null;
 
   @override
   void initState() {
@@ -100,48 +121,22 @@ class _ExploreScreenState extends State<ExploreScreen> {
   /// Whether a server-side search is currently driving the results.
   bool get _searchActive => widget.searchState.filters.hasActiveFilters;
 
-  /// The active guest-facing purpose (null for "Any purpose"; general is a host
-  /// default, not a guest filter, so it reads as "Any").
-  ListingPurpose? get _selectedPurpose {
-    final tags = widget.searchState.filters.purposeTags;
-    final p = tags.isEmpty ? null : tags.first;
-    return (p == null || p == ListingPurpose.general) ? null : p;
+  /// Drops the search and returns to the browse feed. Shared by the back
+  /// button, the ✕ inside the search bar, and the system/browser back gesture,
+  /// so all three leave the results the same way.
+  void _clearSearch() {
+    widget.searchState.clearFilters();
+    _searchController.clear();
+    setState(() {});
   }
 
-  Future<void> _onPurposeSelected(ListingPurpose? purpose) async {
-    final filters = widget.searchState.filters;
-    if (purpose == null) {
-      widget.searchState.updateFilters(
-          filters.copyWith(purposeTags: const [], clearLandmark: true));
-      return;
-    }
-    final type = purpose.landmarkType;
-    if (type == null) {
-      widget.searchState.updateFilters(
-          filters.copyWith(purposeTags: [purpose], clearLandmark: true));
-      return;
-    }
-    // Purpose needs a landmark to rank distance from — let the guest pick one.
-    final title = switch (purpose) {
-      ListingPurpose.medical => 'Choose a hospital',
-      ListingPurpose.exam => 'Choose an exam center',
-      ListingPurpose.tourism => 'Choose an attraction',
-      ListingPurpose.business => 'Choose a business hub',
-      ListingPurpose.student => 'Choose a university',
-      ListingPurpose.general => '',
-    };
-    final chosen = await showLandmarkPicker(
-      context,
-      repository: widget.repository,
-      type: type,
-      title: title,
-    );
-    if (chosen == null) return; // dismissed — leave current filters untouched
-    widget.searchState.updateFilters(filters.copyWith(
-      purposeTags: [purpose],
-      landmark: chosen,
-      radiusMeters: 15000,
-    ));
+  /// Called by [MainShell] when the Explore tab is re-tapped while it is
+  /// already selected. Search results render inline inside this tab, so a
+  /// re-tap can't switch tabs to escape them — instead it drops any active
+  /// search and returns to the main feed. No-op when no search is active.
+  void resetFromTabTap() {
+    if (_showAllActive) _closeShowAll();
+    if (_searchActive) _clearSearch();
   }
 
   List<Listing> get _filteredListings {
@@ -154,9 +149,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
         : widget.repository.listings
             .where((l) => l.available && l.hostAvailable)
             .toList();
-    if (_selectedType != null) {
-      listings = listings.where((l) => l.type == _selectedType).toList();
-    }
     // Exclude own listings when logged in
     final currentUserId = widget.authState.currentUser?.id;
     if (currentUserId != null) {
@@ -188,20 +180,20 @@ class _ExploreScreenState extends State<ExploreScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      // Full-screen sheet: only the status bar stays visible above it. With
+      // no scrim left to tap, dismissal is the ✕ button or drag-down.
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
-      // Cap the height so a tappable scrim always remains above the sheet
-      // (tap-outside to dismiss), even with the keyboard open.
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.9,
-      ),
-      builder: (context) => _SearchSheet(
-        searchController: _searchController,
-        searchState: widget.searchState,
-        onSearch: () {
-          Navigator.pop(context);
-          setState(() {});
-        },
-        repository: widget.repository,
+      builder: (context) => SizedBox.expand(
+        child: _SearchSheet(
+          searchController: _searchController,
+          searchState: widget.searchState,
+          onSearch: () {
+            Navigator.pop(context);
+            setState(() {});
+          },
+          repository: widget.repository,
+        ),
       ),
     );
   }
@@ -230,6 +222,28 @@ class _ExploreScreenState extends State<ExploreScreen> {
     final theme = Theme.of(context);
     final wide = Responsive.isWide(context);
 
+    // System back / browser back leaves the results instead of leaving the app.
+    // The shell's own PopScope only knows about tabs, and Explore is the first
+    // tab, so without this a back press on a results page exits.
+    // Back leaves the See-all grid or the search results (in that order) rather
+    // than exiting, but only while Explore is the tab on screen — otherwise the
+    // shell handles back (see [isActiveTab]).
+    final intercept = (_showAllActive || _searchActive) && widget.isActiveTab;
+    return PopScope(
+      canPop: !intercept,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_showAllActive) {
+          _closeShowAll();
+        } else if (_searchActive) {
+          _clearSearch();
+        }
+      },
+      child: _buildScaffold(context, theme, wide),
+    );
+  }
+
+  Widget _buildScaffold(BuildContext context, ThemeData theme, bool wide) {
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -266,6 +280,23 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   : const EdgeInsets.fromLTRB(16, 10, 16, 8),
               child: Row(
                 children: [
+                  // Leaving the results is a navigation, so it gets the
+                  // affordance guests look for. Only shown once a search is
+                  // running — while browsing there is nothing to go back to.
+                  if (_searchActive) ...[
+                    IconButton(
+                      onPressed: _clearSearch,
+                      icon: const Icon(Icons.arrow_back),
+                      tooltip: 'Back to browsing',
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 40,
+                        minHeight: 40,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
                   Expanded(
                     child: GestureDetector(
                       onTap: _openSearch,
@@ -318,11 +349,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                             ),
                             if (widget.searchState.filters.hasActiveFilters)
                               GestureDetector(
-                                onTap: () {
-                                  widget.searchState.clearFilters();
-                                  _searchController.clear();
-                                  setState(() {});
-                                },
+                                onTap: _clearSearch,
                                 child: Icon(
                                   Icons.close,
                                   size: 18,
@@ -391,23 +418,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
               ),
             ),
 
-            // Category scroll
-            CategoryScroll(
-              selectedType: _selectedType,
-              onTypeSelected: (type) {
-                setState(() => _selectedType = type);
-              },
-            ),
-
-            // Purpose scroll (stay near a hospital / exam center / …).
-            ListenableBuilder(
-              listenable: widget.searchState,
-              builder: (context, _) => PurposeScroll(
-                selected: _selectedPurpose,
-                onSelected: _onPurposeSelected,
-              ),
-            ),
-
+            // Property-type and purpose filters live inside the search sheet
+            // (_SearchSheet) — the page itself stays a clean browse feed.
             const Divider(height: 1),
 
             // Listings grid with pull-to-refresh
@@ -419,6 +431,19 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   widget.searchState,
                 ]),
                 builder: (context, _) {
+                  // A category's "See all" grid takes over just the content
+                  // area — the search bar, notification bell and leaderboard
+                  // above it, and the shell's bottom nav below, all stay.
+                  if (_showAllActive) {
+                    return ShowAllListingsView(
+                      title: _showAllTitle!,
+                      listings: _showAllItems!,
+                      favoritesState: widget.favoritesState,
+                      onOpenListing: _openListingDetail,
+                      onBack: _closeShowAll,
+                    );
+                  }
+
                   final listings = _filteredListings;
                   final isLoading = _searchActive
                       ? widget.searchState.isSearching
@@ -470,10 +495,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   }
 
                   // Airbnb-style curated rows whenever browsing (no active
-                  // search). `listings` is already filtered by the selected
-                  // category chip, so picking Room/Seat/Full house re-curates
-                  // the same rows within that type. Only an explicit search
-                  // (incl. a city "See all") falls back to the grid.
+                  // search). Only an explicit search (incl. a city "See all")
+                  // falls back to the grid; type/purpose filters are part of
+                  // the search sheet.
                   if (!_searchActive) {
                     return RefreshIndicator(
                       onRefresh: _onRefresh,
@@ -481,97 +505,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     );
                   }
 
-                  return RefreshIndicator(
-                    onRefresh: _onRefresh,
-                    child: CustomScrollView(
-                      controller: _scrollController,
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      slivers: [
-                        // Proximity banner: which ring the results came from,
-                        // or that we fell back to the nearest stays.
-                        if (widget.searchState.matchedRadiusMeters != null ||
-                            widget.searchState.usedNearestFallback)
-                          SliverToBoxAdapter(
-                            child: _ProximityBanner(
-                              count: listings.length,
-                              radiusMeters:
-                                  widget.searchState.matchedRadiusMeters,
-                              usedNearestFallback:
-                                  widget.searchState.usedNearestFallback,
-                              placeLabel: widget.searchState.filters.location,
-                            ),
-                          ),
-                        SliverPadding(
-                          padding: const EdgeInsets.all(16),
-                          sliver: SliverGrid(
-                            // Max-extent so the column count grows with width:
-                            // 2 on phones, 3–4 across the desktop content panel,
-                            // with cards kept a consistent, readable size.
-                            gridDelegate:
-                                const SliverGridDelegateWithMaxCrossAxisExtent(
-                              maxCrossAxisExtent: 300,
-                              mainAxisSpacing: 16,
-                              crossAxisSpacing: 12,
-                              // ~square photo like Airbnb (the photo takes
-                              // 5/7 of the cell height in ListingCardModern).
-                              childAspectRatio: 0.72,
-                            ),
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index) {
-                                final listing = listings[index];
-                                // Staggered entrance; modulo keeps the delay
-                                // small for items revealed far down on scroll.
-                                return FadeSlideIn(
-                                  delay:
-                                      Duration(milliseconds: 45 * (index % 6)),
-                                  child: HoverLift(
-                                    child: ListingCardModern(
-                                      listing: listing,
-                                      isFavorite: widget.favoritesState
-                                          .isFavorite(listing.id),
-                                      onTap: () => _openListingDetail(listing),
-                                      onFavoriteTap: () {
-                                        widget.favoritesState
-                                            .toggleFavorite(listing.id);
-                                      },
-                                    ),
-                                  ),
-                                );
-                              },
-                              childCount: listings.length,
-                            ),
-                          ),
-                        ),
-                        // Loading indicator or end message
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Center(
-                              child: widget.repository.isLoadingListings
-                                  ? const SizedBox(
-                                      height: 32,
-                                      width: 32,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : !widget.repository.hasMoreListings &&
-                                          listings.isNotEmpty
-                                      ? Text(
-                                          'No more listings',
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                            color: theme
-                                                .colorScheme.onSurfaceVariant,
-                                          ),
-                                        )
-                                      : const SizedBox.shrink(),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
+                  return _buildSearchResults(listings, theme, wide);
                 },
               ),
             ),
@@ -581,13 +515,240 @@ class _ExploreScreenState extends State<ExploreScreen> {
     );
   }
 
+  /// Search results, laid out around the map.
+  ///
+  /// On a phone the map fills the area and the results ride over it in a
+  /// draggable sheet (Airbnb's pattern): the map is the context, the sheet is
+  /// the answer, and the guest chooses how much of each to see. On a wide
+  /// screen a sheet over a 1400px map reads badly, so the map stays a banner
+  /// above the grid. With no coordinates anywhere there is nothing to put
+  /// behind a sheet, so the grid stands alone.
+  Widget _buildSearchResults(
+    List<Listing> listings,
+    ThemeData theme,
+    bool wide,
+  ) {
+    final hasMap = mappableListings(listings).isNotEmpty;
+
+    if (!hasMap) {
+      return RefreshIndicator(
+        onRefresh: _onRefresh,
+        child: CustomScrollView(
+          controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: _resultSlivers(listings, theme, singleColumn: !wide),
+        ),
+      );
+    }
+
+    if (wide) {
+      return RefreshIndicator(
+        onRefresh: _onRefresh,
+        child: CustomScrollView(
+          controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: ListingPriceMap(
+                  listings: listings,
+                  onListingTap: _openListingDetail,
+                  height: 320,
+                ),
+              ),
+            ),
+            ..._resultSlivers(listings, theme, singleColumn: false),
+          ],
+        ),
+      );
+    }
+
+    return ResultsMapSheet(
+      // Full-bleed and fully interactive: with the sheet handling the list,
+      // nothing competes with the map for drags any more. The sheet reports how
+      // much of the map it covers so the camera frames results ABOVE it.
+      mapBuilder: (context, bottomInset) => ListingPriceMap(
+        listings: listings,
+        onListingTap: _openListingDetail,
+        height: null,
+        interactive: true,
+        bottomInset: bottomInset,
+      ),
+      slivers: _resultSlivers(listings, theme, singleColumn: true),
+    );
+  }
+
+  /// The dates the guest searched for, for the result rows to be priced
+  /// against: "21 – 23 Aug", "2 Sep – 4 Oct", or "21 Aug, 10:00 AM – 2:00 PM"
+  /// for an hourly search. Null when no dates were picked, in which case the
+  /// row simply doesn't claim any.
+  String? _stayLabel(BuildContext context) {
+    final filters = widget.searchState.filters;
+    if (!filters.hasDateSelection) return null;
+
+    if (filters.dateMode == SearchDateMode.singleDateWithTime) {
+      final day = DateFormat('d MMM').format(filters.singleDate!);
+      final from = filters.startTime!.format(context);
+      final to = filters.endTime!.format(context);
+      return '$day, $from – $to';
+    }
+
+    final checkIn = filters.checkIn!;
+    final checkOut = filters.checkOut!;
+    // Same month reads better without repeating it: "21 – 23 Aug".
+    final sameMonth =
+        checkIn.year == checkOut.year && checkIn.month == checkOut.month;
+    final start = DateFormat(sameMonth ? 'd' : 'd MMM').format(checkIn);
+    final end = DateFormat('d MMM').format(checkOut);
+    return '$start – $end';
+  }
+
+  /// The result content itself — proximity banner, cards, footer — shared by
+  /// every layout above so they can't drift apart.
+  ///
+  /// [singleColumn] switches between the two card shapes. Results on a phone
+  /// get one listing per row with the detail to judge it by ([ListingCardWide]);
+  /// a wide screen has room for a real grid, where the compact card is right.
+  List<Widget> _resultSlivers(
+    List<Listing> listings,
+    ThemeData theme, {
+    required bool singleColumn,
+  }) {
+    return [
+      // Which radius ring the results came from, or that we fell back to the
+      // nearest stays.
+      if (widget.searchState.matchedRadiusMeters != null ||
+          widget.searchState.usedNearestFallback)
+        SliverToBoxAdapter(
+          child: _ProximityBanner(
+            count: listings.length,
+            radiusMeters: widget.searchState.matchedRadiusMeters,
+            usedNearestFallback: widget.searchState.usedNearestFallback,
+            placeLabel: widget.searchState.filters.location,
+          ),
+        ),
+      if (singleColumn)
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          sliver: SliverList.separated(
+            itemCount: listings.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 26),
+            itemBuilder: (context, index) {
+              final listing = listings[index];
+              return ListingCardWide(
+                listing: listing,
+                isFavorite: widget.favoritesState.isFavorite(listing.id),
+                onTap: () => _openListingDetail(listing),
+                onFavoriteTap: () {
+                  widget.favoritesState.toggleFavorite(listing.id);
+                },
+                stayLabel: _stayLabel(context),
+              );
+            },
+          ),
+        )
+      else
+        SliverPadding(
+          padding: const EdgeInsets.all(16),
+          sliver: SliverGrid(
+            // Max-extent so the column count grows with width: 3–4 across the
+            // desktop content panel, with cards kept a consistent, readable
+            // size.
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 300,
+              mainAxisSpacing: 16,
+              crossAxisSpacing: 12,
+              // ~square photo like Airbnb (the photo takes 5/7 of the cell
+              // height in ListingCardModern).
+              childAspectRatio: 0.72,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final listing = listings[index];
+                // Staggered entrance; modulo keeps the delay small for items
+                // revealed far down on scroll.
+                return FadeSlideIn(
+                  delay: Duration(milliseconds: 45 * (index % 6)),
+                  child: HoverLift(
+                    child: ListingCardModern(
+                      listing: listing,
+                      isFavorite: widget.favoritesState.isFavorite(listing.id),
+                      onTap: () => _openListingDetail(listing),
+                      onFavoriteTap: () {
+                        widget.favoritesState.toggleFavorite(listing.id);
+                      },
+                    ),
+                  ),
+                );
+              },
+              childCount: listings.length,
+            ),
+          ),
+        ),
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Center(
+            child: widget.repository.isLoadingListings
+                ? const SizedBox(
+                    height: 32,
+                    width: 32,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : !widget.repository.hasMoreListings && listings.isNotEmpty
+                    ? Text(
+                        'No more listings',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+          ),
+        ),
+      ),
+    ];
+  }
+
+  /// The city most of these listings are in, used to name the first curated
+  /// row. Null when none of them carry a city.
+  String? _dominantCity(List<Listing> listings) {
+    final counts = <String, int>{};
+    for (final l in listings) {
+      final city = l.city?.trim();
+      if (city == null || city.isEmpty) continue;
+      counts[city] = (counts[city] ?? 0) + 1;
+    }
+    if (counts.isEmpty) return null;
+    return counts.entries.reduce((a, b) => b.value > a.value ? b : a).key;
+  }
+
+  /// Shows the full curated list behind a category row's "See all" arrow.
+  /// Rendered inline (see [_showAllItems]) so the shell's bottom nav stays.
+  void _openShowAll(String title, List<Listing> items) {
+    setState(() {
+      _showAllTitle = title;
+      _showAllItems = items;
+    });
+  }
+
+  /// Returns from the "See all" grid to the browse feed.
+  void _closeShowAll() {
+    setState(() {
+      _showAllTitle = null;
+      _showAllItems = null;
+    });
+  }
+
   /// Airbnb-style curated rows shown while browsing (no search, no single
-  /// category filter): Popular, Featured, Top rated, Budget-friendly, and
-  /// location-wise sections — each a horizontal, left-to-right scrolling list.
+  /// category filter): Popular stays in {city}, Featured, Top rated,
+  /// Budget-friendly, and other cities — each a horizontal, scrolling list.
   Widget _buildCategoryRows(List<Listing> listings) {
     final sections = <Widget>[];
 
-    void add(String title, List<Listing> items, {VoidCallback? onSeeAll}) {
+    // Every category's "See all" arrow opens the full curated list (the row
+    // itself only shows the first 12) as a client-side grid.
+    void add(String title, List<Listing> items) {
       if (items.isEmpty) return;
       sections.add(
         _CategorySection(
@@ -595,19 +756,22 @@ class _ExploreScreenState extends State<ExploreScreen> {
           listings: items.take(12).toList(),
           favoritesState: widget.favoritesState,
           onOpen: _openListingDetail,
-          onSeeAll: onSeeAll,
+          onSeeAll: () => _openShowAll(title, items),
         ),
       );
     }
 
-    // Popular — most reviewed, then highest rated.
+    // Popular — most reviewed, then highest rated. Named after the city most
+    // of the catalogue is in ("Popular stays in Dhaka"), which reads as a place
+    // to start rather than an unexplained ranking.
     final popular = [...listings]..sort((a, b) {
         final byReviews = b.reviewCount.compareTo(a.reviewCount);
         if (byReviews != 0) return byReviews;
         return (b.rating ?? 0).compareTo(a.rating ?? 0);
       });
+    final mainCity = _dominantCity(listings);
     add(
-      'Popular',
+      mainCity == null ? 'Popular stays' : 'Popular stays in $mainCity',
       popular.where((l) => l.reviewCount > 0 || (l.rating ?? 0) > 0).toList(),
     );
 
@@ -629,8 +793,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       ..sort((a, b) => (b.rating ?? 0).compareTo(a.rating ?? 0));
     add('Top rated', topRated);
 
-    // Location-wise — the busiest cities, "Stays in {city}". "See all" runs a
-    // location search so the grid shows every stay there.
+    // Location-wise — the busiest cities, "Stays in {city}".
     final byCity = <String, List<Listing>>{};
     for (final l in listings) {
       final c = l.city?.trim();
@@ -639,16 +802,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
     final cities = byCity.keys.toList()
       ..sort((a, b) => byCity[b]!.length.compareTo(byCity[a]!.length));
-    for (final city in cities.take(3)) {
+    for (final city in cities.take(4)) {
       if (byCity[city]!.length < 2) continue;
-      add(
-        'Stays in $city',
-        byCity[city]!,
-        onSeeAll: () {
-          widget.searchState.updateLocation(location: city);
-          setState(() {});
-        },
-      );
+      // The first row already covers this one.
+      if (city == mainCity) continue;
+      add('Stays in $city', byCity[city]!);
     }
 
     // Fallback so the screen is never blank when nothing matched a curation.
@@ -774,13 +932,13 @@ class _CategorySection extends StatelessWidget {
                 ),
               ),
               if (onSeeAll != null)
-                TextButton(
+                IconButton(
                   onPressed: onSeeAll,
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: const Text('See all'),
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.all(6),
+                  constraints: const BoxConstraints(),
+                  tooltip: 'See all',
+                  icon: const Icon(Icons.arrow_forward, size: 20),
                 ),
             ],
           ),
@@ -843,6 +1001,11 @@ class _SearchSheetState extends State<_SearchSheet> {
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
 
+  // Purpose of stay (Medical, Exam, …) with its optional landmark anchor
+  // (the chosen hospital / exam center / …) — applied on Search.
+  ListingPurpose? _selectedPurpose;
+  Landmark? _pickedLandmark;
+
   // Location suggestions: instant city matches from loaded listings, plus
   // debounced Google Places type-ahead (any area / address / POI in BD).
   List<_CitySuggestion> _suggestions = [];
@@ -859,6 +1022,10 @@ class _SearchSheetState extends State<_SearchSheet> {
   // the point belonged to the old text.
   double? _pickedLat;
   double? _pickedLng;
+  // The resolved place's extent (a geocoded/Places viewport), when the picked
+  // place is an area rather than a precise point. Present → the search covers
+  // exactly this box instead of a radius ring. Cleared alongside the point.
+  GeoBounds? _pickedBounds;
   bool _settingTextProgrammatically = false;
   bool _locatingMe = false;
   bool _resolvingPlace = false;
@@ -869,12 +1036,19 @@ class _SearchSheetState extends State<_SearchSheet> {
     final filters = widget.searchState.filters;
     _guestCount = filters.guestCount;
     _selectedTypes = List.from(filters.propertyTypes);
+    // General is a host default, not a guest search intent — reads as "Any".
+    final activePurpose =
+        filters.purposeTags.isEmpty ? null : filters.purposeTags.first;
+    _selectedPurpose =
+        activePurpose == ListingPurpose.general ? null : activePurpose;
+    _pickedLandmark = filters.landmark;
     _dateMode = filters.dateMode;
     _settingTextProgrammatically = true;
     widget.searchController.text = filters.location ?? '';
     _settingTextProgrammatically = false;
     _pickedLat = filters.latitude;
     _pickedLng = filters.longitude;
+    _pickedBounds = filters.bounds;
 
     if (filters.checkIn != null && filters.checkOut != null) {
       _dateRange = DateTimeRange(
@@ -900,9 +1074,13 @@ class _SearchSheetState extends State<_SearchSheet> {
 
   void _onLocationChanged() {
     if (_settingTextProgrammatically) return;
-    // Manual edit: any previously resolved point no longer matches the text.
+    // Manual edit: any previously resolved point (or landmark anchor) no
+    // longer matches the text. The purpose itself stays selected — it still
+    // applies as a tag filter without a landmark.
     _pickedLat = null;
     _pickedLng = null;
+    _pickedBounds = null;
+    _pickedLandmark = null;
     final query = widget.searchController.text.toLowerCase();
     _placeDebounce?.cancel();
     if (query.isEmpty) {
@@ -972,10 +1150,17 @@ class _SearchSheetState extends State<_SearchSheet> {
   void _selectSuggestion(_CitySuggestion suggestion) {
     _placeDebounce?.cancel();
     _placeRequestId++; // invalidate any in-flight autocomplete
+    // Guard the programmatic write: without this, setting the field text fires
+    // the controller listener (_onLocationChanged), which recomputes the
+    // suggestions and schedules a fresh places lookup — reopening the dropdown
+    // ~300ms after the tap. The Google-prediction and current-location handlers
+    // guard the same way; this one was missing it.
+    _settingTextProgrammatically = true;
     widget.searchController.text = suggestion.city;
     widget.searchController.selection = TextSelection.fromPosition(
       TextPosition(offset: suggestion.city.length),
     );
+    _settingTextProgrammatically = false;
     setState(() {
       _showSuggestions = false;
       _placeSuggestions = [];
@@ -996,7 +1181,10 @@ class _SearchSheetState extends State<_SearchSheet> {
     );
     _settingTextProgrammatically = false;
     setState(() => _resolvingSuggestionId = s.placeId);
-    final place = await PlacesService().resolve(s, type: '');
+    // locate (not resolve): the search bar only needs coordinates + the place's
+    // extent, and locate carries the viewport bounds that let the search cover
+    // exactly this area — resolve would flatten it to a point-only Landmark.
+    final place = await PlacesService().locate(s);
     if (!mounted) return;
     setState(() {
       _resolvingSuggestionId = null;
@@ -1007,6 +1195,7 @@ class _SearchSheetState extends State<_SearchSheet> {
       if (place != null) {
         _pickedLat = place.latitude;
         _pickedLng = place.longitude;
+        _pickedBounds = place.bounds;
       }
     });
   }
@@ -1036,6 +1225,8 @@ class _SearchSheetState extends State<_SearchSheet> {
     setState(() {
       _pickedLat = position.latitude;
       _pickedLng = position.longitude;
+      // "Near me" is a point + radius search, not an area — no box.
+      _pickedBounds = null;
       _locatingMe = false;
       _suggestions = [];
       _showSuggestions = false;
@@ -1095,6 +1286,60 @@ class _SearchSheetState extends State<_SearchSheet> {
     }
   }
 
+  /// Picking a purpose that needs an anchor (all guest-facing ones do) opens
+  /// the landmark picker on top of this sheet; the chosen place fills the
+  /// Where field and becomes the proximity center. "Any purpose" clears both.
+  Future<void> _onPurposeSelected(ListingPurpose? purpose) async {
+    if (purpose == null) {
+      setState(() {
+        _selectedPurpose = null;
+        _pickedLandmark = null;
+      });
+      return;
+    }
+    final type = purpose.landmarkType;
+    if (type == null) {
+      setState(() {
+        _selectedPurpose = purpose;
+        _pickedLandmark = null;
+      });
+      return;
+    }
+    final title = switch (purpose) {
+      ListingPurpose.medical => 'Choose a hospital',
+      ListingPurpose.exam => 'Choose an exam center',
+      ListingPurpose.tourism => 'Choose an attraction',
+      ListingPurpose.business => 'Choose a business hub',
+      ListingPurpose.student => 'Choose a university',
+      ListingPurpose.general => '',
+    };
+    final chosen = await showLandmarkPicker(
+      context,
+      repository: widget.repository,
+      type: type,
+      title: title,
+    );
+    if (!mounted || chosen == null) {
+      return; // dismissed — leave the current selection untouched
+    }
+    setState(() {
+      _selectedPurpose = purpose;
+      _pickedLandmark = chosen;
+      // The landmark anchors the search: show it in the Where field and use
+      // its coordinates (the text is only a display label server-side).
+      _settingTextProgrammatically = true;
+      widget.searchController.text = chosen.name;
+      _settingTextProgrammatically = false;
+      _pickedLat = chosen.latitude;
+      _pickedLng = chosen.longitude;
+      // A landmark anchors a fixed-radius ring around the place, not a box.
+      _pickedBounds = null;
+      _suggestions = [];
+      _placeSuggestions = [];
+      _showSuggestions = false;
+    });
+  }
+
   void _togglePropertyType(ListingType type) {
     setState(() {
       if (_selectedTypes.contains(type)) {
@@ -1123,18 +1368,26 @@ class _SearchSheetState extends State<_SearchSheet> {
     final text = widget.searchController.text.trim();
     double? lat = _pickedLat;
     double? lng = _pickedLng;
+    GeoBounds? bounds = _pickedBounds;
 
-    // No point yet and the text isn't a known listing city → try to resolve
-    // it to coordinates so the search runs by expanding proximity rings.
-    // If geocoding finds nothing, fall through to the classic text search.
-    if (lat == null && text.isNotEmpty && !_isKnownCity(text)) {
+    // No point picked yet → resolve the typed text. We do this even for a known
+    // listing city ("Dhaka"): the resolver returns the place's box, which lets
+    // the search cover — and the map frame to — the city's real extent instead
+    // of sprawling north into Tongi/Gazipur. Priority:
+    //   • a box came back  → search & frame within it (best; areas and cities);
+    //   • no box, unknown  → center an expanding proximity ring on the point;
+    //   • no box, known city (or geocoding failed) → classic city text search.
+    if (lat == null && bounds == null && text.isNotEmpty) {
       setState(() => _resolvingPlace = true);
       final place = await GeocodingService().geocode(text);
       if (!mounted) return;
       setState(() => _resolvingPlace = false);
       if (place != null) {
-        lat = place.latitude;
-        lng = place.longitude;
+        bounds = place.bounds;
+        if (bounds == null && !_isKnownCity(text)) {
+          lat = place.latitude;
+          lng = place.longitude;
+        }
       }
     }
 
@@ -1146,12 +1399,22 @@ class _SearchSheetState extends State<_SearchSheet> {
         latitude: lat,
         longitude: lng,
         clearCoordinates: lat == null || lng == null,
+        // Carry the place's extent when we have one; a landmark or a point-only
+        // resolve must drop any stale box so it doesn't keep framing the map.
+        bounds: _pickedLandmark == null ? bounds : null,
+        clearBounds: bounds == null || _pickedLandmark != null,
         checkIn:
             _dateMode == SearchDateMode.dateRange ? _dateRange?.start : null,
         checkOut:
             _dateMode == SearchDateMode.dateRange ? _dateRange?.end : null,
         guestCount: _guestCount,
         propertyTypes: _selectedTypes,
+        purposeTags: _selectedPurpose == null
+            ? const <ListingPurpose>[]
+            : [_selectedPurpose!],
+        landmark: _pickedLandmark,
+        radiusMeters: _pickedLandmark == null ? null : 15000,
+        clearLandmark: _pickedLandmark == null,
         dateMode: _dateMode,
         singleDate:
             _dateMode == SearchDateMode.singleDateWithTime ? _singleDate : null,
@@ -1393,6 +1656,46 @@ class _SearchSheetState extends State<_SearchSheet> {
                 ),
               ),
             ),
+            const SizedBox(height: 16),
+
+            // Purpose of stay (near a hospital / exam center / …) — moved in
+            // from the Explore page so every filter lives in this sheet.
+            Text(
+              'Purpose of stay',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            PurposeScroll(
+              selected: _selectedPurpose,
+              onSelected: _onPurposeSelected,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+            ),
+            if (_pickedLandmark != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.place_outlined,
+                      size: 16,
+                      color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Near ${_pickedLandmark!.name}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             const SizedBox(height: 20),
 
             // Date Mode Toggle

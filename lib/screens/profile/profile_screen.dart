@@ -26,6 +26,8 @@ class ProfileScreen extends StatefulWidget {
     this.notificationState,
     this.isHostContext = false,
     this.onSwitchToHosting,
+    this.onSwitchToTravelling,
+    this.hostHasPendingRequests = false,
   });
 
   final AuthStateNotifier authState;
@@ -38,7 +40,18 @@ class ProfileScreen extends StatefulWidget {
   final bool isHostContext;
 
   /// Switches the app into host mode (guest-profile "Switch to hosting" link).
+  /// The Profile tab is the ONLY place to change modes — there is no top-level
+  /// guest/host tab strip anymore.
   final VoidCallback? onSwitchToHosting;
+
+  /// Switches the app back into guest mode (host-profile "Switch to
+  /// travelling" link).
+  final VoidCallback? onSwitchToTravelling;
+
+  /// True when the user has pending booking requests on the host side —
+  /// surfaces a dot on the "Switch to hosting" row so activity isn't missed
+  /// while browsing as a guest.
+  final bool hostHasPendingRequests;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -270,10 +283,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       _SettingsItem(
                         icon: Icons.swap_horiz,
                         title: 'Switch to hosting',
-                        subtitle: 'Go to your host dashboard',
+                        subtitle: widget.hostHasPendingRequests
+                            ? 'New booking request waiting'
+                            : 'Go to your host dashboard',
+                        showDot: widget.hostHasPendingRequests,
                         onTap: widget.onSwitchToHosting!,
                       ),
                   ] else ...[
+                    if (widget.onSwitchToTravelling != null)
+                      _SettingsItem(
+                        icon: Icons.swap_horiz,
+                        title: 'Switch to travelling',
+                        subtitle: 'Find & book stays as a guest',
+                        onTap: widget.onSwitchToTravelling!,
+                      ),
                     _SettingsItem(
                       icon: Icons.dashboard_outlined,
                       title: 'Host Dashboard',
@@ -419,8 +442,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           authState: authState,
           onBecomeHost: () {
             Navigator.pop(context);
-            ModernBanner.showSuccess(
-                context, 'Welcome to hosting! You can now create listings.');
+            // Land the brand-new host straight in the host portal — with the
+            // top tab strip gone there is no other visible way in yet.
+            if (widget.onSwitchToHosting != null) {
+              widget.onSwitchToHosting!();
+            } else {
+              ModernBanner.showSuccess(
+                  context, 'Welcome to hosting! You can now create listings.');
+            }
           },
         ),
       ),
@@ -559,7 +588,12 @@ class _SettingsSection extends StatelessWidget {
               return Column(
                 children: [
                   ListTile(
-                    leading: Icon(item.icon),
+                    leading: Badge(
+                      isLabelVisible: item.showDot,
+                      smallSize: 8,
+                      backgroundColor: theme.colorScheme.error,
+                      child: Icon(item.icon),
+                    ),
                     title: Text(item.title),
                     subtitle:
                         item.subtitle != null ? Text(item.subtitle!) : null,
@@ -583,10 +617,15 @@ class _SettingsItem {
     required this.title,
     this.subtitle,
     required this.onTap,
+    this.showDot = false,
   });
 
   final IconData icon;
   final String title;
   final String? subtitle;
   final VoidCallback onTap;
+
+  /// Shows a small red dot on the leading icon — pending activity behind
+  /// this row (e.g. new booking requests behind "Switch to hosting").
+  final bool showDot;
 }

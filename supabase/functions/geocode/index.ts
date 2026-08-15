@@ -9,7 +9,8 @@
 // Results are biased to Bangladesh (region + country component filter) since
 // the marketplace is BD-only — "banani" should resolve to Dhaka, not elsewhere.
 //
-// Input:  { query: "dakshinkhan" }
+// Input:  { query: "dakshinkhan" }            — forward: name → coordinates
+//         { lat: 23.81, lng: 90.41 }          — reverse: coordinates → address
 // Output: { found: true, lat, lng, label } | { found: false } | { error }
 //
 // Deploy: supabase functions deploy geocode
@@ -19,6 +20,33 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, jsonResponse } from "../_shared/otp.ts";
 
 const SERVER_KEY = Deno.env.get("GOOGLE_MAPS_SERVER_KEY") ?? "";
+
+// A Google geometry's box → the { ne, sw } corners the app filters and frames
+// by. `bounds` (the exact geocoded extent) beats `viewport` (a padded display
+// box) when present; null when neither is usable (e.g. a bare street address).
+function extractBounds(
+  geometry: {
+    bounds?: { northeast?: Corner; southwest?: Corner };
+    viewport?: { northeast?: Corner; southwest?: Corner };
+  } | undefined,
+): { ne_lat: number; ne_lng: number; sw_lat: number; sw_lng: number } | null {
+  const box = geometry?.bounds ?? geometry?.viewport;
+  const ne = box?.northeast;
+  const sw = box?.southwest;
+  if (
+    !ne || !sw ||
+    typeof ne.lat !== "number" || typeof ne.lng !== "number" ||
+    typeof sw.lat !== "number" || typeof sw.lng !== "number"
+  ) {
+    return null;
+  }
+  return { ne_lat: ne.lat, ne_lng: ne.lng, sw_lat: sw.lat, sw_lng: sw.lng };
+}
+
+interface Corner {
+  lat: number;
+  lng: number;
+}
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -32,15 +60,23 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { query } = await req.json();
-    if (typeof query !== "string" || query.trim().length === 0) {
-      return jsonResponse(400, { error: "query is required" });
+    const { query, lat, lng } = await req.json();
+    const reverse = typeof lat === "number" && typeof lng === "number" &&
+      Number.isFinite(lat) && Number.isFinite(lng);
+    if (!reverse && (typeof query !== "string" || query.trim().length === 0)) {
+      return jsonResponse(400, { error: "query or lat/lng is required" });
     }
 
     const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
-    url.searchParams.set("address", query.trim().slice(0, 200));
+    if (reverse) {
+      // Reverse: the pin a host dropped on the map → a readable address. Web
+      // has no platform reverse-geocoder either, so it lands here too.
+      url.searchParams.set("latlng", `${lat},${lng}`);
+    } else {
+      url.searchParams.set("address", query.trim().slice(0, 200));
+      url.searchParams.set("components", "country:BD");
+    }
     url.searchParams.set("region", "bd");
-    url.searchParams.set("components", "country:BD");
     url.searchParams.set("key", SERVER_KEY);
 
     const resp = await fetch(url.toString());
@@ -59,7 +95,13 @@ serve(async (req: Request) => {
       found: true,
       lat: first.geometry.location.lat,
       lng: first.geometry.location.lng,
-      label: first.formatted_address ?? query.trim(),
+      label: first.formatted_address ??
+        (reverse ? `${lat}, ${lng}` : query.trim()),
+      // The place's true extent, so the search covers exactly "Uttara" and not
+      // its neighbours. `bounds` is the precise geocoded box (present for areas
+      // like a thana or city); `viewport` is the recommended display box and is
+      // always present — prefer the tighter `bounds` when Google gives it.
+      bounds: extractBounds(first.geometry),
     });
   } catch (e) {
     return jsonResponse(500, { error: String(e) });

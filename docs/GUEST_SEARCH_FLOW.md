@@ -1,15 +1,15 @@
 # Guest Listing Search — Explore Tab
 
 How a guest finds listings in the Explore tab: the default browse feed, the
-search sheet, category/purpose chips, and the server-side `search_listings`
-RPC that powers all of it.
+search sheet (location, dates, guests, property types, purpose), and the
+server-side `search_listings` RPC that powers all of it.
 
 ## Key components
 
 | Layer | File | Role |
 |---|---|---|
-| UI (screen) | `lib/screens/explore/explore_screen.dart` | Search bar, category & purpose chips, curated rows / results grid, infinite scroll |
-| UI (sheet) | `_SearchSheet` in `explore_screen.dart` | Filter form: location, dates/time, guests, property types |
+| UI (screen) | `lib/screens/explore/explore_screen.dart` | Search bar, curated rows / results grid, infinite scroll |
+| UI (sheet) | `_SearchSheet` in `explore_screen.dart` | Filter form: location, property types, purpose of stay (opens the landmark picker), dates/time, guests — ALL filters live here, the page has no chip rows |
 | UI (picker) | `lib/widgets/landmark_picker_sheet.dart` | Landmark chooser for purpose search — curated `landmarks` rows plus live Google Places matches (`lib/services/places_service.dart` → `places-search` edge function), so any place findable on Google Maps can anchor the search |
 | State | `lib/state/search_state.dart` (`SearchStateNotifier`) | Holds `SearchFilters` + results; debounces stale responses via a search token |
 | Model | `lib/models/search_filters.dart` (`SearchFilters`) | Immutable filter set; `hasActiveFilters` decides feed vs search mode |
@@ -50,19 +50,18 @@ flowchart TD
     FEED --> ROWS[Curated rows:\nPopular / Budget / Newest /\nFeatured / Top rated / Stays in city]
     ROWS -- "scroll ≥ 80%" --> FEED
 
-    A -- taps search bar --> SHEET[Search sheet opens\nlocation, dates or single day + time,\nguests, property types]
+    A -- taps search bar --> SHEET[Search sheet opens\nlocation, property types,\npurpose of stay, dates or\nsingle day + time, guests]
     SHEET -- types location --> SUGG[City suggestions\nfrom already-loaded listings,\ntop 5 by listing count]
-    SHEET -- taps Search --> APPLY[searchState.updateFilters]
 
-    A -- taps purpose chip\nmedical / exam / tourism… --> LM{Purpose needs\na landmark?}
-    LM -- yes --> PICK[Landmark picker sheet\nsearch_landmarks RPC\n+ live Google Places\nvia places-search edge fn]
-    PICK -- chosen --> APPLY2[updateFilters:\npurposeTags + landmark\n+ radius 15 km]
-    PICK -- dismissed --> A
-    LM -- no --> APPLY2
+    SHEET -- taps purpose pill\nmedical / exam / tourism… --> PICK[Landmark picker sheet\nsearch_landmarks RPC\n+ live Google Places\nvia places-search edge fn]
+    PICK -- chosen --> ANCHOR[Landmark fills the Where\nfield + center coordinates]
+    PICK -- dismissed --> SHEET
+    ANCHOR --> SHEET
+
+    SHEET -- taps Search --> APPLY[searchState.updateFilters\nincl. purposeTags + landmark\n+ radius 15 km when anchored]
 
     A -- taps 'See all' on a city row --> CITY[updateLocation city] --> RUN
     APPLY --> RUN[_runSearch]
-    APPLY2 --> RUN
 
     RUN --> TOK[token = ++_searchToken\nisSearching = true]
     TOK --> RPC[repository.searchListingsFromDb\nsupabase.rpc 'search_listings'\nlimit 50]
@@ -70,7 +69,7 @@ flowchart TD
     CHK -- no --> DROP[Drop stale response]
     CHK -- yes --> RES[results stored\nnotifyListeners]
 
-    RES --> POST[Client-side post-filters:\ncategory chip type,\nexclude guest's own listings]
+    RES --> POST[Client-side post-filter:\nexclude guest's own listings]
     POST --> GRID{Results empty?}
     GRID -- yes --> EMPTY[No listings found\nTry adjusting your filters]
     GRID -- no --> SHOW[Responsive grid\nof ListingCardModern]
@@ -113,7 +112,7 @@ sequenceDiagram
     RP-->>SN: List<Listing>
     SN->>SN: token unchanged? → store results,<br/>isSearching = false, notify
     SN-->>ES: notifyListeners
-    ES->>ES: post-filter (category chip,<br/>hide own listings)
+    ES->>ES: post-filter (hide own listings)
     ES-->>G: results grid / empty state
 
     Note over G,PG: Guest clears search
@@ -158,10 +157,9 @@ facilities, and `distance_m` — so the client does no joins.
 - **Stale-response guard** — every `_runSearch()` increments `_searchToken`;
   a response is discarded unless its token is still the newest. Rapid filter
   changes can't render out of order.
-- **Post-filters in the UI** — two filters are applied on the client after
-  results arrive ([explore_screen.dart:142](lib/screens/explore/explore_screen.dart#L142-L161)):
-  the category chip (Room / Seat / Full house scroll) and *exclude the signed-in
-  user's own listings*.
+- **Post-filter in the UI** — after results arrive the client only *excludes
+  the signed-in user's own listings* (and blocked hosts); property type and
+  purpose are server-side filters set from the search sheet.
 - **City suggestions are local** — the search sheet's location autocomplete is
   built from cities of listings already loaded in memory, not from a server
   query. Cities that only appear on unfetched feed pages won't be suggested.
@@ -171,6 +169,47 @@ facilities, and `distance_m` — so the client does no joins.
 - **Errors fail soft** — the repository catches RPC errors and returns `[]`
   (logged via `debugPrint`); the state also stores `error`, but the screen
   currently renders the empty state rather than an error message.
+
+## Landmark suggestions are restricted to the picked category
+
+The landmark picker's live map suggestions come from the `places-search` edge
+function, which takes the **landmark category** (`hospital`, `exam_center`,
+`university`, `tourist_spot`, `business_hub`) — not a list of Google types.
+The category → Google-place-type mapping lives in that function on purpose:
+Android guests run whatever APK they last installed, so mapping fixes must not
+need a client release.
+
+Two lists per category, and they are deliberately different:
+
+| | meaning | limits |
+|---|---|---|
+| `request` | what Google Autocomplete is *asked* to restrict to | ≤ 5 types from place-types Table 1/2 joined by `\|`, **or** exactly one Table 3 filter (`(regions)`, `establishment`) which cannot be mixed with anything — otherwise `INVALID_REQUEST` |
+| `accept` | what a returned prediction must carry to be shown | no limit; may be wider than `request` |
+
+Current mapping (verified against the live API for Bangladesh, Aug 2026):
+
+| Category | request | notes |
+|---|---|---|
+| `hospital` | `hospital\|doctor` | `health` is deliberately excluded — it's a broad Table 2 umbrella that also covers pharmacies (a "FARMECY" leaked in under it) |
+| `exam_center` | `school\|primary_school\|secondary_school\|university` + `library` | BD colleges are typed `university`, not `school` |
+| `university` | `university` | |
+| `tourist_spot` | `tourist_attraction\|museum\|park\|natural_feature\|zoo` | `natural_feature` is essential — Cox's Bazar Sea Beach is *only* that. `accept` additionally allows places of worship, since historic mosques/temples (Sixty Dome Mosque) are often typed only that way |
+| `business_hub` | `(regions)` | business hubs here are **areas** (Motijheel, Gulshan, Karwan Bazar), not businesses, so this asks for localities/sublocalities rather than establishments |
+
+**Two passes, because a narrow filter costs recall.** Google applies the
+request-level type filter over a limited candidate set, so a narrow filter can
+return nothing even when a matching place exists — `lalbagh` finds no
+`tourist_attraction` although Lalbagh Kellah is one, and `karwan` finds no
+region although Karwan Bazar is one. So: pass 1 asks for the category
+(precision, and the only call for a typical query); if it yields nothing,
+pass 2 re-asks unrestricted and keeps only predictions whose own types are in
+`accept`. Recall returns without losing precision — `kfc` under Medical still
+comes back empty.
+
+Curated `landmarks` rows are matched separately by the `search_landmarks` RPC
+and are *not* subject to any of this, which is what keeps un-taggable venues
+reachable: British Council and IDP IELTS carry no educational Google type at
+all, but they are seeded exam centers.
 
 ## Known limitations
 
@@ -206,3 +245,30 @@ location** in the search sheet:
 Caveats: listings without a map pin are invisible to proximity search, and
 listings pinned at the old default coordinates (Mohakhali) rank wrongly —
 they need re-pinning via Edit listing.
+
+## How search results are laid out
+
+| Screen | Layout |
+| --- | --- |
+| Phone, results have pins | `ResultsMapSheet` — the map fills the area, the results ride over it in a `DraggableScrollableSheet` snapping to 15% / 45% / 95% |
+| Wide, results have pins | The map is a 320px banner above the card grid (a draggable sheet over a 1400px map reads badly) |
+| No pins anywhere | The card grid alone |
+
+All three build their content from `_resultSlivers()` in `explore_screen.dart`,
+so the banner, cards and footer can't drift apart.
+
+Two traps live in that sheet, both already paid for:
+
+- **A `DraggableScrollableSheet` is dragged by its scrollable and nothing
+  else.** The grab handle has to be *inside* the `CustomScrollView` (it's a
+  pinned `SliverPersistentHeader`), or it looks draggable and does nothing.
+- **On web a Google map is a DOM element that wins the browser's hit-test over
+  anything Flutter paints on top of it.** Drags and wheel events meant for the
+  sheet reached the map as well, so it panned and zoomed while the sheet stayed
+  still. Anything drawn over a map — the sheet, the expand button — must be
+  wrapped in `PointerInterceptor`, which puts a real DOM blocker in front of
+  the map. It is a no-op off web.
+
+`ResultsMapSheet` takes the map as a plain widget so it can be tested
+(`test/widgets/results_map_sheet_test.dart`); `ExploreScreen` itself still
+can't be built in a test.

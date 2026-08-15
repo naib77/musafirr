@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/theme/app_colors.dart';
 
 /// The single, app-wide page header that sits at the top of every primary
-/// tab (just below the Guest/Host switcher).
+/// tab (directly below the status bar).
 ///
 /// Before this existed, some tabs used a flat bold "slim header" while others
 /// used a Material [AppBar], so titles rendered at different sizes/weights and
@@ -11,7 +11,7 @@ import '../core/theme/app_colors.dart';
 /// treatment, one action-chip style, one rhythm.
 ///
 /// It is intentionally flat (no elevation) and applies **no** top [SafeArea] —
-/// the Guest/Host switcher is the single top-inset consumer (see
+/// the shell's status-bar shim is the single top-inset consumer (see
 /// `main_shell.dart`), so headers below it must not re-add that padding.
 ///
 /// ```dart
