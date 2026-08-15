@@ -2,12 +2,15 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:geocoding/geocoding.dart' as geo;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/geo_bounds.dart';
+
 /// A place name resolved to coordinates, ready to center a proximity search.
 class GeocodeResult {
   const GeocodeResult({
     required this.latitude,
     required this.longitude,
     this.label,
+    this.bounds,
   });
 
   final double latitude;
@@ -16,6 +19,11 @@ class GeocodeResult {
   /// Human-readable resolved name (e.g. "Dakshin Khan, Dhaka 1230"), when the
   /// resolver provides one.
   final String? label;
+
+  /// The place's true extent, when the resolver provides one (the web/edge
+  /// path does; the on-device platform geocoder does not). Present → the search
+  /// covers exactly this box instead of a fixed radius ring.
+  final GeoBounds? bounds;
 }
 
 /// Resolves a typed place name ("dakshinkhan") to coordinates.
@@ -32,12 +40,19 @@ class GeocodingService {
   Future<GeocodeResult?> geocode(String query) async {
     final q = query.trim();
     if (q.isEmpty) return null;
-    if (kIsWeb) return _geocodeViaEdgeFunction(q);
+    // Edge function FIRST on every platform: it returns the place's bounds
+    // (its `viewport`/`bounds` box), which the search needs to frame and filter
+    // to the place's real extent — "Dhaka" to Dhaka, not the sprawl north into
+    // Tongi/Gazipur. The on-device geocoder returns a bare point (no box), so
+    // it's only a fallback for when the edge call fails.
+    final viaEdge = await _geocodeViaEdgeFunction(q);
+    if (viaEdge != null) return viaEdge;
+    if (kIsWeb) return null;
     try {
       // Same Bangladesh bias the edge function applies via the components
       // filter — the marketplace is BD-only.
       final locations = await geo.locationFromAddress('$q, Bangladesh');
-      if (locations.isEmpty) return _geocodeViaEdgeFunction(q);
+      if (locations.isEmpty) return null;
       final loc = locations.first;
       return GeocodeResult(
         latitude: loc.latitude,
@@ -45,7 +60,7 @@ class GeocodingService {
         label: q,
       );
     } catch (_) {
-      return _geocodeViaEdgeFunction(q);
+      return null;
     }
   }
 
@@ -103,6 +118,7 @@ class GeocodingService {
         latitude: (data['lat'] as num).toDouble(),
         longitude: (data['lng'] as num).toDouble(),
         label: data['label'] as String?,
+        bounds: GeoBounds.fromJson(data['bounds']),
       );
     } catch (_) {
       return null;

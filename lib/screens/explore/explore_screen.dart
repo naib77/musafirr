@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/utils/responsive.dart';
+import '../../models/geo_bounds.dart';
 import '../../models/listing.dart';
 import '../../models/listing_type.dart';
 import '../../models/listing_purpose.dart';
@@ -565,12 +566,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
     return ResultsMapSheet(
       // Full-bleed and fully interactive: with the sheet handling the list,
-      // nothing competes with the map for drags any more.
-      map: ListingPriceMap(
+      // nothing competes with the map for drags any more. The sheet reports how
+      // much of the map it covers so the camera frames results ABOVE it.
+      mapBuilder: (context, bottomInset) => ListingPriceMap(
         listings: listings,
         onListingTap: _openListingDetail,
         height: null,
         interactive: true,
+        bottomInset: bottomInset,
       ),
       slivers: _resultSlivers(listings, theme, singleColumn: true),
     );
@@ -1019,6 +1022,10 @@ class _SearchSheetState extends State<_SearchSheet> {
   // the point belonged to the old text.
   double? _pickedLat;
   double? _pickedLng;
+  // The resolved place's extent (a geocoded/Places viewport), when the picked
+  // place is an area rather than a precise point. Present → the search covers
+  // exactly this box instead of a radius ring. Cleared alongside the point.
+  GeoBounds? _pickedBounds;
   bool _settingTextProgrammatically = false;
   bool _locatingMe = false;
   bool _resolvingPlace = false;
@@ -1041,6 +1048,7 @@ class _SearchSheetState extends State<_SearchSheet> {
     _settingTextProgrammatically = false;
     _pickedLat = filters.latitude;
     _pickedLng = filters.longitude;
+    _pickedBounds = filters.bounds;
 
     if (filters.checkIn != null && filters.checkOut != null) {
       _dateRange = DateTimeRange(
@@ -1071,6 +1079,7 @@ class _SearchSheetState extends State<_SearchSheet> {
     // applies as a tag filter without a landmark.
     _pickedLat = null;
     _pickedLng = null;
+    _pickedBounds = null;
     _pickedLandmark = null;
     final query = widget.searchController.text.toLowerCase();
     _placeDebounce?.cancel();
@@ -1141,10 +1150,17 @@ class _SearchSheetState extends State<_SearchSheet> {
   void _selectSuggestion(_CitySuggestion suggestion) {
     _placeDebounce?.cancel();
     _placeRequestId++; // invalidate any in-flight autocomplete
+    // Guard the programmatic write: without this, setting the field text fires
+    // the controller listener (_onLocationChanged), which recomputes the
+    // suggestions and schedules a fresh places lookup — reopening the dropdown
+    // ~300ms after the tap. The Google-prediction and current-location handlers
+    // guard the same way; this one was missing it.
+    _settingTextProgrammatically = true;
     widget.searchController.text = suggestion.city;
     widget.searchController.selection = TextSelection.fromPosition(
       TextPosition(offset: suggestion.city.length),
     );
+    _settingTextProgrammatically = false;
     setState(() {
       _showSuggestions = false;
       _placeSuggestions = [];
@@ -1165,7 +1181,10 @@ class _SearchSheetState extends State<_SearchSheet> {
     );
     _settingTextProgrammatically = false;
     setState(() => _resolvingSuggestionId = s.placeId);
-    final place = await PlacesService().resolve(s, type: '');
+    // locate (not resolve): the search bar only needs coordinates + the place's
+    // extent, and locate carries the viewport bounds that let the search cover
+    // exactly this area — resolve would flatten it to a point-only Landmark.
+    final place = await PlacesService().locate(s);
     if (!mounted) return;
     setState(() {
       _resolvingSuggestionId = null;
@@ -1176,6 +1195,7 @@ class _SearchSheetState extends State<_SearchSheet> {
       if (place != null) {
         _pickedLat = place.latitude;
         _pickedLng = place.longitude;
+        _pickedBounds = place.bounds;
       }
     });
   }
@@ -1205,6 +1225,8 @@ class _SearchSheetState extends State<_SearchSheet> {
     setState(() {
       _pickedLat = position.latitude;
       _pickedLng = position.longitude;
+      // "Near me" is a point + radius search, not an area — no box.
+      _pickedBounds = null;
       _locatingMe = false;
       _suggestions = [];
       _showSuggestions = false;
@@ -1310,6 +1332,8 @@ class _SearchSheetState extends State<_SearchSheet> {
       _settingTextProgrammatically = false;
       _pickedLat = chosen.latitude;
       _pickedLng = chosen.longitude;
+      // A landmark anchors a fixed-radius ring around the place, not a box.
+      _pickedBounds = null;
       _suggestions = [];
       _placeSuggestions = [];
       _showSuggestions = false;
@@ -1344,18 +1368,26 @@ class _SearchSheetState extends State<_SearchSheet> {
     final text = widget.searchController.text.trim();
     double? lat = _pickedLat;
     double? lng = _pickedLng;
+    GeoBounds? bounds = _pickedBounds;
 
-    // No point yet and the text isn't a known listing city → try to resolve
-    // it to coordinates so the search runs by expanding proximity rings.
-    // If geocoding finds nothing, fall through to the classic text search.
-    if (lat == null && text.isNotEmpty && !_isKnownCity(text)) {
+    // No point picked yet → resolve the typed text. We do this even for a known
+    // listing city ("Dhaka"): the resolver returns the place's box, which lets
+    // the search cover — and the map frame to — the city's real extent instead
+    // of sprawling north into Tongi/Gazipur. Priority:
+    //   • a box came back  → search & frame within it (best; areas and cities);
+    //   • no box, unknown  → center an expanding proximity ring on the point;
+    //   • no box, known city (or geocoding failed) → classic city text search.
+    if (lat == null && bounds == null && text.isNotEmpty) {
       setState(() => _resolvingPlace = true);
       final place = await GeocodingService().geocode(text);
       if (!mounted) return;
       setState(() => _resolvingPlace = false);
       if (place != null) {
-        lat = place.latitude;
-        lng = place.longitude;
+        bounds = place.bounds;
+        if (bounds == null && !_isKnownCity(text)) {
+          lat = place.latitude;
+          lng = place.longitude;
+        }
       }
     }
 
@@ -1367,6 +1399,10 @@ class _SearchSheetState extends State<_SearchSheet> {
         latitude: lat,
         longitude: lng,
         clearCoordinates: lat == null || lng == null,
+        // Carry the place's extent when we have one; a landmark or a point-only
+        // resolve must drop any stale box so it doesn't keep framing the map.
+        bounds: _pickedLandmark == null ? bounds : null,
+        clearBounds: bounds == null || _pickedLandmark != null,
         checkIn:
             _dateMode == SearchDateMode.dateRange ? _dateRange?.start : null,
         checkOut:

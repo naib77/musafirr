@@ -33,6 +33,33 @@ const SERVER_KEY = Deno.env.get("GOOGLE_MAPS_SERVER_KEY") ?? "";
 
 const BD = { latMin: 20.5, latMax: 26.7, lngMin: 88.0, lngMax: 92.8 };
 
+interface Corner {
+  lat: number;
+  lng: number;
+}
+
+// A Place Details geometry's box → the { ne, sw } corners the app filters and
+// frames by. Prefers the exact `bounds` over the padded display `viewport`;
+// null when neither is present (a precise point like a single building).
+function extractBounds(
+  geometry: {
+    bounds?: { northeast?: Corner; southwest?: Corner };
+    viewport?: { northeast?: Corner; southwest?: Corner };
+  } | undefined,
+): { ne_lat: number; ne_lng: number; sw_lat: number; sw_lng: number } | null {
+  const box = geometry?.bounds ?? geometry?.viewport;
+  const ne = box?.northeast;
+  const sw = box?.southwest;
+  if (
+    !ne || !sw ||
+    typeof ne.lat !== "number" || typeof ne.lng !== "number" ||
+    typeof sw.lat !== "number" || typeof sw.lng !== "number"
+  ) {
+    return null;
+  }
+  return { ne_lat: ne.lat, ne_lng: ne.lng, sw_lat: sw.lat, sw_lng: sw.lng };
+}
+
 /// Per landmark category, two distinct things (they are NOT the same list):
 ///
 /// `request` — what Google is *asked* to restrict to. Autocomplete allows at
@@ -222,6 +249,11 @@ async function resolve(placeId: string): Promise<Response> {
       .replace(/, Bangladesh$/, ""),
     lat: loc.lat,
     lng: loc.lng,
+    // The place's extent (Place Details returns `viewport`, occasionally the
+    // tighter `bounds`) so an area picked from the search bar — "Uttara",
+    // "Bashundhara R/A" — filters and frames to exactly that area, not a fixed
+    // ring that spills into the next neighbourhood.
+    bounds: extractBounds(data.result.geometry),
   });
 }
 

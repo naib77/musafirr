@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/geo_bounds.dart';
 import '../models/landmark.dart';
 
 /// A Google Places Autocomplete prediction — a name to show in the picker.
@@ -25,6 +26,7 @@ class PlaceLocation {
     required this.latitude,
     required this.longitude,
     this.label,
+    this.bounds,
   });
 
   final String name;
@@ -34,6 +36,11 @@ class PlaceLocation {
 
   final double latitude;
   final double longitude;
+
+  /// The place's extent, when it's an area (a thana, a residential block)
+  /// rather than a precise point. Present → the search bar covers exactly this
+  /// area instead of a fixed radius ring around its center.
+  final GeoBounds? bounds;
 }
 
 /// Google-Maps-style type-ahead for the landmark picker (via the
@@ -109,6 +116,7 @@ class PlacesService {
             : (s.label.isEmpty ? null : s.label),
         latitude: (data['lat'] as num).toDouble(),
         longitude: (data['lng'] as num).toDouble(),
+        bounds: GeoBounds.fromJson(data['bounds']),
       );
     } catch (_) {
       return null;

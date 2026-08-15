@@ -21,6 +21,33 @@ import { corsHeaders, jsonResponse } from "../_shared/otp.ts";
 
 const SERVER_KEY = Deno.env.get("GOOGLE_MAPS_SERVER_KEY") ?? "";
 
+// A Google geometry's box → the { ne, sw } corners the app filters and frames
+// by. `bounds` (the exact geocoded extent) beats `viewport` (a padded display
+// box) when present; null when neither is usable (e.g. a bare street address).
+function extractBounds(
+  geometry: {
+    bounds?: { northeast?: Corner; southwest?: Corner };
+    viewport?: { northeast?: Corner; southwest?: Corner };
+  } | undefined,
+): { ne_lat: number; ne_lng: number; sw_lat: number; sw_lng: number } | null {
+  const box = geometry?.bounds ?? geometry?.viewport;
+  const ne = box?.northeast;
+  const sw = box?.southwest;
+  if (
+    !ne || !sw ||
+    typeof ne.lat !== "number" || typeof ne.lng !== "number" ||
+    typeof sw.lat !== "number" || typeof sw.lng !== "number"
+  ) {
+    return null;
+  }
+  return { ne_lat: ne.lat, ne_lng: ne.lng, sw_lat: sw.lat, sw_lng: sw.lng };
+}
+
+interface Corner {
+  lat: number;
+  lng: number;
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -70,6 +97,11 @@ serve(async (req: Request) => {
       lng: first.geometry.location.lng,
       label: first.formatted_address ??
         (reverse ? `${lat}, ${lng}` : query.trim()),
+      // The place's true extent, so the search covers exactly "Uttara" and not
+      // its neighbours. `bounds` is the precise geocoded box (present for areas
+      // like a thana or city); `viewport` is the recommended display box and is
+      // always present — prefer the tighter `bounds` when Google gives it.
+      bounds: extractBounds(first.geometry),
     });
   } catch (e) {
     return jsonResponse(500, { error: String(e) });

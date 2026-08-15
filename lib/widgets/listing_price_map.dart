@@ -42,10 +42,18 @@ class ListingPriceMap extends StatefulWidget {
     required this.onListingTap,
     this.height = 240,
     this.interactive = false,
+    this.bottomInset = 0,
   });
 
   final List<Listing> listings;
   final void Function(Listing listing) onListingTap;
+
+  /// Height (px) covered at the bottom by an overlay like the results sheet.
+  /// Fed to Google Maps as camera `padding`, so the fit and the map's centre
+  /// sit in the VISIBLE strip above the overlay instead of behind it — without
+  /// it, a "Dhaka" fit centres under the sheet and only the area to the north
+  /// shows. Zero for maps with nothing overlapping them.
+  final double bottomInset;
 
   /// Fixed height for the inline map; null fills the available space, which is
   /// what the full-screen map wants.
@@ -225,8 +233,13 @@ class _ListingPriceMapState extends State<ListingPriceMap> {
     return descriptor;
   }
 
-  /// Frames every result. A single stay (or several at one address) has no
-  /// meaningful bounds, so it gets a fixed neighbourhood-level zoom instead.
+  /// Frames the result pins. Because the search is already filtered to the
+  /// place (server-side bounding box), every pin sits inside the searched area,
+  /// so framing the pins zooms right in on where the stays actually are —
+  /// tighter and more useful than framing the whole city outline. The camera
+  /// `padding` (set from the results sheet) keeps that framing in the visible
+  /// strip above the sheet. A single stay (or several at one address) has no
+  /// meaningful spread, so it gets a fixed neighbourhood-level zoom instead.
   Future<void> _fitToListings({bool animate = false}) async {
     final controller = _controller;
     if (controller == null || _mappable.isEmpty) return;
@@ -242,14 +255,17 @@ class _ListingPriceMapState extends State<ListingPriceMap> {
       maxLng = l.longitude > maxLng ? l.longitude : maxLng;
     }
 
+    // Tight padding (24, not 48) so the pins fill the visible area — the guest
+    // asked for a closer view. A lone/clustered result jumps to a street-level
+    // zoom (15) rather than a wide neighbourhood one.
     final update = (maxLat - minLat < 0.002 && maxLng - minLng < 0.002)
-        ? CameraUpdate.newLatLngZoom(LatLng(minLat, minLng), 14)
+        ? CameraUpdate.newLatLngZoom(LatLng(minLat, minLng), 15)
         : CameraUpdate.newLatLngBounds(
             LatLngBounds(
               southwest: LatLng(minLat, minLng),
               northeast: LatLng(maxLat, maxLng),
             ),
-            48,
+            24,
           );
 
     if (animate) {
@@ -285,6 +301,9 @@ class _ListingPriceMapState extends State<ListingPriceMap> {
           _fitToListings();
         },
         markers: _markers,
+        // Inset the camera so fits and gestures respect the strip left visible
+        // above the results sheet, not the full rectangle it half-covers.
+        padding: EdgeInsets.only(bottom: widget.bottomInset),
         myLocationButtonEnabled: false,
         mapToolbarEnabled: false,
         // Zoom must always be possible. The +/- control is the only way to

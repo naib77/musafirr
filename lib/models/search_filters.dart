@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'geo_bounds.dart';
 import 'landmark.dart';
 import 'listing_purpose.dart';
 import 'listing_type.dart';
@@ -32,11 +33,18 @@ class SearchFilters {
     this.purposeTags = const [],
     this.landmark,
     this.radiusMeters,
+    this.bounds,
   });
 
   final String? location;
   final double? latitude;
   final double? longitude;
+
+  /// The searched place's true extent (a geocoded/Places viewport). When set,
+  /// the search covers exactly this box — "Uttara" stays within Uttara — and
+  /// the results map frames to it, instead of an expanding radius ring that
+  /// spills into neighbouring areas. Null → the point + radius path.
+  final GeoBounds? bounds;
   final DateTime? checkIn;
   final DateTime? checkOut;
   final int guestCount;
@@ -56,6 +64,10 @@ class SearchFilters {
   final List<ListingPurpose> purposeTags;
   final Landmark? landmark;
   final int? radiusMeters;
+
+  /// True when a place extent is available to search within — a valid box
+  /// takes precedence over the radius-ring path.
+  bool get hasBounds => bounds != null && bounds!.isValid;
 
   bool get hasActiveFilters =>
       location != null ||
@@ -140,12 +152,14 @@ class SearchFilters {
     List<ListingPurpose>? purposeTags,
     Landmark? landmark,
     int? radiusMeters,
+    GeoBounds? bounds,
     bool clearLocation = false,
     bool clearDates = false,
     bool clearPriceRange = false,
     bool clearTime = false,
     bool clearLandmark = false,
     bool clearCoordinates = false,
+    bool clearBounds = false,
   }) {
     return SearchFilters(
       location: clearLocation ? null : (location ?? this.location),
@@ -158,6 +172,12 @@ class SearchFilters {
       longitude: (clearLocation || clearCoordinates)
           ? null
           : (longitude ?? this.longitude),
+      // The box is INDEPENDENT of the center point: a city or area resolves to
+      // a box with no center at all, so clearCoordinates must NOT wipe it (that
+      // was the bug where "Dhaka" fell back to marker-fit). Callers that resolve
+      // a new place always pass an explicit `bounds` (+ `clearBounds` when the
+      // new place has none), so a stale box can never leak into the next search.
+      bounds: (clearLocation || clearBounds) ? null : (bounds ?? this.bounds),
       checkIn: clearDates ? null : (checkIn ?? this.checkIn),
       checkOut: clearDates ? null : (checkOut ?? this.checkOut),
       guestCount: guestCount ?? this.guestCount,

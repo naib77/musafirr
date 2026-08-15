@@ -876,23 +876,25 @@ class _HostInfoCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildHostRow(theme),
+          const SizedBox(height: 12),
+          _buildVerifications(theme),
           if (onContactHost != null) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
-              child: OutlinedButton.icon(
+              child: FilledButton.icon(
                 onPressed: onContactHost,
-                icon: const Icon(Icons.chat_bubble_outline, size: 16),
+                icon: const Icon(Icons.chat_bubble_outline, size: 20),
                 label: const Text('Message host'),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(24),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                  textStyle: theme.textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.brand,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size.fromHeight(48),
+                  textStyle: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
@@ -900,6 +902,39 @@ class _HostInfoCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+
+  /// Host trust badges, styled after the profile verification strip. NOTE:
+  /// these currently reflect the platform's host requirements (phone OTP at
+  /// sign-up, admin identity check before a listing can go live) rather than
+  /// per-host flags, which aren't carried on [Listing]. Wire to real host
+  /// verification data once the feed exposes it.
+  Widget _buildVerifications(ThemeData theme) {
+    Widget badge(String label) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.check_circle, size: 16, color: AppColors.success),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: theme.textTheme.labelMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Wrap(
+      spacing: 14,
+      runSpacing: 8,
+      children: [
+        badge('Phone number'),
+        badge('Email'),
+        badge('Identity verification'),
+      ],
     );
   }
 
@@ -969,11 +1004,6 @@ class _HostInfoCard extends StatelessWidget {
                 ),
             ],
           ),
-        ),
-        Icon(
-          Icons.verified_rounded,
-          size: 18,
-          color: AppColors.brand.withValues(alpha: 0.9),
         ),
       ],
     );
