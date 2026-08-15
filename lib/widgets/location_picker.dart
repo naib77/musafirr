@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:pointer_interceptor/pointer_interceptor.dart';
 
+import '../services/geocoding_service.dart';
 import '../services/location_service.dart';
+import '../services/places_service.dart';
+import 'map_place_search_bar.dart';
 import 'modern_banner.dart';
 import 'web_deferred_mount.dart';
 
@@ -17,15 +21,50 @@ class LocationPickerResult {
   final String? address;
 }
 
+/// What the picker needs a map to do: open at [initialTarget] and report where
+/// the camera is. Injected as a builder so the picker can be pumped in a test
+/// without a platform view.
+class LocationPickerMapSpec {
+  const LocationPickerMapSpec({
+    required this.initialTarget,
+    required this.onMapCreated,
+    required this.onCameraMove,
+    required this.onCameraIdle,
+  });
+
+  final LatLng initialTarget;
+  final void Function(GoogleMapController controller) onMapCreated;
+  final void Function(CameraPosition position) onCameraMove;
+  final VoidCallback onCameraIdle;
+}
+
+typedef LocationPickerMapBuilder = Widget Function(LocationPickerMapSpec spec);
+
+/// Uber-style location picker: the pin stays in the middle, the host moves the
+/// map under it, and the search bar jumps the map to a place by name.
 class LocationPicker extends StatefulWidget {
   const LocationPicker({
     super.key,
     this.initialLatitude = 23.8103,
     this.initialLongitude = 90.4125,
+    this.mapBuilder,
+    this.suggest,
+    this.locate,
+    this.addressOf,
   });
 
   final double initialLatitude;
   final double initialLongitude;
+
+  /// Test seams. Production uses a real [GoogleMap], [PlacesService] and
+  /// [GeocodingService].
+  final LocationPickerMapBuilder? mapBuilder;
+  final PlaceSuggestFn? suggest;
+  final PlaceLocateFn? locate;
+  final Future<String?> Function(double latitude, double longitude)? addressOf;
+
+  static const Key confirmKey = ValueKey('location-picker-confirm');
+  static const Key coordinatesKey = ValueKey('location-picker-coordinates');
 
   static Future<LocationPickerResult?> show(
     BuildContext context, {
@@ -50,16 +89,14 @@ class LocationPicker extends StatefulWidget {
 class _LocationPickerState extends State<LocationPicker> {
   GoogleMapController? _controller;
   final _locationService = LocationService();
-  final _searchController = TextEditingController();
+  final _geocoding = GeocodingService();
 
   late double _currentLat;
   late double _currentLng;
   String? _currentAddress;
   bool _isLoadingAddress = false;
   bool _isLoadingLocation = false;
-  bool _isSearching = false;
   bool _mapCreated = false;
-  List<_SearchResult> _searchResults = [];
 
   @override
   void initState() {
@@ -71,7 +108,6 @@ class _LocationPickerState extends State<LocationPicker> {
 
   @override
   void dispose() {
-    _searchController.dispose();
     // Only dispose controller if map was fully created (fixes web bug)
     if (_mapCreated && _controller != null) {
       _controller!.dispose();
@@ -79,18 +115,22 @@ class _LocationPickerState extends State<LocationPicker> {
     super.dispose();
   }
 
+  Future<String?> _lookupAddress(double lat, double lng) =>
+      (widget.addressOf ?? _geocoding.reverse)(lat, lng);
+
+  /// Only the newest lookup may write the address — panning the map fires one
+  /// per stop, and a slow early answer must not land on a later position.
+  int _addressRequest = 0;
+
   Future<void> _fetchAddress() async {
+    final id = ++_addressRequest;
     setState(() => _isLoadingAddress = true);
-    final address = await _locationService.getAddressFromCoordinates(
-      _currentLat,
-      _currentLng,
-    );
-    if (mounted) {
-      setState(() {
-        _currentAddress = address;
-        _isLoadingAddress = false;
-      });
-    }
+    final address = await _lookupAddress(_currentLat, _currentLng);
+    if (!mounted || id != _addressRequest) return;
+    setState(() {
+      _currentAddress = address;
+      _isLoadingAddress = false;
+    });
   }
 
   Future<void> _goToMyLocation() async {
@@ -102,42 +142,33 @@ class _LocationPickerState extends State<LocationPicker> {
       setState(() => _isLoadingLocation = false);
     }
 
-    if (position != null && _controller != null) {
-      final latLng = LatLng(position.latitude, position.longitude);
-      _controller!.animateCamera(
-        CameraUpdate.newLatLngZoom(latLng, 16),
-      );
+    if (position != null) {
+      _moveTo(position.latitude, position.longitude);
     } else if (mounted) {
       ModernBanner.showError(
           context, 'Could not get your location. Please check permissions.');
     }
   }
 
-  Future<void> _searchAddress(String query) async {
-    if (query.trim().length < 3) {
-      setState(() {
-        _searchResults = [];
-        _isSearching = false;
-      });
-      return;
-    }
-
-    setState(() => _isSearching = true);
-
-    final locations = await _locationService.searchAddress(query);
-
-    if (mounted) {
-      setState(() {
-        _isSearching = false;
-        _searchResults = locations
-            .map((loc) => _SearchResult(
-                  title: query,
-                  latitude: loc.latitude,
-                  longitude: loc.longitude,
-                ))
-            .toList();
-      });
-    }
+  /// Moves both the camera and the picked coordinates. The camera callbacks
+  /// would eventually report the same target, but the readout and the Confirm
+  /// button must not wait on an animation — and on a map that never reports
+  /// (no camera events fired) they would never update at all.
+  void _moveTo(double lat, double lng, {String? address}) {
+    setState(() {
+      _currentLat = lat;
+      _currentLng = lng;
+      _currentAddress = address;
+      if (address != null) {
+        // A name we already know beats anything still in flight.
+        _addressRequest++;
+        _isLoadingAddress = false;
+      }
+    });
+    _controller?.animateCamera(
+      CameraUpdate.newLatLngZoom(LatLng(lat, lng), 16),
+    );
+    if (address == null) _fetchAddress();
   }
 
   void _onCameraIdle() {
@@ -149,15 +180,15 @@ class _LocationPickerState extends State<LocationPicker> {
     _currentLng = position.target.longitude;
   }
 
-  void _selectSearchResult(_SearchResult result) {
-    _searchController.clear();
-    setState(() => _searchResults = []);
-
-    _controller?.animateCamera(
-      CameraUpdate.newLatLngZoom(
-        LatLng(result.latitude, result.longitude),
-        16,
-      ),
+  void _onPlacePicked(PlaceLocation place) {
+    // A searched place already knows its own name — no need to reverse-geocode
+    // the coordinates we just got from Google.
+    _moveTo(
+      place.latitude,
+      place.longitude,
+      address: place.label?.isNotEmpty == true
+          ? '${place.name}, ${place.label}'
+          : place.name,
     );
   }
 
@@ -171,45 +202,70 @@ class _LocationPickerState extends State<LocationPicker> {
     );
   }
 
+  Widget _buildMap() {
+    final spec = LocationPickerMapSpec(
+      initialTarget: LatLng(widget.initialLatitude, widget.initialLongitude),
+      onMapCreated: (controller) {
+        _controller = controller;
+        _mapCreated = true;
+      },
+      onCameraMove: _onCameraMove,
+      onCameraIdle: _onCameraIdle,
+    );
+
+    if (widget.mapBuilder != null) return widget.mapBuilder!(spec);
+
+    return WebDeferredMount(
+      builder: (context) => GoogleMap(
+        initialCameraPosition: CameraPosition(
+          target: spec.initialTarget,
+          zoom: 15,
+        ),
+        onMapCreated: spec.onMapCreated,
+        onCameraMove: spec.onCameraMove,
+        onCameraIdle: spec.onCameraIdle,
+        myLocationEnabled: true,
+        myLocationButtonEnabled: false,
+        zoomControlsEnabled: false,
+        mapToolbarEnabled: false,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Pick Location'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+      // Every control here floats over the map, and on web a Google map is a
+      // real DOM element that wins the browser's hit-test against anything
+      // Flutter paints on top of it. Without a PointerInterceptor around each
+      // one, taps land on the map instead: the host could pan the map but never
+      // type in the search box, press Confirm, or even go back.
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(kToolbarHeight),
+        child: PointerInterceptor(
+          child: AppBar(
+            title: const Text('Pick Location'),
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+          ),
+        ),
       ),
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
-          // Map
-          WebDeferredMount(
-            builder: (context) => GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: LatLng(widget.initialLatitude, widget.initialLongitude),
-                zoom: 15,
-              ),
-              onMapCreated: (controller) {
-                _controller = controller;
-                _mapCreated = true;
-              },
-              onCameraMove: _onCameraMove,
-              onCameraIdle: _onCameraIdle,
-              myLocationEnabled: true,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              mapToolbarEnabled: false,
-            ),
-          ),
+          Positioned.fill(child: _buildMap()),
 
-          // Center pin (Uber style)
+          // Center pin (Uber style). Deliberately NOT intercepted — it sits in
+          // the middle of the map and must not swallow pans.
           Center(
             child: Padding(
               padding: const EdgeInsets.only(bottom: 36),
-              child: Icon(
-                Icons.location_pin,
-                size: 48,
-                color: Theme.of(context).colorScheme.primary,
+              child: IgnorePointer(
+                child: Icon(
+                  Icons.location_pin,
+                  size: 48,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
               ),
             ),
           ),
@@ -219,67 +275,12 @@ class _LocationPickerState extends State<LocationPicker> {
             top: MediaQuery.of(context).padding.top + 60,
             left: 16,
             right: 16,
-            child: Column(
-              children: [
-                Material(
-                  elevation: 4,
-                  borderRadius: BorderRadius.circular(12),
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      hintText: 'Search address...',
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon: _isSearching
-                          ? const Padding(
-                              padding: EdgeInsets.all(12),
-                              child: SizedBox(
-                                width: 20,
-                                height: 20,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              ),
-                            )
-                          : _searchController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    setState(() => _searchResults = []);
-                                  },
-                                )
-                              : null,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: Colors.white,
-                    ),
-                    onChanged: _searchAddress,
-                  ),
-                ),
-                if (_searchResults.isNotEmpty)
-                  Material(
-                    elevation: 4,
-                    borderRadius: BorderRadius.circular(12),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      padding: EdgeInsets.zero,
-                      itemCount: _searchResults.length,
-                      itemBuilder: (context, index) {
-                        final result = _searchResults[index];
-                        return ListTile(
-                          leading: const Icon(Icons.location_on_outlined),
-                          title: Text(result.title),
-                          subtitle: Text(
-                            '${result.latitude.toStringAsFixed(4)}, ${result.longitude.toStringAsFixed(4)}',
-                          ),
-                          onTap: () => _selectSearchResult(result),
-                        );
-                      },
-                    ),
-                  ),
-              ],
+            child: PointerInterceptor(
+              child: MapPlaceSearchBar(
+                onPlacePicked: _onPlacePicked,
+                suggest: widget.suggest,
+                locate: widget.locate,
+              ),
             ),
           ),
 
@@ -287,16 +288,18 @@ class _LocationPickerState extends State<LocationPicker> {
           Positioned(
             bottom: 180,
             right: 16,
-            child: FloatingActionButton.small(
-              heroTag: 'myLocationPicker',
-              onPressed: _isLoadingLocation ? null : _goToMyLocation,
-              child: _isLoadingLocation
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.my_location),
+            child: PointerInterceptor(
+              child: FloatingActionButton.small(
+                heroTag: 'myLocationPicker',
+                onPressed: _isLoadingLocation ? null : _goToMyLocation,
+                child: _isLoadingLocation
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.my_location),
+              ),
             ),
           ),
 
@@ -305,74 +308,78 @@ class _LocationPickerState extends State<LocationPicker> {
             bottom: 0,
             left: 0,
             right: 0,
-            child: Container(
-              padding: EdgeInsets.fromLTRB(
-                20,
-                20,
-                20,
-                20 + MediaQuery.of(context).padding.bottom,
-              ),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(20),
+            child: PointerInterceptor(
+              child: Container(
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  20,
+                  20,
+                  20 + MediaQuery.of(context).padding.bottom,
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, -2),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(20),
                   ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.location_pin,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Selected Location',
-                              style: Theme.of(context).textTheme.labelMedium,
-                            ),
-                            const SizedBox(height: 2),
-                            if (_isLoadingAddress)
-                              const Text('Loading address...')
-                            else
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 10,
+                      offset: const Offset(0, -2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.location_pin,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                               Text(
-                                _currentAddress ??
-                                    'Move map to select location',
-                                style: Theme.of(context).textTheme.bodyMedium,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+                                'Selected Location',
+                                style: Theme.of(context).textTheme.labelMedium,
                               ),
-                          ],
+                              const SizedBox(height: 2),
+                              if (_isLoadingAddress)
+                                const Text('Loading address...')
+                              else
+                                Text(
+                                  _currentAddress ??
+                                      'Move map to select location',
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${_currentLat.toStringAsFixed(6)}, ${_currentLng.toStringAsFixed(6)}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: _confirmLocation,
-                    child: const Text('Confirm Location'),
-                  ),
-                ],
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      key: LocationPicker.coordinatesKey,
+                      '${_currentLat.toStringAsFixed(6)}, ${_currentLng.toStringAsFixed(6)}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      key: LocationPicker.confirmKey,
+                      onPressed: _confirmLocation,
+                      child: const Text('Confirm Location'),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -380,16 +387,4 @@ class _LocationPickerState extends State<LocationPicker> {
       ),
     );
   }
-}
-
-class _SearchResult {
-  const _SearchResult({
-    required this.title,
-    required this.latitude,
-    required this.longitude,
-  });
-
-  final String title;
-  final double latitude;
-  final double longitude;
 }

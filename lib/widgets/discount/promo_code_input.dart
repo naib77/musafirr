@@ -162,10 +162,12 @@ class _PromoCodeInputState extends State<PromoCodeInput> {
 
     try {
       final result = await widget.onValidate(code);
+      if (!mounted) return;
       setState(() {
         _result = result;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _result = PromoCodeDisplayResult.error('Failed to validate code');
       });

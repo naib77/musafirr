@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:musafir/widgets/results_map_sheet.dart';
@@ -15,7 +16,8 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: ResultsMapSheet(
-            map: const ColoredBox(color: Colors.green),
+            mapBuilder: (context, bottomInset) =>
+                const ColoredBox(color: Colors.green),
             slivers: [
               SliverList.builder(
                 itemCount: 30,
@@ -71,27 +73,64 @@ void main() {
       expect(sheetTop(tester), lessThan(before - 100));
     });
 
-    testWidgets('it comes to rest at one of the three heights', (tester) async {
+    testWidgets('scrolling the results up drives it to full screen',
+        (tester) async {
       await pumpSheet(tester);
       final height = tester.getSize(find.byType(ResultsMapSheet)).height;
 
-      // Nudged a little way, it snaps rather than stopping wherever the finger
-      // left it.
-      await tester.drag(
-          find.byKey(ResultsMapSheet.handleKey), const Offset(0, -60));
+      // A long scroll on the content drives the sheet continuously to full —
+      // no snap pulls it back partway (which is what defeated a mouse wheel,
+      // whose many small scroll events each got snapped back).
+      await tester.drag(find.text('result 0'), const Offset(0, -600),
+          warnIfMissed: false);
       await tester.pumpAndSettle();
 
       final fraction = (height - sheetTop(tester)) / height;
       expect(
-        [
-          ResultsMapSheet.minSize,
-          ResultsMapSheet.initialSize,
-          ResultsMapSheet.maxSize,
-        ].any((s) => (fraction - s).abs() < 0.02),
-        isTrue,
-        reason: 'rested at ${fraction.toStringAsFixed(3)} of the height',
+        fraction,
+        greaterThan(0.9),
+        reason: 'should reach ~full, was ${fraction.toStringAsFixed(3)}',
       );
     });
+  });
+
+  testWidgets('dragged to full, the Map button brings the map back',
+      (tester) async {
+    await pumpSheet(tester);
+
+    // Drag the sheet all the way up — it now covers the map to the top.
+    await tester.drag(
+        find.byKey(ResultsMapSheet.handleKey), const Offset(0, -600));
+    await tester.pumpAndSettle();
+    final full = sheetTop(tester);
+
+    // Tapping the floating Map button slides the sheet back down so the map is
+    // visible again. (When the map is already visible the button is ignoring
+    // pointers, so a working tap here is itself proof it only acts when full.)
+    await tester.tap(find.byKey(ResultsMapSheet.mapButtonKey));
+    await tester.pumpAndSettle();
+
+    expect(sheetTop(tester), greaterThan(full + 100));
+  });
+
+  testWidgets('a mouse-wheel scroll expands the sheet toward full',
+      (tester) async {
+    await pumpSheet(tester);
+    final before = sheetTop(tester);
+
+    // Simulate a mouse wheel over the sheet — several downward ticks, as a
+    // guest scrolling to see more listings.
+    final pointer = TestPointer(1, PointerDeviceKind.mouse);
+    final spot = tester.getCenter(find.byKey(ResultsMapSheet.surfaceKey));
+    await tester.sendEventToBinding(pointer.hover(spot));
+    for (var i = 0; i < 6; i++) {
+      await tester.sendEventToBinding(pointer.scroll(const Offset(0, 140)));
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+
+    // Expected (Airbnb-style): the sheet grew toward full, not just the list.
+    expect(sheetTop(tester), lessThan(before - 100));
   });
 
   testWidgets('the handle stays put as the results scroll', (tester) async {

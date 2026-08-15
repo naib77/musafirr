@@ -85,6 +85,7 @@ class _MusafirMapState extends State<MusafirMap> {
 
     final position = await _locationService.getCurrentLocation();
 
+    if (!mounted) return;
     setState(() => _isLoadingLocation = false);
 
     if (position != null && _controller != null) {

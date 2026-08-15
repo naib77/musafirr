@@ -44,6 +44,12 @@ class _MusafirAppState extends State<MusafirApp> {
   final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
       GlobalKey<ScaffoldMessengerState>();
 
+  /// The id of the user we last (re)initialised per-user state for. Guards
+  /// [_onAuthStateChanged] so a routine token refresh (which re-notifies
+  /// authState with the SAME user, e.g. on every app resume) does not wipe and
+  /// refetch the whole repository cache — which flashed a blank feed each time.
+  String? _lastAuthedUserId;
+
   late final SupabaseMusafirRepository repository;
   final AuthStateNotifier authState = AuthStateNotifier();
   final FavoritesStateNotifier favoritesState = FavoritesStateNotifier();
@@ -137,10 +143,24 @@ class _MusafirAppState extends State<MusafirApp> {
 
   void _onAuthStateChanged() {
     if (authState.isLoggedIn && authState.currentUser != null) {
-      // User logged in - initialize notifications, favorites, and messaging
-      notificationState.initialize(authState.currentUser!.id);
-      favoritesState.initializeForUser(authState.currentUser!.id);
-      messagingState.initialize(authState.currentUser!.id);
+      final userId = authState.currentUser!.id;
+
+      // Only (re)initialise per-user state when the signed-in USER actually
+      // changes — a first login or a switch to a different account. authState
+      // notifies on EVERY auth event, including the routine token refresh that
+      // fires on app resume and the userUpdated event after a profile/avatar
+      // edit. Without this guard each of those would call
+      // repository.resetForAuthChange(), which clears the listings/bookings
+      // cache and notifies BEFORE the refetch completes — flashing a blank
+      // feed (worse after idle, when the refetch is a cold network call).
+      if (userId == _lastAuthedUserId) return;
+      _lastAuthedUserId = userId;
+
+      // User logged in (or switched) - initialize notifications, favorites,
+      // and messaging.
+      notificationState.initialize(userId);
+      favoritesState.initializeForUser(userId);
+      messagingState.initialize(userId);
 
       // Re-fetch data and (re-)subscribe to booking realtime for this user.
       // The subscription is created once in the repository constructor, so a
@@ -151,6 +171,11 @@ class _MusafirAppState extends State<MusafirApp> {
       // Save FCM token to Supabase for push notifications
       FcmTokenService.instance.initializeForUser();
     } else {
+      // Ignore repeat logged-out notifications; only tear down on the actual
+      // authenticated -> logged-out transition.
+      if (_lastAuthedUserId == null) return;
+      _lastAuthedUserId = null;
+
       // User logged out - clear all per-user state and deactivate FCM token.
       notificationState.clear();
       favoritesState.clearAll();

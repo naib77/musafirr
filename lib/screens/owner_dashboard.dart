@@ -52,6 +52,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
       initialLongitude: double.tryParse(lngController.text) ?? 90.4070,
     );
 
+    if (!mounted) return;
     if (result != null) {
       setState(() {
         latController.text = result.latitude.toStringAsFixed(6);

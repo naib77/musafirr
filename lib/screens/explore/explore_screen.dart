@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/utils/responsive.dart';
+import '../../models/geo_bounds.dart';
 import '../../models/listing.dart';
 import '../../models/listing_type.dart';
 import '../../models/listing_purpose.dart';
@@ -27,6 +28,7 @@ import '../../widgets/purpose_scroll.dart';
 import '../../widgets/hover_lift.dart';
 import '../../widgets/listing_card_modern.dart';
 import '../../widgets/listing_card_wide.dart';
+import 'show_all_listings_screen.dart';
 import '../../widgets/listing_price_map.dart';
 import '../../widgets/notification_bell.dart';
 import '../../widgets/results_map_sheet.dart';
@@ -44,7 +46,15 @@ class ExploreScreen extends StatefulWidget {
     this.bookingLifecycleService,
     this.bookingMessagingCoordinator,
     this.messagingState,
+    this.isActiveTab = true,
   });
+
+  /// Whether Explore is the currently-shown shell tab. Explore is kept alive in
+  /// the shell's IndexedStack, so its [PopScope] stays registered on the shell
+  /// route even while another tab is on screen. Gating the back interception on
+  /// this flag stops a back press on some OTHER tab from also clearing an active
+  /// Explore search (a single back press must do one thing).
+  final bool isActiveTab;
 
   final MusafirRepository repository;
   final AuthStateNotifier authState;
@@ -62,6 +72,14 @@ class ExploreScreen extends StatefulWidget {
 class _ExploreScreenState extends State<ExploreScreen> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+
+  // When a category's "See all" is tapped, its full list is shown inline (so
+  // the shell's bottom nav stays) instead of pushing a route. Non-null title +
+  // list means the show-all view is on screen.
+  String? _showAllTitle;
+  List<Listing>? _showAllItems;
+
+  bool get _showAllActive => _showAllItems != null;
 
   @override
   void initState() {
@@ -110,6 +128,15 @@ class _ExploreScreenState extends State<ExploreScreen> {
     widget.searchState.clearFilters();
     _searchController.clear();
     setState(() {});
+  }
+
+  /// Called by [MainShell] when the Explore tab is re-tapped while it is
+  /// already selected. Search results render inline inside this tab, so a
+  /// re-tap can't switch tabs to escape them — instead it drops any active
+  /// search and returns to the main feed. No-op when no search is active.
+  void resetFromTabTap() {
+    if (_showAllActive) _closeShowAll();
+    if (_searchActive) _clearSearch();
   }
 
   List<Listing> get _filteredListings {
@@ -198,11 +225,19 @@ class _ExploreScreenState extends State<ExploreScreen> {
     // System back / browser back leaves the results instead of leaving the app.
     // The shell's own PopScope only knows about tabs, and Explore is the first
     // tab, so without this a back press on a results page exits.
+    // Back leaves the See-all grid or the search results (in that order) rather
+    // than exiting, but only while Explore is the tab on screen — otherwise the
+    // shell handles back (see [isActiveTab]).
+    final intercept = (_showAllActive || _searchActive) && widget.isActiveTab;
     return PopScope(
-      canPop: !_searchActive,
+      canPop: !intercept,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        if (_searchActive) _clearSearch();
+        if (_showAllActive) {
+          _closeShowAll();
+        } else if (_searchActive) {
+          _clearSearch();
+        }
       },
       child: _buildScaffold(context, theme, wide),
     );
@@ -396,6 +431,19 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   widget.searchState,
                 ]),
                 builder: (context, _) {
+                  // A category's "See all" grid takes over just the content
+                  // area — the search bar, notification bell and leaderboard
+                  // above it, and the shell's bottom nav below, all stay.
+                  if (_showAllActive) {
+                    return ShowAllListingsView(
+                      title: _showAllTitle!,
+                      listings: _showAllItems!,
+                      favoritesState: widget.favoritesState,
+                      onOpenListing: _openListingDetail,
+                      onBack: _closeShowAll,
+                    );
+                  }
+
                   final listings = _filteredListings;
                   final isLoading = _searchActive
                       ? widget.searchState.isSearching
@@ -518,12 +566,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
     return ResultsMapSheet(
       // Full-bleed and fully interactive: with the sheet handling the list,
-      // nothing competes with the map for drags any more.
-      map: ListingPriceMap(
+      // nothing competes with the map for drags any more. The sheet reports how
+      // much of the map it covers so the camera frames results ABOVE it.
+      mapBuilder: (context, bottomInset) => ListingPriceMap(
         listings: listings,
         onListingTap: _openListingDetail,
         height: null,
         interactive: true,
+        bottomInset: bottomInset,
       ),
       slivers: _resultSlivers(listings, theme, singleColumn: true),
     );
@@ -673,13 +723,32 @@ class _ExploreScreenState extends State<ExploreScreen> {
     return counts.entries.reduce((a, b) => b.value > a.value ? b : a).key;
   }
 
+  /// Shows the full curated list behind a category row's "See all" arrow.
+  /// Rendered inline (see [_showAllItems]) so the shell's bottom nav stays.
+  void _openShowAll(String title, List<Listing> items) {
+    setState(() {
+      _showAllTitle = title;
+      _showAllItems = items;
+    });
+  }
+
+  /// Returns from the "See all" grid to the browse feed.
+  void _closeShowAll() {
+    setState(() {
+      _showAllTitle = null;
+      _showAllItems = null;
+    });
+  }
+
   /// Airbnb-style curated rows shown while browsing (no search, no single
   /// category filter): Popular stays in {city}, Featured, Top rated,
   /// Budget-friendly, and other cities — each a horizontal, scrolling list.
   Widget _buildCategoryRows(List<Listing> listings) {
     final sections = <Widget>[];
 
-    void add(String title, List<Listing> items, {VoidCallback? onSeeAll}) {
+    // Every category's "See all" arrow opens the full curated list (the row
+    // itself only shows the first 12) as a client-side grid.
+    void add(String title, List<Listing> items) {
       if (items.isEmpty) return;
       sections.add(
         _CategorySection(
@@ -687,7 +756,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
           listings: items.take(12).toList(),
           favoritesState: widget.favoritesState,
           onOpen: _openListingDetail,
-          onSeeAll: onSeeAll,
+          onSeeAll: () => _openShowAll(title, items),
         ),
       );
     }
@@ -704,15 +773,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
     add(
       mainCity == null ? 'Popular stays' : 'Popular stays in $mainCity',
       popular.where((l) => l.reviewCount > 0 || (l.rating ?? 0) > 0).toList(),
-      // "See all" searches that city, so this row doubles as the entry point
-      // its "Stays in {city}" row used to be (which is now skipped below,
-      // rather than repeating the same city twice on one screen).
-      onSeeAll: mainCity == null
-          ? null
-          : () {
-              widget.searchState.updateLocation(location: mainCity);
-              setState(() {});
-            },
     );
 
     // Budget-friendly — cheapest first (surfaced right after Popular).
@@ -733,8 +793,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       ..sort((a, b) => (b.rating ?? 0).compareTo(a.rating ?? 0));
     add('Top rated', topRated);
 
-    // Location-wise — the busiest cities, "Stays in {city}". "See all" runs a
-    // location search so the grid shows every stay there.
+    // Location-wise — the busiest cities, "Stays in {city}".
     final byCity = <String, List<Listing>>{};
     for (final l in listings) {
       final c = l.city?.trim();
@@ -747,14 +806,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       if (byCity[city]!.length < 2) continue;
       // The first row already covers this one.
       if (city == mainCity) continue;
-      add(
-        'Stays in $city',
-        byCity[city]!,
-        onSeeAll: () {
-          widget.searchState.updateLocation(location: city);
-          setState(() {});
-        },
-      );
+      add('Stays in $city', byCity[city]!);
     }
 
     // Fallback so the screen is never blank when nothing matched a curation.
@@ -880,13 +932,13 @@ class _CategorySection extends StatelessWidget {
                 ),
               ),
               if (onSeeAll != null)
-                TextButton(
+                IconButton(
                   onPressed: onSeeAll,
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: const Text('See all'),
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.all(6),
+                  constraints: const BoxConstraints(),
+                  tooltip: 'See all',
+                  icon: const Icon(Icons.arrow_forward, size: 20),
                 ),
             ],
           ),
@@ -970,6 +1022,10 @@ class _SearchSheetState extends State<_SearchSheet> {
   // the point belonged to the old text.
   double? _pickedLat;
   double? _pickedLng;
+  // The resolved place's extent (a geocoded/Places viewport), when the picked
+  // place is an area rather than a precise point. Present → the search covers
+  // exactly this box instead of a radius ring. Cleared alongside the point.
+  GeoBounds? _pickedBounds;
   bool _settingTextProgrammatically = false;
   bool _locatingMe = false;
   bool _resolvingPlace = false;
@@ -992,6 +1048,7 @@ class _SearchSheetState extends State<_SearchSheet> {
     _settingTextProgrammatically = false;
     _pickedLat = filters.latitude;
     _pickedLng = filters.longitude;
+    _pickedBounds = filters.bounds;
 
     if (filters.checkIn != null && filters.checkOut != null) {
       _dateRange = DateTimeRange(
@@ -1022,6 +1079,7 @@ class _SearchSheetState extends State<_SearchSheet> {
     // applies as a tag filter without a landmark.
     _pickedLat = null;
     _pickedLng = null;
+    _pickedBounds = null;
     _pickedLandmark = null;
     final query = widget.searchController.text.toLowerCase();
     _placeDebounce?.cancel();
@@ -1092,10 +1150,17 @@ class _SearchSheetState extends State<_SearchSheet> {
   void _selectSuggestion(_CitySuggestion suggestion) {
     _placeDebounce?.cancel();
     _placeRequestId++; // invalidate any in-flight autocomplete
+    // Guard the programmatic write: without this, setting the field text fires
+    // the controller listener (_onLocationChanged), which recomputes the
+    // suggestions and schedules a fresh places lookup — reopening the dropdown
+    // ~300ms after the tap. The Google-prediction and current-location handlers
+    // guard the same way; this one was missing it.
+    _settingTextProgrammatically = true;
     widget.searchController.text = suggestion.city;
     widget.searchController.selection = TextSelection.fromPosition(
       TextPosition(offset: suggestion.city.length),
     );
+    _settingTextProgrammatically = false;
     setState(() {
       _showSuggestions = false;
       _placeSuggestions = [];
@@ -1116,7 +1181,10 @@ class _SearchSheetState extends State<_SearchSheet> {
     );
     _settingTextProgrammatically = false;
     setState(() => _resolvingSuggestionId = s.placeId);
-    final place = await PlacesService().resolve(s, type: '');
+    // locate (not resolve): the search bar only needs coordinates + the place's
+    // extent, and locate carries the viewport bounds that let the search cover
+    // exactly this area — resolve would flatten it to a point-only Landmark.
+    final place = await PlacesService().locate(s);
     if (!mounted) return;
     setState(() {
       _resolvingSuggestionId = null;
@@ -1127,6 +1195,7 @@ class _SearchSheetState extends State<_SearchSheet> {
       if (place != null) {
         _pickedLat = place.latitude;
         _pickedLng = place.longitude;
+        _pickedBounds = place.bounds;
       }
     });
   }
@@ -1156,6 +1225,8 @@ class _SearchSheetState extends State<_SearchSheet> {
     setState(() {
       _pickedLat = position.latitude;
       _pickedLng = position.longitude;
+      // "Near me" is a point + radius search, not an area — no box.
+      _pickedBounds = null;
       _locatingMe = false;
       _suggestions = [];
       _showSuggestions = false;
@@ -1261,6 +1332,8 @@ class _SearchSheetState extends State<_SearchSheet> {
       _settingTextProgrammatically = false;
       _pickedLat = chosen.latitude;
       _pickedLng = chosen.longitude;
+      // A landmark anchors a fixed-radius ring around the place, not a box.
+      _pickedBounds = null;
       _suggestions = [];
       _placeSuggestions = [];
       _showSuggestions = false;
@@ -1295,18 +1368,26 @@ class _SearchSheetState extends State<_SearchSheet> {
     final text = widget.searchController.text.trim();
     double? lat = _pickedLat;
     double? lng = _pickedLng;
+    GeoBounds? bounds = _pickedBounds;
 
-    // No point yet and the text isn't a known listing city → try to resolve
-    // it to coordinates so the search runs by expanding proximity rings.
-    // If geocoding finds nothing, fall through to the classic text search.
-    if (lat == null && text.isNotEmpty && !_isKnownCity(text)) {
+    // No point picked yet → resolve the typed text. We do this even for a known
+    // listing city ("Dhaka"): the resolver returns the place's box, which lets
+    // the search cover — and the map frame to — the city's real extent instead
+    // of sprawling north into Tongi/Gazipur. Priority:
+    //   • a box came back  → search & frame within it (best; areas and cities);
+    //   • no box, unknown  → center an expanding proximity ring on the point;
+    //   • no box, known city (or geocoding failed) → classic city text search.
+    if (lat == null && bounds == null && text.isNotEmpty) {
       setState(() => _resolvingPlace = true);
       final place = await GeocodingService().geocode(text);
       if (!mounted) return;
       setState(() => _resolvingPlace = false);
       if (place != null) {
-        lat = place.latitude;
-        lng = place.longitude;
+        bounds = place.bounds;
+        if (bounds == null && !_isKnownCity(text)) {
+          lat = place.latitude;
+          lng = place.longitude;
+        }
       }
     }
 
@@ -1318,6 +1399,10 @@ class _SearchSheetState extends State<_SearchSheet> {
         latitude: lat,
         longitude: lng,
         clearCoordinates: lat == null || lng == null,
+        // Carry the place's extent when we have one; a landmark or a point-only
+        // resolve must drop any stale box so it doesn't keep framing the map.
+        bounds: _pickedLandmark == null ? bounds : null,
+        clearBounds: bounds == null || _pickedLandmark != null,
         checkIn:
             _dateMode == SearchDateMode.dateRange ? _dateRange?.start : null,
         checkOut:
