@@ -4,6 +4,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../core/utils/external_launcher.dart';
 import '../../models/booking.dart';
 import '../../models/listing.dart';
+import '../../models/listing_exact_address.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../widgets/report_sheet.dart';
 
@@ -11,7 +12,7 @@ import '../../widgets/report_sheet.dart';
 /// a dispatcher, share-my-stay, safety tips, and the report entry point.
 /// Opened generically from Profile, or with a [booking] from a trip /
 /// reservation for stay-specific actions.
-class SafetyScreen extends StatelessWidget {
+class SafetyScreen extends StatefulWidget {
   const SafetyScreen({
     super.key,
     required this.repository,
@@ -20,6 +21,36 @@ class SafetyScreen extends StatelessWidget {
 
   final MusafirRepository repository;
   final Booking? booking;
+
+  @override
+  State<SafetyScreen> createState() => _SafetyScreenState();
+}
+
+class _SafetyScreenState extends State<SafetyScreen> {
+  MusafirRepository get repository => widget.repository;
+  Booking? get booking => widget.booking;
+
+  /// The stay's real street address and pin.
+  ///
+  /// `public.listings` only carries the area — enough for browsing, useless to
+  /// an emergency dispatcher. A guest on this screen has a booking the host
+  /// accepted, so `listing_addresses` RLS lets them have the real thing; this
+  /// fetches it rather than reading the redacted line off the listing.
+  ListingExactAddress? _exact;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadExactAddress();
+  }
+
+  Future<void> _loadExactAddress() async {
+    final b = booking;
+    if (b == null) return;
+    final exact = await repository.fetchListingExactAddress(b.listingId);
+    if (exact == null || !mounted) return;
+    setState(() => _exact = exact);
+  }
 
   Listing? get _listing =>
       booking == null ? null : repository.getListingById(booking!.listingId);
@@ -32,16 +63,25 @@ class SafetyScreen extends StatelessWidget {
   String _staySummary() {
     final b = booking!;
     final l = _listing;
+    // Street address and exact pin where the server allowed them, falling back
+    // to the area-level values so the summary is never empty while the fetch is
+    // still in flight.
+    final address = _exact?.address?.trim();
+    final lat = _exact?.latitude ?? l?.latitude;
+    final lng = _exact?.longitude ?? l?.longitude;
+
     final lines = <String>[
       'My stay (Musafir booking):',
       if (b.listingTitle != null) b.listingTitle!,
-      if (l != null && l.address.isNotEmpty)
+      if (address != null && address.isNotEmpty)
+        address
+      else if (l != null && l.address.isNotEmpty)
         l.address
       else if (b.listingCity != null)
         b.listingCity!,
       'From ${_formatDate(b.startAt)} to ${_formatDate(b.endAt)}',
-      if (l != null && l.latitude != 0 && l.longitude != 0)
-        'Map: https://maps.google.com/?q=${l.latitude},${l.longitude}',
+      if (lat != null && lng != null && lat != 0 && lng != 0)
+        'Map: https://maps.google.com/?q=$lat,$lng',
     ];
     return lines.join('\n');
   }

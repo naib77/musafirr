@@ -17,6 +17,7 @@ import '../models/facility.dart';
 import '../models/landmark.dart';
 import '../models/leaderboard_entry.dart';
 import '../models/listing.dart';
+import '../models/listing_exact_address.dart';
 import '../models/listing_purpose.dart';
 import '../models/listing_type.dart';
 import '../models/owner_registration_draft.dart';
@@ -596,6 +597,11 @@ class SupabaseMusafirRepository extends ChangeNotifier
       description: json['description'] as String?,
       city: json['city'] as String?,
       country: json['country'] as String?,
+      // Normally ABSENT: public.listings no longer has these columns, so a
+      // browsing guest gets nulls here. The host and an accepted guest read the
+      // real values from public.listing_addresses via
+      // fetchListingExactAddress(). Still mapped so any other row shape that
+      // does carry them (a local/mock listing) keeps working.
       flatFloor: json['flat_floor'] as String?,
       houseNo: json['house_no'] as String?,
       street: json['street'] as String?,
@@ -640,8 +646,12 @@ class SupabaseMusafirRepository extends ChangeNotifier
   Map<String, dynamic> _listingToJson(Listing listing) {
     return {
       'title': listing.title,
-      'address': listing.address,
+      // `address` is NOT sent: a trigger on public.listings derives it from
+      // area/city so the table can never hold a door-level address. The exact
+      // line goes to public.listing_addresses via _saveListingExactAddress.
       'listing_type': listing.type.name,
+      // Sent exact; the same trigger snaps these to a ~110m grid before they
+      // land. The precise point is preserved in public.listing_addresses.
       'latitude': listing.latitude,
       'longitude': listing.longitude,
       'hourly_rate': listing.hourlyRate,
@@ -653,9 +663,8 @@ class SupabaseMusafirRepository extends ChangeNotifier
       'description': listing.description,
       'city': listing.city,
       'country': listing.country,
-      'flat_floor': listing.flatFloor,
-      'house_no': listing.houseNo,
-      'street': listing.street,
+      // flat_floor / house_no / street are gone from public.listings — they
+      // named a specific door. See _saveListingExactAddress.
       'area': listing.area,
       'postal_code': listing.postalCode,
       'landmark': listing.landmark,
@@ -701,6 +710,61 @@ class SupabaseMusafirRepository extends ChangeNotifier
     } catch (e) {
       debugPrint('Error fetching check-in details: $e');
       return null;
+    }
+  }
+
+  @override
+  Future<ListingExactAddress?> fetchListingExactAddress(
+      String listingId) async {
+    try {
+      final row = await _client
+          .from('listing_addresses')
+          .select()
+          .eq('listing_id', listingId)
+          .maybeSingle();
+      // Null covers both "no row" and "RLS says no" — PostgREST reports a
+      // policy refusal as an empty result, not an error. Either way the caller
+      // must fall back to the area, so they are the same answer here.
+      if (row == null) return null;
+      return ListingExactAddress.fromJson(row);
+    } catch (e) {
+      // Fail closed: a network or policy error must not be read as entitlement.
+      debugPrint('Error fetching listing address: $e');
+      return null;
+    }
+  }
+
+  /// Writes the exact address to the gated side table. RLS restricts this to the
+  /// listing's owner, so a host editing their own place is the only caller that
+  /// can succeed.
+  Future<void> _saveListingExactAddress(
+      String listingId, Listing listing) async {
+    final exact = ListingExactAddress(
+      listingId: listingId,
+      houseNo: listing.houseNo,
+      flatFloor: listing.flatFloor,
+      street: listing.street,
+      // The composed line, built from the parts the host actually entered —
+      // NOT listing.address, which by now may already be the redacted form the
+      // server handed back.
+      address: Listing.composeAddress(
+        houseNo: listing.houseNo,
+        flatFloor: listing.flatFloor,
+        street: listing.street,
+        area: listing.area,
+        city: listing.city,
+        postalCode: listing.postalCode,
+      ),
+      latitude: listing.latitude,
+      longitude: listing.longitude,
+    );
+
+    try {
+      await _client.from('listing_addresses').upsert(exact.toJson());
+    } catch (e) {
+      // Non-fatal: the listing itself saved, and the public area-level location
+      // is already correct. Surfacing this would fail an otherwise good edit.
+      debugPrint('Error saving listing address: $e');
     }
   }
 
@@ -1055,7 +1119,11 @@ class SupabaseMusafirRepository extends ChangeNotifier
       final data = {
         'owner_name': draft.mobile,
         'title': draft.title,
-        'address': draft.address,
+        // No 'address': a trigger derives public.listings.address from
+        // area/city. This legacy quick-register draft carries only a free-text
+        // address and no area, so the public label stays blank until the host
+        // fills in area/city from the full edit screen — we can't safely guess
+        // which part of a typed line is the house number.
         'listing_type': draft.type.name,
         'latitude': draft.latitude,
         'longitude': draft.longitude,
@@ -1065,7 +1133,18 @@ class SupabaseMusafirRepository extends ChangeNotifier
         'is_active': true,
       };
 
-      await _client.from('listings').insert(data);
+      final inserted =
+          await _client.from('listings').insert(data).select('id').single();
+
+      // The typed address and exact pin go to the gated table rather than being
+      // dropped on the floor.
+      await _client.from('listing_addresses').upsert({
+        'listing_id': inserted['id'],
+        'exact_address': draft.address,
+        'latitude': draft.latitude,
+        'longitude': draft.longitude,
+      });
+
       await _refreshListings();
     } catch (e) {
       debugPrint('Error registering listing: $e');
@@ -1324,6 +1403,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
 
       await _saveListingFacilities(realId, listing.facilities);
       await _saveCheckInDetails(realId, listing.checkInDetails);
+      await _saveListingExactAddress(realId, listing);
 
       // Drop the temp-id copy; _refreshListings brings in the canonical row.
       _listings.removeWhere((l) => l.id == listing.id);
@@ -1353,6 +1433,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
           .eq('id', listing.id);
       await _saveListingFacilities(listing.id, listing.facilities);
       await _saveCheckInDetails(listing.id, listing.checkInDetails);
+      await _saveListingExactAddress(listing.id, listing);
     } catch (e) {
       // Roll back to the previous value on failure.
       final i = _listings.indexWhere((l) => l.id == listing.id);

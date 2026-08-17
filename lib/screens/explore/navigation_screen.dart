@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../core/utils/external_launcher.dart';
 
+import '../../core/privacy/listing_location.dart';
 import '../../core/theme/app_colors.dart';
 import '../../models/listing.dart';
 import '../../services/directions_service.dart';
 import '../../services/location_service.dart';
+import '../../widgets/map_focus_button.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/web_deferred_mount.dart';
 
@@ -14,9 +16,16 @@ class NavigationScreen extends StatefulWidget {
   const NavigationScreen({
     super.key,
     required this.listing,
+    required this.location,
   });
 
   final Listing listing;
+
+  /// Where to route to, and how much of the address may be shown. Required
+  /// rather than derived from [listing] so this screen cannot leak an exact
+  /// address just because a future caller forgot to check: it navigates to
+  /// whatever point the gate handed it, and prints whatever label came with it.
+  final ListingLocation location;
 
   @override
   State<NavigationScreen> createState() => _NavigationScreenState();
@@ -33,6 +42,10 @@ class _NavigationScreenState extends State<NavigationScreen> {
   String? _error;
   String _travelMode = 'driving';
 
+  /// A recenter tap is taking a fresh GPS fix. Shown on the button itself so a
+  /// slow fix doesn't read as a dead control.
+  bool _recentering = false;
+
   // The bottom info panel overlays the map, so the map viewport must be
   // padded by the panel's height — otherwise camera fits center the route on
   // the full canvas and the destination ends up hidden behind the panel.
@@ -41,8 +54,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
   double _mapBottomPadding = 0;
 
   LatLng get _destinationLocation => LatLng(
-        widget.listing.latitude,
-        widget.listing.longitude,
+        widget.location.latitude,
+        widget.location.longitude,
       );
 
   Set<Marker> get _markers {
@@ -53,7 +66,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
         position: _destinationLocation,
         infoWindow: InfoWindow(
           title: widget.listing.title,
-          snippet: widget.listing.address,
+          snippet: widget.location.label,
         ),
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
       ),
@@ -180,29 +193,54 @@ class _NavigationScreenState extends State<NavigationScreen> {
   void _fitMapToBothLocations() {
     if (_currentLocation == null || _mapController == null) return;
 
-    final bounds = LatLngBounds(
-      southwest: LatLng(
-        _currentLocation!.latitude < _destinationLocation.latitude
-            ? _currentLocation!.latitude
-            : _destinationLocation.latitude,
-        _currentLocation!.longitude < _destinationLocation.longitude
-            ? _currentLocation!.longitude
-            : _destinationLocation.longitude,
-      ),
-      northeast: LatLng(
-        _currentLocation!.latitude > _destinationLocation.latitude
-            ? _currentLocation!.latitude
-            : _destinationLocation.latitude,
-        _currentLocation!.longitude > _destinationLocation.longitude
-            ? _currentLocation!.longitude
-            : _destinationLocation.longitude,
-      ),
+    final update = framePoints(
+      [_currentLocation!, _destinationLocation],
+      padding: 80,
     );
+    if (update != null) _mapController?.animateCamera(update);
+  }
 
-    _mapController?.animateCamera(
-      CameraUpdate.newLatLngBounds(bounds, 80),
+  /// The Uber/Pathao recenter: take a *fresh* GPS fix and drop the camera on it
+  /// at street zoom. Fresh rather than the fix from when the screen opened,
+  /// because by the time someone reaches for this button they're usually
+  /// already on their way.
+  Future<void> _recenterOnMe() async {
+    if (_recentering) return;
+    setState(() => _recentering = true);
+
+    final position = await _locationService.getCurrentLocation();
+
+    if (!mounted) return;
+    setState(() {
+      _recentering = false;
+      if (position != null) {
+        // Moves the origin pin too, not just the camera.
+        _currentLocation = LatLng(position.latitude, position.longitude);
+      }
+    });
+
+    if (position == null) {
+      ModernBanner.showError(
+        context,
+        'Could not get your location. Please check permissions.',
+      );
+      return;
+    }
+
+    await focusCamera(
+      context,
+      _mapController,
+      CameraUpdate.newLatLngZoom(_currentLocation!, 16.5),
     );
   }
+
+  /// Frames the destination on its own — the "where am I actually going" tap,
+  /// for when the route overview is too wide to make out the address.
+  Future<void> _focusDestination() => focusCamera(
+        context,
+        _mapController,
+        CameraUpdate.newLatLngZoom(_destinationLocation, 16.5),
+      );
 
   Future<void> _openInGoogleMaps() async {
     final origin = _currentLocation != null
@@ -246,6 +284,53 @@ class _NavigationScreenState extends State<NavigationScreen> {
     super.dispose();
   }
 
+  /// The stack of focus controls, or nothing when the info panel has left too
+  /// little map above it to put them on — better absent than floating over the
+  /// panel and the app bar on a short window.
+  Widget _focusControls() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final controls = <Widget>[
+          MapFocusButton(
+            icon: Icons.place_rounded,
+            label: 'Focus on ${widget.listing.title}',
+            onPressed: _focusDestination,
+          ),
+          MapFocusButton(
+            icon: Icons.zoom_out_map_rounded,
+            label: _directions != null
+                ? 'Show the whole route'
+                : 'Show both locations',
+            onPressed: _fitCamera,
+          ),
+          // Primary, and last so it sits closest to the thumb.
+          MapFocusButton(
+            icon: Icons.my_location_rounded,
+            label: 'Center on my location',
+            emphasized: true,
+            busy: _recentering,
+            onPressed: _recenterOnMe,
+          ),
+        ];
+
+        final diameter = MapFocusButton.diameterOf(context);
+        final stackHeight =
+            controls.length * diameter + (controls.length - 1) * 8;
+        if (constraints.maxHeight - _mapBottomPadding < stackHeight + 24) {
+          return const SizedBox.shrink();
+        }
+
+        return Padding(
+          padding: EdgeInsets.only(right: 12, bottom: _mapBottomPadding + 12),
+          child: Align(
+            alignment: Alignment.bottomRight,
+            child: MapFocusControls(children: controls),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -276,11 +361,22 @@ class _NavigationScreenState extends State<NavigationScreen> {
                 _fitCamera();
               },
               myLocationEnabled: true,
-              myLocationButtonEnabled: true,
+              // Ours instead of the SDK's: the native button only exists on
+              // Android, sits under the app bar, and doesn't take a fresh fix.
+              myLocationButtonEnabled: false,
               zoomControlsEnabled: true,
               mapToolbarEnabled: false,
             ),
           ),
+
+          // Focus controls, parked above the info panel so they stay reachable
+          // whatever height the panel settles at. Hidden while the route loads,
+          // where the scrim below would leave them visible but unresponsive.
+          //
+          // Positioned.fill only so the LayoutBuilder can see how much map
+          // there is; Align keeps the controls in the corner, and the empty
+          // remainder isn't hit-testable, so map gestures pass straight through.
+          if (!_isLoading) Positioned.fill(child: _focusControls()),
 
           // Loading overlay
           if (_isLoading)
@@ -467,7 +563,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
                                       ),
                                     ),
                                     Text(
-                                      widget.listing.address,
+                                      widget.location.label,
                                       style:
                                           theme.textTheme.bodySmall?.copyWith(
                                         color:

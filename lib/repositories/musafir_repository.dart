@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/booking.dart';
 import '../models/booking_contacts.dart';
 import '../models/booking_duration.dart';
+import '../models/listing_exact_address.dart';
 import '../models/landmark.dart';
 import '../models/leaderboard_entry.dart';
 import '../models/listing.dart';
@@ -137,6 +138,16 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   /// none / not the owner). Kept separate from the main listing fetch so the
   /// guest-facing explore feed never depends on this private table.
   Future<CheckInDetails?> fetchCheckInDetails(String listingId);
+
+  /// A listing's real street address and coordinates, or null when the caller
+  /// isn't entitled to them.
+  ///
+  /// `public.listings` only ever carries the area-level address and coordinates
+  /// snapped to a ~110m grid; the precise values live in
+  /// `public.listing_addresses` behind RLS that admits the host, an admin, or a
+  /// guest with a confirmed/active/completed booking. A null here is the server
+  /// declining, not a failure — fall back to the area.
+  Future<ListingExactAddress?> fetchListingExactAddress(String listingId);
 
   /// Contact phone numbers for both parties of a confirmed booking (the guest's
   /// and host's login numbers). Returns null if the booking isn't confirmed yet
