@@ -7,12 +7,14 @@ import '../../core/utils/distance_format.dart';
 import '../../core/utils/external_launcher.dart';
 
 import '../../core/currency/money.dart';
+import '../../core/privacy/listing_location.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/responsive.dart';
 import '../../widgets/app_network_image.dart';
 import '../../models/booking.dart';
 import '../../models/booking_conflict_exception.dart';
 import '../../models/listing.dart';
+import '../../models/listing_exact_address.dart';
 import '../../models/listing_purpose.dart';
 import '../../models/listing_type.dart';
 import '../../models/rental_plan.dart';
@@ -26,6 +28,7 @@ import '../../state/messaging_state.dart';
 import '../../state/shell_nav_state.dart';
 import '../messaging/chat_screen.dart';
 import 'listing_gallery_screen.dart';
+import '../../widgets/map_focus_button.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/price_breakdown_card.dart';
 import '../../widgets/price_display.dart';
@@ -63,6 +66,39 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   bool get _isOwnListing {
     final currentUserId = widget.authState.currentUser?.id;
     return currentUserId != null && widget.listing.hostId == currentUserId;
+  }
+
+  /// The exact street address, once the server has agreed to disclose it. Null
+  /// while the request is in flight and null forever for a viewer who isn't
+  /// entitled — the two are indistinguishable on purpose, and both mean "show
+  /// the area".
+  ListingExactAddress? _exactAddress;
+  bool _loadingExactAddress = false;
+
+  /// How much of this listing's location the viewer gets. Decided entirely by
+  /// what came back from `listing_addresses`, whose RLS is the actual gate.
+  ListingLocation get _viewerLocation =>
+      ListingLocation.forListing(widget.listing, _exactAddress);
+
+  /// Asks the server for the exact address. A no is silent and final for this
+  /// attempt; [_onRepositoryChanged] retries when something (a host accepting
+  /// this booking, say) suggests the answer may have changed.
+  Future<void> _loadExactAddress() async {
+    if (_loadingExactAddress || _exactAddress != null) return;
+    _loadingExactAddress = true;
+    final exact =
+        await widget.repository.fetchListingExactAddress(widget.listing.id);
+    if (!mounted) return;
+    _loadingExactAddress = false;
+    if (exact == null) return;
+    setState(() => _exactAddress = exact);
+  }
+
+  /// The host may accept while the guest is sitting on this screen. The
+  /// repository notifies when bookings change, so re-ask then — but only while
+  /// we still have no address, so this can't turn into a request loop.
+  void _onRepositoryChanged() {
+    if (_exactAddress == null) _loadExactAddress();
   }
 
   /// Pre-booking inquiry is offered when messaging is available, the host is
@@ -119,7 +155,15 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _loadExactAddress();
+    widget.repository.addListener(_onRepositoryChanged);
+  }
+
+  @override
   void dispose() {
+    widget.repository.removeListener(_onRepositoryChanged);
     _imageController.dispose();
     super.dispose();
   }
@@ -248,7 +292,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
-                                  '${listing.city ?? listing.address}, ${listing.country ?? 'Bangladesh'}',
+                                  '${listing.city ?? listing.approximateAddress}, ${listing.country ?? 'Bangladesh'}',
                                   style: theme.textTheme.bodyMedium?.copyWith(
                                     color: theme.colorScheme.onSurfaceVariant,
                                   ),
@@ -328,7 +372,16 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                           ],
 
                           // Location & Navigation
-                          _LocationSection(listing: listing),
+                          // _onRepositoryChanged re-asks the server for the
+                          // address when bookings change, so the exact location
+                          // appears as soon as the host's acceptance arrives
+                          // without the guest reopening the screen. No
+                          // ListenableBuilder needed — that setState rebuilds
+                          // this.
+                          _LocationSection(
+                            listing: listing,
+                            location: _viewerLocation,
+                          ),
                           const SizedBox(height: 20),
 
                           // Amenities — hide the whole section when there are none
@@ -1011,9 +1064,13 @@ class _HostInfoCard extends StatelessWidget {
 }
 
 class _LocationSection extends StatefulWidget {
-  const _LocationSection({required this.listing});
+  const _LocationSection({required this.listing, required this.location});
 
   final Listing listing;
+
+  /// How much of the location this viewer may see. Governs the address line,
+  /// the map (pin vs area circle), and whether directions are offered at all.
+  final ListingLocation location;
 
   @override
   State<_LocationSection> createState() => _LocationSectionState();
@@ -1023,31 +1080,71 @@ class _LocationSectionState extends State<_LocationSection> {
   GoogleMapController? _mapController;
   bool _mapCreated = false;
 
+  /// The point the map is about: the stay's front door for a viewer entitled to
+  /// it, otherwise the coarsened centre of the area circle.
   LatLng get _location =>
-      LatLng(widget.listing.latitude, widget.listing.longitude);
+      LatLng(widget.location.latitude, widget.location.longitude);
 
-  Set<Marker> get _markers => {
-        Marker(
-          markerId: MarkerId(widget.listing.id),
-          position: _location,
-          infoWindow: InfoWindow(
-            title: widget.listing.title,
-            snippet: widget.listing.address,
+  /// A pin only once the address is disclosed. A pin on the exact roof would
+  /// hand over what the redacted address line just withheld.
+  Set<Marker> get _markers => widget.location.isExact
+      ? {
+          Marker(
+            markerId: MarkerId(widget.listing.id),
+            position: _location,
+            infoWindow: InfoWindow(
+              title: widget.listing.title,
+              snippet: widget.location.label,
+            ),
           ),
-        ),
-      };
+        }
+      : const {};
+
+  /// The "somewhere in here" circle shown in place of a pin. Airbnb's approach:
+  /// a guest can read the neighbourhood off it without learning which building.
+  Set<Circle> get _circles {
+    final radius = widget.location.radiusMeters;
+    if (radius == null) return const {};
+    return {
+      Circle(
+        circleId: CircleId('${widget.listing.id}-area'),
+        center: _location,
+        radius: radius,
+        fillColor: AppColors.brand.withValues(alpha: 0.16),
+        strokeColor: AppColors.brand.withValues(alpha: 0.55),
+        strokeWidth: 2,
+      ),
+    };
+  }
 
   void _openDirections() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => NavigationScreen(listing: widget.listing),
+        builder: (context) => NavigationScreen(
+          listing: widget.listing,
+          location: widget.location,
+        ),
       ),
     );
   }
 
+  /// Puts the stay back in the middle of this small map. On a 150dp map a couple
+  /// of pinches is enough to lose it off-screen entirely, with no way back short
+  /// of leaving the screen and returning.
+  ///
+  /// Zooms out a step for the area circle, which needs more room than a pin.
+  Future<void> _recenterOnStay() => focusCamera(
+        context,
+        _mapController,
+        CameraUpdate.newLatLngZoom(
+            _location, widget.location.isExact ? 15 : 13),
+      );
+
   Future<void> _openInMaps() async {
-    final lat = widget.listing.latitude;
-    final lng = widget.listing.longitude;
+    // The redacted centre, not the listing's real coordinates — an external
+    // Maps link is as much of a disclosure as the inline map.
+    final lat = widget.location.latitude;
+    final lng = widget.location.longitude;
 
     final googleMapsUrl =
         'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
@@ -1076,6 +1173,31 @@ class _LocationSectionState extends State<_LocationSection> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final exact = widget.location.isExact;
+
+    final actions = <Widget>[
+      // The inline map above is already interactive on web, so "View on Map"
+      // (which hands off to the native Maps app) is mobile-only. It opens the
+      // redacted centre, so it stays available before acceptance.
+      if (!kIsWeb)
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: _openInMaps,
+            icon: const Icon(Icons.map_outlined),
+            label: Text(exact ? 'View on Map' : 'View the area'),
+          ),
+        ),
+      // Directions route to the front door, so they wait on the host's
+      // acceptance along with the address itself.
+      if (exact)
+        Expanded(
+          child: FilledButton.icon(
+            onPressed: _openDirections,
+            icon: const Icon(Icons.directions),
+            label: const Text('Get Directions'),
+          ),
+        ),
+    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1083,18 +1205,20 @@ class _LocationSectionState extends State<_LocationSection> {
         const _SectionTitle('Location'),
         const SizedBox(height: 8),
 
-        // Address
+        // Address — the area only until the host accepts the booking.
         Row(
           children: [
             Icon(
-              Icons.location_on,
+              widget.location.isExact
+                  ? Icons.location_on
+                  : Icons.location_searching_rounded,
               size: 17,
               color: theme.colorScheme.primary,
             ),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                widget.listing.address,
+                widget.location.label,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -1112,57 +1236,99 @@ class _LocationSectionState extends State<_LocationSection> {
             border: Border.all(color: theme.colorScheme.outlineVariant),
           ),
           clipBehavior: Clip.antiAlias,
-          // WebDeferredMount defers the map by one frame on web so the
-          // google_maps_flutter_web "disposed before buildView" assertion can't
-          // fire on fast navigation. That makes the SAME inline interactive map
-          // safe to render on web and mobile alike (no placeholder/new-tab).
-          child: WebDeferredMount(
-            builder: (context) => GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: _location,
-                zoom: 15,
-              ),
-              markers: _markers,
-              onMapCreated: (controller) {
-                _mapController = controller;
-                _mapCreated = true;
-              },
-              zoomControlsEnabled: false,
-              mapToolbarEnabled: false,
-              myLocationButtonEnabled: false,
-              scrollGesturesEnabled: true,
-              zoomGesturesEnabled: true,
-              rotateGesturesEnabled: false,
-              tiltGesturesEnabled: false,
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-
-        // Action buttons
-        Row(
-          children: [
-            // The inline map above is already interactive on web, so "View on
-            // Map" (which hands off to the native Maps app) is mobile-only.
-            if (!kIsWeb) ...[
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _openInMaps,
-                  icon: const Icon(Icons.map_outlined),
-                  label: const Text('View on Map'),
+          child: Stack(
+            children: [
+              // WebDeferredMount defers the map by one frame on web so the
+              // google_maps_flutter_web "disposed before buildView" assertion
+              // can't fire on fast navigation. That makes the SAME inline
+              // interactive map safe to render on web and mobile alike (no
+              // placeholder/new-tab).
+              Positioned.fill(
+                child: WebDeferredMount(
+                  builder: (context) => GoogleMap(
+                    initialCameraPosition: CameraPosition(
+                      target: _location,
+                      // The area circle needs more room in frame than a pin.
+                      zoom: widget.location.isExact ? 15 : 13,
+                    ),
+                    markers: _markers,
+                    circles: _circles,
+                    onMapCreated: (controller) {
+                      _mapController = controller;
+                      _mapCreated = true;
+                    },
+                    zoomControlsEnabled: false,
+                    mapToolbarEnabled: false,
+                    myLocationButtonEnabled: false,
+                    scrollGesturesEnabled: true,
+                    zoomGesturesEnabled: true,
+                    rotateGesturesEnabled: false,
+                    tiltGesturesEnabled: false,
+                  ),
                 ),
               ),
-              const SizedBox(width: 12),
-            ],
-            Expanded(
-              child: FilledButton.icon(
-                onPressed: _openDirections,
-                icon: const Icon(Icons.directions),
-                label: const Text('Get Directions'),
+              Positioned(
+                right: 8,
+                bottom: 8,
+                child: MapFocusControls(
+                  children: [
+                    MapFocusButton(
+                      icon: Icons.center_focus_strong_rounded,
+                      label: widget.location.isExact
+                          ? 'Center the map on this stay'
+                          : 'Center the map on the area',
+                      emphasized: true,
+                      onPressed: _recenterOnStay,
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
+
+        // Why the map is a circle and what makes it a pin. Without this the
+        // vague location reads as missing data rather than a deliberate
+        // protection the guest will get past by booking.
+        if (widget.location.disclosure case final note?) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceMuted,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.lock_outline_rounded,
+                  size: 16,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    note,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        if (actions.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              for (var i = 0; i < actions.length; i++) ...[
+                if (i > 0) const SizedBox(width: 12),
+                actions[i],
+              ],
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -2165,7 +2331,8 @@ class _BookingSheetState extends State<_BookingSheet> {
                               const SizedBox(width: 3),
                               Expanded(
                                 child: Text(
-                                  widget.listing.city ?? widget.listing.address,
+                                  widget.listing.city ??
+                                      widget.listing.approximateAddress,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: theme.textTheme.bodySmall?.copyWith(

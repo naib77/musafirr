@@ -116,12 +116,13 @@ class _EditListingScreenState extends State<EditListingScreen> {
     final l = widget.listing;
     _titleController = TextEditingController(text: l.title);
     _descriptionController = TextEditingController(text: l.description ?? '');
+    // House / flat / road no longer travel on the listing itself — they are the
+    // parts that name a door, so they live in the gated address table and arrive
+    // via _loadExactAddress() below. Seeded from the listing anyway for local
+    // and mock listings, which still carry them inline.
     _flatFloorController = TextEditingController(text: l.flatFloor ?? '');
     _houseNoController = TextEditingController(text: l.houseNo ?? '');
-    // Fall back to the legacy single-line address for street on older listings
-    // that predate the structured fields, so nothing looks empty on edit.
-    _streetController = TextEditingController(
-        text: l.street ?? (l.houseNo == null ? l.address : ''));
+    _streetController = TextEditingController(text: l.street ?? '');
     _areaController = TextEditingController(text: l.area ?? '');
     _cityController = TextEditingController(text: l.city ?? '');
     _postalCodeController = TextEditingController(text: l.postalCode ?? '');
@@ -182,6 +183,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
     _accessCodeController = TextEditingController();
     // Check-in details live in a separate host-only table; load them async.
     _loadCheckInDetails();
+    _loadExactAddress();
 
     _originalImageUrls = List<String>.from(l.imageUrls);
     _images = l.imageUrls
@@ -264,6 +266,35 @@ class _EditListingScreenState extends State<EditListingScreen> {
     final i = url.indexOf(marker);
     if (i == -1) return null;
     return url.substring(i + marker.length);
+  }
+
+  /// Pulls the host's own street address out of the gated table. `public.listings`
+  /// only carries the area-level form, so without this the edit form would show a
+  /// host their own address blanked out and quietly save the blanks back.
+  ///
+  /// A null answer means the server declined; leave whatever is on screen alone.
+  Future<void> _loadExactAddress() async {
+    final exact =
+        await widget.repository.fetchListingExactAddress(widget.listing.id);
+    if (exact == null || !mounted) return;
+
+    // Seeding, not a user edit — don't let it flip the dirty flag.
+    _trackChanges = false;
+    setState(() {
+      if (exact.houseNo != null) _houseNoController.text = exact.houseNo!;
+      if (exact.flatFloor != null) _flatFloorController.text = exact.flatFloor!;
+      if (exact.street != null) {
+        _streetController.text = exact.street!;
+      } else if (_streetController.text.isEmpty &&
+          _houseNoController.text.isEmpty &&
+          exact.address != null) {
+        // Rows written before the structured columns existed have only the
+        // composed line. Put it in the road field so the host can see and split
+        // it rather than being shown an empty form.
+        _streetController.text = exact.address!;
+      }
+    });
+    _trackChanges = true;
   }
 
   Future<void> _loadCheckInDetails() async {

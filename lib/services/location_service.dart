@@ -6,6 +6,24 @@ class LocationService {
   factory LocationService() => _instance;
   LocationService._internal();
 
+  /// How long to wait for a position before giving up.
+  ///
+  /// Enforced here rather than left to [LocationSettings.timeLimit], because on
+  /// web that limit is never applied: `geolocator_web` forwards it to the
+  /// browser's `PositionOptions.timeout` in MICROseconds, so ten seconds is
+  /// sent as ~2h46m (and an absent limit as ~24 days). A browser whose location
+  /// provider never answers — desktop with location services off, no GPS, weak
+  /// network positioning — therefore left callers awaiting a future that could
+  /// not complete, which is what hung the directions screen on "Getting
+  /// directions…" forever.
+  static const Duration _positionTimeout = Duration(seconds: 10);
+
+  /// How long to wait for the user to answer the permission dialog. Generous —
+  /// this one is human time, not machine time — but still bounded, since on web
+  /// [Geolocator.requestPermission] IS a position request and hangs just the
+  /// same when the prompt is ignored.
+  static const Duration _permissionTimeout = Duration(seconds: 60);
+
   Future<bool> requestPermission() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
@@ -28,7 +46,8 @@ class LocationService {
   }
 
   Future<Position?> getCurrentLocation() async {
-    final hasPermission = await requestPermission();
+    final hasPermission = await requestPermission()
+        .timeout(_permissionTimeout, onTimeout: () => false);
     if (!hasPermission) {
       return null;
     }
@@ -37,9 +56,9 @@ class LocationService {
       return await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 10),
+          timeLimit: _positionTimeout,
         ),
-      );
+      ).timeout(_positionTimeout);
     } catch (e) {
       return null;
     }

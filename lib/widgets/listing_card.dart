@@ -35,7 +35,9 @@ class ListingCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 6),
-            Text(listing.address),
+            // Area, never the door. A card is browsed by anyone, so there's no
+            // viewer here who could have earned the exact address.
+            Text(listing.approximateAddress),
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,

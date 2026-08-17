@@ -206,7 +206,7 @@ class ImageUploadService {
             '[ImageUploadService] Compressed ${(before / 1024).round()}KB -> ${(bytes.length / 1024).round()}KB ($mimeType)');
       }
 
-      return _uploadBytes(
+      return await _uploadBytes(
         bytes: bytes,
         bucket: bucket,
         path: uploadPath,
@@ -300,7 +300,7 @@ class ImageUploadService {
 
       final mimeType = lookupMimeType(file.name) ?? 'application/octet-stream';
 
-      return _uploadBytes(
+      return await _uploadBytes(
         bytes: bytes,
         bucket: bucket,
         path: path,

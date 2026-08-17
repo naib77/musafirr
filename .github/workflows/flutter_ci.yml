@@ -4,7 +4,19 @@ on:
   push:
     branches:
       - main
+      # The two deploy branches. They must run analyze-test as well, or
+      # deploy-web's `needs:` could never be satisfied and nothing would ship.
+      - stage-deploy
+      - production
   pull_request:
+
+# A second push while a deploy is in flight would race it to the same Worker,
+# and whichever upload finished last would win regardless of commit order.
+# Queue them per branch instead; don't cancel, because a half-run deploy job is
+# worse than a slightly late one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   analyze-test:
@@ -14,9 +26,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Pinned, not `channel: stable`. An unpinned channel installs whatever
+      # stable is on the day the job runs, so a new Dart release can add a lint
+      # and turn a build red with no change on our side — and CI then disagrees
+      # with what `flutter analyze` says locally. Bump this deliberately,
+      # together with the SDK developers are running.
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: 3.44.4
           channel: stable
 
       - name: Install dependencies
@@ -30,3 +48,101 @@ jobs:
 
       - name: Test
         run: flutter test
+
+  # Builds the web bundle and ships it to Cloudflare.
+  #
+  # Why this job exists: `wrangler deploy` only UPLOADS ./build/web — neither it
+  # nor Cloudflare's build image can compile Flutter (that image has Node, not
+  # the Flutter SDK). That is why build/web used to be a hand-committed
+  # artifact, and why a commit touching only lib/ would deploy green while
+  # serving the previous bundle. This runner already has Flutter pinned above,
+  # so it can do the compile Cloudflare can't.
+  #
+  # `needs: analyze-test` also adds a gate the old flow never had: a commit that
+  # fails analyze or tests no longer reaches production.
+  # Deploys from `stage-deploy` and `production` — NOT from main, which ships
+  # nowhere. The two branches go to two DIFFERENT Cloudflare accounts, so each
+  # needs its own account id and API token.
+  #
+  # Those credentials come from GitHub Environments rather than differently-named
+  # secrets: `stage` and `production` each hold their own CLOUDFLARE_API_TOKEN
+  # and CLOUDFLARE_ACCOUNT_ID, and the branch below picks which environment the
+  # job runs in. Same step, right account, and no chance of a copy-paste picking
+  # the staging token for a production deploy. It also gives you somewhere to add
+  # a required reviewer on `production` (Settings -> Environments) if you want
+  # deploys there to be approved rather than automatic.
+  deploy-web:
+    needs: analyze-test
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/stage-deploy' ||
+       github.ref == 'refs/heads/production')
+    runs-on: ubuntu-latest
+    environment: >-
+      ${{ github.ref == 'refs/heads/production' && 'production' || 'stage' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Same pin as analyze-test — deploying with a different SDK than the one
+      # the tests ran under would defeat the point of pinning at all.
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.4
+          channel: stable
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # Are this environment's Cloudflare credentials actually present?
+      #
+      # Without this the job HAS to fail on any branch where the `stage` /
+      # `production` Environment secrets haven't been added yet: wrangler-action
+      # would run with an empty token and error. That would paint both deploy
+      # branches red for something that is a setup step, not a code fault — and
+      # a red deploy branch is exactly the signal you stop trusting.
+      #
+      # So: report cleanly instead. The build below still runs either way, which
+      # makes this job a genuine "the release web build compiles" check even
+      # before any secret exists, and the deploy switches itself on the moment
+      # both secrets are added — no workflow edit needed.
+      #
+      # Read via env, never interpolated into the script: `${{ secrets.X }}`
+      # inline would paste the credential into the shell command itself.
+      - name: Check Cloudflare credentials
+        id: creds
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$CF_TOKEN" ] && [ -n "$CF_ACCOUNT" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "Cloudflare credentials found for the '${{ github.ref_name }}' target."
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Cloudflare deploy skipped::Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID to the GitHub Environment for this branch (Settings -> Environments) to enable deploys. The web bundle was still built and checked."
+          fi
+
+      # Not `flutter build web` — the script also copies web/_headers (Flutter
+      # skips underscore-prefixed files), content-hashes the bundle, rewrites
+      # the reference in flutter_bootstrap.js and index.html, drops *.symbols,
+      # and stamps build_stamp.json for WebUpdateService.
+      #
+      # SUPABASE_* are optional: unset, the build keeps the project compiled
+      # into lib/config/supabase_config.dart. Set them per Environment to point
+      # `production` at a different database than `stage` — see the note in
+      # supabase_config.dart about the two targets currently sharing one.
+      - name: Build web bundle
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: sh tool/build_web.sh
+
+      - name: Deploy to Cloudflare
+        if: steps.creds.outputs.configured == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
