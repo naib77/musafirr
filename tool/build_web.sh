@@ -5,7 +5,26 @@
 # build, and we fingerprint the app bundle so it can be cached immutably.
 set -e
 cd "$(dirname "$0")/.."
-flutter build web --release "$@"
+
+# Point the build at a specific Supabase project when the environment names one
+# (the deploy workflow feeds these from the per-target GitHub Environment).
+# Unset means "use the default compiled into lib/config/supabase_config.dart",
+# which keeps a plain local build byte-identical to what it always produced.
+DEFINES=""
+if [ -n "${SUPABASE_URL:-}" ]; then
+  DEFINES="$DEFINES --dart-define=SUPABASE_URL=$SUPABASE_URL"
+  echo "Supabase URL      -> $SUPABASE_URL"
+fi
+if [ -n "${SUPABASE_ANON_KEY:-}" ]; then
+  # Never echoed: it is public, but printing it into CI logs invites copy-paste
+  # into places that are not.
+  DEFINES="$DEFINES --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
+  echo "Supabase anon key -> (supplied via environment)"
+fi
+
+# $DEFINES is deliberately unquoted: it must word-split into separate flags.
+# shellcheck disable=SC2086
+flutter build web --release $DEFINES "$@"
 
 # ── Content-hash the app bundle (main.dart.js) ──────────────────────────────
 # main.dart.js is ~1.2 MB over the wire and is the load-time bottleneck (the
@@ -23,7 +42,14 @@ flutter build web --release "$@"
 # Drop any hashed bundles left by previous builds (but not the fresh
 # main.dart.js this build just produced).
 find build/web -maxdepth 1 -name 'main.*.dart.js' ! -name 'main.dart.js' -delete
-HASH="$(shasum -a 256 build/web/main.dart.js | cut -c1-16)"
+# sha256sum on Linux (CI), shasum on macOS. Both print "<hash>  <file>", so the
+# same cut works either way — don't let the build differ between a laptop and
+# the runner, or the two produce different filenames for identical code.
+if command -v sha256sum >/dev/null 2>&1; then
+  HASH="$(sha256sum build/web/main.dart.js | cut -c1-16)"
+else
+  HASH="$(shasum -a 256 build/web/main.dart.js | cut -c1-16)"
+fi
 HASHED="main.$HASH.dart.js"
 mv build/web/main.dart.js "build/web/$HASHED"
 # Rewrite the entrypoint reference(s) inside the bootstrap to the hashed name.
