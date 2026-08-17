@@ -17,8 +17,10 @@ class ListingSummaryCard extends StatelessWidget {
         contentPadding: const EdgeInsets.all(16),
         leading: CircleAvatar(child: Text(listing.type.title[0])),
         title: Text(listing.title),
+        // Area, never the door: this card is fed from the whole listing
+        // catalogue, so it can't assume the reader owns what it's showing.
         subtitle: Text(
-          '${listing.address}\n${listing.displayPrice.toStringAsFixed(0)} BDT / ${listing.cheapestPlan?.displayUnit ?? ''}',
+          '${listing.approximateAddress}\n${listing.displayPrice.toStringAsFixed(0)} BDT / ${listing.cheapestPlan?.displayUnit ?? ''}',
         ),
         isThreeLine: true,
         trailing: Chip(
