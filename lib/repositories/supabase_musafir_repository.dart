@@ -228,6 +228,16 @@ class SupabaseMusafirRepository extends ChangeNotifier
     ]);
   }
 
+  /// Refresh only what [getUnreviewedCompletedBookings] reads.
+  ///
+  /// The review-prompt check runs on every app resume; routing it through the
+  /// full [refresh] made a resume re-fetch the entire catalog, which is both a
+  /// wasted round-trip and (before the reset above became non-destructive) a
+  /// visible reload of the Explore feed.
+  Future<void> refreshBookingsAndReviews() async {
+    await Future.wait([_refreshBookings(), _refreshReviews()]);
+  }
+
   // ============== Safety: reports & blocks ==============
 
   final Set<String> _blockedUserIds = {};
@@ -355,15 +365,43 @@ class SupabaseMusafirRepository extends ChangeNotifier
 
   @override
   Future<void> resetListingsPagination() async {
-    // Keep the signed-in user's own listings — host screens depend on them
-    // being present regardless of where they rank in the explore feed.
-    final ownId = _client.auth.currentUser?.id;
-    _listings.removeWhere((l) => ownId == null || l.hostId != ownId);
-    _listingsOffset = 0;
-    _hasMoreListings = true;
-    _isLoadingListings = false;
+    // Fetch BEFORE clearing. Emptying the cache and notifying up front left
+    // Explore with `listings.isEmpty && isLoading` for a whole network
+    // round-trip, which renders its full-screen spinner — so every refresh
+    // (pull-to-refresh, auth change, the resume check) looked like the page had
+    // reloaded. Swapping the page in only once it has arrived keeps the current
+    // feed on screen throughout.
+    if (_isLoadingListings) return;
+    _isLoadingListings = true;
     notifyListeners();
-    await fetchNextListingsPage();
+
+    try {
+      final page = await searchListingsFromDb(
+        const SearchFilters(),
+        limit: _pageSize,
+        offset: 0,
+      );
+      // Keep the signed-in user's own listings — host screens depend on them
+      // being present regardless of where they rank in the explore feed.
+      final ownId = _client.auth.currentUser?.id;
+      final own = ownId == null
+          ? const <Listing>[]
+          : _listings.where((l) => l.hostId == ownId).toList();
+      final ownIds = own.map((l) => l.id).toSet();
+
+      _listings
+        ..clear()
+        ..addAll(own)
+        ..addAll(page.listings.where((l) => !ownIds.contains(l.id)));
+      _listingsOffset = page.listings.length;
+      _hasMoreListings = page.listings.length >= _pageSize;
+    } catch (e) {
+      // A failed refresh must not empty the feed — keep what is already cached.
+      debugPrint('Error resetting listings pagination: $e');
+    } finally {
+      _isLoadingListings = false;
+      notifyListeners();
+    }
   }
 
   @override

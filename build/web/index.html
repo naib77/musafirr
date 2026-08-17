@@ -25,8 +25,10 @@
        context to reclaim memory; on return the canvas stays BLACK because the
        lost context is never repainted. CanvasKit renders via an OffscreenCanvas
        whose context-loss events never reach the DOM, so we patch getContext
-       (BEFORE the engine boots) to attach the loss listener to the REAL context
-       and reload once to reinitialise cleanly when it isn't restored.
+       (BEFORE the engine boots) to attach the loss listener to the REAL context.
+       We then ask the browser for a restore and only reload as a fallback, once
+       the user is back and the context is verifiably still lost — a reload
+       costs a full cold start, so it must not be the routine outcome.
        Append ?gldebug=1 to the URL to see an on-screen event log on a device. -->
   <script>
     (function () {
@@ -47,36 +49,69 @@
         panel.scrollTop = panel.scrollHeight;
       }
 
-      // Reload to recover, but only while the user is actually looking (so we
-      // never reload in the background — we recover the moment they return).
-      var reloadArmed = false;
-      function recover(reason, delay) {
-        if (reloadArmed) return;
-        reloadArmed = true;
-        log('WILL RECOVER (' + reason + ') in ' + delay + 'ms');
-        setTimeout(function () {
-          if (document.visibilityState === 'visible') { location.reload(); return; }
-          document.addEventListener('visibilitychange', function once() {
-            if (document.visibilityState === 'visible') {
-              document.removeEventListener('visibilitychange', once);
-              location.reload();
-            }
-          });
-        }, delay);
+      function whenVisible(fn) {
+        if (document.visibilityState === 'visible') { fn(); return; }
+        document.addEventListener('visibilitychange', function once() {
+          if (document.visibilityState !== 'visible') return;
+          document.removeEventListener('visibilitychange', once);
+          fn();
+        });
       }
 
-      function watch(canvas, label) {
+      // Reloading is the LAST resort, not the first response. Backgrounding a
+      // tab is by far the most common way to lose the context, and the browser
+      // normally hands it straight back — reloading anyway turned every tab
+      // switch into a cold start (splash, blank feed, lost scroll, full
+      // refetch). So: ask for a restore, wait until the user is actually back,
+      // give the engine a moment to repaint, and reload only if the context is
+      // STILL lost at that point.
+      var armed = false;
+      var graceTimer = null;
+
+      function cancel(reason) {
+        if (!armed) return;
+        armed = false;
+        clearTimeout(graceTimer);
+        graceTimer = null;
+        log('recovery cancelled (' + reason + ')');
+      }
+
+      function recover(reason, ctx, grace) {
+        if (armed) return;
+        armed = true;
+        log('ARMED (' + reason + ')');
+        whenVisible(function () {
+          if (!armed) return; // restored while the tab was in the background
+          graceTimer = setTimeout(function () {
+            if (!armed) return;
+            var lost = true;
+            try { lost = !ctx || ctx.isContextLost(); } catch (e) {}
+            if (!lost) { cancel('context healthy on return'); return; }
+            log('RELOADING (' + reason + ')');
+            location.reload();
+          }, grace);
+        });
+      }
+
+      function watch(canvas, ctx, label) {
         if (!canvas || canvas.__glWatched) return;
         canvas.__glWatched = true;
         try {
-          canvas.addEventListener('webglcontextlost', function () {
+          canvas.addEventListener('webglcontextlost', function (e) {
+            // Required by the WebGL spec: without preventDefault() the browser
+            // never attempts a restore, so an ordinary background eviction
+            // could only ever end in a reload.
+            e.preventDefault();
             log('CONTEXT LOST (' + label + ')');
-            // The engine's own restore is unreliable on mobile resume; a short
-            // grace lets a genuine restore paint first, then we reload.
-            recover('contextlost', 1200);
+            // A short grace lets a genuine restore paint first.
+            recover('contextlost', ctx, 1200);
           });
           canvas.addEventListener('webglcontextrestored', function () {
             log('CONTEXT RESTORED (' + label + ')');
+            cancel('webglcontextrestored');
+            // Nudge the engine into repainting the restored surface — without a
+            // layout change it can sit on the frame it held when the context died.
+            try { window.dispatchEvent(new Event('resize')); } catch (e) {}
           });
         } catch (e) { log('watch error: ' + e.message); }
       }
@@ -89,7 +124,7 @@
         var orig = proto.getContext;
         proto.getContext = function (type) {
           var ctx = orig.apply(this, arguments);
-          if (ctx && (type === 'webgl' || type === 'webgl2')) watch(this, label + ':' + type);
+          if (ctx && (type === 'webgl' || type === 'webgl2')) watch(this, ctx, label + ':' + type);
           return ctx;
         };
       }
@@ -108,6 +143,74 @@
         window.addEventListener('pageshow', function (e) { log('pageshow persisted=' + e.persisted); });
         window.addEventListener('flutter-first-frame', function () { log('flutter-first-frame'); });
       }
+    })();
+  </script>
+
+  <!-- PWA install bridge.
+       Chrome/Edge/Samsung fire `beforeinstallprompt` very early — usually long
+       before the multi-MB Flutter bundle has booted, so a Dart-side listener
+       would miss it entirely. This script runs in <head>, captures the event,
+       and parks it on `window.__musafirPwa` for the smart sidebar to trigger
+       later (see lib/services/pwa/). Calling preventDefault() also suppresses
+       Chrome's own mini-infobar so our panel is the single install entry point.
+       iOS Safari never fires the event at all, hence the isIos() probe — there
+       the UI shows Share ▸ Add to Home Screen instructions instead. -->
+  <script>
+    (function () {
+      var deferred = null;
+      var installed = false;
+
+      function announce() {
+        window.dispatchEvent(new Event('musafir-pwa-changed'));
+      }
+
+      function isStandalone() {
+        try {
+          if (window.matchMedia) {
+            if (window.matchMedia('(display-mode: standalone)').matches) return true;
+            if (window.matchMedia('(display-mode: fullscreen)').matches) return true;
+            if (window.matchMedia('(display-mode: minimal-ui)').matches) return true;
+          }
+        } catch (e) {}
+        return navigator.standalone === true; // iOS Safari
+      }
+
+      function isIosSafari() {
+        var ua = navigator.userAgent || '';
+        var ios = /iPad|iPhone|iPod/.test(ua) ||
+          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        // Chrome/Firefox/Edge on iOS can't add to the home screen at all.
+        var safari = /WebKit/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|Mercury/.test(ua);
+        return ios && safari;
+      }
+
+      window.__musafirPwa = {
+        canInstall: function () { return !!deferred; },
+        isInstalled: function () { return installed || isStandalone(); },
+        isIos: function () { return isIosSafari(); },
+        // Resolves to 'accepted' | 'dismissed' | 'unavailable'.
+        prompt: function () {
+          if (!deferred) return Promise.resolve('unavailable');
+          var e = deferred;
+          deferred = null; // a captured event may only be prompted once
+          announce();
+          return Promise.resolve(e.prompt())
+            .then(function () { return e.userChoice; })
+            .then(function (choice) { return (choice && choice.outcome) || 'dismissed'; })
+            .catch(function () { return 'unavailable'; });
+        }
+      };
+
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        deferred = e;
+        announce();
+      });
+      window.addEventListener('appinstalled', function () {
+        installed = true;
+        deferred = null;
+        announce();
+      });
     })();
   </script>
 
@@ -175,7 +278,7 @@
 
   <!-- Corbado Passkeys Web SDK (flutter-passkeys 2.4.0) -->
   <script defer src="passkeys_bundle.js"></script>
-  <link rel="preload" as="script" href="main.b2a763b9693a54e3.dart.js"></head>
+  <link rel="preload" as="script" href="main.daf03405ade36bf0.dart.js"></head>
 <body>
   <div id="splash">
     <img src="icons/Icon-192.png" alt="Musaafir" width="88" height="88">

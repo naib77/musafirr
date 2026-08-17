@@ -17,6 +17,7 @@ import 'repositories/supabase_message_template_repository.dart';
 import 'services/messaging/booking_conversation_service.dart';
 import 'services/messaging/supabase_messaging_service.dart';
 import 'services/notifications/fcm_token_service.dart';
+import 'services/pwa/pwa_install_service.dart';
 import 'services/web_update_service.dart';
 import 'services/notifications/notification_service_factory.dart';
 import 'state/auth_state.dart';
@@ -67,6 +68,11 @@ class _MusafirAppState extends State<MusafirApp> {
     // Web only: offer a refresh when a newer build is deployed while this
     // tab stays open (reloads always get the newest build; idle tabs don't).
     WebUpdateService.instance.start(onUpdateAvailable: _showUpdateBanner);
+
+    // Web only: track whether the browser can add Musaafir to the home screen,
+    // so the smart sidebar can offer it. Must start early — Chrome fires
+    // `beforeinstallprompt` shortly after load.
+    PwaInstallService.instance.start();
 
     // Initialize Supabase repository
     repository = SupabaseMusafirRepository();
