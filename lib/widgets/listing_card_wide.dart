@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 
 import '../core/utils/distance_format.dart';
@@ -38,7 +40,53 @@ class ListingCardWide extends StatefulWidget {
 }
 
 class _ListingCardWideState extends State<ListingCardWide> {
+  // Drives the photo carousel, so the arrow buttons can step it. Without a
+  // controller the PageView can only be swiped, which on a desktop browser
+  // means the extra photos are effectively unreachable.
+  final PageController _photoController = PageController();
+
   int _page = 0;
+
+  // Whether a mouse is over the photo. Arrows are a mouse's substitute for a
+  // swipe, so on a pointer device they fade in on hover the way Airbnb's do and
+  // the photo stays uncluttered until then.
+  bool _hovered = false;
+
+  @override
+  void dispose() {
+    _photoController.dispose();
+    super.dispose();
+  }
+
+  /// Touch devices never fire a hover, so nothing there could ever reveal the
+  /// arrows — they stay put instead. A guest on a phone can still swipe; the
+  /// buttons are simply the visible way to do the same thing.
+  bool get _arrowsAlwaysVisible =>
+      defaultTargetPlatform == TargetPlatform.iOS ||
+      defaultTargetPlatform == TargetPlatform.android;
+
+  /// Whether the arrows should be showing at all right now. Each one still
+  /// hides itself at the end of the carousel it points past.
+  bool get _arrowsVisible => _arrowsAlwaysVisible || _hovered;
+
+  /// Steps the carousel one photo. Stops at the ends rather than wrapping: the
+  /// arrow that would wrap is hidden anyway, and a silent jump back to the
+  /// first photo reads as a glitch.
+  void _step(int delta) {
+    final next = _page + delta;
+    if (next < 0 || next >= widget.listing.imageUrls.length) return;
+    // A guest who asked the system to cut animation gets the jump, not the slide.
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _photoController.jumpToPage(next);
+      setState(() => _page = next);
+      return;
+    }
+    _photoController.animateToPage(
+      next,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,20 +105,58 @@ class _ListingCardWideState extends State<ListingCardWide> {
             aspectRatio: 1.15,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  _photos(theme),
-                  _photoPill(theme, hasReviews: hasReviews),
-                  Positioned(top: 10, right: 10, child: _favoriteButton()),
-                  if (listing.imageUrls.length > 1)
-                    Positioned(
-                      bottom: 10,
-                      left: 0,
-                      right: 0,
-                      child: _dots(),
-                    ),
-                ],
+              // Tracks the mouse so the arrows can fade in over the photo.
+              // A no-op on touch, where there is no pointer to track.
+              child: MouseRegion(
+                onEnter: (_) => setState(() => _hovered = true),
+                onExit: (_) => setState(() => _hovered = false),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _photos(theme),
+                    _photoPill(theme, hasReviews: hasReviews),
+                    Positioned(top: 10, right: 10, child: _favoriteButton()),
+                    if (listing.imageUrls.length > 1) ...[
+                      Positioned(
+                        bottom: 10,
+                        left: 0,
+                        right: 0,
+                        child: _dots(),
+                      ),
+                      // Centred on the photo's vertical midline and inset just
+                      // enough to clear the rounded corner. Only the button's
+                      // own 44px box takes a hit — the full-height strip around
+                      // it stays transparent to the swipe underneath.
+                      Positioned(
+                        left: 4,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: _SliderButton(
+                            icon: Icons.chevron_left_rounded,
+                            semanticLabel: 'Previous photo',
+                            visible: _arrowsVisible && _page > 0,
+                            onPressed: () => _step(-1),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        right: 4,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: _SliderButton(
+                            icon: Icons.chevron_right_rounded,
+                            semanticLabel: 'Next photo',
+                            visible: _arrowsVisible &&
+                                _page < listing.imageUrls.length - 1,
+                            onPressed: () => _step(1),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -234,6 +320,7 @@ class _ListingCardWideState extends State<ListingCardWide> {
     if (urls.length == 1) return _photo(urls.first, theme);
 
     return PageView.builder(
+      controller: _photoController,
       itemCount: urls.length,
       onPageChanged: (i) => setState(() => _page = i),
       itemBuilder: (context, i) => _photo(urls[i], theme),
@@ -353,6 +440,106 @@ class _ListingCardWideState extends State<ListingCardWide> {
           width: 24,
           height: 24,
           child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ),
+    );
+  }
+}
+
+/// A round step-through button on the photo carousel — the pointer's answer to
+/// a swipe. Styled to match the favourite button it shares the photo with:
+/// near-white, softly shadowed so it reads against a bright photo as well as a
+/// dark one, and it grows a little under the cursor.
+class _SliderButton extends StatefulWidget {
+  const _SliderButton({
+    required this.icon,
+    required this.semanticLabel,
+    required this.visible,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+
+  /// Spoken by a screen reader — the icon alone says nothing to one.
+  final String semanticLabel;
+
+  /// Faded out, and inert, at the end of the carousel it points past (and, on a
+  /// pointer device, until the mouse is over the photo). Fading rather than
+  /// removing keeps the photo from twitching as the arrow comes and goes.
+  final bool visible;
+
+  final VoidCallback onPressed;
+
+  /// Big enough to read over a photo, small enough not to cover it.
+  static const double _diameter = 30;
+
+  /// The circle is 30px, but a 30px tap target is a miss waiting to happen, so
+  /// the transparent box around it is the 44px minimum for a comfortable thumb.
+  static const double _hitArea = 44;
+
+  @override
+  State<_SliderButton> createState() => _SliderButtonState();
+}
+
+class _SliderButtonState extends State<_SliderButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      ignoring: !widget.visible,
+      child: AnimatedOpacity(
+        opacity: widget.visible ? 1 : 0,
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        child: Semantics(
+          button: true,
+          label: widget.semanticLabel,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            onEnter: (_) => setState(() => _hovered = true),
+            onExit: (_) => setState(() => _hovered = false),
+            child: GestureDetector(
+              // Its own recogniser, so a tap here steps the photos instead of
+              // opening the listing the way a tap anywhere else on the card
+              // does. A horizontal drag still loses the arena to the PageView
+              // underneath, so a swipe that starts on the button still swipes.
+              onTap: widget.onPressed,
+              behavior: HitTestBehavior.opaque,
+              child: SizedBox(
+                width: _SliderButton._hitArea,
+                height: _SliderButton._hitArea,
+                child: Center(
+                  child: AnimatedScale(
+                    scale: _hovered ? 1.08 : 1.0,
+                    duration: const Duration(milliseconds: 150),
+                    curve: Curves.easeOut,
+                    child: Container(
+                      width: _SliderButton._diameter,
+                      height: _SliderButton._diameter,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.92),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.18),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        widget.icon,
+                        size: 18,
+                        color: Colors.grey[900],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
