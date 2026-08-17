@@ -5,7 +5,26 @@
 # build, and we fingerprint the app bundle so it can be cached immutably.
 set -e
 cd "$(dirname "$0")/.."
-flutter build web --release "$@"
+
+# Point the build at a specific Supabase project when the environment names one
+# (the deploy workflow feeds these from the per-target GitHub Environment).
+# Unset means "use the default compiled into lib/config/supabase_config.dart",
+# which keeps a plain local build byte-identical to what it always produced.
+DEFINES=""
+if [ -n "${SUPABASE_URL:-}" ]; then
+  DEFINES="$DEFINES --dart-define=SUPABASE_URL=$SUPABASE_URL"
+  echo "Supabase URL      -> $SUPABASE_URL"
+fi
+if [ -n "${SUPABASE_ANON_KEY:-}" ]; then
+  # Never echoed: it is public, but printing it into CI logs invites copy-paste
+  # into places that are not.
+  DEFINES="$DEFINES --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
+  echo "Supabase anon key -> (supplied via environment)"
+fi
+
+# $DEFINES is deliberately unquoted: it must word-split into separate flags.
+# shellcheck disable=SC2086
+flutter build web --release $DEFINES "$@"
 
 # ── Content-hash the app bundle (main.dart.js) ──────────────────────────────
 # main.dart.js is ~1.2 MB over the wire and is the load-time bottleneck (the

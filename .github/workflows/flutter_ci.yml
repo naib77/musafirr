@@ -96,14 +96,52 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # Are this environment's Cloudflare credentials actually present?
+      #
+      # Without this the job HAS to fail on any branch where the `stage` /
+      # `production` Environment secrets haven't been added yet: wrangler-action
+      # would run with an empty token and error. That would paint both deploy
+      # branches red for something that is a setup step, not a code fault — and
+      # a red deploy branch is exactly the signal you stop trusting.
+      #
+      # So: report cleanly instead. The build below still runs either way, which
+      # makes this job a genuine "the release web build compiles" check even
+      # before any secret exists, and the deploy switches itself on the moment
+      # both secrets are added — no workflow edit needed.
+      #
+      # Read via env, never interpolated into the script: `${{ secrets.X }}`
+      # inline would paste the credential into the shell command itself.
+      - name: Check Cloudflare credentials
+        id: creds
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$CF_TOKEN" ] && [ -n "$CF_ACCOUNT" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "Cloudflare credentials found for the '${{ github.ref_name }}' target."
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Cloudflare deploy skipped::Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID to the GitHub Environment for this branch (Settings -> Environments) to enable deploys. The web bundle was still built and checked."
+          fi
+
       # Not `flutter build web` — the script also copies web/_headers (Flutter
       # skips underscore-prefixed files), content-hashes the bundle, rewrites
       # the reference in flutter_bootstrap.js and index.html, drops *.symbols,
       # and stamps build_stamp.json for WebUpdateService.
+      #
+      # SUPABASE_* are optional: unset, the build keeps the project compiled
+      # into lib/config/supabase_config.dart. Set them per Environment to point
+      # `production` at a different database than `stage` — see the note in
+      # supabase_config.dart about the two targets currently sharing one.
       - name: Build web bundle
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: sh tool/build_web.sh
 
       - name: Deploy to Cloudflare
+        if: steps.creds.outputs.configured == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
