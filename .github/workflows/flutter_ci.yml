@@ -14,9 +14,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Pinned, not `channel: stable`. An unpinned channel installs whatever
+      # stable is on the day the job runs, so a new Dart release can add a lint
+      # and turn a build red with no change on our side — and CI then disagrees
+      # with what `flutter analyze` says locally. Bump this deliberately,
+      # together with the SDK developers are running.
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: 3.44.4
           channel: stable
 
       - name: Install dependencies
