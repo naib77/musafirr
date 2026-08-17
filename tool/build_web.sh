@@ -23,7 +23,14 @@ flutter build web --release "$@"
 # Drop any hashed bundles left by previous builds (but not the fresh
 # main.dart.js this build just produced).
 find build/web -maxdepth 1 -name 'main.*.dart.js' ! -name 'main.dart.js' -delete
-HASH="$(shasum -a 256 build/web/main.dart.js | cut -c1-16)"
+# sha256sum on Linux (CI), shasum on macOS. Both print "<hash>  <file>", so the
+# same cut works either way — don't let the build differ between a laptop and
+# the runner, or the two produce different filenames for identical code.
+if command -v sha256sum >/dev/null 2>&1; then
+  HASH="$(sha256sum build/web/main.dart.js | cut -c1-16)"
+else
+  HASH="$(shasum -a 256 build/web/main.dart.js | cut -c1-16)"
+fi
 HASHED="main.$HASH.dart.js"
 mv build/web/main.dart.js "build/web/$HASHED"
 # Rewrite the entrypoint reference(s) inside the bootstrap to the hashed name.
