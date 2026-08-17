@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../core/privacy/listing_location.dart';
 import '../models/listing.dart';
 import '../models/listing_type.dart';
 import '../models/rental_plan.dart';
 import '../services/location_service.dart';
+import 'listing_price_map.dart' show mappableListings;
+import 'map_focus_button.dart';
 import 'modern_banner.dart';
 import 'web_deferred_mount.dart';
 
@@ -41,6 +44,12 @@ class _MusafirMapState extends State<MusafirMap> {
   LatLng? _selectedLocation;
   bool _mapCreated = false;
 
+  /// Where a listing's pin goes: the area, never the door.
+  static LatLng _pinFor(Listing listing) {
+    final at = ListingLocation.approximate(listing);
+    return LatLng(at.latitude, at.longitude);
+  }
+
   Set<Marker> get _markers {
     final markers = <Marker>{};
 
@@ -49,7 +58,10 @@ class _MusafirMapState extends State<MusafirMap> {
       markers.add(
         Marker(
           markerId: MarkerId(listing.id),
-          position: LatLng(listing.latitude, listing.longitude),
+          // Coarsened to the area, like the results map: a browsing guest has
+          // no accepted booking for these, so an exact pin would give away the
+          // address the listing page withholds.
+          position: _pinFor(listing),
           infoWindow: InfoWindow(
             title: listing.title,
             snippet:
@@ -90,7 +102,9 @@ class _MusafirMapState extends State<MusafirMap> {
 
     if (position != null && _controller != null) {
       final latLng = LatLng(position.latitude, position.longitude);
-      _controller!.animateCamera(
+      await focusCamera(
+        context,
+        _controller,
         CameraUpdate.newLatLngZoom(latLng, 15),
       );
       widget.onTap?.call(position.latitude, position.longitude);
@@ -98,6 +112,24 @@ class _MusafirMapState extends State<MusafirMap> {
       ModernBanner.showError(
           context, 'Could not get your location. Please check permissions.');
     }
+  }
+
+  /// Puts the map back on what it's showing: every result pin if there are any,
+  /// otherwise the search centre. The recovery for a map that's been zoomed and
+  /// dragged until nothing recognisable is left on screen.
+  Future<void> _focusOnContent() {
+    final mappable = mappableListings(widget.listings);
+    final update = mappable.isEmpty
+        ? CameraUpdate.newLatLngZoom(
+            LatLng(widget.centerLat, widget.centerLng), 14)
+        : framePoints(
+            // The same coarsened points the pins use, so the fit frames what's
+            // actually drawn.
+            [for (final l in mappable) _pinFor(l)],
+            padding: 48,
+          );
+    if (update == null) return Future<void>.value();
+    return focusCamera(context, _controller, update);
   }
 
   void _onMapTap(LatLng position) {
@@ -159,22 +191,29 @@ class _MusafirMapState extends State<MusafirMap> {
                 mapToolbarEnabled: false,
               ),
             ),
-            if (widget.showMyLocationButton)
-              Positioned(
-                bottom: 16,
-                right: 16,
-                child: FloatingActionButton.small(
-                  heroTag: 'myLocation',
-                  onPressed: _isLoadingLocation ? null : _goToMyLocation,
-                  child: _isLoadingLocation
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.my_location),
-                ),
+            Positioned(
+              bottom: 16,
+              right: 16,
+              child: MapFocusControls(
+                children: [
+                  MapFocusButton(
+                    icon: Icons.center_focus_strong_rounded,
+                    label: widget.listings.isEmpty
+                        ? 'Center the map on the search area'
+                        : 'Show all results',
+                    onPressed: _focusOnContent,
+                  ),
+                  if (widget.showMyLocationButton)
+                    MapFocusButton(
+                      icon: Icons.my_location_rounded,
+                      label: 'Center on my location',
+                      emphasized: true,
+                      busy: _isLoadingLocation,
+                      onPressed: _goToMyLocation,
+                    ),
+                ],
               ),
+            ),
           ],
         ),
       ),

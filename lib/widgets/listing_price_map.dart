@@ -2,10 +2,11 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:pointer_interceptor/pointer_interceptor.dart';
 
+import '../core/privacy/listing_location.dart';
 import '../core/theme/app_colors.dart';
 import '../models/listing.dart';
+import 'map_focus_button.dart';
 import 'web_deferred_mount.dart';
 
 /// The price on a listing's map marker: its cheapest rate in full — "৳500",
@@ -149,7 +150,11 @@ class _ListingPriceMapState extends State<ListingPriceMap> {
       markers.add(
         Marker(
           markerId: MarkerId(listing.id),
-          position: LatLng(listing.latitude, listing.longitude),
+          // Coarsened, not the exact building. Nobody browsing results has an
+          // accepted booking for them, and an exact pin here would hand over
+          // the address the listing page withholds. At city zoom the shift is
+          // invisible; the guest sees the same spread of stays either way.
+          position: _pinFor(listing),
           icon: icon,
           // Selected pill draws above its neighbours so it isn't half-hidden
           // by a cheaper stay next door.
@@ -163,6 +168,13 @@ class _ListingPriceMapState extends State<ListingPriceMap> {
 
     if (!mounted) return;
     setState(() => _markers = markers);
+  }
+
+  /// Where a listing's pill goes: the area, never the door. See
+  /// [ListingLocation] for why the offset is a fixed grid and not random jitter.
+  static LatLng _pinFor(Listing listing) {
+    final at = ListingLocation.approximate(listing);
+    return LatLng(at.latitude, at.longitude);
   }
 
   void _onMarkerTap(Listing listing) {
@@ -244,32 +256,18 @@ class _ListingPriceMapState extends State<ListingPriceMap> {
     final controller = _controller;
     if (controller == null || _mappable.isEmpty) return;
 
-    var minLat = _mappable.first.latitude;
-    var maxLat = minLat;
-    var minLng = _mappable.first.longitude;
-    var maxLng = minLng;
-    for (final l in _mappable) {
-      minLat = l.latitude < minLat ? l.latitude : minLat;
-      maxLat = l.latitude > maxLat ? l.latitude : maxLat;
-      minLng = l.longitude < minLng ? l.longitude : minLng;
-      maxLng = l.longitude > maxLng ? l.longitude : maxLng;
-    }
-
-    // Tight padding (24, not 48) so the pins fill the visible area — the guest
-    // asked for a closer view. A lone/clustered result jumps to a street-level
-    // zoom (15) rather than a wide neighbourhood one.
-    final update = (maxLat - minLat < 0.002 && maxLng - minLng < 0.002)
-        ? CameraUpdate.newLatLngZoom(LatLng(minLat, minLng), 15)
-        : CameraUpdate.newLatLngBounds(
-            LatLngBounds(
-              southwest: LatLng(minLat, minLng),
-              northeast: LatLng(maxLat, maxLng),
-            ),
-            24,
-          );
+    // Tight padding (24, not the 48 default) so the pins fill the visible area
+    // — the guest asked for a closer view. A lone/clustered result jumps to a
+    // street-level zoom rather than a wide neighbourhood one.
+    final update = framePoints(
+      // Same coarsened points the pins use, so the fit frames what's drawn.
+      [for (final l in _mappable) _pinFor(l)],
+      padding: 24,
+    );
+    if (update == null) return;
 
     if (animate) {
-      await controller.animateCamera(update);
+      await focusCamera(context, controller, update);
     } else {
       await controller.moveCamera(update);
     }
@@ -326,50 +324,67 @@ class _ListingPriceMapState extends State<ListingPriceMap> {
       ),
     );
 
-    if (widget.height == null) return map;
+    final inline = widget.height != null;
+    final controls = <Widget>[
+      // The inline map can't be panned, so offer the one that can.
+      if (inline)
+        MapFocusButton(
+          icon: Icons.open_in_full_rounded,
+          label: 'Open the full map',
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ListingsMapScreen(
+                listings: widget.listings,
+                onListingTap: widget.onListingTap,
+              ),
+            ),
+          ),
+        ),
+      // Zoom is enabled even inline, so a guest can lose the pins on either
+      // map. This puts every result back in frame. Last, and so closest to the
+      // thumb, because it's the one that rescues a lost map.
+      MapFocusButton(
+        icon: Icons.center_focus_strong_rounded,
+        label: _mappable.length == 1
+            ? 'Center the map on this stay'
+            : 'Show all ${_mappable.length} stays',
+        emphasized: true,
+        onPressed: () => _fitToListings(animate: true),
+      ),
+    ];
+
+    final stack = LayoutBuilder(
+      builder: (context, constraints) {
+        // The controls ride above whatever overlaps the bottom of the map (the
+        // results sheet), so they never end up underneath it. That sheet can be
+        // dragged all the way up, though — once the strip it leaves is too
+        // short to hold the stack, the controls go away rather than float off
+        // the top of the map and over the sheet. Nothing left to re-frame by
+        // then anyway.
+        final diameter = MapFocusButton.diameterOf(context);
+        final stackHeight =
+            controls.length * diameter + (controls.length - 1) * 8;
+        final visible = constraints.maxHeight - widget.bottomInset;
+
+        return Stack(
+          children: [
+            Positioned.fill(child: map),
+            if (visible >= stackHeight + 20)
+              Positioned(
+                right: 10,
+                bottom: widget.bottomInset + 10,
+                child: MapFocusControls(children: controls),
+              ),
+          ],
+        );
+      },
+    );
+
+    if (!inline) return stack;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
-      child: SizedBox(
-        height: widget.height,
-        child: Stack(
-          children: [
-            Positioned.fill(child: map),
-            // The inline map can't be panned, so offer the one that can.
-            // Wrapped in a PointerInterceptor because on web the map is a DOM
-            // element that wins the browser's hit-test over anything Flutter
-            // paints on top of it — without this the tap lands on the map and
-            // the button never fires.
-            Positioned(
-              right: 10,
-              bottom: 10,
-              child: PointerInterceptor(
-                child: Material(
-                  color: Colors.white,
-                  shape: const CircleBorder(),
-                  elevation: 2,
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => ListingsMapScreen(
-                          listings: widget.listings,
-                          onListingTap: widget.onListingTap,
-                        ),
-                      ),
-                    ),
-                    child: const Padding(
-                      padding: EdgeInsets.all(9),
-                      child: Icon(Icons.open_in_full_rounded,
-                          size: 18, color: AppColors.ink),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+      child: SizedBox(height: widget.height, child: stack),
     );
   }
 }

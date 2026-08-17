@@ -233,6 +233,25 @@ class Listing {
     return line;
   }
 
+  /// The address with everything that identifies a specific door taken out —
+  /// house number, flat/floor, road — leaving the area and city. What a guest
+  /// gets before the host has accepted their booking, and what a search result
+  /// shows at all times.
+  ///
+  /// Falls back to the city, then to a generic label, but never to [address]:
+  /// a listing whose structured parts were never saved must not leak the whole
+  /// line just because we can't tell which segment is the house number.
+  ///
+  /// This is only the string. Which viewers see it is [ListingLocation]'s
+  /// decision, and the map and directions follow the same one.
+  String get approximateAddress {
+    final composed = composeAddress(area: area, city: city);
+    if (composed.isNotEmpty) return composed;
+    final fallback = city?.trim();
+    if (fallback != null && fallback.isNotEmpty) return fallback;
+    return 'Approximate location';
+  }
+
   Listing copyWith({
     String? id,
     String? ownerName,

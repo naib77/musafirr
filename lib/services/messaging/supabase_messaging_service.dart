@@ -199,7 +199,7 @@ class SupabaseMessagingService implements MessagingService {
       }
 
       // Fetch the full conversation
-      return getConversation(conversationId, currentUserId);
+      return await getConversation(conversationId, currentUserId);
     } catch (e) {
       debugPrint('[SupabaseMessagingService] Error creating conversation: $e');
       return MessagingResult.failure('Failed to create conversation: $e');
@@ -467,7 +467,7 @@ class SupabaseMessagingService implements MessagingService {
           .maybeSingle();
 
       if (latestMessage != null) {
-        return markAsRead(
+        return await markAsRead(
           conversationId,
           userId,
           latestMessage['id'] as String,

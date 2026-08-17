@@ -232,7 +232,7 @@ class SupabaseConversationRepository implements ConversationRepository {
       }
 
       // Fetch the full conversation
-      return findById(
+      return await findById(
         conversationId: conversationId,
         userId: participantOneId,
       );
