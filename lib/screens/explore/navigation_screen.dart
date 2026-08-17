@@ -106,8 +106,10 @@ class _NavigationScreenState extends State<NavigationScreen> {
       if (position == null) {
         if (!mounted) return;
         setState(() {
-          _error =
-              'Could not get your location. Please enable location services.';
+          _error = kIsWeb
+              ? 'Could not get your location. Allow location access for this '
+                  'site in your browser and retry, or open Google Maps below.'
+              : 'Could not get your location. Please enable location services.';
           _isLoading = false;
         });
         return;
@@ -331,8 +333,12 @@ class _NavigationScreenState extends State<NavigationScreen> {
               ),
             ),
 
-          // Bottom info panel
-          if (_currentLocation != null && !_isLoading)
+          // Bottom info panel. Shown as soon as loading finishes, with or
+          // without a current location: the "Open in Google Maps" button below
+          // works from an empty origin (Google resolves the start itself), so
+          // gating the whole panel on _currentLocation left a failed location
+          // lookup with an error card and no way to get directions at all.
+          if (!_isLoading)
             Positioned(
               bottom: 0,
               left: 0,
@@ -402,9 +408,10 @@ class _NavigationScreenState extends State<NavigationScreen> {
                         ),
                         const SizedBox(height: 16),
 
-                        // Hint shown when the in-app route couldn't load
-                        // (e.g. Directions API key restricted/disabled).
-                        if (!kIsWeb && _directions == null) ...[
+                        // Hint shown when the in-app route couldn't load —
+                        // either the origin is unknown or the route lookup
+                        // failed (e.g. Directions API key restricted/disabled).
+                        if (_directions == null) ...[
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(

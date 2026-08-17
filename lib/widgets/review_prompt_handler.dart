@@ -30,7 +30,13 @@ class ReviewPromptHandler extends StatefulWidget {
 
 class _ReviewPromptHandlerState extends State<ReviewPromptHandler>
     with WidgetsBindingObserver {
+  /// Shortest gap between two resume-triggered checks. Long enough that
+  /// flipping between tabs or apps costs nothing, short enough that a booking
+  /// completed mid-session is still noticed without a restart.
+  static const Duration _resumeCheckInterval = Duration(minutes: 15);
+
   bool _hasCheckedReviews = false;
+  DateTime? _lastResumeCheck;
   List<Booking> _pendingReviews = [];
   int _currentReviewIndex = 0;
 
@@ -52,11 +58,22 @@ class _ReviewPromptHandlerState extends State<ReviewPromptHandler>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Check for pending reviews when app resumes
-    if (state == AppLifecycleState.resumed) {
-      _hasCheckedReviews = false;
-      _checkPendingReviews();
+    // Check for pending reviews when app resumes.
+    //
+    // Resume fires on every browser tab switch and every app switch, so this
+    // is throttled: [ReviewPromptConfig] only records a timestamp when a prompt
+    // is actually SHOWN, which means a user with nothing to review is never
+    // throttled at all and would otherwise hit the network on every single
+    // return to the app.
+    if (state != AppLifecycleState.resumed) return;
+    final last = _lastResumeCheck;
+    if (last != null &&
+        DateTime.now().difference(last) < _resumeCheckInterval) {
+      return;
     }
+    _lastResumeCheck = DateTime.now();
+    _hasCheckedReviews = false;
+    _checkPendingReviews();
   }
 
   Future<void> _checkPendingReviews() async {
@@ -72,8 +89,10 @@ class _ReviewPromptHandlerState extends State<ReviewPromptHandler>
     // instead of prompting on every app open.
     if (!await ReviewPromptConfig.shouldShowPrompt()) return;
 
-    // Refresh data first to get latest bookings and reviews
-    await widget.repository.refresh();
+    // Refresh only bookings and reviews — the two things the pending-review
+    // query reads. A full repository refresh would also re-fetch the listing
+    // catalog, which this check has no use for.
+    await widget.repository.refreshBookingsAndReviews();
 
     final pending = widget.repository.getUnreviewedCompletedBookings(userId);
 

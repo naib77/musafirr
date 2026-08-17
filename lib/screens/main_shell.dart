@@ -19,6 +19,7 @@ import '../widgets/app_page_header.dart';
 import '../widgets/modern_banner.dart';
 import '../widgets/notification_bell.dart';
 import '../widgets/review_prompt_handler.dart';
+import '../widgets/smart_sidebar.dart';
 import 'explore/explore_screen.dart';
 import 'hosting/earnings_screen.dart';
 import 'host/host_dashboard_screen.dart';
@@ -268,6 +269,14 @@ class _MainShellState extends State<MainShell> {
             child: scaffold,
           );
         }
+
+        // Mobile-web edge-swipe panel (install the PWA, jump between tabs).
+        // Self-disabling off web and on wide layouts, so this wrap is a no-op
+        // everywhere the navigation rail or a native build already applies.
+        result = SmartSidebar(
+          shortcuts: isGuest ? _guestShortcuts() : _hostShortcuts(),
+          child: result,
+        );
 
         // Android system back on a non-first tab returns to the first tab
         // (Explore for guests, dashboard for hosts) instead of exiting the
@@ -749,6 +758,113 @@ class _MainShellState extends State<MainShell> {
           ResponsiveCenter(maxWidth: widths[i], child: tabs[i]),
       ],
     );
+  }
+
+  // ============================================================
+  // SMART SIDEBAR SHORTCUTS
+  // ============================================================
+
+  /// The quick-access tiles behind the mobile-web edge swipe. They mirror the
+  /// bottom bar's destinations (so the panel is a shortcut, never a second,
+  /// divergent navigation model) plus Notifications, which has no tab of its
+  /// own and is otherwise only reachable from a per-tab header button.
+  List<SmartSidebarShortcut> _guestShortcuts() {
+    final unreadMessages = (widget.messagingState?.totalUnreadCount ?? 0) > 0;
+    return [
+      SmartSidebarShortcut(
+        icon: Icons.search_rounded,
+        label: 'Explore',
+        accent: AppColors.brand,
+        onTap: () => _goToGuestTab(0),
+      ),
+      SmartSidebarShortcut(
+        icon: Icons.favorite_rounded,
+        label: 'Wishlists',
+        accent: AppColors.pink,
+        onTap: () => _goToGuestTab(1),
+      ),
+      SmartSidebarShortcut(
+        icon: Icons.luggage_rounded,
+        label: 'Trips',
+        accent: AppColors.violet,
+        onTap: () => _goToGuestTab(2),
+      ),
+      SmartSidebarShortcut(
+        icon: Icons.chat_bubble_rounded,
+        label: 'Messages',
+        accent: AppColors.blue,
+        badge: unreadMessages,
+        onTap: () => _goToGuestTab(3),
+      ),
+      SmartSidebarShortcut(
+        icon: Icons.notifications_rounded,
+        label: 'Alerts',
+        accent: AppColors.amber,
+        badge: widget.notificationState?.hasUnread ?? false,
+        onTap: _openNotificationCenter,
+      ),
+      SmartSidebarShortcut(
+        icon: Icons.person_rounded,
+        label: 'Profile',
+        accent: AppColors.indigo,
+        onTap: () => _goToGuestTab(4),
+      ),
+    ];
+  }
+
+  List<SmartSidebarShortcut> _hostShortcuts() {
+    final unreadMessages = (widget.messagingState?.totalUnreadCount ?? 0) > 0;
+    return [
+      SmartSidebarShortcut(
+        icon: Icons.dashboard_rounded,
+        label: 'Dashboard',
+        accent: AppColors.brand,
+        onTap: () => _goToHostTab(0),
+      ),
+      SmartSidebarShortcut(
+        icon: Icons.calendar_month_rounded,
+        label: 'Bookings',
+        accent: AppColors.coral,
+        badge: _hasHostNotification,
+        onTap: () => _goToHostTab(1),
+      ),
+      SmartSidebarShortcut(
+        icon: Icons.account_balance_wallet_rounded,
+        label: 'Earnings',
+        accent: AppColors.green,
+        onTap: () => _goToHostTab(2),
+      ),
+      SmartSidebarShortcut(
+        icon: Icons.chat_bubble_rounded,
+        label: 'Messages',
+        accent: AppColors.blue,
+        badge: unreadMessages,
+        onTap: () => _goToHostTab(3),
+      ),
+      SmartSidebarShortcut(
+        icon: Icons.notifications_rounded,
+        label: 'Alerts',
+        accent: AppColors.amber,
+        badge: widget.notificationState?.hasUnread ?? false,
+        onTap: _openNotificationCenter,
+      ),
+      SmartSidebarShortcut(
+        icon: Icons.person_rounded,
+        label: 'Profile',
+        accent: AppColors.indigo,
+        onTap: () => _goToHostTab(4),
+      ),
+    ];
+  }
+
+  void _goToGuestTab(int index) {
+    if (!mounted) return;
+    setState(() => _guestTabIndex = index);
+  }
+
+  void _goToHostTab(int index) {
+    if (!mounted) return;
+    setState(() => _hostTabIndex = index);
   }
 
   // ============================================================
