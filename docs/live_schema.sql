@@ -34,6 +34,24 @@ create table public.app_settings (
   is_public boolean default true not null
 );
 
+create table public.audit_log (
+  id bigint not null,
+  occurred_at timestamp with time zone default now() not null,
+  table_name text not null,
+  record_id uuid,
+  action text not null,
+  actor_id uuid,
+  actor_role text,
+  source text default 'app'::text not null,
+  category text not null,
+  amount numeric,
+  currency text,
+  changed_cols _text,
+  old_data jsonb,
+  new_data jsonb,
+  note text
+);
+
 create table public.bookings (
   id uuid default uuid_generate_v4() not null,
   listing_id uuid,
@@ -60,7 +78,9 @@ create table public.bookings (
   cancelled_at timestamp with time zone,
   coupon_code text,
   discount_amount numeric default 0 not null,
-  payment_status text default 'unpaid'::text not null
+  payment_status text default 'unpaid'::text not null,
+  paid_at timestamp with time zone,
+  payment_method text
 );
 
 create table public.conversation_participants (
@@ -153,6 +173,30 @@ create table public.host_leaderboard_snapshots (
   captured_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+create table public.landmarks (
+  id uuid default gen_random_uuid() not null,
+  name text not null,
+  type text not null,
+  city text,
+  area text,
+  latitude double precision not null,
+  longitude double precision not null,
+  geog geography,
+  is_active boolean default true not null,
+  created_at timestamp with time zone default now() not null
+);
+
+create table public.listing_addresses (
+  listing_id uuid not null,
+  house_no text,
+  flat_floor text,
+  street text,
+  exact_address text,
+  latitude numeric,
+  longitude numeric,
+  updated_at timestamp with time zone default now() not null
+);
+
 create table public.listing_checkin_details (
   listing_id uuid not null,
   directions text,
@@ -210,12 +254,11 @@ create table public.listings (
   max_nights integer,
   min_months integer,
   max_months integer,
-  flat_floor text,
-  house_no text,
-  street text,
   area text,
   postal_code text,
-  landmark text
+  landmark text,
+  purpose_tags _text default '{}'::text[] not null,
+  geog geography
 );
 
 create table public.message_templates (
@@ -351,7 +394,14 @@ create table public.profiles (
   is_available boolean default true not null,
   leaderboard_opt_out boolean default false not null,
   message_language text default 'en'::text not null,
-  signup_completed boolean default false not null
+  signup_completed boolean default false not null,
+  address_verification_status verification_status default 'none'::verification_status not null,
+  address_line text,
+  address_submitted_at timestamp with time zone,
+  address_verified_at timestamp with time zone,
+  address_verified_by uuid,
+  address_rejection_reason text,
+  address_visit_notes text
 );
 
 create table public.push_tokens (
@@ -372,6 +422,21 @@ create table public.read_cursors (
   user_id uuid not null,
   last_read_message_id uuid,
   last_read_at timestamp with time zone default now() not null
+);
+
+create table public.reports (
+  id uuid default gen_random_uuid() not null,
+  reporter_id uuid not null,
+  reported_user_id uuid,
+  listing_id uuid,
+  booking_id uuid,
+  category text not null,
+  details text,
+  status text default 'open'::text not null,
+  resolution_note text,
+  created_at timestamp with time zone default now() not null,
+  resolved_at timestamp with time zone,
+  resolved_by uuid
 );
 
 create table public.reviews (
@@ -408,7 +473,17 @@ create table public.typing_indicators (
   started_at timestamp with time zone default now() not null
 );
 
+create table public.user_blocks (
+  blocker_id uuid not null,
+  blocked_id uuid not null,
+  created_at timestamp with time zone default now() not null
+);
+
 -- ========================= INDEXES =========================
+CREATE INDEX idx_audit_log_actor ON public.audit_log USING btree (actor_id);
+CREATE INDEX idx_audit_log_category_time ON public.audit_log USING btree (category, occurred_at DESC);
+CREATE INDEX idx_audit_log_occurred ON public.audit_log USING btree (occurred_at DESC);
+CREATE INDEX idx_audit_log_table_record ON public.audit_log USING btree (table_name, record_id);
 CREATE INDEX bookings_overlap_idx ON public.bookings USING gist (listing_id, tstzrange(starts_at, ends_at, '[)'::text)) WHERE (booking_status = ANY (ARRAY['pending'::booking_status, 'confirmed'::booking_status]));
 CREATE INDEX idx_conv_participants_active ON public.conversation_participants USING btree (is_active) WHERE (is_active = true);
 CREATE INDEX idx_conv_participants_conversation ON public.conversation_participants USING btree (conversation_id);
@@ -421,6 +496,10 @@ CREATE INDEX favorites_by_listing ON public.favorites USING btree (listing_id);
 CREATE INDEX favorites_by_user ON public.favorites USING btree (user_id);
 CREATE INDEX idx_fcm_tokens_active ON public.fcm_tokens USING btree (user_id, is_active) WHERE (is_active = true);
 CREATE INDEX idx_fcm_tokens_user_id ON public.fcm_tokens USING btree (user_id);
+CREATE INDEX idx_landmarks_geog ON public.landmarks USING gist (geog);
+CREATE INDEX idx_landmarks_type ON public.landmarks USING btree (type) WHERE is_active;
+CREATE INDEX idx_listings_geog ON public.listings USING gist (geog);
+CREATE INDEX idx_listings_purpose_tags ON public.listings USING gin (purpose_tags);
 CREATE INDEX listings_location_idx ON public.listings USING gist (location);
 CREATE INDEX idx_messages_conversation ON public.messages USING btree (conversation_id);
 CREATE INDEX idx_messages_created_at ON public.messages USING btree (created_at DESC);
@@ -437,10 +516,13 @@ CREATE INDEX owner_documents_user_id_idx ON public.owner_documents USING btree (
 CREATE INDEX owner_documents_verified_at_idx ON public.owner_documents USING btree (verified_at) WHERE (verified_at IS NULL);
 CREATE INDEX payments_booking_id_idx ON public.payments USING btree (booking_id);
 CREATE INDEX payments_user_id_idx ON public.payments USING btree (user_id);
+CREATE INDEX profiles_address_verification_status_idx ON public.profiles USING btree (address_verification_status) WHERE (address_verification_status <> 'none'::verification_status);
 CREATE INDEX profiles_is_host_idx ON public.profiles USING btree (is_host) WHERE (is_host = true);
 CREATE INDEX idx_push_tokens_active ON public.push_tokens USING btree (user_id, is_active) WHERE (is_active = true);
 CREATE INDEX idx_push_tokens_token ON public.push_tokens USING btree (token);
 CREATE INDEX idx_push_tokens_user ON public.push_tokens USING btree (user_id);
+CREATE INDEX idx_reports_reported_user ON public.reports USING btree (reported_user_id);
+CREATE INDEX idx_reports_status ON public.reports USING btree (status, created_at DESC);
 CREATE INDEX reviews_by_booking ON public.reviews USING btree (booking_id);
 CREATE INDEX reviews_by_listing ON public.reviews USING btree (listing_id) WHERE (listing_id IS NOT NULL);
 CREATE INDEX reviews_by_reviewee ON public.reviews USING btree (reviewee_id);
@@ -450,6 +532,7 @@ CREATE UNIQUE INDEX reviews_unique_per_booking ON public.reviews USING btree (bo
 -- ==================== ROW LEVEL SECURITY ====================
 alter table public.app_secrets enable row level security;
 alter table public.app_settings enable row level security;
+alter table public.audit_log enable row level security;
 alter table public.bookings enable row level security;
 alter table public.conversation_participants enable row level security;
 alter table public.conversations enable row level security;
@@ -459,6 +542,8 @@ alter table public.facilities enable row level security;
 alter table public.favorites enable row level security;
 alter table public.fcm_tokens enable row level security;
 alter table public.host_leaderboard_snapshots enable row level security;
+alter table public.landmarks enable row level security;
+alter table public.listing_addresses enable row level security;
 alter table public.listing_checkin_details enable row level security;
 alter table public.listing_facilities enable row level security;
 alter table public.listings enable row level security;
@@ -472,14 +557,34 @@ alter table public.payments enable row level security;
 alter table public.profiles enable row level security;
 alter table public.push_tokens enable row level security;
 alter table public.read_cursors enable row level security;
+alter table public.reports enable row level security;
 alter table public.reviews enable row level security;
 alter table public.scheduled_message_sends enable row level security;
 alter table public.typing_indicators enable row level security;
+alter table public.user_blocks enable row level security;
 
 -- Policies
+create policy "app_settings_admin_insert" on public.app_settings
+  as permissive for insert to authenticated
+  with check ((EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.role = 'admin'::app_role)))));
+create policy "app_settings_admin_update" on public.app_settings
+  as permissive for update to authenticated
+  using ((EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.role = 'admin'::app_role)))))
+  with check ((EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.role = 'admin'::app_role)))));
 create policy "app_settings_select_public" on public.app_settings
   as permissive for select to public
   using (is_public);
+create policy "audit_log_admin_select" on public.audit_log
+  as permissive for select to authenticated
+  using ((EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.role = 'admin'::app_role)))));
 create policy "Admins can view all bookings" on public.bookings
   as permissive for select to authenticated
   using (is_admin());
@@ -555,6 +660,30 @@ create policy "Users can update own fcm tokens" on public.fcm_tokens
 create policy "Users can view own fcm tokens" on public.fcm_tokens
   as permissive for select to authenticated
   using ((auth.uid() = user_id));
+create policy "landmarks_public_read" on public.landmarks
+  as permissive for select to public
+  using ((is_active = true));
+create policy "listing_addresses_owner_delete" on public.listing_addresses
+  as permissive for delete to authenticated
+  using ((EXISTS ( SELECT 1
+   FROM listings l
+  WHERE ((l.id = listing_addresses.listing_id) AND (l.owner_id = auth.uid())))));
+create policy "listing_addresses_owner_insert" on public.listing_addresses
+  as permissive for insert to authenticated
+  with check ((EXISTS ( SELECT 1
+   FROM listings l
+  WHERE ((l.id = listing_addresses.listing_id) AND (l.owner_id = auth.uid())))));
+create policy "listing_addresses_owner_update" on public.listing_addresses
+  as permissive for update to authenticated
+  using ((EXISTS ( SELECT 1
+   FROM listings l
+  WHERE ((l.id = listing_addresses.listing_id) AND (l.owner_id = auth.uid())))))
+  with check ((EXISTS ( SELECT 1
+   FROM listings l
+  WHERE ((l.id = listing_addresses.listing_id) AND (l.owner_id = auth.uid())))));
+create policy "listing_addresses_select_entitled" on public.listing_addresses
+  as permissive for select to authenticated
+  using (can_see_listing_address(listing_id));
 create policy "owner_manages_checkin_details" on public.listing_checkin_details
   as permissive for all to authenticated
   using ((EXISTS ( SELECT 1
@@ -680,6 +809,16 @@ create policy "push_tokens_update_own" on public.push_tokens
 create policy "Users can manage own read cursors" on public.read_cursors
   as permissive for all to public
   using ((auth.uid() = user_id));
+create policy "reports_admin_update" on public.reports
+  as permissive for update to authenticated
+  using (is_admin())
+  with check (is_admin());
+create policy "reports_insert_own" on public.reports
+  as permissive for insert to authenticated
+  with check ((reporter_id = auth.uid()));
+create policy "reports_select_own_or_admin" on public.reports
+  as permissive for select to authenticated
+  using (((reporter_id = auth.uid()) OR is_admin()));
 create policy "reviews_insert" on public.reviews
   as permissive for insert to public
   with check (((auth.uid() = reviewer_id) AND (EXISTS ( SELECT 1
@@ -709,8 +848,31 @@ create policy "Users can view typing in own conversations" on public.typing_indi
   using ((EXISTS ( SELECT 1
    FROM conversations c
   WHERE ((c.id = typing_indicators.conversation_id) AND ((c.participant_one_id = auth.uid()) OR (c.participant_two_id = auth.uid()))))));
+create policy "user_blocks_delete_own" on public.user_blocks
+  as permissive for delete to authenticated
+  using ((blocker_id = auth.uid()));
+create policy "user_blocks_insert_own" on public.user_blocks
+  as permissive for insert to authenticated
+  with check ((blocker_id = auth.uid()));
+create policy "user_blocks_select_involved" on public.user_blocks
+  as permissive for select to authenticated
+  using (((blocker_id = auth.uid()) OR (blocked_id = auth.uid()) OR is_admin()));
 
 -- ========================= VIEWS =========================
+create or replace view public.financial_audit as
+ SELECT id,
+    occurred_at,
+    table_name,
+    record_id,
+    action,
+    actor_id,
+    actor_role,
+    source,
+    amount,
+    currency,
+    changed_cols
+   FROM audit_log
+  WHERE category = 'financial'::text;
 create or replace view public.guest_ratings as
  SELECT reviewee_id AS guest_id,
     count(*) AS review_count,
@@ -742,7 +904,10 @@ create or replace view public.public_profiles as
     response_time,
     is_available,
     message_language,
-    created_at
+    created_at,
+    COALESCE(phone_verified, false) AS phone_verified,
+    verification_status = 'verified'::verification_status AS identity_verified,
+    address_verification_status = 'verified'::verification_status AS address_verified
    FROM profiles;
 
 -- ========================= FUNCTIONS =========================
@@ -811,6 +976,7 @@ CREATE OR REPLACE FUNCTION public.auto_complete_elapsed_bookings()
  RETURNS integer
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public'
 AS $function$
 DECLARE
     completed_count integer;
@@ -832,6 +998,16 @@ BEGIN
             booking_status = 'completed',
             completed_at = NOW()
         WHERE id = booking_record.id;
+
+        -- Send the host's "After checkout" template to the guest. Auto-complete
+        -- is the ONLY completion path for stays the host never marks done, so
+        -- without this the checkout message never fires. Defensive: a bad
+        -- template must not abort the whole completion job.
+        BEGIN
+            PERFORM public.send_checkout_for_booking(booking_record.id);
+        EXCEPTION WHEN OTHERS THEN
+            RAISE NOTICE 'checkout message failed for booking %: %', booking_record.id, SQLERRM;
+        END;
 
         -- Listing info for notifications
         SELECT l.title, l.owner_id INTO listing_record
@@ -966,6 +1142,32 @@ BEGIN
 
     RETURN revealed_count;
 END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.can_see_listing_address(p_listing_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select
+    -- Admins run the safety/verification queues and need the real address.
+    public.is_admin()
+    -- The host knows their own address.
+    or exists (
+      select 1 from public.listings l
+      where l.id = p_listing_id and l.owner_id = auth.uid()
+    )
+    -- A guest the host has ACCEPTED. `pending` is excluded on purpose: asking
+    -- to stay somewhere must not be enough to learn where it is. `rejected` and
+    -- `cancelled` are excluded too — an acceptance that fell through is not a
+    -- standing invitation.
+    or exists (
+      select 1 from public.bookings b
+      where b.listing_id = p_listing_id
+        and b.tenant_id = auth.uid()
+        and b.booking_status in ('confirmed', 'active', 'completed')
+    );
 $function$;
 
 CREATE OR REPLACE FUNCTION public.capture_monthly_leaderboard_snapshot()
@@ -1244,6 +1446,34 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.enforce_listing_public_location()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  -- Derived, never client-supplied: whatever `address` a client sends is
+  -- discarded in favour of the area-level form.
+  new.address   := public.listing_area_address(new.area, new.city, new.postal_code);
+  new.latitude  := public.snap_coordinate(new.latitude);
+  new.longitude := public.snap_coordinate(new.longitude);
+
+  -- Re-derive the PostGIS columns from the SNAPPED coordinates. The existing
+  -- listing_location_trigger / trg_set_listing_geog do this too, but they fire
+  -- in trigger-name order and `listing_location_trigger` sorts before this one,
+  -- so it would otherwise stamp `location` with the exact point. Doing it here
+  -- as well makes the outcome independent of trigger ordering.
+  if new.latitude is not null and new.longitude is not null then
+    new.location := ST_SetSRID(ST_MakePoint(new.longitude, new.latitude), 4326)::geography;
+    new.geog     := ST_SetSRID(ST_MakePoint(new.longitude, new.latitude), 4326)::geography;
+  else
+    new.location := null;
+    new.geog     := null;
+  end if;
+
+  return new;
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.expire_stale_bookings()
  RETURNS integer
  LANGUAGE plpgsql
@@ -1330,6 +1560,121 @@ BEGIN
 
     RETURN expired_count;
 END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_audit()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_old      jsonb := case when tg_op <> 'INSERT' then to_jsonb(old) end;
+  v_new      jsonb := case when tg_op <> 'DELETE' then to_jsonb(new) end;
+  v_row      jsonb := coalesce(v_new, v_old);
+  v_actor    uuid  := auth.uid();
+  v_role     text;
+  v_source   text  := coalesce(
+                        nullif(current_setting('app.audit_source', true), ''),
+                        case when auth.uid() is null then 'system' else 'app' end);
+  v_category text  := tg_argv[0];
+  v_amount   numeric;
+  v_currency text;
+  v_changed  text[];
+begin
+  if tg_op = 'UPDATE' then
+    select array_agg(k)
+      into v_changed
+      from jsonb_object_keys(v_new) k
+     where (v_new -> k) is distinct from (v_old -> k);
+    -- Nothing we care about actually changed → skip the row.
+    if v_changed is null then
+      return null;
+    end if;
+  end if;
+
+  if v_actor is not null then
+    select role::text into v_role from public.profiles where id = v_actor;
+  end if;
+
+  if tg_table_name = 'payments' then
+    v_amount   := (v_row ->> 'amount')::numeric;
+    v_currency := coalesce(v_row ->> 'currency', 'BDT');
+  elsif tg_table_name = 'bookings' then
+    v_amount   := (v_row ->> 'total_price')::numeric;
+    v_currency := 'BDT';
+  end if;
+
+  insert into public.audit_log (
+    table_name, record_id, action, actor_id, actor_role, source,
+    category, amount, currency, changed_cols, old_data, new_data)
+  values (
+    tg_table_name,
+    (v_row ->> 'id')::uuid,
+    lower(tg_op),
+    v_actor, v_role, v_source,
+    v_category, v_amount, v_currency, v_changed, v_old, v_new);
+
+  return null; -- AFTER trigger; return value ignored
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_audit_immutable()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  raise exception 'audit_log is append-only (% blocked)', tg_op
+    using errcode = '42501';
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_guard_verification_verdicts()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  -- A NULL uid is a trusted server caller: service_role, an Edge Function, or
+  -- a pg_cron job running as postgres with no JWT. (Lesson from migration 077:
+  -- any auth.uid() guard that a cron job reaches must allow NULL.)
+  if auth.uid() is null or public.is_admin() then
+    return new;
+  end if;
+
+  -- Awarding a verdict is admin-only, in both directions of the flow.
+  if new.address_verification_status = 'verified'
+     and old.address_verification_status is distinct from 'verified' then
+    raise exception 'address verification is granted by an admin visit, not by the host'
+      using errcode = '42501';
+  end if;
+
+  if new.verification_status = 'verified'
+     and old.verification_status is distinct from 'verified' then
+    raise exception 'identity verification is granted by an admin, not by the user'
+      using errcode = '42501';
+  end if;
+
+  if new.nid_verified and not coalesce(old.nid_verified, false) then
+    raise exception 'nid_verified is set by an admin, not by the user'
+      using errcode = '42501';
+  end if;
+
+  -- The paper trail of a visit belongs to whoever made it.
+  if new.address_verified_at is distinct from old.address_verified_at
+     or new.address_verified_by is distinct from old.address_verified_by
+     or new.address_visit_notes is distinct from old.address_visit_notes
+     or new.address_rejection_reason is distinct from old.address_rejection_reason then
+    raise exception 'address verification audit fields are admin-only'
+      using errcode = '42501';
+  end if;
+
+  -- Everything else a host may do to their own row is untouched: uploading a
+  -- bill, declaring an address, and moving their own submission to 'pending'
+  -- (or back to 'none') are all still theirs.
+  return new;
+end;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.get_auth_user_id_by_email(p_email text)
@@ -1453,7 +1798,10 @@ AS $function$
 declare
   conv_id uuid;
 begin
-  if auth.uid() is null or auth.uid() not in (user_one, user_two) then
+  -- Enforce participant membership ONLY for a real authenticated user. A NULL
+  -- auth.uid() means a trusted SECURITY DEFINER / cron caller (anon has no
+  -- EXECUTE grant, so it can never reach here unauthenticated).
+  if auth.uid() is not null and auth.uid() not in (user_one, user_two) then
     raise exception 'Not authorized' using errcode = '42501';
   end if;
 
@@ -1672,10 +2020,10 @@ AS $function$
 BEGIN
     RETURN NOT EXISTS (
         SELECT 1
-        FROM bookings
+        FROM public.bookings
         WHERE listing_id = p_listing_id
-        AND booking_status IN ('pending', 'confirmed')
-        AND tstzrange(starts_at, ends_at, '[)') && tstzrange(p_starts_at, p_ends_at, '[)')
+          AND booking_status IN ('pending', 'confirmed', 'active')
+          AND tstzrange(starts_at, ends_at, '[)') && tstzrange(p_starts_at, p_ends_at, '[)')
     );
 END;
 $function$;
@@ -1693,6 +2041,22 @@ AS $function$
       and cp.user_id = p_user_id
       and cp.is_active = true
   );
+$function$;
+
+CREATE OR REPLACE FUNCTION public.listing_area_address(p_area text, p_city text, p_postal_code text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  select nullif(
+    concat_ws(', ',
+      nullif(btrim(coalesce(p_area, '')), ''),
+      nullif(btrim(concat_ws(' ',
+        nullif(btrim(coalesce(p_city, '')), ''),
+        nullif(btrim(coalesce(p_postal_code, '')), '')
+      )), '')
+    ),
+  '');
 $function$;
 
 CREATE OR REPLACE FUNCTION public.mark_all_notifications_read(p_user_id uuid)
@@ -1760,7 +2124,7 @@ begin
   -- Let the guest see the confirmation live (reliable notifications channel).
   insert into public.notifications (user_id, type, title, body, action_url)
   values (
-    v_tenant, 'paymentReceived', 'Cash payment confirmed',
+    v_tenant, 'payment_received', 'Cash payment confirmed',
     'The host confirmed your cash payment for ' || coalesce(v_title, 'your booking') || '.',
     '/trips'
   );
@@ -1792,6 +2156,22 @@ BEGIN
 
   RETURN migrated;
 END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.nearby_landmarks(p_lat double precision, p_lng double precision, p_limit integer DEFAULT 5, p_type text DEFAULT NULL::text)
+ RETURNS SETOF jsonb
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+  select to_jsonb(x) from (
+    select id, name, type, city, area, latitude, longitude,
+           ST_Distance(geog, ST_SetSRID(ST_MakePoint(p_lng, p_lat), 4326)::geography) as distance_m
+    from public.landmarks
+    where is_active and (p_type is null or type = p_type)
+    order by geog <-> ST_SetSRID(ST_MakePoint(p_lng, p_lat), 4326)::geography
+    limit greatest(coalesce(p_limit, 5), 0)
+  ) x;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.notify_on_booking_change()
@@ -2319,15 +2699,104 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.search_listings(p_property_types text[] DEFAULT NULL::text[], p_guest_count integer DEFAULT 1, p_min_price numeric DEFAULT NULL::numeric, p_max_price numeric DEFAULT NULL::numeric, p_amenities text[] DEFAULT NULL::text[], p_location text DEFAULT NULL::text, p_limit integer DEFAULT 20, p_offset integer DEFAULT 0)
+CREATE OR REPLACE FUNCTION public.search_landmarks(p_query text DEFAULT NULL::text, p_type text DEFAULT NULL::text, p_limit integer DEFAULT 20)
  RETURNS SETOF jsonb
  LANGUAGE sql
  STABLE
  SET search_path TO 'public'
 AS $function$
-  select to_jsonb(l) || jsonb_build_object(
-    'rating', lr.average_rating,
-    'review_count', coalesce(lr.review_count, 0),
+  select to_jsonb(x) from (
+    select id, name, type, city, area, latitude, longitude
+    from public.landmarks
+    where is_active
+      and (p_type is null or type = p_type)
+      and (p_query is null or p_query = '' or
+           name ilike '%' || p_query || '%' or
+           area ilike '%' || p_query || '%' or
+           city ilike '%' || p_query || '%')
+    order by name
+    limit greatest(coalesce(p_limit, 20), 0)
+  ) x;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.search_listings(p_property_types text[] DEFAULT NULL::text[], p_guest_count integer DEFAULT 1, p_min_price numeric DEFAULT NULL::numeric, p_max_price numeric DEFAULT NULL::numeric, p_amenities text[] DEFAULT NULL::text[], p_location text DEFAULT NULL::text, p_limit integer DEFAULT 20, p_offset integer DEFAULT 0, p_purpose_tags text[] DEFAULT NULL::text[], p_center_lat double precision DEFAULT NULL::double precision, p_center_lng double precision DEFAULT NULL::double precision, p_radius_m integer DEFAULT NULL::integer, p_radii integer[] DEFAULT NULL::integer[], p_ne_lat double precision DEFAULT NULL::double precision, p_ne_lng double precision DEFAULT NULL::double precision, p_sw_lat double precision DEFAULT NULL::double precision, p_sw_lng double precision DEFAULT NULL::double precision)
+ RETURNS SETOF jsonb
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+  with center as (
+    select case
+             when p_center_lat is not null and p_center_lng is not null
+             then ST_SetSRID(ST_MakePoint(p_center_lng, p_center_lat), 4326)::geography
+           end as g
+  ),
+  -- The bounding box is active only when all four corners are present and the
+  -- box is non-degenerate (north-east actually north-east of south-west).
+  bbox as (
+    select (p_ne_lat is not null and p_ne_lng is not null
+            and p_sw_lat is not null and p_sw_lng is not null
+            and p_ne_lat > p_sw_lat and p_ne_lng > p_sw_lng) as active
+  ),
+  -- Every filter except the expanding radius. dist is non-null whenever a
+  -- center is set and the listing has coordinates.
+  base as (
+    select l.id as lid, l as row_l, lr.average_rating as rating,
+           coalesce(lr.review_count, 0) as review_count,
+           -- Live host avatar (public_profiles is anon-readable, no PII). The
+           -- listings.host_avatar_url column is dead (never written), so we
+           -- source the real, current picture from the owner's profile. (091)
+           pp.avatar_url as host_avatar,
+           case when c.g is not null and l.geog is not null
+                then ST_Distance(l.geog, c.g) end as dist
+    from public.listings l
+    left join public.listing_ratings lr on lr.listing_id = l.id
+    left join public.public_profiles pp on pp.id = l.owner_id
+    cross join center c
+    cross join bbox bb
+    where l.is_active = true
+      and l.host_available = true
+      and (p_property_types is null or l.listing_type::text = any(p_property_types))
+      and l.max_guests >= coalesce(p_guest_count, 1)
+      and (p_min_price is null or least(l.hourly_rate, l.daily_rate, l.monthly_rate) >= p_min_price)
+      and (p_max_price is null or least(l.hourly_rate, l.daily_rate, l.monthly_rate) <= p_max_price)
+      and (p_location is null or p_location = '' or
+           l.city    ilike '%' || p_location || '%' or
+           l.address ilike '%' || p_location || '%' or
+           l.title   ilike '%' || p_location || '%')
+      and (p_amenities is null or (
+        select count(distinct f.name)
+        from public.listing_facilities lf
+        join public.facilities f on f.id = lf.facility_id
+        where lf.listing_id = l.id and f.name = any(p_amenities)
+      ) = array_length(p_amenities, 1))
+      and (p_purpose_tags is null or l.purpose_tags && p_purpose_tags)
+      -- bounding-box search: the listing must sit inside the place's extent.
+      -- This is the exact area the guest searched, so it supersedes both radius
+      -- paths (which are passed null in box mode anyway).
+      and (not bb.active or
+           (l.latitude between p_sw_lat and p_ne_lat and
+            l.longitude between p_sw_lng and p_ne_lng))
+      -- single fixed radius (purpose/landmark search) — unchanged
+      and (c.g is null or p_radius_m is null or
+           (l.geog is not null and ST_DWithin(l.geog, c.g, p_radius_m)))
+      -- tiered search ranks by distance; listings without a pin can't qualify
+      and (c.g is null or p_radii is null or l.geog is not null)
+  ),
+  -- Smallest tier that contains at least one match (null → nearest fallback).
+  chosen as (
+    select min(r) as radius
+    from unnest(coalesce(p_radii, '{}'::integer[])) r
+    where (select min(dist) from base) <= r
+  )
+  select to_jsonb(b.row_l) || jsonb_build_object(
+    'host_avatar_url', b.host_avatar,
+    'rating', b.rating,
+    'review_count', b.review_count,
+    'distance_m', b.dist,
+    'search_radius_m', (select radius from chosen),
+    'radius_fallback',
+      (p_radii is not null and (select radius from chosen) is null),
     'listing_facilities',
     coalesce((
       select jsonb_agg(jsonb_build_object(
@@ -2335,31 +2804,22 @@ AS $function$
                'facilities', jsonb_build_object('name', f.name)))
       from public.listing_facilities lf
       join public.facilities f on f.id = lf.facility_id
-      where lf.listing_id = l.id
+      where lf.listing_id = b.lid
     ), '[]'::jsonb)
   )
-  from public.listings l
-  left join public.listing_ratings lr on lr.listing_id = l.id
-  where l.is_active = true
-    and l.host_available = true
-    and (p_property_types is null or l.listing_type::text = any(p_property_types))
-    and l.max_guests >= coalesce(p_guest_count, 1)
-    and (p_min_price is null or least(l.hourly_rate, l.daily_rate, l.monthly_rate) >= p_min_price)
-    and (p_max_price is null or least(l.hourly_rate, l.daily_rate, l.monthly_rate) <= p_max_price)
-    and (p_location is null or p_location = '' or
-         l.city    ilike '%' || p_location || '%' or
-         l.address ilike '%' || p_location || '%' or
-         l.title   ilike '%' || p_location || '%')
-    and (p_amenities is null or (
-      select count(distinct f.name)
-      from public.listing_facilities lf
-      join public.facilities f on f.id = lf.facility_id
-      where lf.listing_id = l.id and f.name = any(p_amenities)
-    ) = array_length(p_amenities, 1))
-  order by coalesce(lr.average_rating, 0) desc,
-           coalesce(lr.review_count, 0) desc,
-           l.created_at desc
-  limit greatest(coalesce(p_limit, 20), 0)
+  from base b
+  where p_radii is null
+     or (select radius from chosen) is null            -- fallback: nearest N
+     or b.dist <= (select radius from chosen)
+  order by b.dist asc nulls last,
+           coalesce(b.rating, 0) desc,
+           b.review_count desc,
+           (b.row_l).created_at desc
+  limit case
+          when p_radii is not null and (select radius from chosen) is null
+          then least(greatest(coalesce(p_limit, 20), 0), 20)
+          else greatest(coalesce(p_limit, 20), 0)
+        end
   offset greatest(coalesce(p_offset, 0), 0);
 $function$;
 
@@ -2490,13 +2950,19 @@ DECLARE
 BEGIN
     SELECT b.id AS booking_id, b.tenant_id, b.listing_id,
            COALESCE(b.listing_title, l.title) AS listing_title,
-           l.address AS listing_address, l.city AS listing_city,
-           l.latitude AS listing_lat, l.longitude AS listing_lng,
+           -- Exact address + coordinates from the gated table, falling back to
+           -- the listing's public (area-level) values so a listing with no
+           -- listing_addresses row still gets a usable map pin.
+           COALESCE(la.exact_address, l.address) AS listing_address,
+           l.city AS listing_city,
+           COALESCE(la.latitude, l.latitude) AS listing_lat,
+           COALESCE(la.longitude, l.longitude) AS listing_lng,
            l.owner_id AS host_id,
            COALESCE(p.message_language, 'en') AS message_language
     INTO rec
     FROM public.bookings b
     JOIN public.listings l ON l.id = b.listing_id
+    LEFT JOIN public.listing_addresses la ON la.listing_id = l.id
     LEFT JOIN public.profiles p ON p.id = l.owner_id
     WHERE b.id = p_booking_id AND b.booking_status = 'confirmed'
       AND b.tenant_id IS NOT NULL;
@@ -2539,6 +3005,121 @@ BEGIN
 END;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.send_checkout_for_booking(p_booking_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+    rec RECORD;
+    v_content TEXT;
+    v_enabled BOOLEAN;
+    v_conv_id UUID;
+    v_rendered TEXT;
+    v_nights INTEGER;
+    v_units INTEGER;
+    v_duration TEXT;
+    v_lang TEXT;
+    v_default_en TEXT;
+    v_default_bn TEXT;
+    v_ci_date TEXT;
+    v_co_date TEXT;
+BEGIN
+    SELECT b.id AS booking_id, b.tenant_id, b.tenant_name, b.guest_count,
+           b.starts_at, b.ends_at, b.pricing_unit,
+           COALESCE(b.listing_title, l.title) AS listing_title,
+           b.listing_id, l.owner_id AS host_id,
+           COALESCE(p.full_name, 'Your host') AS host_name,
+           COALESCE(p.message_language, 'en') AS message_language
+    INTO rec
+    FROM public.bookings b
+    JOIN public.listings l ON l.id = b.listing_id
+    LEFT JOIN public.profiles p ON p.id = l.owner_id
+    WHERE b.id = p_booking_id AND b.tenant_id IS NOT NULL;
+
+    IF NOT FOUND THEN RETURN; END IF;
+
+    -- Deliver once per booking.
+    IF EXISTS (SELECT 1 FROM public.scheduled_message_sends s
+               WHERE s.booking_id = rec.booking_id AND s.trigger = 'check_out') THEN
+        RETURN;
+    END IF;
+
+    v_lang := rec.message_language;
+
+    -- Keep in sync with MessageTemplate.defaultContentFor(checkOut, en).
+    v_default_en := E'Hi {{guest_name}},\n\n' ||
+        'Thanks for staying at {{listing_title}} — I hope you enjoyed ' ||
+        E'your visit! You are welcome back anytime.\n\n' ||
+        E'Safe travels!\n\n' ||
+        E'Thanks,\n{{host_name}}';
+    -- Keep in sync with MessageTemplate.defaultContentFor(checkOut, bn).
+    v_default_bn := E'হ্যালো {{guest_name}},\n\n' ||
+        '{{listing_title}}-এ থাকার জন্য ধন্যবাদ — আশা করি আপনার সময়টা ' ||
+        E'ভালো কেটেছে! আপনি যেকোনো সময় আবার স্বাগত।\n\n' ||
+        E'শুভ যাত্রা!\n\n' ||
+        E'ধন্যবাদ,\n{{host_name}}';
+
+    SELECT t.content, t.enabled
+    INTO v_content, v_enabled
+    FROM public.message_templates t
+    WHERE t.host_id = rec.host_id AND t.trigger = 'check_out';
+
+    IF NOT FOUND THEN
+        v_enabled := TRUE;
+        v_content := CASE WHEN v_lang = 'bn' THEN v_default_bn ELSE v_default_en END;
+    ELSIF v_content = v_default_en OR v_content = v_default_bn THEN
+        -- Host stored an un-customized default; render it in their language.
+        v_content := CASE WHEN v_lang = 'bn' THEN v_default_bn ELSE v_default_en END;
+    END IF;
+
+    IF NOT v_enabled THEN RETURN; END IF;
+
+    v_conv_id := public.get_or_create_conversation(
+        rec.tenant_id, rec.host_id, rec.booking_id, rec.listing_id);
+
+    v_nights := GREATEST(1, (rec.ends_at::date - rec.starts_at::date));
+    IF rec.pricing_unit::text = 'hour' THEN
+        v_units := GREATEST(1, FLOOR(EXTRACT(EPOCH FROM (rec.ends_at - rec.starts_at)) / 3600)::int);
+        v_duration := v_units || CASE WHEN v_lang = 'bn' THEN ' ঘণ্টা'
+                                      WHEN v_units = 1 THEN ' hour' ELSE ' hours' END;
+    ELSIF rec.pricing_unit::text = 'month' THEN
+        v_units := GREATEST(1, ROUND((rec.ends_at::date - rec.starts_at::date) / 30.0)::int);
+        v_duration := v_units || CASE WHEN v_lang = 'bn' THEN ' মাস'
+                                      WHEN v_units = 1 THEN ' month' ELSE ' months' END;
+    ELSE
+        v_duration := v_nights || CASE WHEN v_lang = 'bn' THEN ' রাত'
+                                       WHEN v_nights = 1 THEN ' night' ELSE ' nights' END;
+    END IF;
+
+    v_ci_date := to_char(rec.starts_at, 'FMDay, FMMonth FMDD');
+    v_co_date := to_char(rec.ends_at, 'FMDay, FMMonth FMDD');
+    IF v_lang = 'bn' THEN
+        v_ci_date := public._localize_date_bn(v_ci_date);
+        v_co_date := public._localize_date_bn(v_co_date);
+    END IF;
+
+    v_rendered := v_content;
+    v_rendered := replace(v_rendered, '{{guest_name}}',
+        COALESCE(rec.tenant_name, CASE WHEN v_lang = 'bn' THEN 'অতিথি' ELSE 'Guest' END));
+    v_rendered := replace(v_rendered, '{{listing_title}}',
+        COALESCE(rec.listing_title, CASE WHEN v_lang = 'bn' THEN 'আপনার থাকার জায়গা' ELSE 'your stay' END));
+    v_rendered := replace(v_rendered, '{{check_in_date}}', v_ci_date);
+    v_rendered := replace(v_rendered, '{{check_out_date}}', v_co_date);
+    v_rendered := replace(v_rendered, '{{duration}}', v_duration);
+    v_rendered := replace(v_rendered, '{{nights}}', v_nights::text);
+    v_rendered := replace(v_rendered, '{{guest_count}}', COALESCE(rec.guest_count, 1)::text);
+    v_rendered := replace(v_rendered, '{{host_name}}', rec.host_name);
+
+    INSERT INTO public.messages (conversation_id, sender_id, content, content_type)
+    VALUES (v_conv_id, rec.host_id, v_rendered, 'text');
+
+    INSERT INTO public.scheduled_message_sends (booking_id, trigger)
+    VALUES (rec.booking_id, 'check_out');
+END;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.send_pre_checkin_messages()
  RETURNS integer
  LANGUAGE plpgsql
@@ -2554,14 +3135,23 @@ BEGIN
         FROM public.bookings b
         WHERE b.booking_status = 'confirmed'
           AND b.tenant_id IS NOT NULL
-          AND b.starts_at > NOW()
+          -- Candidate while the stay is not fully over. The per-booking window
+          -- guard inside send_precheckin_for_booking enforces "not too early";
+          -- using ends_at (not starts_at) is what lets lead_days=0 fire.
+          AND b.ends_at > NOW()
           AND NOT EXISTS (
               SELECT 1 FROM public.scheduled_message_sends s
               WHERE s.booking_id = b.id AND s.trigger = 'check_in'
           )
     LOOP
-        PERFORM public.send_precheckin_for_booking(rec.booking_id);
-        sent_count := sent_count + 1;
+        -- Isolate each booking: one bad render must not abort the whole run
+        -- (defect #1 was exactly a single-call error cascading to every booking).
+        BEGIN
+            PERFORM public.send_precheckin_for_booking(rec.booking_id);
+            sent_count := sent_count + 1;
+        EXCEPTION WHEN OTHERS THEN
+            RAISE NOTICE 'pre-checkin message failed for booking %: %', rec.booking_id, SQLERRM;
+        END;
     END LOOP;
     RETURN sent_count;
 END;
@@ -2878,6 +3468,135 @@ BEGIN
 END;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.set_address_verification(p_user_id uuid, p_status verification_status, p_visit_notes text DEFAULT NULL::text, p_rejection_reason text DEFAULT NULL::text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_admin uuid := auth.uid();
+begin
+  if not public.is_admin() then
+    raise exception 'admin only' using errcode = '42501';
+  end if;
+  if p_status not in ('pending', 'verified', 'rejected') then
+    raise exception 'status must be pending, verified or rejected'
+      using errcode = '22023';
+  end if;
+  if p_status = 'rejected'
+     and coalesce(btrim(p_rejection_reason), '') = '' then
+    raise exception 'a rejection reason is required' using errcode = '22023';
+  end if;
+
+  update public.profiles
+     set address_verification_status = p_status,
+         -- Stamped only on approval; cleared otherwise, so verified_at can
+         -- never outlive the verdict it belongs to.
+         address_verified_at = case when p_status = 'verified' then now() end,
+         address_verified_by = case when p_status = 'verified' then v_admin end,
+         address_visit_notes = coalesce(btrim(p_visit_notes), address_visit_notes),
+         address_rejection_reason =
+           case when p_status = 'rejected' then btrim(p_rejection_reason) end
+   where id = p_user_id;
+
+  if not found then
+    raise exception 'no such profile' using errcode = 'P0002';
+  end if;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.set_booking_paid_at()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    IF NEW.payment_status = 'paid' AND NEW.paid_at IS NULL THEN
+        NEW.paid_at := now();
+    END IF;
+    RETURN NEW;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.set_booking_payment_method(p_booking_id uuid, p_method text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_uid uuid := auth.uid();
+  v_tenant uuid;
+  v_pay_status text;
+  v_status text;
+  v_cash_enabled boolean;
+begin
+  if v_uid is null then raise exception 'Not authenticated'; end if;
+
+  if p_method not in ('online', 'cash') then
+    raise exception 'Invalid payment method: %', p_method using errcode = '22023';
+  end if;
+
+  select tenant_id, payment_status, booking_status
+    into v_tenant, v_pay_status, v_status
+    from public.bookings where id = p_booking_id;
+  if v_tenant is null then raise exception 'Booking not found'; end if;
+
+  -- Only the guest who owns the booking may choose its payment method.
+  if v_tenant <> v_uid then
+    raise exception 'Only the guest can choose the payment method'
+      using errcode = '42501';
+  end if;
+
+  -- Nothing to choose once it's already settled.
+  if v_pay_status = 'paid' then
+    raise exception 'This booking is already paid' using errcode = '42501';
+  end if;
+
+  -- Payment is only arranged after the host accepts and before completion.
+  if v_status not in ('confirmed', 'active') then
+    raise exception 'Payment can only be arranged after the host accepts'
+      using errcode = '42501';
+  end if;
+
+  -- 'cash' requires the admin toggle. Defence in depth: the client hides the
+  -- option, but never trust the client.
+  if p_method = 'cash' then
+    select lower(coalesce(value, '')) = 'true' into v_cash_enabled
+      from public.app_settings where key = 'cash_payment_enabled';
+    if not coalesce(v_cash_enabled, false) then
+      raise exception 'Cash payment is not available' using errcode = '42501';
+    end if;
+  end if;
+
+  update public.bookings set payment_method = p_method where id = p_booking_id;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.set_landmark_geog()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  new.geog := ST_SetSRID(ST_MakePoint(new.longitude, new.latitude), 4326)::geography;
+  return new;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.set_listing_geog()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  if new.latitude is not null and new.longitude is not null then
+    new.geog := ST_SetSRID(ST_MakePoint(new.longitude, new.latitude), 4326)::geography;
+  else
+    new.geog := null;
+  end if;
+  return new;
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.set_listing_host_available()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -2918,6 +3637,44 @@ BEGIN
 END;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.snap_coordinate(p_degrees numeric)
+ RETURNS numeric
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  select round(p_degrees / 0.001) * 0.001;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.submit_address_verification(p_address_line text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_uid uuid := auth.uid();
+begin
+  if v_uid is null then
+    raise exception 'not authenticated' using errcode = '42501';
+  end if;
+  if coalesce(btrim(p_address_line), '') = '' then
+    raise exception 'a full address is required' using errcode = '22023';
+  end if;
+  if not exists (
+    select 1 from public.profiles
+     where id = v_uid and address_proof_path is not null
+  ) then
+    raise exception 'upload a proof-of-address document first'
+      using errcode = '22023';
+  end if;
+
+  update public.profiles
+     set address_line = btrim(p_address_line),
+         address_verification_status = 'pending',
+         address_submitted_at = now()
+   where id = v_uid;
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.sync_listings_host_available()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -2931,6 +3688,16 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.touch_listing_address()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  new.updated_at := now();
+  return new;
+end;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.touch_message_templates_updated_at()
@@ -3163,11 +3930,24 @@ end;
 $function$;
 
 -- ========================= TRIGGERS =========================
+CREATE TRIGGER trg_audit_app_settings AFTER INSERT OR UPDATE ON public.app_settings FOR EACH ROW EXECUTE FUNCTION fn_audit('admin');
+CREATE TRIGGER trg_audit_immutable BEFORE DELETE OR UPDATE ON public.audit_log FOR EACH ROW EXECUTE FUNCTION fn_audit_immutable();
 CREATE TRIGGER booking_lifecycle_notifications AFTER INSERT OR UPDATE OF booking_status, cancelled_by ON public.bookings FOR EACH ROW EXECUTE FUNCTION notify_on_booking_lifecycle();
+CREATE TRIGGER trg_audit_bookings_ins AFTER INSERT ON public.bookings FOR EACH ROW EXECUTE FUNCTION fn_audit('financial');
+CREATE TRIGGER trg_audit_bookings_upd AFTER UPDATE ON public.bookings FOR EACH ROW WHEN (((old.payment_status IS DISTINCT FROM new.payment_status) OR (old.payment_method IS DISTINCT FROM new.payment_method) OR (old.booking_status IS DISTINCT FROM new.booking_status) OR (old.total_price IS DISTINCT FROM new.total_price))) EXECUTE FUNCTION fn_audit('financial');
 CREATE TRIGGER trg_enforce_booking_update_rules BEFORE UPDATE ON public.bookings FOR EACH ROW EXECUTE FUNCTION enforce_booking_update_rules();
+CREATE TRIGGER trg_set_booking_paid_at BEFORE INSERT OR UPDATE OF payment_status ON public.bookings FOR EACH ROW EXECUTE FUNCTION set_booking_paid_at();
+CREATE TRIGGER trg_audit_coupon_redemptions_ins AFTER INSERT ON public.coupon_redemptions FOR EACH ROW EXECUTE FUNCTION fn_audit('discount');
 CREATE TRIGGER coupons_normalize_code_trg BEFORE INSERT OR UPDATE ON public.coupons FOR EACH ROW EXECUTE FUNCTION coupons_normalize_code();
+CREATE TRIGGER trg_audit_coupons_del AFTER DELETE ON public.coupons FOR EACH ROW EXECUTE FUNCTION fn_audit('discount');
+CREATE TRIGGER trg_audit_coupons_ins AFTER INSERT ON public.coupons FOR EACH ROW EXECUTE FUNCTION fn_audit('discount');
+CREATE TRIGGER trg_audit_coupons_upd AFTER UPDATE ON public.coupons FOR EACH ROW WHEN (((old.is_active IS DISTINCT FROM new.is_active) OR (old.discount_type IS DISTINCT FROM new.discount_type) OR (old.discount_value IS DISTINCT FROM new.discount_value) OR (old.max_discount_amount IS DISTINCT FROM new.max_discount_amount) OR (old.min_booking_amount IS DISTINCT FROM new.min_booking_amount) OR (old.usage_limit IS DISTINCT FROM new.usage_limit) OR (old.per_user_limit IS DISTINCT FROM new.per_user_limit) OR (old.starts_at IS DISTINCT FROM new.starts_at) OR (old.expires_at IS DISTINCT FROM new.expires_at))) EXECUTE FUNCTION fn_audit('discount');
 CREATE TRIGGER fcm_tokens_updated_at BEFORE UPDATE ON public.fcm_tokens FOR EACH ROW EXECUTE FUNCTION update_fcm_token_timestamp();
+CREATE TRIGGER trg_set_landmark_geog BEFORE INSERT OR UPDATE OF latitude, longitude ON public.landmarks FOR EACH ROW EXECUTE FUNCTION set_landmark_geog();
+CREATE TRIGGER trg_touch_listing_address BEFORE UPDATE ON public.listing_addresses FOR EACH ROW EXECUTE FUNCTION touch_listing_address();
+CREATE TRIGGER enforce_listing_public_location BEFORE INSERT OR UPDATE ON public.listings FOR EACH ROW EXECUTE FUNCTION enforce_listing_public_location();
 CREATE TRIGGER listing_location_trigger BEFORE INSERT OR UPDATE ON public.listings FOR EACH ROW EXECUTE FUNCTION update_listing_location();
+CREATE TRIGGER trg_set_listing_geog BEFORE INSERT OR UPDATE OF latitude, longitude ON public.listings FOR EACH ROW EXECUTE FUNCTION set_listing_geog();
 CREATE TRIGGER trg_set_listing_host_available BEFORE INSERT ON public.listings FOR EACH ROW EXECUTE FUNCTION set_listing_host_available();
 CREATE TRIGGER on_message_template_update BEFORE UPDATE ON public.message_templates FOR EACH ROW EXECUTE FUNCTION touch_message_templates_updated_at();
 CREATE TRIGGER on_message_notify_recipient AFTER INSERT ON public.messages FOR EACH ROW EXECUTE FUNCTION notify_recipient_on_new_message();
@@ -3177,9 +3957,17 @@ CREATE TRIGGER notifications_updated_at BEFORE UPDATE ON public.notifications FO
 CREATE TRIGGER on_notification_send_push AFTER INSERT ON public.notifications FOR EACH ROW EXECUTE FUNCTION send_push_on_notification_insert();
 CREATE TRIGGER on_document_uploaded AFTER INSERT ON public.owner_documents FOR EACH ROW EXECUTE FUNCTION set_verification_pending();
 CREATE TRIGGER on_document_verified AFTER UPDATE OF verified_at ON public.owner_documents FOR EACH ROW WHEN (((new.verified_at IS NOT NULL) AND (old.verified_at IS NULL))) EXECUTE FUNCTION update_profile_verification_status();
+CREATE TRIGGER trg_audit_owner_documents_upd AFTER UPDATE ON public.owner_documents FOR EACH ROW WHEN (((old.verified_at IS DISTINCT FROM new.verified_at) OR (old.verified_by IS DISTINCT FROM new.verified_by) OR (old.rejection_reason IS DISTINCT FROM new.rejection_reason))) EXECUTE FUNCTION fn_audit('verification');
 CREATE TRIGGER payments_touch_updated_at BEFORE UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION touch_payments_updated_at();
+CREATE TRIGGER trg_audit_payments_ins AFTER INSERT ON public.payments FOR EACH ROW EXECUTE FUNCTION fn_audit('financial');
+CREATE TRIGGER trg_audit_payments_upd AFTER UPDATE ON public.payments FOR EACH ROW WHEN (((old.status IS DISTINCT FROM new.status) OR (old.validated_at IS DISTINCT FROM new.validated_at))) EXECUTE FUNCTION fn_audit('financial');
+CREATE TRIGGER trg_audit_profiles_address_verification AFTER UPDATE ON public.profiles FOR EACH ROW WHEN (((old.address_verification_status IS DISTINCT FROM new.address_verification_status) OR (old.address_verified_by IS DISTINCT FROM new.address_verified_by))) EXECUTE FUNCTION fn_audit('verification');
+CREATE TRIGGER trg_audit_profiles_upd AFTER UPDATE ON public.profiles FOR EACH ROW WHEN (((old.role IS DISTINCT FROM new.role) OR (old.is_host IS DISTINCT FROM new.is_host))) EXECUTE FUNCTION fn_audit('auth');
+CREATE TRIGGER trg_guard_verification_verdicts BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION fn_guard_verification_verdicts();
 CREATE TRIGGER trg_sync_listings_host_available AFTER UPDATE OF is_available ON public.profiles FOR EACH ROW EXECUTE FUNCTION sync_listings_host_available();
 CREATE TRIGGER push_tokens_updated_at BEFORE UPDATE ON public.push_tokens FOR EACH ROW EXECUTE FUNCTION update_notifications_updated_at();
+CREATE TRIGGER trg_audit_reports_ins AFTER INSERT ON public.reports FOR EACH ROW EXECUTE FUNCTION fn_audit('safety');
+CREATE TRIGGER trg_audit_reports_upd AFTER UPDATE ON public.reports FOR EACH ROW WHEN (((old.status IS DISTINCT FROM new.status) OR (old.resolution_note IS DISTINCT FROM new.resolution_note) OR (old.resolved_by IS DISTINCT FROM new.resolved_by))) EXECUTE FUNCTION fn_audit('safety');
 CREATE TRIGGER reveal_reviews_on_insert AFTER INSERT ON public.reviews FOR EACH ROW EXECUTE FUNCTION check_and_reveal_reviews();
 CREATE TRIGGER review_revealed_notification AFTER UPDATE OF is_revealed ON public.reviews FOR EACH ROW EXECUTE FUNCTION notify_on_review_revealed();
 CREATE TRIGGER reviews_updated_at BEFORE UPDATE ON public.reviews FOR EACH ROW EXECUTE FUNCTION update_reviews_updated_at();

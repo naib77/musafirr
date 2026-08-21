@@ -14,6 +14,7 @@ import '../models/payment_record.dart';
 import '../models/booking_duration.dart';
 import '../models/booking_status.dart';
 import '../models/facility.dart';
+import '../models/host_verifications.dart';
 import '../models/landmark.dart';
 import '../models/leaderboard_entry.dart';
 import '../models/listing.dart';
@@ -1716,6 +1717,27 @@ class SupabaseMusafirRepository extends ChangeNotifier
     } catch (e) {
       debugPrint('Error checking host availability: $e');
       return true; // fail-open: don't block booking on a lookup error
+    }
+  }
+
+  @override
+  Future<HostVerifications> fetchHostVerifications(String hostId) async {
+    // Cross-user read → public_profiles, which carries the three flags and no
+    // document detail (migration 094). The base `profiles` table is own-row
+    // only under RLS (061), so a guest asking about a host must come here.
+    try {
+      final row = await _client
+          .from('public_profiles')
+          .select('phone_verified, identity_verified, address_verified')
+          .eq('id', hostId)
+          .maybeSingle();
+      if (row == null) return HostVerifications.none;
+      return HostVerifications.fromJson(row);
+    } catch (e) {
+      debugPrint('Error fetching host verifications: $e');
+      // Fail CLOSED, unlike availability above: a lookup error must not paint
+      // badges the database never granted.
+      return HostVerifications.none;
     }
   }
 

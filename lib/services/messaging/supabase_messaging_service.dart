@@ -179,6 +179,34 @@ class SupabaseMessagingService implements MessagingService {
     String? bookingId,
     String? listingId,
   }) async {
+    final id = await getOrCreateConversationId(
+      currentUserId: currentUserId,
+      otherUserId: otherUserId,
+      bookingId: bookingId,
+      listingId: listingId,
+    );
+    if (!id.isSuccess || id.data == null) {
+      return MessagingResult.failure(
+          id.error ?? 'Failed to create conversation');
+    }
+    // Awaited here, unlike the navigate-now path, so a caller that asked for
+    // the hydrated object gets one with the booking context already on it.
+    if (bookingId != null) {
+      await populateBookingContext(id.data!, bookingId);
+    }
+    // Three more round trips (row + participant + unread count). Only worth
+    // paying when the caller needs the hydrated object rather than just
+    // somewhere to navigate.
+    return await getConversation(id.data!, currentUserId);
+  }
+
+  @override
+  Future<MessagingResult<String>> getOrCreateConversationId({
+    required String currentUserId,
+    required String otherUserId,
+    String? bookingId,
+    String? listingId,
+  }) async {
     try {
       // Use the database function for thread-safe creation
       final response = await _client.rpc(
@@ -191,23 +219,15 @@ class SupabaseMessagingService implements MessagingService {
         },
       );
 
-      final conversationId = response as String;
-
-      // If we have a bookingId, populate the booking context fields
-      if (bookingId != null) {
-        await _populateBookingContext(conversationId, bookingId);
-      }
-
-      // Fetch the full conversation
-      return await getConversation(conversationId, currentUserId);
+      return MessagingResult.success(response as String);
     } catch (e) {
       debugPrint('[SupabaseMessagingService] Error creating conversation: $e');
       return MessagingResult.failure('Failed to create conversation: $e');
     }
   }
 
-  /// Populate booking context fields on a conversation from the booking data
-  Future<void> _populateBookingContext(
+  @override
+  Future<void> populateBookingContext(
       String conversationId, String bookingId) async {
     try {
       // Fetch booking with listing info
