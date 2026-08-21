@@ -321,6 +321,37 @@ class InMemoryMessagingService implements MessagingService {
   }
 
   @override
+  Future<void> populateBookingContext(
+    String conversationId,
+    String bookingId,
+  ) async {
+    // Nothing to enrich in memory: conversations here are built with their
+    // booking fields already set.
+  }
+
+  @override
+  Future<MessagingResult<String>> getOrCreateConversationId({
+    required String currentUserId,
+    required String otherUserId,
+    String? bookingId,
+    String? listingId,
+  }) async {
+    // In memory there are no round trips to save, so the fast path is just the
+    // full one with the id picked out.
+    final result = await getOrCreateConversation(
+      currentUserId: currentUserId,
+      otherUserId: otherUserId,
+      bookingId: bookingId,
+      listingId: listingId,
+    );
+    if (!result.isSuccess || result.data == null) {
+      return MessagingResult.failure(
+          result.error ?? 'Failed to create conversation');
+    }
+    return MessagingResult.success(result.data!.id);
+  }
+
+  @override
   Future<MessagingResult<Conversation>> getOrCreateConversation({
     required String currentUserId,
     required String otherUserId,

@@ -1158,19 +1158,23 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
     );
   }
 
+  /// Blocks a second tap while the first is still creating the
+  /// conversation — without it an impatient tap opens the chat twice.
+  bool _openingChat = false;
+
   Future<void> _openChatForBooking(Booking booking) async {
     if (widget.messagingState == null) {
       _showInfoBanner('Messaging is not available');
       return;
     }
 
-    // Find the conversation for this booking
+    // Already in the local list? Then there is nothing to fetch at all.
     final conversations = widget.messagingState!.conversations;
-    var conversation =
-        conversations.where((c) => c.bookingId == booking.id).firstOrNull;
+    var conversationId =
+        conversations.where((c) => c.bookingId == booking.id).firstOrNull?.id;
 
     // If no conversation exists, create one
-    if (conversation == null) {
+    if (conversationId == null) {
       final guestId = booking.userId;
       if (guestId == null) {
         _showInfoBanner('Cannot message: guest information not available');
@@ -1187,14 +1191,21 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
         );
       }
 
-      // Create the conversation
-      conversation = await widget.messagingState!.startConversation(
+      if (_openingChat) return;
+      _openingChat = true;
+
+      // One round trip: create the conversation. The booking context write and
+      // the hydrated read-back happen behind the chat rather than in front of
+      // it — this screen already knows the guest's name and id, so it never
+      // needed the hydrated conversation for anything but its id.
+      conversationId = await widget.messagingState!.startConversationId(
         otherUserId: guestId,
         bookingId: booking.id,
         listingId: booking.listingId,
       );
+      _openingChat = false;
 
-      if (conversation == null) {
+      if (conversationId == null) {
         if (mounted) {
           _showInfoBanner('Failed to start conversation. Please try again.');
         }
@@ -1202,21 +1213,23 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
       }
     }
 
-    if (mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ChatScreen(
-            conversationId: conversation!.id,
-            messagingState: widget.messagingState!,
-            otherParticipantName: booking.tenantName,
-            otherParticipantAvatarUrl: null,
-            repository: widget.repository,
-            otherParticipantId: booking.userId,
-          ),
+    if (!mounted) return;
+    // A final copy: the builder closure below captures it, and a captured
+    // mutable local doesn't keep its promoted non-null type.
+    final id = conversationId;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          conversationId: id,
+          messagingState: widget.messagingState!,
+          otherParticipantName: booking.tenantName,
+          otherParticipantAvatarUrl: null,
+          repository: widget.repository,
+          otherParticipantId: booking.userId,
         ),
-      );
-    }
+      ),
+    );
   }
 
   Color _getStatusColor(BookingStatus status) {

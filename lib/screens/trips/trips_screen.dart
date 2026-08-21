@@ -552,24 +552,40 @@ class _TripsScreenState extends State<TripsScreen> {
     );
   }
 
+  /// Blocks a second tap while the first is still creating the
+  /// conversation — without it an impatient tap opens the chat twice.
+  bool _openingChat = false;
+
   Future<void> _openChatForBooking(Booking booking) async {
     if (widget.messagingState == null) return;
 
     final user = widget.authState.currentUser;
     if (user == null) return;
 
-    // Find the conversation for this booking
+    // Already in the local list? Then the chat opens with no network at all.
     final conversations = widget.messagingState!.conversations;
-    var conversation =
+    final existing =
         conversations.where((c) => c.bookingId == booking.id).firstOrNull;
 
-    // If no conversation exists, create one
-    if (conversation == null) {
-      // Get the host ID from the listing
-      final listing = widget.repository.listings
-          .where((l) => l.id == booking.listingId)
-          .firstOrNull;
+    // Who the guest is talking to. Taken from the cached conversation when
+    // there is one, otherwise from the listing — which is where the host's
+    // name and picture come from anyway, so there is nothing to fetch for the
+    // chat header either way.
+    final listing = widget.repository.listings
+        .where((l) => l.id == booking.listingId)
+        .firstOrNull;
 
+    String? conversationId = existing?.id;
+    String? otherId = existing != null &&
+            widget.messagingState!.currentUserId != null
+        ? existing.getOtherParticipantId(widget.messagingState!.currentUserId!)
+        : listing?.hostId;
+    var otherName =
+        existing?.otherParticipant?.name ?? listing?.ownerName ?? 'Host';
+    final otherAvatar = existing?.avatarUrl ?? listing?.hostAvatarUrl;
+
+    // If no conversation exists, create one
+    if (conversationId == null) {
       final hostId = listing?.hostId;
       if (hostId == null) {
         if (mounted) {
@@ -578,6 +594,8 @@ class _TripsScreenState extends State<TripsScreen> {
         }
         return;
       }
+      otherId = hostId;
+      if (otherName.isEmpty) otherName = 'Host';
 
       // Show loading indicator
       if (mounted) {
@@ -589,14 +607,21 @@ class _TripsScreenState extends State<TripsScreen> {
         );
       }
 
-      // Create the conversation
-      conversation = await widget.messagingState!.startConversation(
+      if (_openingChat) return;
+      _openingChat = true;
+
+      // One round trip: create the conversation. The booking-context write and
+      // the hydrated read-back used to be awaited here too — five more trips
+      // of a screen that had not visibly changed — and now happen behind the
+      // chat instead.
+      conversationId = await widget.messagingState!.startConversationId(
         otherUserId: hostId,
         bookingId: booking.id,
         listingId: booking.listingId,
       );
+      _openingChat = false;
 
-      if (conversation == null) {
+      if (conversationId == null) {
         if (mounted) {
           ModernBanner.showError(
               context, 'Failed to start conversation. Please try again.');
@@ -605,24 +630,25 @@ class _TripsScreenState extends State<TripsScreen> {
       }
     }
 
-    if (mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ChatScreen(
-            conversationId: conversation!.id,
-            messagingState: widget.messagingState!,
-            otherParticipantName: conversation.displayName,
-            otherParticipantAvatarUrl: conversation.avatarUrl,
-            repository: widget.repository,
-            otherParticipantId: widget.messagingState!.currentUserId == null
-                ? null
-                : conversation.getOtherParticipantId(
-                    widget.messagingState!.currentUserId!),
-          ),
+    if (!mounted) return;
+    // Final copies: the builder closure captures these, and a captured mutable
+    // local doesn't keep its promoted non-null type.
+    final id = conversationId;
+    final participantId = otherId;
+    final participantName = otherName;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          conversationId: id,
+          messagingState: widget.messagingState!,
+          otherParticipantName: participantName,
+          otherParticipantAvatarUrl: otherAvatar,
+          repository: widget.repository,
+          otherParticipantId: participantId,
         ),
-      );
-    }
+      ),
+    );
   }
 
   /// Entry point for the "Pay" button. If the admin has enabled hand cash, the

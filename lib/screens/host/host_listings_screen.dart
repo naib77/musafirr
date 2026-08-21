@@ -128,14 +128,21 @@ class HostListingsScreen extends StatelessWidget {
       if (!verified) return;
     }
 
-    // When configured, a host must also have a proof-of-address document on
-    // file before publishing a listing. Upload is enough to unlock (no approval).
+    // When configured, a host must have submitted their address — the billed
+    // copy AND the address in writing — before publishing a listing.
+    //
+    // SUBMITTING is the gate, not the verdict: an admin's physical visit takes
+    // days, and a host who has done their part must not sit on an unpublishable
+    // listing waiting for one. The "Address verified" badge is what waits for
+    // the visit. A rejected submission is also allowed through — the host is
+    // told why on the profile screen and can resubmit; blocking them here would
+    // pull a live host's ability to list out from under them over a bad photo.
     if (!context.mounted) return;
     if (userId != null &&
         await AppSettingsService.instance.ensureRequireListingAddressProof()) {
-      final hasProof =
-          await ImageUploadService.instance.hasAddressProof(userId);
-      if (!hasProof) {
+      final address =
+          await ImageUploadService.instance.addressVerification(userId);
+      if (!address.isSubmitted) {
         if (!context.mounted) return;
         final uploaded = await Navigator.push<bool>(
           context,
@@ -143,7 +150,7 @@ class HostListingsScreen extends StatelessWidget {
             builder: (context) => AddressProofScreen(userId: userId),
           ),
         );
-        // User backed out without uploading — don't proceed to the form.
+        // Host backed out without submitting — don't proceed to the form.
         if (uploaded != true) return;
       }
     }

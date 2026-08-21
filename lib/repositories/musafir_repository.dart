@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/booking.dart';
 import '../models/booking_contacts.dart';
 import '../models/booking_duration.dart';
+import '../models/host_verifications.dart';
 import '../models/listing_exact_address.dart';
 import '../models/landmark.dart';
 import '../models/leaderboard_entry.dart';
@@ -88,6 +89,11 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   /// Whether a host is currently accepting bookings (host-wide availability).
   /// Defaults to true if the host can't be resolved.
   Future<bool> isHostAvailable(String hostId);
+
+  /// The host's verified-credential flags, for the trust badges on a listing
+  /// page. Returns [HostVerifications.none] when the host can't be resolved —
+  /// a lookup failure must never present as a verified host.
+  Future<HostVerifications> fetchHostVerifications(String hostId);
 
   /// Ranked hosts for the public leaderboard (composite "Host Score").
   /// Computed server-side; the app only reads the ranked rows.

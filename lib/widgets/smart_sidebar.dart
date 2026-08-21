@@ -75,11 +75,12 @@ class _SmartSidebarState extends State<SmartSidebar>
   /// Fling speed (px/s) past which direction wins over position.
   static const double _flingThreshold = 320;
 
-  /// Where the handle — and the panel it pulls in — sit vertically, as a
-  /// [Alignment] y value (-1 top, 0 centre). Kept in the upper third: clear of
-  /// the thumb's resting arc over the bottom navigation bar, and away from the
-  /// centre of the screen where the content itself lives.
-  static const double _verticalAnchor = -0.5;
+  /// Distance from the top of the viewport (below the status bar) to the top
+  /// of the pill — and of the panel it pulls in. Adds up the search row band
+  /// that heads every tab (10 top inset + 44 field + 8 bottom inset + the 1px
+  /// divider), so the pill begins immediately under it with no gap, rather
+  /// than drifting down the screen the way a proportional anchor did.
+  static const double _handleTopOffset = 63;
 
   late final AnimationController _anim = AnimationController(
     vsync: this,
@@ -142,12 +143,18 @@ class _SmartSidebarState extends State<SmartSidebar>
 
     _extent = _resolveExtent(MediaQuery.sizeOf(context).width);
 
+    // Pinned a fixed distance below the status bar rather than to a fraction
+    // of the height, so the handle lands just under the search bar on every
+    // viewport instead of sliding toward the middle on tall ones.
+    final double handleTop =
+        MediaQuery.paddingOf(context).top + _handleTopOffset;
+
     return Stack(
       children: [
         Positioned.fill(child: widget.child),
         Positioned.fill(child: _buildScrim()),
-        Positioned.fill(child: _buildPanelLayer()),
-        Positioned.fill(child: _buildHandle()),
+        _buildPanelLayer(handleTop),
+        _buildHandle(handleTop),
       ],
     );
   }
@@ -178,43 +185,46 @@ class _SmartSidebarState extends State<SmartSidebar>
     );
   }
 
-  Widget _buildPanelLayer() {
-    return AnimatedBuilder(
-      animation: _anim,
-      builder: (context, child) {
-        final progress = _anim.value;
-        if (progress <= 0) return const SizedBox.shrink();
-        return Align(
-          // Emerges level with the handle, so the panel appears to come out of
-          // the thing you just pulled. Falls back to filling the height when
-          // the card is tall enough to need it.
-          alignment: const Alignment(1, _verticalAnchor),
-          child: FractionalTranslation(
+  Widget _buildPanelLayer(double top) {
+    // Top-aligned with the handle, so the panel appears to come out of the
+    // thing you just pulled; the run to the bottom edge is what a tall
+    // shortcut grid scrolls inside.
+    return Positioned(
+      top: top,
+      right: 0,
+      bottom: 0,
+      child: AnimatedBuilder(
+        animation: _anim,
+        builder: (context, child) {
+          final progress = _anim.value;
+          if (progress <= 0) return const SizedBox.shrink();
+          return FractionalTranslation(
             // The child's own width includes [_panelInset], so a full 1.0
             // translation parks it completely off-screen.
             translation: Offset(1 - progress, 0),
             child: child,
-          ),
-        );
-      },
-      child: RepaintBoundary(child: _buildPanel()),
+          );
+        },
+        child: RepaintBoundary(child: _buildPanel()),
+      ),
     );
   }
 
-  Widget _buildHandle() {
-    return AnimatedBuilder(
-      animation: _anim,
-      builder: (context, child) {
-        // Fades out over the first half of the pull, by which point the panel
-        // itself is the thing under the finger.
-        final visibility = (1 - _anim.value * 2).clamp(0.0, 1.0);
-        return IgnorePointer(
-          ignoring: visibility == 0,
-          child: Opacity(opacity: visibility, child: child),
-        );
-      },
-      child: Align(
-        alignment: const Alignment(1, _verticalAnchor),
+  Widget _buildHandle(double top) {
+    return Positioned(
+      top: top,
+      right: 0,
+      child: AnimatedBuilder(
+        animation: _anim,
+        builder: (context, child) {
+          // Fades out over the first half of the pull, by which point the
+          // panel itself is the thing under the finger.
+          final visibility = (1 - _anim.value * 2).clamp(0.0, 1.0);
+          return IgnorePointer(
+            ignoring: visibility == 0,
+            child: Opacity(opacity: visibility, child: child),
+          );
+        },
         child: Semantics(
           container: true,
           button: true,
@@ -230,7 +240,13 @@ class _SmartSidebarState extends State<SmartSidebar>
               // matters, without claiming the whole edge.
               width: 28,
               height: 104,
-              child: Center(
+              // Top-right: flush against the screen edge (centring it in the
+              // grab zone left a gap that read as floating loose of the edge)
+              // and top-aligned so the visible pill — not the invisible grab
+              // zone — is what lines up with the search row. The zone runs on
+              // below the pill, where the extra slop is easiest to reach.
+              child: Align(
+                alignment: Alignment.topRight,
                 child: _HandlePill(),
               ),
             ),
