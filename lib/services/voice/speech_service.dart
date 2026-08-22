@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
+import 'speech_failure.dart';
 import 'speech_locale.dart';
 import 'voice_support_stub.dart'
     if (dart.library.js_interop) 'voice_support_web.dart';
@@ -64,6 +65,15 @@ class VoiceSpeechService {
   void Function()? _onDone;
   List<stt.LocaleName> _locales = const [];
 
+  /// Why the last [initialize] failed, so the caller can say something true.
+  /// `unsupported` means this browser/device has no recogniser at all;
+  /// `permissionDenied` means the microphone was refused.
+  VoiceFailure? _initFailure;
+
+  /// Set when a turn is reported failed asynchronously (the Web Speech API
+  /// delivers a refused mic through onError, long after listen() returned).
+  void Function(VoiceFailure failure)? _onFailure;
+
   /// The turn in flight, kept so a `language-not-supported` error — which
   /// arrives asynchronously, after listen() has already returned success — can
   /// be answered by retrying in English instead of showing the user a dead mic.
@@ -77,6 +87,30 @@ class VoiceSpeechService {
 
   bool get isListening => _speech.isListening;
 
+  /// Why [initialize] last returned false. Null when it succeeded.
+  VoiceFailure? get initFailure => _initFailure;
+
+  /// Asks for the microphone up front, returning whether it is available.
+  ///
+  /// MUST be called straight from the tap handler. Browsers only show a
+  /// permission prompt while a user gesture is still live, and the listening
+  /// sheet asks after a post-frame callback and an await — by which point the
+  /// activation is spent and Chrome can decline to prompt at all.
+  ///
+  /// A grant is remembered for the session so [initialize] does not ask again
+  /// moments later: the second request is silent, but it re-opens and closes an
+  /// audio track, which blinks the browser's recording indicator for no reason.
+  /// A revoked permission still surfaces — the turn then fails with
+  /// `not-allowed`, which [mapSpeechError] turns into a real message.
+  Future<bool> ensureMicrophonePermission() async {
+    if (_micGranted == true) return true;
+    final granted = await requestMicrophonePermission();
+    _micGranted = granted;
+    return granted;
+  }
+
+  bool? _micGranted;
+
   /// Asks the platform for a recogniser, prompting for microphone permission
   /// on the way. MUST be called from a user gesture: browsers reject a
   /// permission request that no click preceded, and asking an Android user
@@ -85,6 +119,16 @@ class VoiceSpeechService {
     if (_initialised) return _available;
     if (!maybeAvailable) {
       _initialised = true;
+      _initFailure = VoiceFailure.unsupported;
+      return false;
+    }
+    // On web this is the only thing that ever asks for the microphone: the
+    // plugin's initialize() just builds a SpeechRecognition and its
+    // hasPermission() reports whether the API exists, not whether the mic is
+    // allowed. No-op on native, where the plugin asks for RECORD_AUDIO itself.
+    if (!await ensureMicrophonePermission()) {
+      _initialised = true;
+      _initFailure = VoiceFailure.permissionDenied;
       return false;
     }
     try {
@@ -92,6 +136,12 @@ class VoiceSpeechService {
         onError: (e) {
           debugPrint('[VoiceSpeechService] error: ${e.errorMsg}');
           _maybeRetryInEnglish(e.errorMsg);
+          // Errors arrive here asynchronously, after listen() has already
+          // returned success, so this is the ONLY route by which a refused
+          // microphone can reach the UI. Dropping it is what made a denial
+          // read as "Nothing was heard".
+          final failure = mapSpeechError(e.errorMsg);
+          if (failure != null) _onFailure?.call(failure);
         },
         onStatus: (s) {
           debugPrint('[VoiceSpeechService] status: $s');
@@ -161,9 +211,10 @@ class VoiceSpeechService {
     Duration pauseFor = const Duration(seconds: 3),
   }) async {
     final ready = await initialize();
-    if (!ready) return VoiceFailure.unsupported;
+    if (!ready) return _initFailure ?? VoiceFailure.unsupported;
 
     _onDone = onDone;
+    _onFailure = onFailure;
     final localeId = _resolveLocaleId(language);
     // A browser may accept the tag and only then report that it cannot serve
     // that language. Remember enough to retry once in English rather than
@@ -243,6 +294,7 @@ class VoiceSpeechService {
     // A cancelled turn must not trigger a search on the way out, nor come back
     // to life as an English retry.
     _onDone = null;
+    _onFailure = null;
     _retry = null;
     try {
       await _speech.cancel();

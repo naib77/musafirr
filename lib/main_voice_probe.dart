@@ -39,14 +39,17 @@ class _ProbeState extends State<_Probe> {
     final svc = VoiceSpeechService.current;
     _say('--- stage probe ---');
     _say('maybeAvailable = ${svc.maybeAvailable}');
+    _say('ensureMicrophonePermission() = '
+        '${await svc.ensureMicrophonePermission()}');
     final ready = await svc.initialize();
     _say('initialize() = $ready');
+    _say('initFailure = ${svc.initFailure}');
     _say('isAvailable = ${svc.isAvailable}');
     _say('supportsBangla = ${svc.supportsBangla}');
     _say('banglaLocale = ${svc.banglaLocale?.localeId}');
     if (!ready) {
       _say('STOP: initialize() returned false — listen() would report '
-          'VoiceFailure.unsupported');
+          '${svc.initFailure ?? VoiceFailure.unsupported}');
       return;
     }
     final failure = await svc.listen(
