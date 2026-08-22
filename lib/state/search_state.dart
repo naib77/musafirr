@@ -45,10 +45,12 @@ class SearchStateNotifier extends ChangeNotifier with SafeNotifier {
     _searcher = searcher;
   }
 
-  // Update filters
-  void updateFilters(SearchFilters newFilters) {
+  // Update filters. Returns the search it kicks off, so a caller that needs to
+  // read [results] straight afterwards — voice search logging its outcome —
+  // can await it. Callers that just want the UI to refresh keep ignoring it.
+  Future<void> updateFilters(SearchFilters newFilters) {
     _filters = newFilters;
-    _runSearch();
+    return _runSearch();
   }
 
   // Update location filter. Passing no coordinates makes this a text-only

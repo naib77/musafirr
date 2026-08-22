@@ -14,6 +14,7 @@ import '../models/payment_record.dart';
 import '../models/booking_duration.dart';
 import '../models/booking_status.dart';
 import '../models/facility.dart';
+import '../models/host_verifications.dart';
 import '../models/landmark.dart';
 import '../models/leaderboard_entry.dart';
 import '../models/listing.dart';
@@ -25,6 +26,7 @@ import '../models/review.dart';
 import '../models/search_filters.dart';
 import '../models/user.dart';
 import '../models/user_role.dart';
+import '../services/app_settings_service.dart';
 import 'musafir_repository.dart';
 
 /// Supabase-backed implementation of [MusafirRepository].
@@ -445,10 +447,6 @@ class SupabaseMusafirRepository extends ChangeNotifier
     }
   }
 
-  /// Expanding proximity rings for point searches: try the nearest first,
-  /// widen until something matches (the RPC falls back to nearest-N beyond).
-  static const List<int> _radiusTiers = [1000, 3000, 5000, 10000];
-
   /// Full-catalog listing search via the `search_listings` RPC. Every filter is
   /// applied server-side and results are ranked (rating desc, reviews desc,
   /// newest). Used both for the default feed (empty filters) and Explore search.
@@ -476,6 +474,11 @@ class SupabaseMusafirRepository extends ChangeNotifier
           !hasBounds &&
           filters.latitude != null &&
           filters.longitude != null;
+      // Expanding proximity rings, and the landmark ring, are admin-configured
+      // (app_settings → SearchAreaSettings). Awaited rather than read from the
+      // cached getter because startup calls load() unawaited, and the first
+      // search can beat it.
+      final searchArea = await AppSettingsService.instance.ensureSearchArea();
       final rows = await _client.rpc('search_listings', params: {
         'p_property_types': filters.propertyTypes.isEmpty
             ? null
@@ -505,8 +508,10 @@ class SupabaseMusafirRepository extends ChangeNotifier
             : filters.purposeTags.map((p) => p.wireName).toList(),
         'p_center_lat': landmark?.latitude ?? filters.latitude,
         'p_center_lng': landmark?.longitude ?? filters.longitude,
-        'p_radius_m': landmark != null ? (filters.radiusMeters ?? 15000) : null,
-        'p_radii': useTiers ? _radiusTiers : null,
+        'p_radius_m': landmark != null
+            ? (filters.radiusMeters ?? searchArea.landmarkRadiusMeters)
+            : null,
+        'p_radii': useTiers ? searchArea.radiusTiersMeters : null,
         // The place's box. When set, the RPC filters to listings inside it
         // (distance-ranked to the center) and ignores the radius paths.
         'p_ne_lat': hasBounds ? bounds.neLat : null,
@@ -1716,6 +1721,27 @@ class SupabaseMusafirRepository extends ChangeNotifier
     } catch (e) {
       debugPrint('Error checking host availability: $e');
       return true; // fail-open: don't block booking on a lookup error
+    }
+  }
+
+  @override
+  Future<HostVerifications> fetchHostVerifications(String hostId) async {
+    // Cross-user read → public_profiles, which carries the three flags and no
+    // document detail (migration 094). The base `profiles` table is own-row
+    // only under RLS (061), so a guest asking about a host must come here.
+    try {
+      final row = await _client
+          .from('public_profiles')
+          .select('phone_verified, identity_verified, address_verified')
+          .eq('id', hostId)
+          .maybeSingle();
+      if (row == null) return HostVerifications.none;
+      return HostVerifications.fromJson(row);
+    } catch (e) {
+      debugPrint('Error fetching host verifications: $e');
+      // Fail CLOSED, unlike availability above: a lookup error must not paint
+      // badges the database never granted.
+      return HostVerifications.none;
     }
   }
 

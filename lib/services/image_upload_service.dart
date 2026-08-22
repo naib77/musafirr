@@ -7,6 +7,7 @@ import 'package:mime/mime.dart';
 import 'package:path/path.dart' as p;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/address_verification.dart';
 import 'image_compression_service.dart';
 
 /// Storage bucket names
@@ -697,19 +698,49 @@ class ImageUploadService {
     return result;
   }
 
-  /// Whether the user has a proof-of-address document on file.
-  Future<bool> hasAddressProof(String userId) async {
+  /// The host's own address-verification record: the document, the address they
+  /// declared, the admin's verdict, and the reason behind a rejection.
+  ///
+  /// Own-row read, so it goes to `profiles` directly rather than the guest-
+  /// facing `public_profiles` view — the rejection reason is for the host and
+  /// nobody else.
+  Future<AddressVerification> addressVerification(String userId) async {
     try {
       final row = await _client
           .from('profiles')
-          .select('address_proof_path')
+          .select('address_proof_path, address_verification_status, '
+              'address_line, address_rejection_reason')
           .eq('id', userId)
           .maybeSingle();
-      final path = row?['address_proof_path'] as String?;
-      return path != null && path.isNotEmpty;
+      if (row == null) return AddressVerification.none;
+      return AddressVerification.fromJson(row);
     } catch (e) {
-      debugPrint('[ImageUploadService] hasAddressProof failed: $e');
-      return false;
+      debugPrint('[ImageUploadService] addressVerification failed: $e');
+      // Fail closed: an unreadable record is not a verified one.
+      return AddressVerification.none;
+    }
+  }
+
+  /// Declares the host's full address and enters the admin visit queue.
+  ///
+  /// The RPC is the only way in: it stamps the submission time server-side and
+  /// refuses a declaration with no billed copy behind it. Returns null on
+  /// success, or a message to show the host.
+  Future<String?> submitAddressVerification({
+    required String addressLine,
+  }) async {
+    try {
+      await _client.rpc(
+        'submit_address_verification',
+        params: {'p_address_line': addressLine},
+      );
+      return null;
+    } on PostgrestException catch (e) {
+      debugPrint('[ImageUploadService] submitAddressVerification failed: $e');
+      return e.message;
+    } catch (e) {
+      debugPrint('[ImageUploadService] submitAddressVerification failed: $e');
+      return 'Could not submit your address. Please try again.';
     }
   }
 

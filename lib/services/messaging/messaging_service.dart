@@ -164,6 +164,36 @@ abstract class MessagingService {
     String? listingId,
   });
 
+  /// Get or create a conversation and return only its ID.
+  ///
+  /// The id is all a caller needs to OPEN the chat — [ChatScreen] loads the
+  /// messages itself and is handed the other participant's name and avatar by
+  /// whoever pushes it. [getOrCreateConversation] additionally fetches the
+  /// conversation row, the participant profile and the unread count, which on
+  /// a remote backend is three more sequential round trips that the guest
+  /// waits out staring at an unchanged screen.
+  ///
+  /// Use this when you are about to navigate; use
+  /// [getOrCreateConversation] when you actually need the hydrated object.
+  ///
+  /// Does NOT populate booking context — that is two further round trips (read
+  /// the booking, write the conversation). Call [populateBookingContext]
+  /// afterwards, off the critical path, when a bookingId is involved.
+  Future<MessagingResult<String>> getOrCreateConversationId({
+    required String currentUserId,
+    required String otherUserId,
+    String? bookingId,
+    String? listingId,
+  });
+
+  /// Copy a booking's dates, listing type and title onto its conversation, so
+  /// the conversation list and chat header can show what the thread is about.
+  ///
+  /// Pure enrichment of an existing row: nothing about opening a chat depends
+  /// on it, and it already swallows its own errors, so callers that are about
+  /// to navigate should not wait for it.
+  Future<void> populateBookingContext(String conversationId, String bookingId);
+
   /// Archive a conversation
   Future<MessagingResult<void>> archiveConversation(String conversationId);
 

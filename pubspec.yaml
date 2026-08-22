@@ -38,6 +38,10 @@ dependencies:
   firebase_messaging: ^15.2.5
   flutter_local_notifications: ^19.2.1
   pointer_interceptor: ^0.10.1+2
+  # Voice search — wraps the Android recognizer and the browser Web Speech
+  # API. Both are free and keyless; no cloud STT is involved.
+  speech_to_text: ^7.4.0
+  camera: ^0.12.0+2
 
 dev_dependencies:
   flutter_test:

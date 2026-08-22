@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/utils/responsive.dart';
 import '../../models/geo_bounds.dart';
@@ -23,6 +24,12 @@ import '../../state/notification_state.dart';
 import '../../state/search_state.dart';
 import '../../models/landmark.dart';
 import '../../widgets/animations/fade_slide_in.dart';
+import '../../widgets/modern_banner.dart';
+import '../../models/voice_query.dart';
+import '../../services/voice/speech_service.dart';
+import '../../services/voice/voice_search_runner.dart';
+import '../../widgets/voice_listening_sheet.dart';
+import '../../widgets/voice_search_button.dart';
 import '../../widgets/landmark_picker_sheet.dart';
 import '../../widgets/purpose_scroll.dart';
 import '../../widgets/hover_lift.dart';
@@ -71,6 +78,11 @@ class ExploreScreen extends StatefulWidget {
 
 class _ExploreScreenState extends State<ExploreScreen> {
   final TextEditingController _searchController = TextEditingController();
+
+  /// True while a spoken place is being geocoded — the feed shows its normal
+  /// searching state, but the mic flow needs its own flag because the search
+  /// notifier is not busy yet.
+  bool _voiceResolving = false;
   final ScrollController _scrollController = ScrollController();
 
   // When a category's "See all" is tapped, its full list is shown inline (so
@@ -198,6 +210,72 @@ class _ExploreScreenState extends State<ExploreScreen> {
     );
   }
 
+  /// Voice search: listen, confirm what was heard, then run it through the
+  /// ordinary search stack.
+  ///
+  /// The sheet does the listening and the confirming; everything after it is
+  /// the same geocode-then-filter path a typed search takes, so results, map
+  /// framing and empty states all behave identically.
+  Future<void> _startVoiceSearch() async {
+    final query = await VoiceListeningSheet.show(context);
+    if (query == null || !mounted) return;
+
+    setState(() => _voiceResolving = true);
+    final runner = VoiceSearchRunner(
+      searchState: widget.searchState,
+      isKnownCity: _isKnownCityName,
+    );
+    final ran = await runner.run(query);
+    if (!mounted) return;
+    setState(() => _voiceResolving = false);
+
+    // Fire-and-forget: the lexicon grows from what people actually said, and
+    // a logging outage must never be visible to someone mid-search.
+    unawaited(_logVoiceSearch(query, ran));
+
+    if (!ran) {
+      ModernBanner.showError(
+        context,
+        'Could not turn that into a search. Try naming an area, like '
+        '"Dhanmondi".',
+      );
+      return;
+    }
+
+    // The spoken words go into the search field too, so the pill shows what
+    // was searched and the sheet opens pre-filled if they want to adjust it.
+    _searchController.text = query.placeText ?? query.transcript;
+  }
+
+  Future<void> _logVoiceSearch(VoiceQuery query, bool ran) async {
+    final logger = VoiceSearchLogger((row) async {
+      // Never chain .select() here. The table has an insert policy and no
+      // select policy by design (transcripts are private telemetry), and
+      // .select() makes PostgREST ask for the row back — which RLS refuses
+      // with a 401 that reads, misleadingly, as "new row violates row-level
+      // security policy". A bare insert sends Prefer: return=minimal and
+      // succeeds; verified against the live table.
+      await Supabase.instance.client.from('voice_search_log').insert({
+        ...row,
+        'user_id': widget.authState.currentUser?.id,
+      });
+    });
+    await logger.log(
+      query: query,
+      localeId: VoiceSpeechService.current.supportsBangla ? 'bn-BD' : 'en-US',
+      parsed: ran,
+      resultCount: widget.searchState.results.length,
+    );
+  }
+
+  /// Same test the search sheet applies to typed text — a city we already
+  /// stock is searched by name, not by dropping a point in the middle of it.
+  bool _isKnownCityName(String name) {
+    final q = name.trim().toLowerCase();
+    return widget.repository.listings
+        .any((l) => (l.city ?? '').trim().toLowerCase() == q);
+  }
+
   void _openNotificationCenter() {
     if (widget.notificationState == null) return;
     if (widget.bookingLifecycleService == null) return;
@@ -319,9 +397,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                         ),
                         child: Row(
                           children: [
-                            // Balances the trailing icon so the label stays
+                            // Balances the trailing mic so the label stays
                             // visually centered.
-                            const SizedBox(width: 24),
+                            const SizedBox(width: 12),
                             Expanded(
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -355,10 +433,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                   size: 18,
                                   color: theme.colorScheme.onSurfaceVariant,
                                 ),
-                              )
-                            else
-                              const SizedBox(width: 18),
-                            const SizedBox(width: 6),
+                              ),
+                            // Inside the pill rather than beside it: the row
+                            // already carries a trophy and a bell, and a
+                            // fourth circle would squeeze the label off a
+                            // 360dp phone. Hides itself where the browser has
+                            // no Web Speech API.
+                            VoiceSearchMicButton(onTap: _startVoiceSearch),
+                            const SizedBox(width: 4),
                           ],
                         ),
                       ),
@@ -445,9 +527,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   }
 
                   final listings = _filteredListings;
-                  final isLoading = _searchActive
-                      ? widget.searchState.isSearching
-                      : widget.repository.isLoadingListings;
+                  // Geocoding a spoken place happens before the search
+                  // notifier is busy, so the feed would otherwise sit on stale
+                  // results with no sign anything was happening.
+                  final isLoading = _voiceResolving ||
+                      (_searchActive
+                          ? widget.searchState.isSearching
+                          : widget.repository.isLoadingListings);
 
                   // Show loading indicator when loading and no listings yet
                   if (listings.isEmpty && isLoading) {
@@ -1413,7 +1499,8 @@ class _SearchSheetState extends State<_SearchSheet> {
             ? const <ListingPurpose>[]
             : [_selectedPurpose!],
         landmark: _pickedLandmark,
-        radiusMeters: _pickedLandmark == null ? null : 15000,
+        // No radiusMeters: the landmark ring is admin-configured and resolved
+        // in the repository, so the sheet never carries a second copy of it.
         clearLandmark: _pickedLandmark == null,
         dateMode: _dateMode,
         singleDate:
