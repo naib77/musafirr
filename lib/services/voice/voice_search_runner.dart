@@ -51,6 +51,7 @@ class VoiceSearchRunner {
     double? lat;
     double? lng;
     GeoBounds? bounds;
+    var usedModel = false;
 
     var place = query.placeText;
     if (place != null && place.isNotEmpty) {
@@ -72,7 +73,10 @@ class VoiceSearchRunner {
         final rewritten = better?.placeText;
         if (rewritten != null && rewritten != place) {
           result = await _geo.geocode(rewritten);
-          if (result != null) place = rewritten;
+          if (result != null) {
+            place = rewritten;
+            usedModel = true;
+          }
         }
       }
 
@@ -126,7 +130,8 @@ class VoiceSearchRunner {
                   ? 'point'
                   : 'name only (geocode miss)';
       debugPrint('[VoiceSearch] "${query.transcript}" -> place=$place '
-          '($geo) types=${query.types.map((t) => t.name).toList()} '
+          '($geo, via ${query.fromModel || usedModel ? "GEMINI" : "lexicon"}) '
+          'types=${query.types.map((t) => t.name).toList()} '
           'guests=${query.guestCount} maxPrice=${query.maxPrice} '
           'purpose=${query.purpose?.name} '
           '=> ${searchState.results.length} result(s)');

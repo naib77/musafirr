@@ -49,7 +49,19 @@ class RemoteVoiceParser {
 
       final query = _toQuery(text, body);
       // A "parsed" response that filled nothing is a miss, not a result.
-      return query.isEmpty ? null : query;
+      if (query.isEmpty) {
+        debugPrint('[RemoteVoiceParser] model had nothing for "$text"');
+        return null;
+      }
+      // Logged on SUCCESS too, not just on failure. Without this there is no
+      // way to tell from a running app whether the fallback ever fired — and
+      // "is it using Gemini?" is exactly the question you cannot answer by
+      // watching a search that silently worked.
+      debugPrint('[RemoteVoiceParser] model answered "$text" -> '
+          'place=${query.placeText} types=${query.types.map((t) => t.name).toList()} '
+          'guests=${query.guestCount} maxPrice=${query.maxPrice} '
+          'purpose=${query.purpose?.name}');
+      return query;
     } catch (e) {
       // Deliberately swallowed, including TimeoutException: the lexicon has
       // already produced something, and a search the user is watching must not
