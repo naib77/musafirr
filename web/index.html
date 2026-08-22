@@ -274,7 +274,12 @@
        never block first paint (the splash). Both are consumed only later, once
        Flutter boots a map or a passkey flow — so deferring is safe. Without it
        these render-blocking <head> scripts delay FCP by seconds on slow mobile. -->
-  <script defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBw1uyOoZ2tS8-NS_83ov8rE3OusmmDWRM"></script>
+  <!-- `loading=async` tells the Maps loader it may initialise off the critical
+       path, which keeps its bootstrap off the main thread during startup.
+       Fully lazy-loading (inject on first map) was considered and rejected:
+       every map entry point would have to await a loader, and one missed call
+       site is a blank map in production. -->
+  <script defer src="https://maps.googleapis.com/maps/api/js?loading=async&key=AIzaSyBw1uyOoZ2tS8-NS_83ov8rE3OusmmDWRM"></script>
 
   <!-- Corbado Passkeys Web SDK (flutter-passkeys 2.4.0) -->
   <script defer src="passkeys_bundle.js"></script>

@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../models/notification.dart';
+import 'app_network_image.dart';
 
 /// A list item for displaying a notification with glassmorphism design
 class NotificationItem extends StatelessWidget {
@@ -259,10 +260,11 @@ class _ModernNotificationIcon extends StatelessWidget {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(14),
-          child: Image.network(
-            notification.imageUrl!,
+          child: AppNetworkImage(
+            url: notification.imageUrl!,
+            decodeWidth: 48,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => _buildGradientIcon(colors),
+            errorWidget: _buildGradientIcon(colors),
           ),
         ),
       );

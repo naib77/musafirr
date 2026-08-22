@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
+import 'speech_locale.dart';
 import 'voice_support_stub.dart'
     if (dart.library.js_interop) 'voice_support_web.dart';
 
@@ -61,6 +64,11 @@ class VoiceSpeechService {
   void Function()? _onDone;
   List<stt.LocaleName> _locales = const [];
 
+  /// The turn in flight, kept so a `language-not-supported` error — which
+  /// arrives asynchronously, after listen() has already returned success — can
+  /// be answered by retrying in English instead of showing the user a dead mic.
+  _LocaleRetry? _retry;
+
   /// Free capability probe — safe to call during `build`, never prompts.
   bool get maybeAvailable => speechRecognitionMaybeAvailable();
 
@@ -81,7 +89,10 @@ class VoiceSpeechService {
     }
     try {
       _available = await _speech.initialize(
-        onError: (e) => debugPrint('[VoiceSpeechService] error: ${e.errorMsg}'),
+        onError: (e) {
+          debugPrint('[VoiceSpeechService] error: ${e.errorMsg}');
+          _maybeRetryInEnglish(e.errorMsg);
+        },
         onStatus: (s) {
           debugPrint('[VoiceSpeechService] status: $s');
           // Both 'notListening' and 'done' arrive for one turn; the callback
@@ -119,21 +130,24 @@ class VoiceSpeechService {
     return null;
   }
 
-  bool get supportsBangla => banglaLocale != null;
+  /// Whether a Bangla search is worth offering.
+  ///
+  /// On web this can only ever be a "probably": the browser exposes no locale
+  /// list (see [resolveSpeechLocaleId]), so absence of evidence is not
+  /// evidence of absence. Chrome does serve bn-BD, so web reports true and
+  /// [listen] retries in English if a particular browser disagrees.
+  bool get supportsBangla => banglaLocale != null || !_canEnumerateLocales;
 
-  String _resolveLocaleId(VoiceLanguage language) {
-    switch (language) {
-      case VoiceLanguage.bangla:
-        return banglaLocale?.localeId ?? 'bn-BD';
-      case VoiceLanguage.english:
-        return 'en-US';
-      case VoiceLanguage.auto:
-        // Bangla when the device has it. The parser reads Banglish out of an
-        // English transcript perfectly well, so English is the safe default
-        // when it does not — the reverse is not true.
-        return banglaLocale?.localeId ?? 'en-US';
-    }
-  }
+  /// False where the platform cannot list its speech locales — web, where
+  /// `locales()` reads `SpeechRecognition.lang` and gets an empty string until
+  /// a listen has already set it, so the list is always empty.
+  bool get _canEnumerateLocales => !kIsWeb;
+
+  String _resolveLocaleId(VoiceLanguage language) => resolveSpeechLocaleId(
+        language: language,
+        availableLocaleIds: [for (final l in _locales) l.localeId],
+        canEnumerateLocales: _canEnumerateLocales,
+      );
 
   /// Starts listening. [onResult] fires repeatedly with partial text and once
   /// more with `isFinal` set; [onLevel] carries mic amplitude for the meter.
@@ -150,13 +164,26 @@ class VoiceSpeechService {
     if (!ready) return VoiceFailure.unsupported;
 
     _onDone = onDone;
+    final localeId = _resolveLocaleId(language);
+    // A browser may accept the tag and only then report that it cannot serve
+    // that language. Remember enough to retry once in English rather than
+    // leaving the sheet on "Nothing was heard".
+    _retry = _LocaleRetry(
+      localeId: localeId,
+      onResult: onResult,
+      onLevel: onLevel,
+      onFailure: onFailure,
+      onDone: onDone,
+      listenFor: listenFor,
+      pauseFor: pauseFor,
+    );
     try {
       await _speech.listen(
         onResult: (SpeechRecognitionResult r) =>
             onResult(r.recognizedWords, r.finalResult),
         onSoundLevelChange: onLevel == null ? null : (l) => onLevel(l),
         listenOptions: stt.SpeechListenOptions(
-          localeId: _resolveLocaleId(language),
+          localeId: localeId,
           // Partial results are what let the sheet show text as it is spoken,
           // which is the single biggest trust factor in a voice UI.
           partialResults: true,
@@ -174,8 +201,36 @@ class VoiceSpeechService {
     }
   }
 
+  /// Web Speech accepts any language tag and only then reports that it cannot
+  /// serve it. Bangla is requested optimistically on web (the browser exposes
+  /// no locale list to check against), so this is the other half of that bet:
+  /// one retry in English, then give up.
+  void _maybeRetryInEnglish(String errorMsg) {
+    final pending = _retry;
+    if (pending == null) return;
+    // Web reports 'language-not-supported'; Android's message differs but also
+    // names the language. Anything else is a real failure, not a wrong guess.
+    if (!errorMsg.toLowerCase().contains('language')) return;
+    if (fallbackLocaleId(pending.localeId) == null) return;
+
+    _retry = null;
+    debugPrint('[VoiceSpeechService] ${pending.localeId} not supported — '
+        'retrying in English');
+    unawaited(listen(
+      language: VoiceLanguage.english,
+      onResult: pending.onResult,
+      onLevel: pending.onLevel,
+      onFailure: pending.onFailure,
+      onDone: pending.onDone,
+      listenFor: pending.listenFor,
+      pauseFor: pending.pauseFor,
+    ));
+  }
+
   /// Ends the turn and keeps whatever was heard.
   Future<void> stop() async {
+    // The turn ended on purpose; a late language error must not restart it.
+    _retry = null;
     try {
       await _speech.stop();
     } catch (e) {
@@ -185,12 +240,35 @@ class VoiceSpeechService {
 
   /// Ends the turn and throws the transcript away.
   Future<void> cancel() async {
-    // A cancelled turn must not trigger a search on the way out.
+    // A cancelled turn must not trigger a search on the way out, nor come back
+    // to life as an English retry.
     _onDone = null;
+    _retry = null;
     try {
       await _speech.cancel();
     } catch (e) {
       debugPrint('[VoiceSpeechService] cancel failed: $e');
     }
   }
+}
+
+/// Everything needed to start the same turn again in a different language.
+class _LocaleRetry {
+  const _LocaleRetry({
+    required this.localeId,
+    required this.onResult,
+    required this.onLevel,
+    required this.onFailure,
+    required this.onDone,
+    required this.listenFor,
+    required this.pauseFor,
+  });
+
+  final String localeId;
+  final void Function(String text, bool isFinal) onResult;
+  final void Function(double level)? onLevel;
+  final void Function(VoiceFailure failure)? onFailure;
+  final void Function()? onDone;
+  final Duration listenFor;
+  final Duration pauseFor;
 }

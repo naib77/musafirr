@@ -26,6 +26,7 @@ import '../messaging/chat_screen.dart';
 import '../payment/payment_webview_screen.dart';
 import '../safety/safety_screen.dart';
 import '../review/guest_review_screen.dart';
+import '../../widgets/app_network_image.dart';
 
 class TripsScreen extends StatefulWidget {
   const TripsScreen({
@@ -1070,11 +1071,15 @@ class _EnhancedBookingCard extends StatelessWidget {
       child: SizedBox(
         width: 84,
         height: 84,
+        // 84 logical px, not the 1920px master. Image.network decodes at full
+        // resolution regardless of the box it is painted into, so a screen of
+        // these held tens of megabytes of pixels and thrashed the image cache.
         child: booking.listingImageUrl != null
-            ? Image.network(
-                booking.listingImageUrl!,
+            ? AppNetworkImage(
+                url: booking.listingImageUrl!,
+                decodeWidth: 84,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _placeholder(theme),
+                errorWidget: _placeholder(theme),
               )
             : _placeholder(theme),
       ),

@@ -1,4 +1,6 @@
 import 'package:camera/camera.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -54,13 +56,27 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen>
   /// can claim it — and rebuilt on the way back, or the preview returns frozen.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) return;
-    if (state == AppLifecycleState.inactive) {
-      controller.dispose();
-      _controller = null;
-    } else if (state == AppLifecycleState.resumed) {
-      _start();
+    // The guard belongs INSIDE the inactive branch, not above both. Hoisted, it
+    // killed the feature: `inactive` sets _controller to null, so by the time
+    // `resumed` arrives the null check returns early and _start() is never
+    // reached. The camera never came back — permanent spinner, dead shutter,
+    // and no way out of the verification flow but killing the app.
+    switch (state) {
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+        final controller = _controller;
+        if (controller == null) return;
+        // Cleared before the await so a second lifecycle event cannot dispose
+        // the same controller twice.
+        _controller = null;
+        unawaited(controller.dispose());
+      case AppLifecycleState.resumed:
+        // Only rebuild what was actually torn down. A resume with a live
+        // controller (some platforms emit resumed without a prior inactive)
+        // must not spawn a second camera.
+        if (_controller == null) _start();
     }
   }
 
