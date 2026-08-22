@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/utils/responsive.dart';
 import '../../services/image_upload_service.dart';
 import '../../widgets/modern_banner.dart';
+import 'selfie_capture_screen.dart';
 
 /// An identity document the user can upload for verification.
 class _IdDocType {
@@ -182,9 +183,34 @@ class _IdentityVerificationScreenState
 
   /// Selfie is taken with the front camera only (no gallery) — it must be a
   /// live face photo for verification.
+  ///
+  /// Uses the in-app [SelfieCaptureScreen], which selects the front lens
+  /// itself. Handing off to the system camera app does NOT work: the
+  /// `preferredCameraDevice` hint is advisory and many Android camera apps —
+  /// and mobile browsers that delegate to them — ignore it and open the rear
+  /// camera. Falls back to the picker only when the device reports no front
+  /// camera at all, so a guest is never dead-ended.
   Future<void> _captureSelfie() async {
-    final image = await ImageUploadService.instance.pickSelfieFromCamera();
+    final captured = await Navigator.push<Object?>(
+      context,
+      MaterialPageRoute(builder: (_) => const SelfieCaptureScreen()),
+    );
+    if (!mounted) return;
+
+    XFile? image;
+    if (captured is XFile) {
+      image = captured;
+    } else if (captured == SelfieCaptureResult.unavailable) {
+      // No front lens. The picker's hint is the best remaining option, and the
+      // guest is told why the camera may not face them.
+      ModernBanner.showInfo(
+        context,
+        'No front camera found — please make sure your face is in the photo.',
+      );
+      image = await ImageUploadService.instance.pickSelfieFromCamera();
+    }
     if (image == null) return;
+
     final bytes = await image.readAsBytes();
     if (!mounted) return;
     setState(() {

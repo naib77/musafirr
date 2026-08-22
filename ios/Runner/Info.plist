@@ -34,6 +34,10 @@
 	<string>Musaafir needs camera access to scan your NID card for identity verification.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Musaafir needs photo access so you can upload your NID card and listing photos.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Musaafir uses the microphone for voice search, so you can say where you want to stay.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Musaafir turns what you say into a search for stays near the place you name.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

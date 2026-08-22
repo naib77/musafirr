@@ -21,6 +21,7 @@ import '../widgets/notification_bell.dart';
 import '../widgets/review_prompt_handler.dart';
 import '../widgets/smart_sidebar.dart';
 import 'explore/explore_screen.dart';
+import 'host/become_host_screen.dart';
 import 'hosting/earnings_screen.dart';
 import 'host/host_dashboard_screen.dart';
 import 'host/host_reservations_screen.dart';
@@ -275,6 +276,7 @@ class _MainShellState extends State<MainShell> {
         // everywhere the navigation rail or a native build already applies.
         result = SmartSidebar(
           shortcuts: isGuest ? _guestShortcuts() : _hostShortcuts(),
+          cta: _hostCta(isGuest),
           child: result,
         );
 
@@ -855,6 +857,61 @@ class _MainShellState extends State<MainShell> {
         onTap: () => _goToHostTab(4),
       ),
     ];
+  }
+
+  /// The panel's headline action: the way into hosting. Only the guest panel
+  /// carries it — the host portal is already where it leads. Which of the
+  /// three states applies mirrors the Profile tab's hosting section, so the
+  /// two entry points never disagree about what the user can do next.
+  SmartSidebarCta? _hostCta(bool isGuest) {
+    if (!isGuest) return null;
+
+    final user = widget.authState.currentUser;
+    if (user == null) {
+      // Hosting needs an account; the Profile tab is where the login prompt
+      // lives, so send them there rather than to a screen that would fail.
+      return SmartSidebarCta(
+        icon: Icons.home_work_rounded,
+        label: 'Become a host',
+        description: 'Sign in to start earning',
+        onTap: () => _goToGuestTab(4),
+      );
+    }
+
+    if (user.isHost) {
+      return SmartSidebarCta(
+        icon: Icons.swap_horiz_rounded,
+        label: 'Switch to hosting',
+        description: _hasHostNotification
+            ? 'New booking request waiting'
+            : 'Go to your host dashboard',
+        onTap: () => _switchMode(AppMode.host),
+      );
+    }
+
+    return SmartSidebarCta(
+      icon: Icons.home_work_rounded,
+      label: 'Become a host',
+      description: 'Start earning by sharing your space',
+      onTap: _openBecomeHost,
+    );
+  }
+
+  /// Signs the user up as a host and lands them in the host portal, the same
+  /// way the Profile tab's "Become a Host" row does.
+  void _openBecomeHost() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BecomeHostScreen(
+          authState: widget.authState,
+          onBecomeHost: () {
+            Navigator.pop(context);
+            _switchMode(AppMode.host);
+          },
+        ),
+      ),
+    );
   }
 
   void _goToGuestTab(int index) {

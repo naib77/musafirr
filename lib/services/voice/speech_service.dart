@@ -1,0 +1,196 @@
+import 'package:flutter/foundation.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+
+import 'voice_support_stub.dart'
+    if (dart.library.js_interop) 'voice_support_web.dart';
+
+/// Which language the recogniser was asked for. Auto is not a third engine —
+/// it just picks Bangla where the device has it, because that is what most
+/// Bangladeshi users speak into a search box.
+enum VoiceLanguage { bangla, english, auto }
+
+extension VoiceLanguageLabel on VoiceLanguage {
+  String get label => switch (this) {
+        VoiceLanguage.bangla => 'বাংলা',
+        VoiceLanguage.english => 'English',
+        VoiceLanguage.auto => 'Auto',
+      };
+}
+
+/// Why listening could not start. Each maps to a different thing worth saying
+/// to the user — "your browser can't" and "you said no to the mic" need
+/// different responses, and a single generic failure message earns support
+/// tickets.
+enum VoiceFailure { unsupported, permissionDenied, noSpeech, error }
+
+/// Thin wrapper over `speech_to_text`, which is itself a wrapper over the
+/// Android recogniser and the browser Web Speech API. Both are free, keyless,
+/// and unlimited — there is no cloud STT behind this and no billing account
+/// attached to it.
+///
+/// Kept as a singleton because the underlying plugin holds one native
+/// recogniser per process; two instances listening at once fight over it.
+class VoiceSpeechService {
+  VoiceSpeechService();
+
+  static final VoiceSpeechService instance = VoiceSpeechService();
+
+  /// Test seam — a fake subclass stands in so widget tests never touch a real
+  /// microphone (there isn't one in the test harness). Always read the service
+  /// through [current], never through [instance].
+  @visibleForTesting
+  static VoiceSpeechService? debugOverride;
+
+  static VoiceSpeechService get current => debugOverride ?? instance;
+
+  /// Created on first use, not in the field initialiser: a fake overrides
+  /// every method that would touch it, and constructing the real plugin in a
+  /// test that will never listen is pure waste.
+  stt.SpeechToText? _plugin;
+
+  stt.SpeechToText get _speech => _plugin ??= stt.SpeechToText();
+
+  bool _initialised = false;
+  bool _available = false;
+
+  /// Fired once when the recogniser stops on its own. Search runs without a
+  /// button press, so the caller has to know the turn ended even in the case
+  /// where the engine closes the mic without ever sending a final result —
+  /// otherwise the sheet would sit listening to a microphone that is shut.
+  void Function()? _onDone;
+  List<stt.LocaleName> _locales = const [];
+
+  /// Free capability probe — safe to call during `build`, never prompts.
+  bool get maybeAvailable => speechRecognitionMaybeAvailable();
+
+  /// True once [initialize] has run and the platform said yes.
+  bool get isAvailable => _available;
+
+  bool get isListening => _speech.isListening;
+
+  /// Asks the platform for a recogniser, prompting for microphone permission
+  /// on the way. MUST be called from a user gesture: browsers reject a
+  /// permission request that no click preceded, and asking an Android user
+  /// for the mic before they tapped anything reads as spyware.
+  Future<bool> initialize() async {
+    if (_initialised) return _available;
+    if (!maybeAvailable) {
+      _initialised = true;
+      return false;
+    }
+    try {
+      _available = await _speech.initialize(
+        onError: (e) => debugPrint('[VoiceSpeechService] error: ${e.errorMsg}'),
+        onStatus: (s) {
+          debugPrint('[VoiceSpeechService] status: $s');
+          // Both 'notListening' and 'done' arrive for one turn; the callback
+          // is cleared as it fires so the caller hears about it once.
+          if (s == 'notListening' || s == 'done') {
+            final ended = _onDone;
+            _onDone = null;
+            ended?.call();
+          }
+        },
+        debugLogging: false,
+      );
+      if (_available) {
+        _locales = await _speech.locales();
+      }
+    } catch (e) {
+      debugPrint('[VoiceSpeechService] initialize failed: $e');
+      _available = false;
+    }
+    _initialised = true;
+    return _available;
+  }
+
+  /// The `bn` locale this device actually has, or null when it has none.
+  /// Never assume Bangla is present — Android phones without Google speech
+  /// services, and every Safari build, will not have it.
+  stt.LocaleName? get banglaLocale {
+    for (final l in _locales) {
+      final id = l.localeId.toLowerCase().replaceAll('-', '_');
+      if (id == 'bn_bd') return l;
+    }
+    for (final l in _locales) {
+      if (l.localeId.toLowerCase().startsWith('bn')) return l;
+    }
+    return null;
+  }
+
+  bool get supportsBangla => banglaLocale != null;
+
+  String _resolveLocaleId(VoiceLanguage language) {
+    switch (language) {
+      case VoiceLanguage.bangla:
+        return banglaLocale?.localeId ?? 'bn-BD';
+      case VoiceLanguage.english:
+        return 'en-US';
+      case VoiceLanguage.auto:
+        // Bangla when the device has it. The parser reads Banglish out of an
+        // English transcript perfectly well, so English is the safe default
+        // when it does not — the reverse is not true.
+        return banglaLocale?.localeId ?? 'en-US';
+    }
+  }
+
+  /// Starts listening. [onResult] fires repeatedly with partial text and once
+  /// more with `isFinal` set; [onLevel] carries mic amplitude for the meter.
+  Future<VoiceFailure?> listen({
+    required VoiceLanguage language,
+    required void Function(String text, bool isFinal) onResult,
+    void Function(double level)? onLevel,
+    void Function(VoiceFailure failure)? onFailure,
+    void Function()? onDone,
+    Duration listenFor = const Duration(seconds: 20),
+    Duration pauseFor = const Duration(seconds: 3),
+  }) async {
+    final ready = await initialize();
+    if (!ready) return VoiceFailure.unsupported;
+
+    _onDone = onDone;
+    try {
+      await _speech.listen(
+        onResult: (SpeechRecognitionResult r) =>
+            onResult(r.recognizedWords, r.finalResult),
+        onSoundLevelChange: onLevel == null ? null : (l) => onLevel(l),
+        listenOptions: stt.SpeechListenOptions(
+          localeId: _resolveLocaleId(language),
+          // Partial results are what let the sheet show text as it is spoken,
+          // which is the single biggest trust factor in a voice UI.
+          partialResults: true,
+          cancelOnError: true,
+          listenMode: stt.ListenMode.search,
+          listenFor: listenFor,
+          pauseFor: pauseFor,
+        ),
+      );
+      return null;
+    } catch (e) {
+      debugPrint('[VoiceSpeechService] listen failed: $e');
+      onFailure?.call(VoiceFailure.error);
+      return VoiceFailure.error;
+    }
+  }
+
+  /// Ends the turn and keeps whatever was heard.
+  Future<void> stop() async {
+    try {
+      await _speech.stop();
+    } catch (e) {
+      debugPrint('[VoiceSpeechService] stop failed: $e');
+    }
+  }
+
+  /// Ends the turn and throws the transcript away.
+  Future<void> cancel() async {
+    // A cancelled turn must not trigger a search on the way out.
+    _onDone = null;
+    try {
+      await _speech.cancel();
+    } catch (e) {
+      debugPrint('[VoiceSpeechService] cancel failed: $e');
+    }
+  }
+}
