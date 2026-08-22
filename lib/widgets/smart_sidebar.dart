@@ -31,6 +31,26 @@ class SmartSidebarShortcut {
   final bool badge;
 }
 
+/// The panel's single full-width call to action, rendered above the shortcut
+/// grid. Unlike a [SmartSidebarShortcut] it is not a tab jump — it is the one
+/// thing the panel wants you to do, so it gets the width and the brand fill.
+class SmartSidebarCta {
+  const SmartSidebarCta({
+    required this.icon,
+    required this.label,
+    required this.description,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+
+  /// One line under the label saying what tapping actually does.
+  final String description;
+
+  final VoidCallback onTap;
+}
+
 /// An OPPO-style smart sidebar for mobile web.
 ///
 /// A slim handle rides the right edge; swiping it inward (or tapping it) pulls
@@ -51,11 +71,15 @@ class SmartSidebar extends StatefulWidget {
     super.key,
     required this.child,
     required this.shortcuts,
+    this.cta,
     this.enabled = true,
   });
 
   final Widget child;
   final List<SmartSidebarShortcut> shortcuts;
+
+  /// Optional headline action shown above the grid — the way into hosting.
+  final SmartSidebarCta? cta;
 
   /// Escape hatch for screens that need the right edge to themselves.
   final bool enabled;
@@ -134,6 +158,11 @@ class _SmartSidebarState extends State<SmartSidebar>
   void _runShortcut(SmartSidebarShortcut shortcut) {
     _close();
     shortcut.onTap();
+  }
+
+  void _runCta(SmartSidebarCta cta) {
+    _close();
+    cta.onTap();
   }
 
   @override
@@ -327,6 +356,13 @@ class _SmartSidebarState extends State<SmartSidebar>
                 _panelHeader(),
                 const SizedBox(height: 14),
                 _InstallSection(onDone: _close),
+                if (widget.cta != null) ...[
+                  const SizedBox(height: 14),
+                  _CtaTile(
+                    cta: widget.cta!,
+                    onTap: () => _runCta(widget.cta!),
+                  ),
+                ],
                 if (widget.shortcuts.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   const _PanelLabel('Jump to'),
@@ -412,18 +448,105 @@ class _HandlePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 5,
-      height: 64,
+      // Brand teal at full strength, and thick enough to read as a control.
+      // The old 5px translucent-grey pill vanished over the photography that
+      // fills most of the explore feed — it looked like a rendering seam
+      // rather than something you could grab.
+      width: 10,
+      height: 76,
       decoration: BoxDecoration(
-        color: AppColors.ink.withValues(alpha: 0.26),
-        borderRadius: const BorderRadius.horizontal(left: Radius.circular(4)),
+        gradient: AppColors.brandGradient,
+        borderRadius: const BorderRadius.horizontal(left: Radius.circular(7)),
+        // A hairline of white keeps the edge defined over dark photos, where
+        // teal-on-dark would otherwise merge into the image.
+        border: Border.all(color: Colors.white.withValues(alpha: 0.7)),
         boxShadow: [
           BoxShadow(
-            color: AppColors.ink.withValues(alpha: 0.16),
-            blurRadius: 6,
-            offset: const Offset(-1, 2),
+            color: AppColors.brand.withValues(alpha: 0.42),
+            blurRadius: 12,
+            offset: const Offset(-2, 3),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CtaTile extends StatelessWidget {
+  const _CtaTile({required this.cta, required this.onTap});
+
+  final SmartSidebarCta cta;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: AppColors.brandGradient,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.brand.withValues(alpha: 0.28),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.22),
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: Icon(cta.icon, size: 19, color: Colors.white),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        cta.label,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                          letterSpacing: -0.1,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        cta.description,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          height: 1.25,
+                          color: Colors.white.withValues(alpha: 0.88),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Icon(
+                  Icons.arrow_forward_rounded,
+                  size: 18,
+                  color: Colors.white,
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

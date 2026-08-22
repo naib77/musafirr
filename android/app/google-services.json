@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "814163045663",
+    "firebase_url": "https://musafir-200107.firebaseio.com",
+    "project_id": "musafir-200107",
+    "storage_bucket": "musafir-200107.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:814163045663:android:5451031a1c77ae2ffd542a",
+        "android_client_info": {
+          "package_name": "co.iobytes.musafir"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "814163045663-qiv2ool83u0jpoq5pepplrooenb621dj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAzZ05IKpXyfO_g0boukAyXS257jArmLMM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "814163045663-qiv2ool83u0jpoq5pepplrooenb621dj.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
