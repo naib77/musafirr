@@ -16,8 +16,9 @@ import 'speech_service.dart';
 ///
 /// Matching is substring-and-case-insensitive on purpose. Web Speech sends
 /// terse codes (`not-allowed`), the Android plugin sends its own names
-/// (`error_permission`), and both get wrapped in prose or JSON along the way,
-/// so an equality check would miss nearly every real message.
+/// (`error_permission`), and the web plugin wraps its own in
+/// `jsonEncode(error.toJson())` — so the code arrives embedded in a JSON
+/// string. An equality check would miss nearly every real message.
 VoiceFailure? mapSpeechError(String errorMsg) {
   final e = errorMsg.trim().toLowerCase();
   if (e.isEmpty) return null;
@@ -27,6 +28,16 @@ VoiceFailure? mapSpeechError(String errorMsg) {
   // not a refusal.
   if (e.contains('language-not-supported') || e.contains('language_not')) {
     return null;
+  }
+
+  // No recogniser the plugin can use. Checked after the language case above,
+  // because 'language-not-supported' also contains "not-supported" and is a
+  // retry rather than a dead end. This is the ONLY reason it is fair to tell
+  // the user their browser cannot do voice search.
+  if (e.contains('not supported') ||
+      e.contains('not_supported') ||
+      e.contains('not-supported')) {
+    return VoiceFailure.unsupported;
   }
 
   // A refused mic. 'service-not-allowed' is Chrome's variant when the speech

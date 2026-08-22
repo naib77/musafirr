@@ -44,6 +44,35 @@ void main() {
     });
   });
 
+  group('genuinely unsupported', () {
+    // The one case where blaming the browser is correct. The plugin reports
+    // these two when it has no recogniser it can construct, and they must not
+    // be flattened into a generic error — "try again" is useless advice for a
+    // browser that will never work.
+    test('the plugin\'s "not supported" is taken at its word', () {
+      expect(mapSpeechError('not supported'), VoiceFailure.unsupported);
+    });
+
+    test('speech_not_supported is unsupported', () {
+      expect(mapSpeechError('speech_not_supported'), VoiceFailure.unsupported);
+    });
+
+    test('a JSON-wrapped report is still read', () {
+      // The web plugin sends errors as jsonEncode(error.toJson()), so the code
+      // arrives embedded in a JSON string rather than on its own.
+      expect(
+        mapSpeechError('{"errorMsg":"speech_not_supported","permanent":true}'),
+        VoiceFailure.unsupported,
+      );
+    });
+
+    test('a rejected LANGUAGE is not a rejected browser', () {
+      // 'language-not-supported' contains "not-supported"; mistaking it for an
+      // unsupported browser would hide a retry that is already happening.
+      expect(mapSpeechError('language-not-supported'), isNull);
+    });
+  });
+
   group('real faults', () {
     test('audio-capture means no usable microphone', () {
       expect(mapSpeechError('audio-capture'), VoiceFailure.error);
