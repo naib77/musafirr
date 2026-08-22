@@ -49,23 +49,30 @@ class RemoteVoiceParser {
 
       final query = _toQuery(text, body);
       // A "parsed" response that filled nothing is a miss, not a result.
-      if (query.isEmpty) {
-        debugPrint('[RemoteVoiceParser] model had nothing for "$text"');
-        return null;
+      // Logged on SUCCESS too, not just on failure: without it there is no way
+      // to tell from a running app whether the fallback ever fired, and "is it
+      // using Gemini?" is exactly the question a silently-working search
+      // cannot answer.
+      //
+      // Debug builds only. `debugPrint` is NOT stripped in release, and these
+      // lines carry the transcript — printing what someone said into the
+      // production browser console is not something a search box should do.
+      if (kDebugMode) {
+        debugPrint(query.isEmpty
+            ? '[RemoteVoiceParser] model had nothing for "$text"'
+            : '[RemoteVoiceParser] model answered "$text" -> '
+                'place=${query.placeText} '
+                'types=${query.types.map((t) => t.name).toList()} '
+                'guests=${query.guestCount} maxPrice=${query.maxPrice} '
+                'purpose=${query.purpose?.name}');
       }
-      // Logged on SUCCESS too, not just on failure. Without this there is no
-      // way to tell from a running app whether the fallback ever fired — and
-      // "is it using Gemini?" is exactly the question you cannot answer by
-      // watching a search that silently worked.
-      debugPrint('[RemoteVoiceParser] model answered "$text" -> '
-          'place=${query.placeText} types=${query.types.map((t) => t.name).toList()} '
-          'guests=${query.guestCount} maxPrice=${query.maxPrice} '
-          'purpose=${query.purpose?.name}');
-      return query;
+      return query.isEmpty ? null : query;
     } catch (e) {
       // Deliberately swallowed, including TimeoutException: the lexicon has
       // already produced something, and a search the user is watching must not
       // fail because a fallback did.
+      // The exception text is safe to keep in release — it names the failure,
+      // not the speech.
       debugPrint('[RemoteVoiceParser] skipped: $e');
       return null;
     }
