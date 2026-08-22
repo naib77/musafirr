@@ -99,8 +99,11 @@ class _MainShellState extends State<MainShell> {
       if (guestTab != null) _guestTabIndex = guestTab;
       if (hostTab != null) _hostTabIndex = hostTab;
     });
-    // The Reservations screen is kept alive in an IndexedStack, so its inner
-    // tab is switched imperatively via its state.
+    // The Reservations screen stays mounted once visited (see
+    // _LazyIndexedStack), so its inner tab is switched imperatively via its
+    // state. Safe with lazy mounting because openHostReservations() always
+    // sets the host tab too, so the screen is built in the frame before this
+    // callback runs.
     if (reservationsTab != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _hostReservationsKey.currentState?.goToTab(reservationsTab);
@@ -617,7 +620,7 @@ class _MainShellState extends State<MainShell> {
         ],
       ),
     ];
-    return IndexedStack(
+    return _LazyIndexedStack(
       key: const ValueKey('guest'),
       index: _guestTabIndex,
       children: [
@@ -752,7 +755,7 @@ class _MainShellState extends State<MainShell> {
         ],
       ),
     ];
-    return IndexedStack(
+    return _LazyIndexedStack(
       key: const ValueKey('host'),
       index: _hostTabIndex,
       children: [
@@ -1028,6 +1031,61 @@ class _LeaderboardHeaderButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// An [IndexedStack] that only builds a tab once it has actually been visited.
+///
+/// A plain IndexedStack mounts every child immediately: all five tabs ran their
+/// initState and fired their startup fetches before the user had chosen
+/// anything, and the map tab kept a live GL surface rendering behind whatever
+/// was on screen — GPU work and radio traffic for screens nobody was looking
+/// at. Visited tabs stay mounted, so switching back is still instant and their
+/// scroll position and state survive, which is the reason IndexedStack was
+/// chosen in the first place.
+class _LazyIndexedStack extends StatefulWidget {
+  const _LazyIndexedStack({
+    super.key,
+    required this.index,
+    required this.children,
+  });
+
+  final int index;
+  final List<Widget> children;
+
+  @override
+  State<_LazyIndexedStack> createState() => _LazyIndexedStackState();
+}
+
+class _LazyIndexedStackState extends State<_LazyIndexedStack> {
+  final Set<int> _visited = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _visited.add(widget.index);
+  }
+
+  @override
+  void didUpdateWidget(covariant _LazyIndexedStack oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _visited.add(widget.index);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IndexedStack(
+      index: widget.index,
+      children: [
+        for (var i = 0; i < widget.children.length; i++)
+          // A zero-size box holds the slot so the stack's indices still line up
+          // with the navigation bar's.
+          if (_visited.contains(i))
+            widget.children[i]
+          else
+            const SizedBox.shrink(),
+      ],
     );
   }
 }

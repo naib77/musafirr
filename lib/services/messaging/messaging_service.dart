@@ -303,5 +303,13 @@ abstract class MessagingService {
   Future<void> initialize();
 
   /// Dispose of resources
+  /// Tears down the realtime channels opened for one conversation.
+  ///
+  /// Cancelling the Dart stream subscription is not enough — the websocket
+  /// channel stays subscribed server-side, and every chat ever opened kept
+  /// costing traffic for the rest of the session. Call this when a chat is
+  /// closed, not just when the app shuts down.
+  Future<void> unsubscribeFromConversation(String conversationId);
+
   Future<void> dispose();
 }

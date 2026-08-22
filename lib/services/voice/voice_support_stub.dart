@@ -13,3 +13,8 @@ import 'package:flutter/foundation.dart';
 /// the language it exists to serve is worse than shipping none.
 bool speechRecognitionMaybeAvailable() =>
     defaultTargetPlatform == TargetPlatform.android;
+
+/// Native platforms need no separate request: `speech_to_text`'s `initialize()`
+/// asks Android for RECORD_AUDIO itself, and returns false when it is refused.
+/// Asking twice would show the user two dialogs for one microphone.
+Future<bool> requestMicrophonePermission() async => true;

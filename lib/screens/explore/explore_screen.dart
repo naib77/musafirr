@@ -217,6 +217,23 @@ class _ExploreScreenState extends State<ExploreScreen> {
   /// the same geocode-then-filter path a typed search takes, so results, map
   /// framing and empty states all behave identically.
   Future<void> _startVoiceSearch() async {
+    // Ask for the microphone HERE, not inside the sheet. A browser only shows
+    // a permission prompt while the tap's user activation is still live, and
+    // the sheet asks after a post-frame callback and an await — by then the
+    // activation is spent and Chrome can decline to prompt at all, which
+    // surfaced as the sheet opening and immediately saying it heard nothing.
+    final granted =
+        await VoiceSpeechService.current.ensureMicrophonePermission();
+    if (!mounted) return;
+    if (!granted) {
+      ModernBanner.showError(
+        context,
+        'Musafir needs permission to use your microphone. Allow it for this '
+        'site, then tap the mic again.',
+      );
+      return;
+    }
+
     final query = await VoiceListeningSheet.show(context);
     if (query == null || !mounted) return;
 

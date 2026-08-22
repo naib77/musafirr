@@ -2,6 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image/image.dart' as img;
 
+import 'image_resize_stub.dart'
+    if (dart.library.js_interop) 'image_resize_web.dart';
+
 /// A compression target. [maxDimension] caps the shorter edge (aspect ratio is
 /// always preserved and images are never upscaled); [quality] is 0–100.
 class ImageCompressionProfile {
@@ -90,6 +93,20 @@ class ImageCompressionService {
     Uint8List input,
     ImageCompressionProfile profile,
   ) async {
+    // Browser codecs first. The pure-Dart path below blocks the main thread for
+    // seconds on a phone photo, and Flutter web has no isolates, so `compute`
+    // cannot move it. `createImageBitmap` decodes off-thread in native code.
+    final viaBrowser = await resizeWithBrowserCodecs(
+      input,
+      maxDimension: profile.maxDimension,
+      quality: profile.quality,
+    );
+    if (viaBrowser != null) {
+      return CompressedImage(bytes: viaBrowser, mimeType: 'image/jpeg');
+    }
+
+    // Fallback for a browser without OffscreenCanvas / createImageBitmap: slow,
+    // but still correct, and still better than uploading a 6 MB original.
     final decoded = img.decodeImage(input);
     if (decoded == null) return null;
 

@@ -472,31 +472,73 @@ class CampaignCountdown extends StatefulWidget {
   State<CampaignCountdown> createState() => _CampaignCountdownState();
 }
 
-class _CampaignCountdownState extends State<CampaignCountdown> {
+class _CampaignCountdownState extends State<CampaignCountdown>
+    with WidgetsBindingObserver {
   Timer? _timer;
   late Duration _remaining;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _remaining = widget.campaign.timeRemaining;
-    _startTimer();
+    _restartTimer();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     super.dispose();
   }
 
-  void _startTimer() {
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() {
-        _remaining = widget.campaign.timeRemaining;
-        if (_remaining <= Duration.zero) {
-          timer.cancel();
-        }
-      });
+  /// A countdown nobody can see is just a wake-up call for the CPU. Ticking is
+  /// suspended while the app is backgrounded and the remaining time is
+  /// recomputed from the clock on the way back, so the display is correct
+  /// immediately without having counted in between.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (!mounted) return;
+      setState(() => _remaining = widget.campaign.timeRemaining);
+      _restartTimer();
+    } else {
+      _timer?.cancel();
+      _timer = null;
+    }
+  }
+
+  /// How often the *visible* text actually changes.
+  ///
+  /// The full layout shows a seconds cell, so it genuinely needs a second. The
+  /// compact one reads "3d 4h left" until the last hour — rebuilding that 60
+  /// times a minute redraws identical pixels, on a banner that sits in a
+  /// scrolling feed.
+  Duration get _tickInterval {
+    final showsSeconds =
+        !widget.compact || _remaining < const Duration(hours: 1);
+    return showsSeconds
+        ? const Duration(seconds: 1)
+        : const Duration(minutes: 1);
+  }
+
+  void _restartTimer() {
+    _timer?.cancel();
+    if (_remaining <= Duration.zero) return;
+    _timer = Timer.periodic(_tickInterval, (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      final previous = _tickInterval;
+      setState(() => _remaining = widget.campaign.timeRemaining);
+      if (_remaining <= Duration.zero) {
+        timer.cancel();
+        _timer = null;
+      } else if (_tickInterval != previous) {
+        // Crossed the one-hour line — switch to per-second updates.
+        _restartTimer();
+      }
     });
   }
 

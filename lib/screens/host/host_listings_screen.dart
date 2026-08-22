@@ -13,6 +13,7 @@ import '../../widgets/modern_banner.dart';
 import 'address_proof_screen.dart';
 import 'create_listing_screen.dart';
 import 'edit_listing_screen.dart';
+import '../../widgets/app_network_image.dart';
 
 class HostListingsScreen extends StatelessWidget {
   const HostListingsScreen({
@@ -296,10 +297,12 @@ class _ListingCard extends StatelessWidget {
               AspectRatio(
                 aspectRatio: 2.5,
                 child: listing.primaryImage != null
-                    ? Image.network(
-                        listing.primaryImage!,
+                    ? AppNetworkImage(
+                        url: listing.primaryImage!,
+                        // Card-width hero in a scrolling list, never full-screen.
+                        decodeWidth: 600,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _buildPlaceholder(theme),
+                        errorWidget: _buildPlaceholder(theme),
                       )
                     : _buildPlaceholder(theme),
               ),

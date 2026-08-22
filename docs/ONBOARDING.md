@@ -149,7 +149,7 @@ lib/
 │
 ├── core/                ← cross-cutting building blocks:
 │   ├── theme/          ← AppColors, AppTypography, AppTheme (the design system)
-│   ├── utils/          ← responsive.dart, result.dart, retry.dart, offline.dart…
+│   ├── utils/          ← responsive.dart, result.dart, image_utils.dart…
 │   ├── currency/       ← money & price formatting (BDT ৳)
 │   ├── discount/       ← the discount/stacking engine
 │   └── state/          ← SafeNotifier mixin (build-safe notifyListeners)

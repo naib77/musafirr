@@ -123,8 +123,9 @@ class _VoiceListeningSheetState extends State<VoiceListeningSheet>
     final ready = await _speech.initialize();
     if (!mounted) return;
     if (!ready) {
-      _fail('Voice search needs microphone access, and this browser or '
-          'device did not grant it. You can still type your search.');
+      // Default to a plain error, never to "bad browser": an unattributed
+      // failure is not evidence the browser lacks a recogniser.
+      _fail(_messageFor(_speech.initFailure ?? VoiceFailure.error));
       return;
     }
 
@@ -134,14 +135,41 @@ class _VoiceListeningSheetState extends State<VoiceListeningSheet>
       language: _language,
       onResult: _onResult,
       onLevel: _onLevel,
+      // Web Speech reports a refused microphone asynchronously, after listen()
+      // has already succeeded. Without this the refusal never arrived and the
+      // sheet blamed a quiet mic for it.
+      onFailure: _onFailure,
       onDone: _onEngineStopped,
     );
     if (!mounted) return;
-    if (failure != null) {
-      _fail('Could not start listening. Check that no other app is using '
-          'the microphone, then try again.');
-    }
+    if (failure != null) _fail(_messageFor(failure));
   }
+
+  void _onFailure(VoiceFailure failure) {
+    if (!mounted) return;
+    // A refusal can land while the sheet is mid-turn; whatever partial text
+    // exists is worthless if the mic was never open, so the failure wins.
+    _autoSearch?.cancel();
+    _fail(_messageFor(failure));
+  }
+
+  /// One message per cause. These were collapsed into "needs microphone
+  /// access" and "nothing was heard", which sent users to retry a mic they had
+  /// blocked and to speak closer to a browser that has no recogniser at all.
+  String _messageFor(VoiceFailure failure) => switch (failure) {
+        VoiceFailure.permissionDenied =>
+          'Musafir needs permission to use your microphone. Allow it for this '
+              'site — in Chrome, tap the icon at the left of the address bar — '
+              'then try again. You can still type your search.',
+        VoiceFailure.unsupported =>
+          'This browser cannot do voice search. Chrome on Android or desktop '
+              'can; Firefox cannot. You can still type your search.',
+        VoiceFailure.noSpeech =>
+          'Nothing was heard. Try again, a little closer to the mic.',
+        VoiceFailure.error =>
+          'Voice search could not start. Check your connection and that no '
+              'other app is using the microphone, then try again.',
+      };
 
   void _onLevel(double raw) {
     if (!mounted) return;

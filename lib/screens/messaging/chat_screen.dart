@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:geocoding/geocoding.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:mime/mime.dart';
 
 import '../../core/utils/responsive.dart';
 import '../../models/message.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../widgets/report_sheet.dart';
+import '../../services/location_service.dart';
 import '../../services/image_compression_service.dart';
 import '../../services/image_upload_service.dart';
 import '../../services/messaging/message_router.dart';
@@ -221,12 +220,14 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Shares the sender's current location as a map message.
   Future<void> _sendLocation() async {
     try {
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
+      // Routed through LocationService rather than Geolocator directly. A bare
+      // getCurrentPosition() has NO timeout, and on web the browser's own
+      // PositionOptions.timeout is in microseconds — indoors, or with location
+      // services wedged, the share button hung forever with no way to cancel.
+      // LocationService exists to bound exactly this (10 s position, 60 s
+      // permission) and was simply not being used here.
+      final location = LocationService();
+      if (!await location.requestPermission()) {
         if (mounted) {
           ModernBanner.showWarning(
             context,
@@ -236,25 +237,24 @@ class _ChatScreenState extends State<ChatScreen> {
         return;
       }
 
-      final position = await Geolocator.getCurrentPosition();
+      final position = await location.getCurrentLocation();
+      if (position == null) {
+        if (mounted) {
+          ModernBanner.showWarning(
+            context,
+            'Could not get your location in time. Try again outdoors, or '
+            'check that location services are on.',
+          );
+        }
+        return;
+      }
 
       // Reverse-geocode for a readable label; not supported on web, and never
       // worth failing the send over.
-      String? address;
-      try {
-        final placemarks = await placemarkFromCoordinates(
-          position.latitude,
-          position.longitude,
-        );
-        if (placemarks.isNotEmpty) {
-          final p = placemarks.first;
-          address = [p.street, p.subLocality, p.locality]
-              .whereType<String>()
-              .where((part) => part.isNotEmpty)
-              .join(', ');
-          if (address.isEmpty) address = null;
-        }
-      } catch (_) {}
+      final address = await location.getAddressFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
 
       final sent = await widget.messagingState.sendLocationMessage(
         latitude: position.latitude,
