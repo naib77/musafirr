@@ -35,6 +35,11 @@ class SupabaseMessagingService implements MessagingService {
       _typingControllers = {};
   StreamController<int>? _unreadCountController;
 
+  /// Long enough to swallow a burst of messages, short enough that the badge
+  /// still feels live.
+  static const Duration _unreadRecountDebounce = Duration(milliseconds: 1200);
+  Timer? _unreadRecountTimer;
+
   // Supabase realtime subscriptions
   final Map<String, RealtimeChannel> _channels = {};
 
@@ -59,6 +64,7 @@ class SupabaseMessagingService implements MessagingService {
     for (final controller in _typingControllers.values) {
       await controller.close();
     }
+    _unreadRecountTimer?.cancel();
     await _unreadCountController?.close();
 
     // Unsubscribe from all channels
@@ -102,31 +108,36 @@ class SupabaseMessagingService implements MessagingService {
           .order('last_message_at', ascending: false, nullsFirst: false)
           .range(offset, offset + limit - 1);
 
+      final rows = (response as List)
+          .map((row) => Conversation.fromJson(row as Map<String, dynamic>))
+          .toList();
+
+      // Fanned out rather than awaited one at a time. Serially this was
+      // 2 round-trips PER conversation — a 20-row inbox meant 40 requests
+      // back-to-back, and because the unread-count subscription calls this on
+      // every inbound message, it kept the radio awake for the whole of a
+      // conversation. Concurrent, it is two batches deep regardless of size.
+      final enriched = await Future.wait([
+        for (final conversation in rows)
+          Future.wait([
+            _loadUser(conversation.getOtherParticipantId(userId)),
+            _getUnreadCountInternal(conversation.id, userId),
+          ]),
+      ]);
+
       final conversations = <Conversation>[];
-      for (final row in response as List) {
-        final json = row as Map<String, dynamic>;
-        var conversation = Conversation.fromJson(json);
-
-        // Load other participant info
-        final otherUserId = conversation.getOtherParticipantId(userId);
-        final otherUser = await _loadUser(otherUserId);
-
-        // Get unread count
-        final unreadCount = await _getUnreadCountInternal(
-          conversation.id,
-          userId,
-        );
-
-        conversation = conversation.copyWith(
-          otherParticipant: otherUser,
-          unreadCount: unreadCount,
-        );
+      for (var i = 0; i < rows.length; i++) {
+        final otherUser = enriched[i][0] as app.User?;
+        final unreadCount = enriched[i][1] as int;
 
         // Filter by hasUnread if specified
         if (filter?.hasUnread == true && unreadCount == 0) continue;
         if (filter?.hasUnread == false && unreadCount > 0) continue;
 
-        conversations.add(conversation);
+        conversations.add(rows[i].copyWith(
+          otherParticipant: otherUser,
+          unreadCount: unreadCount,
+        ));
       }
 
       return MessagingResult.success(conversations);
@@ -746,13 +757,15 @@ class SupabaseMessagingService implements MessagingService {
             event: PostgresChangeEvent.insert,
             schema: 'public',
             table: 'messages',
-            callback: (payload) async {
-              // When a new message arrives, recalculate total unread
-              final result = await getTotalUnreadCount(userId);
-              if (result.isSuccess) {
-                _unreadCountController?.add(result.data!);
-              }
-            },
+            // Own messages cannot change an unread count, and this fires on
+            // every keystroke-ending send during an active chat. Filtering
+            // them out server-side removes roughly half the wake-ups for free.
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.neq,
+              column: 'sender_id',
+              value: userId,
+            ),
+            callback: (_) => _scheduleUnreadRecount(userId),
           )
           .subscribe();
 
@@ -760,6 +773,38 @@ class SupabaseMessagingService implements MessagingService {
     }
 
     return _unreadCountController!.stream;
+  }
+
+  /// Coalesces unread recounts.
+  ///
+  /// The recount is not cheap — it reads every conversation — and messages
+  /// arrive in bursts. Recounting per message meant a ten-message flurry cost
+  /// ten full inbox reads, back to back, which is what kept the radio hot and
+  /// the phone warm. One recount shortly after the burst is the same answer
+  /// for a fraction of the work; the badge is not a stopwatch.
+  void _scheduleUnreadRecount(String userId) {
+    _unreadRecountTimer?.cancel();
+    _unreadRecountTimer = Timer(_unreadRecountDebounce, () async {
+      final result = await getTotalUnreadCount(userId);
+      if (result.isSuccess && !(_unreadCountController?.isClosed ?? true)) {
+        _unreadCountController?.add(result.data!);
+      }
+    });
+  }
+
+  @override
+  Future<void> unsubscribeFromConversation(String conversationId) async {
+    for (final key in [
+      'messages_$conversationId',
+      'typing_$conversationId',
+      'conversation_$conversationId',
+    ]) {
+      final channel = _channels.remove(key);
+      if (channel != null) await _client.removeChannel(channel);
+      await _messageControllers.remove(key)?.close();
+      await _typingControllers.remove(key)?.close();
+      await _conversationControllers.remove(key)?.close();
+    }
   }
 
   // ============================================

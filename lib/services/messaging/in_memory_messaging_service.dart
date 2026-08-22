@@ -233,6 +233,11 @@ class InMemoryMessagingService implements MessagingService {
   }
 
   @override
+  Future<void> unsubscribeFromConversation(String conversationId) async {
+    // Nothing to tear down: this implementation has no realtime channels.
+  }
+
+  @override
   Future<void> dispose() async {
     for (final controller in _messageStreams.values) {
       await controller.close();
