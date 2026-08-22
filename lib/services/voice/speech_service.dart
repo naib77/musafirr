@@ -36,7 +36,11 @@ enum VoiceFailure { unsupported, permissionDenied, noSpeech, error }
 /// Kept as a singleton because the underlying plugin holds one native
 /// recogniser per process; two instances listening at once fight over it.
 class VoiceSpeechService {
-  VoiceSpeechService();
+  /// [plugin] is a test seam. The initialize/retry logic here is exactly what
+  /// decides which message a user sees when voice search fails, and it was
+  /// untestable: tests could only replace the whole service via
+  /// [debugOverride], which skips this logic entirely.
+  VoiceSpeechService({stt.SpeechToText? plugin}) : _plugin = plugin;
 
   static final VoiceSpeechService instance = VoiceSpeechService();
 
@@ -55,8 +59,12 @@ class VoiceSpeechService {
 
   stt.SpeechToText get _speech => _plugin ??= stt.SpeechToText();
 
-  bool _initialised = false;
   bool _available = false;
+
+  /// The most recent message from the recogniser. Read straight after a failed
+  /// initialize to say WHY it failed: the platform reports the reason through
+  /// onError and then simply returns false, so this is the only record of it.
+  String? _lastErrorMsg;
 
   /// Fired once when the recogniser stops on its own. Search runs without a
   /// button press, so the caller has to know the turn ended even in the case
@@ -116,9 +124,12 @@ class VoiceSpeechService {
   /// permission request that no click preceded, and asking an Android user
   /// for the mic before they tapped anything reads as spyware.
   Future<bool> initialize() async {
-    if (_initialised) return _available;
+    // Only success is cached. A failed attempt MUST be retryable: the usual
+    // reason for failing is a permission the user is about to grant, and
+    // remembering the refusal meant they could never get past it without
+    // reloading the page.
+    if (_available) return true;
     if (!maybeAvailable) {
-      _initialised = true;
       _initFailure = VoiceFailure.unsupported;
       return false;
     }
@@ -127,14 +138,15 @@ class VoiceSpeechService {
     // hasPermission() reports whether the API exists, not whether the mic is
     // allowed. No-op on native, where the plugin asks for RECORD_AUDIO itself.
     if (!await ensureMicrophonePermission()) {
-      _initialised = true;
       _initFailure = VoiceFailure.permissionDenied;
       return false;
     }
+    _lastErrorMsg = null;
     try {
       _available = await _speech.initialize(
         onError: (e) {
           debugPrint('[VoiceSpeechService] error: ${e.errorMsg}');
+          _lastErrorMsg = e.errorMsg;
           _maybeRetryInEnglish(e.errorMsg);
           // Errors arrive here asynchronously, after listen() has already
           // returned success, so this is the ONLY route by which a refused
@@ -157,12 +169,25 @@ class VoiceSpeechService {
       );
       if (_available) {
         _locales = await _speech.locales();
+        _initFailure = null;
+      } else {
+        // The platform said no. Prefer what it actually reported; fall back to
+        // a plain error rather than claiming the browser has no recogniser —
+        // that reading is unfalsifiable to the user and, on a browser that
+        // clearly does have one, simply wrong. It is also what produced
+        // "This browser cannot do voice search" on Chrome.
+        _initFailure = _failureFromLastError() ?? VoiceFailure.error;
       }
     } catch (e) {
       debugPrint('[VoiceSpeechService] initialize failed: $e');
       _available = false;
+      // The platform commonly reports the reason through onError and THEN
+      // throws — the web plugin does exactly that, sending
+      // 'speech_not_supported' before throwing "webkitSpeechRecognition is not
+      // a constructor". That report is the only accurate account of what
+      // happened, so it must survive the exception.
+      _initFailure = _failureFromLastError() ?? VoiceFailure.error;
     }
-    _initialised = true;
     return _available;
   }
 
@@ -211,7 +236,7 @@ class VoiceSpeechService {
     Duration pauseFor = const Duration(seconds: 3),
   }) async {
     final ready = await initialize();
-    if (!ready) return _initFailure ?? VoiceFailure.unsupported;
+    if (!ready) return _initFailure ?? VoiceFailure.error;
 
     _onDone = onDone;
     _onFailure = onFailure;
@@ -250,6 +275,13 @@ class VoiceSpeechService {
       onFailure?.call(VoiceFailure.error);
       return VoiceFailure.error;
     }
+  }
+
+  /// What the platform last reported, as a failure — null when it said nothing
+  /// useful.
+  VoiceFailure? _failureFromLastError() {
+    final msg = _lastErrorMsg;
+    return msg == null ? null : mapSpeechError(msg);
   }
 
   /// Web Speech accepts any language tag and only then reports that it cannot

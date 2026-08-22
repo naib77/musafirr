@@ -123,7 +123,9 @@ class _VoiceListeningSheetState extends State<VoiceListeningSheet>
     final ready = await _speech.initialize();
     if (!mounted) return;
     if (!ready) {
-      _fail(_messageFor(_speech.initFailure ?? VoiceFailure.unsupported));
+      // Default to a plain error, never to "bad browser": an unattributed
+      // failure is not evidence the browser lacks a recogniser.
+      _fail(_messageFor(_speech.initFailure ?? VoiceFailure.error));
       return;
     }
 

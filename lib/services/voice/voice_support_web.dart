@@ -3,14 +3,28 @@ import 'dart:js_interop_unsafe';
 
 import 'package:web/web.dart' as web;
 
-/// Whether this browser exposes the Web Speech API.
+/// Whether this browser exposes a Web Speech API that `speech_to_text` can
+/// actually use.
 ///
-/// Chrome and Samsung Internet do (prefixed), Safari does under the prefix,
-/// and Firefox and Edge do not ship it at all — so this returns false for a
-/// meaningful slice of desktop traffic, which is exactly the point. A mic
-/// button that cannot listen is worse than no mic button.
+/// Deliberately checks ONLY the prefixed `webkitSpeechRecognition`, even though
+/// the unprefixed `SpeechRecognition` is the standard name. The reason is a
+/// mismatch inside the plugin: its own support check accepts either name, but
+/// the constructor it calls is hardcoded to the prefixed one —
+///
+///     @JS('webkitSpeechRecognition')
+///     extension type _SpeechRecognition._(web.SpeechRecognition _) ...
+///
+/// — and that `try` has a `finally` but no `catch`. So on a browser carrying
+/// only the unprefixed name, the plugin reports itself supported, then throws
+/// `webkitSpeechRecognition is not a constructor` out of `initialize()`.
+/// Accepting either name here drew a mic button that could only ever fail, and
+/// reported it as "this browser cannot do voice search" — on browsers that
+/// plainly can.
+///
+/// Testing the name the plugin will really construct keeps the button honest:
+/// hidden where it cannot work, shown where it can. Widen this only once the
+/// plugin constructs the unprefixed name too.
 bool speechRecognitionMaybeAvailable() =>
-    globalContext.has('SpeechRecognition') ||
     globalContext.has('webkitSpeechRecognition');
 
 /// Asks the browser for the microphone, returning whether it was granted.

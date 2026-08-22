@@ -26,6 +26,59 @@ fi
 # shellcheck disable=SC2086
 flutter build web --release $DEFINES "$@"
 
+# ── Guard: the generated web plugin registrant must be current ──────────────
+# Flutter caches a generated web_plugin_registrant.dart per build configuration,
+# and has been observed reusing a STALE one — a registrant produced before a
+# plugin was added to the project. Nothing catches this: the build succeeds,
+# every test passes, and `flutter run -d chrome` works (it uses a different
+# build directory with a fresh registrant). Only the deployed bundle is broken,
+# and only at runtime:
+#
+#   MissingPluginException(No implementation found for method initialize
+#                          on channel plugin.csdcorp.com/speech_to_text)
+#
+# That shipped once already — voice search was deployed for a day with
+# speech_to_text unregistered, working perfectly in debug the whole time. This
+# check compares the registrant that produced THIS bundle against the plugin
+# list the build itself resolved, and refuses to fingerprint a bundle that is
+# missing any of them.
+REGISTRANT=""
+for d in .dart_tool/flutter_build/*/; do
+  [ -f "${d}main.dart.js" ] || continue
+  if cmp -s "${d}main.dart.js" build/web/main.dart.js; then
+    REGISTRANT="${d}web_plugin_registrant.dart"
+    break
+  fi
+done
+
+if [ -z "$REGISTRANT" ] || [ ! -f "$REGISTRANT" ] || [ ! -f .flutter-plugins-dependencies ]; then
+  # Not a failure: a future Flutter may lay the build out differently. Say so
+  # loudly rather than reporting a check that did not actually run.
+  echo "NOTE: could not locate this bundle's plugin registrant — staleness check SKIPPED."
+else
+  MISSING="$(python3 - "$REGISTRANT" <<'PYEOF'
+import json, sys
+registrant = open(sys.argv[1]).read()
+plugins = json.load(open('.flutter-plugins-dependencies'))['plugins'].get('web', [])
+print(' '.join(p['name'] for p in plugins if p['name'] not in registrant))
+PYEOF
+)"
+  if [ -n "$MISSING" ]; then
+    echo ""
+    echo "BUILD REJECTED: these web plugins are NOT registered in the bundle:"
+    for m in $MISSING; do echo "  - $m"; done
+    echo ""
+    echo "Flutter reused a stale web_plugin_registrant.dart. Deploying this would"
+    echo "fail at runtime with MissingPluginException, while debug builds keep"
+    echo "working. Fix it with a clean build:"
+    echo ""
+    echo "    flutter clean && sh tool/build_web.sh"
+    echo ""
+    exit 1
+  fi
+  echo "Plugin registrant OK ($(grep -c registerWith "$REGISTRANT") web plugins registered)"
+fi
+
 # ── Content-hash the app bundle (main.dart.js) ──────────────────────────────
 # main.dart.js is ~1.2 MB over the wire and is the load-time bottleneck (the
 # CanvasKit engine is served from the gstatic CDN, not our origin). Because its
