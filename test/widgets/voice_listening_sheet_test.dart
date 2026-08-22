@@ -11,9 +11,14 @@ import 'package:musafir/widgets/voice_listening_sheet.dart';
 /// Stands in for the platform recogniser. Nothing here touches a microphone —
 /// the test drives [emit] to play the part of the engine returning text.
 class _FakeSpeech extends VoiceSpeechService {
-  _FakeSpeech({this.ready = true});
+  _FakeSpeech({this.ready = true, this.failure});
 
   final bool ready;
+
+  /// Why initialize() failed. The sheet now says something different for a
+  /// refused microphone than for a browser with no recogniser, so the fake has
+  /// to be able to express which — `ready: false` alone no longer says.
+  final VoiceFailure? failure;
 
   bool listenCalled = false;
   int cancelCount = 0;
@@ -22,12 +27,24 @@ class _FakeSpeech extends VoiceSpeechService {
   void Function(String text, bool isFinal)? _onResult;
   void Function(double level)? _onLevel;
   void Function()? _onDone;
+  void Function(VoiceFailure failure)? _onFailure;
+
+  /// Stands in for the browser reporting an error after listen() returned.
+  void emitFailure(VoiceFailure failure) => _onFailure?.call(failure);
 
   @override
   bool get maybeAvailable => true;
 
   @override
+  VoiceFailure? get initFailure => failure;
+
+  @override
   Future<bool> initialize() async => ready;
+
+  /// The tap handler asks for the mic before the sheet opens; tests drive the
+  /// sheet directly, so this just has to not touch a real device.
+  @override
+  Future<bool> ensureMicrophonePermission() async => ready;
 
   @override
   Future<VoiceFailure?> listen({
@@ -44,6 +61,7 @@ class _FakeSpeech extends VoiceSpeechService {
     _onResult = onResult;
     _onLevel = onLevel;
     _onDone = onDone;
+    _onFailure = onFailure;
     return null;
   }
 
@@ -213,16 +231,46 @@ void main() {
     expect(find.textContaining('Nothing was heard'), findsOneWidget);
   });
 
-  testWidgets('offers a way out when the microphone is refused',
-      (tester) async {
-    speech = _FakeSpeech(ready: false);
+  testWidgets('a refused microphone says how to allow it', (tester) async {
+    speech = _FakeSpeech(ready: false, failure: VoiceFailure.permissionDenied);
     VoiceSpeechService.debugOverride = speech;
 
     await openSheet(tester);
 
     expect(speech.listenCalled, isFalse);
-    expect(find.textContaining('microphone access'), findsOneWidget);
+    // Must name the remedy. Telling someone who blocked the mic to "try again"
+    // or to speak closer to it sends them round a loop they cannot exit.
+    expect(find.textContaining('permission'), findsOneWidget);
     expect(find.text('Type instead'), findsOneWidget);
+  });
+
+  testWidgets('a browser with no recogniser says so instead of blaming the mic',
+      (tester) async {
+    speech = _FakeSpeech(ready: false, failure: VoiceFailure.unsupported);
+    VoiceSpeechService.debugOverride = speech;
+
+    await openSheet(tester);
+
+    expect(speech.listenCalled, isFalse);
+    expect(
+        find.textContaining('browser cannot do voice search'), findsOneWidget);
+    expect(find.text('Type instead'), findsOneWidget);
+  });
+
+  testWidgets('a mic refused mid-turn replaces the silence message',
+      (tester) async {
+    // The real sequence on web: listen() succeeds, then the browser reports
+    // not-allowed asynchronously. Before this was wired up the refusal was
+    // dropped and the user was told to speak closer to the microphone.
+    await openSheet(tester);
+    expect(speech.listenCalled, isTrue);
+
+    speech.emitFailure(VoiceFailure.permissionDenied);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.textContaining('permission'), findsOneWidget);
+    expect(find.textContaining('closer to the mic'), findsNothing);
   });
 
   testWidgets('restarts listening when the language is switched',
