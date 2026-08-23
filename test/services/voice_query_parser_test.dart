@@ -176,6 +176,25 @@ void main() {
       expect(q.types, [ListingType.room]);
     });
 
+    // The reported bug: "ঢাকার মধ্যে 500 টাকার নিচে রুম হবে কি?" put
+    // "Dhaka নিচ হব" in the search box. The price pass claims "500 টাকার",
+    // which orphans the "নিচে" that belonged to it, and "হবে" was not a known
+    // verb — both fell through into the place name (as their stripped stems,
+    // making the pollution look even stranger than the missing words).
+    test('"টাকার নিচে ... হবে কি" leaves only the place', () {
+      final q = parser.parse('ঢাকার মধ্যে 500 টাকার নিচে রুম হবে কি?');
+      expect(q.placeText, 'Dhaka');
+      expect(q.maxPrice, 500);
+      expect(q.types, [ListingType.room]);
+    });
+
+    test('"takar niche ... hobe ki" leaves only the place', () {
+      final q = parser.parse('dhakar moddhe 500 takar niche room hobe ki');
+      expect(q.placeText, 'Dhaka');
+      expect(q.maxPrice, 500);
+      expect(q.types, [ListingType.room]);
+    });
+
     test('the bare imperatives are noise in both scripts', () {
       expect(parser.parse('ঢাকায় রুম দেখো').placeText, 'Dhaka');
       expect(parser.parse('gulshane seat khujo').placeText, 'Gulshan');

@@ -377,9 +377,13 @@ const Set<String> _stopWords = {
   'খোঁজো', 'খোঁজ', 'খুঁজে', 'খুঁজছি', 'খুজি', 'দেখাও', 'দেখান',
   'দেখো', 'দেখ', 'দেখি', 'দেখতে', 'খুঁজো', 'খুজো', 'খুঁজতে', 'খুঁজব',
   'দাও', 'চাই', 'চাচ্ছি', 'লাগবে', 'দরকার', 'আছে', 'পাবো', 'পাব', 'করো',
-  'করুন', 'নিয়ে', 'দিন',
-  // Bengali — postpositions and location filler
-  'দিকে', 'কাছে', 'কাছাকাছি', 'আশেপাশে', 'আশপাশে', 'পাশে', 'মধ্যে', 'ভিতরে',
+  'করুন', 'নিয়ে', 'দিন', 'হবে',
+  // Bengali — postpositions and location filler. "নিচে" is here for the price
+  // idiom "৫০০ টাকার নিচে": the price pass claims the number and the currency
+  // word but has no way to know the postposition after them belonged to the
+  // phrase too, so without this entry it rode into the place name.
+  'দিকে', 'কাছে', 'কাছাকাছি', 'আশেপাশে', 'আশপাশে', 'পাশে', 'মধ্যে', 'নিচে',
+  'ভিতরে',
   'এলাকা', 'এলাকায়', 'এলাকার', 'জায়গায়', 'জন্য', 'সাথে', 'থেকে',
   // Bengali — pronouns / determiners / filler
   'আমি', 'আমার', 'আমাকে', 'একটা', 'একটি', 'কিছু', 'কোনো', 'কোন', 'কি',
@@ -392,9 +396,10 @@ const Set<String> _stopWords = {
   'dekho', 'dekh', 'dekhi', 'dekhte', 'dekhba', 'dekhben',
   'khujo', 'khuji', 'khujte', 'khujba', 'khujben', 'khujtechi', 'khujchilam',
   'chai', 'chacchi', 'lagbe', 'dorkar', 'ache', 'pabo', 'koro', 'korun',
-  'niye', 'din',
+  'niye', 'din', 'hobe',
   'dike', 'kache', 'kachakachi', 'asepashe', 'ashepashe', 'pashe', 'moddhe',
-  'vitore', 'elaka', 'elakay', 'elakar', 'jaygay', 'jonno', 'sathe', 'theke',
+  'niche', 'vitore', 'elaka', 'elakay', 'elakar', 'jaygay', 'jonno',
+  'sathe', 'theke',
   'ami', 'amar', 'amake', 'ekta', 'ekti', 'kichu', 'kono', 'ki', 'ebong',
   'ar', 'plij', 'vara', 'bhara',
   // Case particles spoken as their own word ("chittagong e", "kushtia te").

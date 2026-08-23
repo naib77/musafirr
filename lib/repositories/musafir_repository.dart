@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/booking.dart';
 import '../models/booking_contacts.dart';
 import '../models/booking_duration.dart';
+import '../models/disbursement.dart';
 import '../models/host_verifications.dart';
 import '../models/listing_exact_address.dart';
 import '../models/landmark.dart';
@@ -12,6 +13,7 @@ import '../models/leaderboard_entry.dart';
 import '../models/listing.dart';
 import '../models/owner_registration_draft.dart';
 import '../models/payment_record.dart';
+import '../models/payout_method.dart';
 import '../models/review.dart';
 import '../models/search_filters.dart';
 import '../models/user.dart';
@@ -264,6 +266,47 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   /// The signed-in user's own payment history (payments they made as a guest),
   /// most recent first. Backed by the `payments` table's own-row RLS.
   Future<List<PaymentRecord>> fetchUserPayments(String userId);
+
+  // ── Payout methods (migration 100) ─────────────────────────────────────────
+  //
+  // Where the user wants to be paid: host earnings, or a guest refund. Every
+  // write goes through a SECURITY DEFINER RPC rather than a table write —
+  // `payout_methods` has no INSERT/UPDATE/DELETE policy at all, because a
+  // silently repointed payout is the most expensive thing that can happen to
+  // an account here.
+
+  /// The signed-in user's live payout methods, default first. Retired ones are
+  /// excluded: they exist only so past disbursements still name a real
+  /// account.
+  Future<List<PayoutMethod>> fetchPayoutMethods(String userId);
+
+  /// Adds a payout method. It lands as `pending` and cannot receive money
+  /// until an admin verifies it.
+  ///
+  /// Returns null on success, or a human-readable reason it was refused —
+  /// duplicate account, channel not currently accepted, malformed number. The
+  /// caller shows that string; there is nothing useful to do with a thrown
+  /// PostgrestException at the UI layer.
+  Future<String?> addPayoutMethod({
+    required PayoutChannel channel,
+    required String accountName,
+    required String accountNumber,
+    String? bankName,
+    String? branchName,
+    String? routingNumber,
+  });
+
+  /// Makes [payoutMethodId] the destination for future payouts.
+  Future<String?> setDefaultPayoutMethod(String payoutMethodId);
+
+  /// Retires a method. It stops being usable but is never deleted, so the
+  /// disbursements pointing at it keep their meaning.
+  Future<String?> retirePayoutMethod(String payoutMethodId);
+
+  /// Money the platform has actually paid out to this user — host payouts and
+  /// guest refunds — most recent first, each with the destination account it
+  /// went to.
+  Future<List<Disbursement>> fetchDisbursements(String userId);
 
   /// Authoritative, server-side availability check for a listing/interval.
   ///

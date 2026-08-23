@@ -10,7 +10,10 @@ import '../data/facility_catalog.dart';
 import '../models/booking.dart';
 import '../models/booking_conflict_exception.dart';
 import '../models/booking_contacts.dart';
+import '../models/booking_rejected_exception.dart';
+import '../models/disbursement.dart';
 import '../models/payment_record.dart';
+import '../models/payout_method.dart';
 import '../models/booking_duration.dart';
 import '../models/booking_status.dart';
 import '../models/facility.dart';
@@ -1917,6 +1920,11 @@ class SupabaseMusafirRepository extends ChangeNotifier
     } catch (e) {
       _bookings.removeWhere((b) => b.id == booking.id);
       notifyListeners();
+      // Always log the raw failure. Every branch below narrows it to something
+      // showable, and the fallback rethrow reaches a generic banner — so this
+      // line is the only place the server's actual words survive. A booking
+      // that "just fails" with no trace is undiagnosable from a bug report.
+      debugPrint('createMarketplaceBooking failed: $e');
       // Translate the server's conflict (the manual guard AND the
       // bookings_no_overlap exclusion constraint both raise SQLSTATE 23P01) into
       // a typed BookingConflictException, so the UI shows a specific "slot was
@@ -1935,6 +1943,16 @@ class SupabaseMusafirRepository extends ChangeNotifier
           // of this client, so there is nothing to list.
           conflictingBookings: const [],
         );
+      }
+      // The RPC's other refusals are raised with guest-facing sentences under
+      // three deliberate SQLSTATEs: 22023 (capacity, dates, duration, an
+      // unbookable rate, a rejected coupon), P0002 (listing vanished) and 42501
+      // (session expired mid-booking). Those explain exactly which field to
+      // change, so pass the server's own words through instead of flattening
+      // them. Anything else is a fault, not a refusal — it keeps the generic
+      // banner, because its text is for us, not the guest.
+      if (e is PostgrestException && isGuestFacingBookingRefusal(e.code)) {
+        throw BookingRejectedException(e.message, code: e.code);
       }
       rethrow;
     }
@@ -2415,6 +2433,109 @@ class SupabaseMusafirRepository extends ChangeNotifier
     } catch (e) {
       debugPrint('Error fetching booking counts: $e');
       return {'upcoming': 0, 'current': 0, 'past': 0};
+    }
+  }
+
+  // ── Payout methods & disbursements (migration 100) ─────────────────────────
+
+  @override
+  Future<List<PayoutMethod>> fetchPayoutMethods(String userId) async {
+    try {
+      final rows = await _client
+          .from('payout_methods')
+          .select()
+          .eq('user_id', userId)
+          .isFilter('retired_at', null)
+          .order('is_default', ascending: false)
+          .order('created_at');
+      return (rows as List)
+          .map((r) => PayoutMethod.fromJson((r as Map).cast<String, dynamic>()))
+          .toList();
+    } catch (e) {
+      debugPrint('Error fetching payout methods: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<String?> addPayoutMethod({
+    required PayoutChannel channel,
+    required String accountName,
+    required String accountNumber,
+    String? bankName,
+    String? branchName,
+    String? routingNumber,
+  }) async {
+    return _payoutRpc('add_payout_method', {
+      'p_channel': channel.wireName,
+      'p_account_name': accountName,
+      'p_account_number': accountNumber,
+      'p_bank_name': bankName,
+      'p_branch_name': branchName,
+      'p_routing_number': routingNumber,
+    });
+  }
+
+  @override
+  Future<String?> setDefaultPayoutMethod(String payoutMethodId) =>
+      _payoutRpc('set_default_payout_method', {'p_id': payoutMethodId});
+
+  @override
+  Future<String?> retirePayoutMethod(String payoutMethodId) =>
+      _payoutRpc('retire_payout_method', {'p_id': payoutMethodId});
+
+  /// Calls a payout RPC and turns whatever comes back into either null
+  /// (success) or a sentence worth showing someone.
+  ///
+  /// The RPCs in migration 100 raise with deliberately user-facing messages
+  /// ("you have already added that account"), because the alternative — a
+  /// generic "Something went wrong" over a specific, fixable problem — is how
+  /// a user ends up adding the same wallet four times. Anything that is NOT
+  /// one of those deliberate raises (a network drop, a missing migration) is
+  /// logged and reported generically, since its text is for us, not them.
+  Future<String?> _payoutRpc(String fn, Map<String, dynamic> params) async {
+    try {
+      await _client.rpc(fn, params: params);
+      return null;
+    } on PostgrestException catch (e) {
+      debugPrint('Payout RPC $fn failed: ${e.code} ${e.message}');
+      // 22023 invalid_parameter_value, 23505 unique_violation and 42501
+      // insufficient_privilege are the codes the RPCs raise on purpose; their
+      // messages are written to be read by the person who caused them.
+      const speakable = {'22023', '23505', '42501'};
+      if (speakable.contains(e.code) && e.message.trim().isNotEmpty) {
+        return e.message;
+      }
+      // PGRST202 = the function isn't there. Almost always migration 100 has
+      // not been applied to this environment, which is worth saying plainly
+      // rather than dressing up as a payment failure.
+      if (e.code == 'PGRST202') {
+        return 'Payouts aren\'t set up on this server yet.';
+      }
+      return 'Could not save that right now. Please try again.';
+    } catch (e) {
+      debugPrint('Payout RPC $fn failed: $e');
+      return 'Could not save that right now. Please try again.';
+    }
+  }
+
+  @override
+  Future<List<Disbursement>> fetchDisbursements(String userId) async {
+    try {
+      // The joined method is what makes a row readable — "৳8,000 to bKash
+      // ••••5678" instead of "৳8,000 to some uuid". Because payout methods are
+      // immutable, this join can never rewrite where a past payout went.
+      final rows = await _client
+          .from('disbursements')
+          .select('*, payout_methods(*)')
+          .eq('user_id', userId)
+          .order('created_at', ascending: false);
+      return (rows as List)
+          .map((r) => Disbursement.fromJson((r as Map).cast<String, dynamic>()))
+          .toList();
+    } catch (e) {
+      debugPrint('Error fetching disbursements: $e');
+      return [];
     }
   }
 }
