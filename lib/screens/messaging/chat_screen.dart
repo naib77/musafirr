@@ -8,9 +8,7 @@ import '../../widgets/report_sheet.dart';
 import '../../services/location_service.dart';
 import '../../services/image_compression_service.dart';
 import '../../services/image_upload_service.dart';
-import '../../services/messaging/message_router.dart';
 import '../../state/messaging_state.dart';
-import '../../widgets/messaging/channel_selector.dart';
 import '../../widgets/messaging/message_bubble.dart';
 import '../../widgets/messaging/message_input.dart';
 import '../../widgets/messaging/typing_indicator.dart';
@@ -58,10 +56,6 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-
-  // Channel state
-  MessagingChannel _selectedChannel = MessagingChannel.inApp;
-  List<MessagingChannel> _availableChannels = [MessagingChannel.inApp];
 
   Future<void> _confirmBlock() async {
     final repository = widget.repository;
@@ -316,38 +310,6 @@ class _ChatScreenState extends State<ChatScreen> {
     ModernBanner.showSuccess(context, 'Message copied to clipboard');
   }
 
-  void _onChannelSelected(MessagingChannel channel) {
-    setState(() => _selectedChannel = channel);
-    ModernBanner.showInfo(context, 'Switched to ${channel.displayName}');
-  }
-
-  void _showChannelSettings() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => ChannelPreferencesSheet(
-        preferences: UserChannelPreferences(
-          userId: widget.messagingState.currentUserId ?? '',
-          preferredChannel: _selectedChannel,
-        ),
-        onPreferencesChanged: (prefs) {
-          setState(() {
-            _selectedChannel = prefs.preferredChannel;
-            _availableChannels = prefs.availableChannels;
-          });
-        },
-        onConnectWhatsApp: () {
-          Navigator.pop(context);
-          ModernBanner.showInfo(context, 'WhatsApp connection coming soon');
-        },
-        onConnectMessenger: () {
-          Navigator.pop(context);
-          ModernBanner.showInfo(context, 'Messenger connection coming soon');
-        },
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -469,15 +431,6 @@ class _ChatScreenState extends State<ChatScreen> {
                       ],
                     ),
                   ),
-
-                  // Channel indicator (if multiple channels available)
-                  if (_availableChannels.length > 1)
-                    ChannelSelector(
-                      selectedChannel: _selectedChannel,
-                      availableChannels: _availableChannels,
-                      onChannelSelected: _onChannelSelected,
-                      compact: true,
-                    ),
                 ],
               ),
         actions: _isSearching
@@ -512,9 +465,6 @@ class _ChatScreenState extends State<ChatScreen> {
                         break;
                       case 'media':
                         _openMediaGallery();
-                        break;
-                      case 'channels':
-                        _showChannelSettings();
                         break;
                       case 'mute':
                         ModernBanner.showSuccess(
@@ -552,16 +502,6 @@ class _ChatScreenState extends State<ChatScreen> {
                           Icon(Icons.photo_library),
                           SizedBox(width: 12),
                           Text('Media & Links'),
-                        ],
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      value: 'channels',
-                      child: Row(
-                        children: [
-                          Icon(Icons.multiple_stop),
-                          SizedBox(width: 12),
-                          Text('Message Channels'),
                         ],
                       ),
                     ),

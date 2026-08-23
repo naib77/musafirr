@@ -17,6 +17,7 @@ import '../verification/identity_verification_screen.dart';
 import 'edit_profile_screen.dart';
 import 'login_security_screen.dart';
 import 'payments_payouts_screen.dart';
+import 'payout_methods_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
@@ -240,6 +241,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     icon: Icons.payment_outlined,
                     title: 'Payments & payouts',
                     onTap: () => _navigateToPayments(context),
+                  ),
+                  // Listed in its own right rather than only nested under
+                  // Payments: this is the setting people go looking for by
+                  // name ("where do I put my bKash number?"), and burying it
+                  // one level down is how a host reaches payday with nowhere
+                  // to be paid.
+                  _SettingsItem(
+                    icon: Icons.account_balance_wallet_outlined,
+                    title: 'Payout methods',
+                    subtitle: 'bKash, Nagad, Rocket or bank account',
+                    onTap: () => _navigateToPayoutMethods(context),
                   ),
                   _SettingsItem(
                     icon: Icons.notifications_outlined,
@@ -501,6 +513,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => LoginSecurityScreen(authState: authState),
+      ),
+    );
+  }
+
+  void _navigateToPayoutMethods(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PayoutMethodsScreen(
+          repository: repository,
+          authState: authState,
+        ),
       ),
     );
   }
