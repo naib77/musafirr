@@ -59,3 +59,75 @@ has coordinates. Becomes a Landmark only once chosen. Suggestions come from
 both the curated Landmarks the project maintains and a live map service; the
 guest is not meant to be able to tell which is which, beyond a section
 heading.
+
+**Extent** — the real boundary of a named place: Uttara as the shape Uttara
+actually is, Dhaka as the whole city. The counterpart to an Anchor. A search
+that resolves to an Extent covers exactly that area, which is why "Uttara"
+does not spill into Tongi and "Dhaka" is not reduced to a circle around its
+centre. A place has an Extent; a Landmark is only ever an Anchor.
+
+**Ring** — a distance around an Anchor. A search anchored to a bare point
+widens through a series of Rings and takes the smallest one that contains any
+stay, so a guest in a dense area is not shown the whole city. A Landmark
+search uses a single Ring instead of widening, because "everything around this
+hospital" is one question, not a series of them.
+
+**Nearest fallback** — what a guest is shown when no Ring contains anything: the
+closest stays regardless of distance, labelled as such. A sparse area returns
+something honest rather than an empty screen.
+
+## Speaking a search
+
+**Spoken query** — a search said aloud rather than typed, in Bangla or
+Banglish. It fills in the same fields the search sheet does; nothing is
+searchable by voice that is not searchable by typing.
+
+**Lexicon** — the word list that turns a Spoken query into places, types and
+counts. It knows only the phrasings someone put in it, so it is the fast path
+rather than the only one.
+
+## Trust
+
+**Verification** — a claim about a Host that Musafir has checked, shown to
+guests as a badge. Each kind is earned separately; a Host may have any
+combination.
+
+**Address verification** — confirmation that a Host is really at the address
+they gave. Earned by an admin **Verification visit**, not by uploading a
+document: a bill proves a name on a page, not a person at a door. The Host
+submits the address and their proof; the badge appears only after the visit.
+
+**Verification visit** — an admin going to a Host's stated address in person
+and recording what they found. The only thing that grants Address
+verification.
+
+## Getting paid
+
+**Payout method** — an account a person wants to be paid into: a bKash, Nagad
+or Rocket wallet, or a bank account. Belongs to a person rather than a role,
+because both sides need one — a Host to receive earnings, a Guest to receive a
+refund.
+
+A payout method is **never edited**. Changing where you get paid means adding a
+new one and **retiring** the old, which leaves the old account on file and
+timestamped. This is the whole defence against a quietly repointed payout: a
+changed destination is always a new row in the review queue, never an
+untraceable edit.
+
+**Retired** — a payout method withdrawn from use. It is kept forever, because
+past **disbursements** point at it as the record of where money actually went;
+deleting it would rewrite settled history.
+
+**Payout verification** — an admin checking that a payout method's account
+holder name matches the identity already on file, before any money can be sent
+to it. A method is *pending* until then, and nothing will be paid to a pending
+one. The same shape as an address **Verification visit**: the credential means
+"a person checked", so a person checks.
+
+**Disbursement** — money the platform has sent out, recorded after the fact.
+Two kinds: a **Payout** to a Host for stays they have earned, and a **Refund**
+to a Guest. Recording it is what stops the same stay being paid twice, and what
+gives a reference to quote when someone says the money never arrived.
+
+Sending is manual today — an admin transfers from the bKash app or their bank
+and then records it. The ledger is the product; the transfer is not automated.

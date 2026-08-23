@@ -13,6 +13,7 @@ import '../../core/utils/responsive.dart';
 import '../../widgets/app_network_image.dart';
 import '../../models/booking.dart';
 import '../../models/booking_conflict_exception.dart';
+import '../../models/booking_rejected_exception.dart';
 import '../../models/host_verifications.dart';
 import '../../models/listing.dart';
 import '../../models/listing_exact_address.dart';
@@ -2266,6 +2267,13 @@ class _BookingSheetState extends State<_BookingSheet> {
         }
 
         _showErrorBanner(message);
+      }
+    } on BookingRejectedException catch (e) {
+      // The server refused for a reason the guest can fix (capacity, dates,
+      // duration, coupon, an expired session). Its sentence names the field to
+      // change; "please try again" would send them round the same loop.
+      if (mounted) {
+        _showErrorBanner(e.message);
       }
     } catch (e) {
       if (mounted) {

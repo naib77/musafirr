@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/payout_method.dart';
 import '../models/search_area_settings.dart';
 
 /// Reads admin-configurable, app-wide flags from the Supabase `app_settings`
@@ -31,6 +32,13 @@ class AppSettingsService {
   // as before.
   SearchAreaSettings _searchArea = SearchAreaSettings.defaults;
 
+  // Which payout channels a user may add. Defaults to all of them: unlike a
+  // payment option, an unreadable settings table here must not silently stop
+  // hosts registering somewhere to be paid — and nothing is at risk, because
+  // add_payout_method() re-checks the real list server-side and refuses a
+  // channel that is genuinely disabled.
+  List<PayoutChannel> _payoutChannels = PayoutChannel.values;
+
   /// Whether a host must upload a proof-of-address document before adding a
   /// listing.
   bool get requireListingAddressProof => _requireListingAddressProof;
@@ -44,6 +52,11 @@ class AppSettingsService {
   /// unawaited at startup, so a very early search could otherwise read the
   /// defaults instead of the configured values.
   SearchAreaSettings get searchArea => _searchArea;
+
+  /// Payout channels currently on offer, in the order the enum declares them
+  /// rather than the order an admin happened to type — so the add-a-method
+  /// screen doesn't reshuffle itself when the setting is edited.
+  List<PayoutChannel> get payoutChannels => _payoutChannels;
 
   /// Fetch settings from Supabase. Safe to call multiple times.
   Future<void> load() async {
@@ -67,6 +80,23 @@ class AppSettingsService {
           case 'search_landmark_radius_m':
             landmarkRadius = value;
             break;
+          case 'payout_channels_enabled':
+            final parsed = (value ?? '')
+                .split(',')
+                .map((t) => payoutChannelFromWire(t.trim()))
+                .whereType<PayoutChannel>()
+                .toSet();
+            // An empty or entirely unparseable list keeps the default. The
+            // admin portal cannot save one (migration 100 validates the key on
+            // write), so reaching here means the value predates that guard or
+            // names channels this build is too old to know about — in both
+            // cases offering everything beats offering nothing.
+            if (parsed.isNotEmpty) {
+              _payoutChannels = PayoutChannel.values
+                  .where(parsed.contains)
+                  .toList(growable: false);
+            }
+            break;
         }
       }
       // Parsed together, and only from keys that were actually present: a null
@@ -86,6 +116,12 @@ class AppSettingsService {
   Future<bool> ensureRequireListingAddressProof() async {
     if (!_loaded) await load();
     return _requireListingAddressProof;
+  }
+
+  /// Returns the offered payout channels, loading settings first if needed.
+  Future<List<PayoutChannel>> ensurePayoutChannels() async {
+    if (!_loaded) await load();
+    return _payoutChannels;
   }
 
   /// Returns the search-area config, loading settings first if needed.

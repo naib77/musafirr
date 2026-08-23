@@ -418,24 +418,3 @@ class _AttachmentOption extends StatelessWidget {
     );
   }
 }
-
-/// Emoji picker button (for future use)
-class EmojiPickerButton extends StatelessWidget {
-  const EmojiPickerButton({
-    super.key,
-    required this.onEmojiSelected,
-  });
-
-  final ValueChanged<String> onEmojiSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      icon: const Icon(Icons.emoji_emotions_outlined),
-      onPressed: () {
-        // TODO: Show emoji picker
-        ModernBanner.showInfo(context, 'Emoji picker coming soon');
-      },
-    );
-  }
-}
