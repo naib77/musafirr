@@ -100,13 +100,73 @@ pins the slug list so the two drifting apart fails rather than silently shipping
 a theme no admin can select. That test also holds every palette to WCAG: 4.5:1
 for tokens that carry text, 3:1 for ones that only ever tint an icon. There are
 no exemptions and the tiers are not advisory — a new palette that fails is a
-failing build, so pick colours against a background, not in isolation. Note that `web/manifest.json` and the
-`index.html` spinner still hardcode the teal brand: those are the browser's
-splash/chrome colours, baked into the static shell, so they do not follow the
-theme.
+failing build, so pick colours against a background, not in isolation.
+
+### The boot chain is brand rose, not the palette
+
+Seven surfaces hardcode **`#C35063`** and cannot follow `active_theme`, because
+the OS or the browser paints them before any Dart runs: `values/colors.xml`,
+`values-v31/styles.xml`, `LaunchScreen.storyboard`, `web/manifest.json`, the
+`web/index.html` boot splash, `tool/gen_brand_assets.py`, and — by choice, to
+end the chain in the same colour — `SplashScreen` via
+[`Brand.rose`](lib/core/theme/brand.dart). That file lists all seven; if the
+brand colour changes they all change together, and nothing can automate it.
+
+`SplashScreen` used to paint `colorScheme.primary`. With the default
+`ocean_teal` palette that meant a rose launch window flipped to a **teal**
+screen, which reads as a broken load rather than a brand. Do not "fix" it back
+to the theme.
+
+The `index.html` splash also had no business having a `prefers-color-scheme:
+dark` variant — it was `#0E1F23`, a dark green-teal, and since that background
+paints the instant the CSS parses while the icon is still loading, a dark-mode
+browser opened on a greenish blank window. A brand colour has no dark variant.
 
 Before hardcoding a number a human might want to change, check whether it
 belongs here instead.
+
+## Brand assets are generated, not hand-made
+
+`python3 tool/gen_brand_assets.py` derives all of these from the artwork
+committed in `assets/brand/source/`:
+
+| Output | Surface |
+| --- | --- |
+| `assets/brand/logo.png` | in-app `BrandLogo` — splash, login, sidebar rail |
+| `assets/brand/icon*.png` | masters for the generators below |
+| `mipmap-*/ic_launcher*` | Android launcher: legacy, round, adaptive, monochrome |
+| `drawable-*/ic_notification.png` | Android status bar / notification shade |
+| `LaunchImage*.png` | iOS launch screen |
+| `web/social-card.png` | link previews (og:image) |
+| `store/play/icon-512.png` | Play listing |
+
+The iOS **app** icon and the web icons come from
+`dart run flutter_launcher_icons` afterwards, in that order — it reads
+`icon.png`, which the script writes.
+
+Two of those exist because a launcher icon cannot be reused as they are:
+
+- **`ic_notification`** — Android draws a notification's small icon from the
+  **alpha channel alone**, discarding colour. `ic_launcher` is a rounded square
+  that is 96% opaque, so pointing a notification at it renders a featureless
+  white blob. This app shipped that bug. Wired in `AndroidManifest.xml` *and*
+  twice in `firebase_push_notification_service.dart` — all three must agree.
+- **`LaunchImage`** — Flutter's template is a 1×1 transparent PNG on a white
+  storyboard, so an unbranded iOS cold start is a blank white screen. The
+  storyboard background carries the rose; the image is the mark on
+  transparency, mirroring how Android layers its launch window.
+
+So **never hand-edit or hand-resize one of those files**: the next regeneration
+silently reverts it. Change the script or the source artwork instead.
+
+The source is flat rose on opaque white with a soft, faintly rose-tinted drop
+shadow. Keying that cleanly is genuinely fiddly and the reasoning is written up
+in `assets/brand/README.md` — read it before touching the pipeline, in
+particular why there is a levels floor before the bounding box is measured.
+
+Two footguns after any regeneration: `flutter_launcher_icons` strips the
+trailing newline from `web/manifest.json`, and `landing/favicon.png` +
+`landing/Icon-192.png` are separate copies that it does not touch.
 
 ## The admin portal is a separate repo
 

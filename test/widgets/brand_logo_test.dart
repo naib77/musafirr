@@ -61,9 +61,16 @@ void main() {
 
     final image = tester.widget<Image>(find.byType(Image));
     expect(image.width, 64);
-    // srcIn is what makes one white silhouette work across four palettes;
-    // without it a tint would wash the whole box instead of the mark.
+    // No tint by default: logo.png ships in the brand rose, and repainting it
+    // per palette would swap the brand out for the theme.
     expect(image.colorBlendMode, isNull, reason: 'no tint requested');
+    // The real proof that the committed PNG decodes. Image.asset builds an
+    // Image widget whether or not the bytes load — on failure it is the
+    // errorBuilder's glyph that gets painted inside it — so asserting on the
+    // Image alone would pass even with the asset deleted. The absence of the
+    // fallback icon is what distinguishes the two.
+    expect(find.byIcon(Icons.travel_explore_rounded), findsNothing,
+        reason: 'assets/brand/logo.png should have decoded, not fallen back');
   });
 
   testWidgets('stays square inside a stretching Column', (tester) async {

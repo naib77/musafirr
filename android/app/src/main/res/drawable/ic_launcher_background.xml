@@ -1,20 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Adaptive-icon background layer: the brand rose, #C35063, measured from the
-     solid interior of the supplied APP ICON artwork. The foreground layer is
-     the mark knocked out in white, so this colour is what the icon reads as.
+<!-- Adaptive-icon background layer: the brand rose. The foreground layer is the
+     mark knocked out in white, so this colour is what the icon reads as.
 
-     A slight vertical gradient rather than a flat fill — a launcher icon sits
-     against arbitrary wallpaper, and the shade gives it an edge without needing
-     a border. Both stops are the brand hue, one a little deeper.
+     Flat, and referencing @color/brand_launch_background rather than repeating
+     a literal, so the adaptive icon, the pre-12 launch window and the Android
+     12+ SplashScreen cannot drift apart — they are three different Android
+     mechanisms drawing what a user reads as one continuous colour.
+
+     This was a vertical gradient (#A83E51 -> #C35063) while iOS, the web icons
+     and the PWA splash were all flat #C35063. That made the same app's icon
+     visibly different depending on the platform it was installed on, which is
+     the one thing a launcher icon must never be. Flat everywhere wins over a
+     shade that only one of the four surfaces could have.
 
      Deliberately NOT theme-aware: the launcher icon is baked into the installed
      app and cannot follow the `active_theme` app setting, exactly as
-     web/manifest.json cannot. -->
+     web/manifest.json cannot. See lib/core/theme/brand.dart, which lists every
+     place this value is duplicated. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <gradient
-        android:angle="270"
-        android:startColor="#A83E51"
-        android:endColor="#C35063"
-        android:type="linear" />
+    <solid android:color="@color/brand_launch_background" />
 </shape>

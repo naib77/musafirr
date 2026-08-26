@@ -22,12 +22,15 @@ Writes (nothing else in the repo is generated from the artwork):
     android/.../mipmap-<d>/ic_launcher_round.png      legacy, circular (API 25)
     android/.../mipmap-<d>/ic_launcher_foreground.png adaptive foreground
     android/.../mipmap-<d>/ic_launcher_monochrome.png adaptive monochrome
+    android/.../drawable-<d>/ic_notification.png      status-bar icon
+    ios/.../LaunchImage.imageset/LaunchImage*.png     iOS launch screen
     store/play/icon-512.png                          Play listing icon
 
-iOS and web are NOT written here — `dart run flutter_launcher_icons` derives
-those from `assets/brand/icon.png`, so run this first and that second. The web
-files then still need `sh tool/build_web.sh` and a commit of `build/web` to
-reach anyone; see CLAUDE.md.
+The iOS *app icon* and the web icons are NOT written here —
+`dart run flutter_launcher_icons` derives those from `assets/brand/icon.png`,
+so run this first and that second. The web files then still need
+`sh tool/build_web.sh` and a commit of `build/web` to reach anyone; see
+CLAUDE.md.
 """
 
 import os
@@ -46,33 +49,47 @@ from PIL import Image, ImageChops, ImageDraw
 # web/index.html spinner. Re-measuring every run would drift away from all of
 # them for no visible gain.
 BRAND = (0xC3, 0x50, 0x63)
-# Top stop of the launcher-icon gradient. Must stay value-for-value in step
-# with drawable/ic_launcher_background.xml, which is the same gradient
-# expressed as an XML shape for the adaptive (API 26+) path — these two draw
-# what a user reads as one icon.
-BRAND_DARK = (0xA8, 0x3E, 0x51)
 WHITE = (0xFF, 0xFF, 0xFF)
 
 # Mark width as a fraction of canvas, per output. Width rather than height
 # because the mark is ~1.42:1, so width is the binding dimension everywhere.
 #
-# The adaptive canvas is 108dp, of which only the centre 66dp circle is
-# guaranteed to survive the launcher's mask. 0.52 * 108 = 56dp leaves 5dp of
-# margin inside that guarantee. The safe zone is a floor, not a target: a mark
-# sized right up to 66dp is technically compliant and still looks cramped once
-# a launcher crops to its 72dp viewport.
-FRAC_ADAPTIVE = 0.52
-# Legacy and Play icons carry their own baked ground, so the mark can sit a
-# little tighter without any mask to fear.
-FRAC_LEGACY = 0.56
-# iOS/web master. iOS rounds the corners but crops very little, so this can be
-# larger than the Android adaptive figure.
+# These three are NOT free choices — they are solved so the mark comes out the
+# same visual size on every platform. What matters is the fraction of the
+# *visible* icon the mark covers, and the platforms differ in how much of the
+# file is visible at all:
+#
+#   Android adaptive: the canvas is 108dp but a launcher shows only the centre
+#                     72dp, so a mark of F*108 reads as F*108/72 = 1.5*F.
+#   Everything else:  the whole canvas is visible (iOS and the legacy masks
+#                     only round off corners), so the mark reads as F.
+#
+# Target 0.60 of the visible icon throughout. Hence 0.40 for adaptive
+# (0.40*1.5 = 0.60) and a flat 0.60 elsewhere. Getting this wrong is what made
+# the Android launcher icon look like a different, more zoomed-in logo than the
+# web and iOS icons: 0.52 adaptive reads as 0.78 visible, against 0.60.
+FRAC_ADAPTIVE = 0.40
+FRAC_LEGACY = 0.60
 FRAC_ICON = 0.60
+# Sanity-check the identity above rather than trusting the arithmetic to stay
+# true if someone edits one number: 108/72 is the adaptive viewport ratio.
+assert abs(FRAC_ADAPTIVE * (108 / 72) - FRAC_ICON) < 1e-9, (
+    "adaptive and icon fractions no longer render the mark at the same "
+    "visible size"
+)
+# 0.40*108 = 43.2dp, far inside the 66dp circle every launcher mask spares.
+assert FRAC_ADAPTIVE * 108 < 66, "adaptive mark escapes the safe zone"
 # In-app logo: close to full-bleed, because BrandLogo draws it into a square
 # box and the mark is ~1.42:1, so width binds and the vertical letterboxing
 # that leaves is intended. Short of 1.0 so the mark never touches the edge of
 # whatever tile a caller draws behind it.
 FRAC_LOGO = 0.86
+# Android status-bar icon. Nearly full-bleed: the system scales a 24dp source
+# down into a small slot, so margin here is margin lost twice over.
+FRAC_NOTIFICATION = 0.92
+# iOS launch screen. The storyboard centres this on the brand rose, so the
+# figure is a size in points rather than a fraction of any canvas.
+LAUNCH_IMAGE_WIDTH_PT = 128
 
 SS = 4  # supersample factor for the drawn masks and gradients
 
@@ -211,17 +228,6 @@ def place(mark, canvas, frac, background=None):
     return img
 
 
-def gradient(size, top, bottom):
-    """The launcher ground. Flat fill reads as cheap at 192px and up, and a
-    launcher icon has to hold its own against arbitrary wallpaper."""
-    col = Image.new("RGB", (1, size))
-    px = col.load()
-    for y in range(size):
-        t = y / max(1, size - 1)
-        px[0, y] = tuple(round(top[i] + (bottom[i] - top[i]) * t) for i in range(3))
-    return col.resize((size, size), Image.NEAREST)
-
-
 def rounded_mask(size, radius_frac):
     m = Image.new("L", (size, size), 0)
     d = ImageDraw.Draw(m)
@@ -238,12 +244,17 @@ def circle_mask(size):
 def legacy(mark_white, size, mask):
     """Pre-adaptive launcher icon (API 24-25) and the Play listing.
 
+    Flat brand rose, matching drawable/ic_launcher_background.xml (the adaptive
+    path) and assets/brand/icon.png (iOS and web). This used to be a vertical
+    gradient here and in the adaptive XML while iOS and web were flat, so the
+    same app had two visibly different icons depending on the platform.
+
     Those launchers apply no mask of their own, so the rounding or circling has
     to be baked in here. Drawn at SS x and downsampled, because PIL has no
     antialiased shape fill and a mask cut at 48px is visibly jagged.
     """
     ss = size * SS
-    img = place(mark_white, ss, FRAC_LEGACY, gradient(ss, BRAND_DARK, BRAND))
+    img = place(mark_white, ss, FRAC_LEGACY, Image.new("RGB", (ss, ss), BRAND))
     if mask is not None:
         img.putalpha(mask(ss))
     return img.resize((size, size), Image.LANCZOS)
@@ -307,6 +318,66 @@ for bucket, scale in DENSITIES.items():
     adaptive = place(mark_white, adaptive_px, FRAC_ADAPTIVE)
     write(os.path.join(out, "ic_launcher_foreground.png"), adaptive)
     write(os.path.join(out, "ic_launcher_monochrome.png"), adaptive)
+
+print("android status-bar icon:")
+# A separate resource from the launcher icon, and it has to be: Android draws a
+# notification's small icon from its ALPHA CHANNEL ONLY, discarding colour and
+# painting the silhouette in the system tint. ic_launcher is a rounded square
+# that is 96% opaque, so pointing a notification at it renders a solid white
+# blob with the mark nowhere in sight — which is what this app shipped.
+#
+# 24dp is the platform size for a status-bar icon, so these are much smaller
+# than the launcher densities.
+for bucket, scale in DENSITIES.items():
+    write(
+        os.path.join(RES, f"drawable-{bucket}", "ic_notification.png"),
+        place(mark_white, round(24 * scale), FRAC_NOTIFICATION),
+    )
+
+print("ios launch image:")
+# Flutter's template ships a 1x1 fully transparent LaunchImage on a white
+# storyboard background, so an unbranded iOS cold start is a blank white
+# screen. Android's equivalent (drawable/launch_background.xml plus the
+# values-v31 SplashScreen entry) is branded, and these two should agree.
+#
+# Transparent, not rose: LaunchScreen.storyboard paints the brand rose behind
+# it, exactly as the Android launch window paints @color/brand_launch_background
+# under the foreground layer.
+IOS_LAUNCH = os.path.join(
+    "ios", "Runner", "Assets.xcassets", "LaunchImage.imageset"
+)
+for suffix, scale in [("", 1), ("@2x", 2), ("@3x", 3)]:
+    w = LAUNCH_IMAGE_WIDTH_PT * scale
+    trimmed = mark_white.crop(mark_white.split()[3].getbbox())
+    h = max(1, round(w * trimmed.size[1] / trimmed.size[0]))
+    # Sized to the mark itself rather than padded into a square: the storyboard
+    # centres the image, so any padding baked in here would only offset it.
+    write(
+        os.path.join(IOS_LAUNCH, f"LaunchImage{suffix}.png"),
+        trimmed.resize((w, h), Image.LANCZOS),
+    )
+
+print("web social card:")
+# The image a shared link shows on WhatsApp, Messenger, Facebook, X and iMessage
+# — the app's most public surface, and it carried no image at all before this.
+#
+# Landscape 1200x630 rather than the 512 app icon: every one of those platforms
+# crops or letterboxes a square into a wide card, and several will fall back to
+# a tiny thumbnail. This is also the only place the real wordmark ships, so it
+# is the one output built from logo_lockup rather than the mark alone.
+CARD_W, CARD_H = 1200, 630
+card = Image.new("RGB", (CARD_W, CARD_H), BRAND)
+lockup_white = recolour(lockup_rose, WHITE)
+lw = lockup_white.crop(lockup_white.split()[3].getbbox())
+# 0.62 of the width: wide enough to read as the brand at thumbnail size, with
+# enough ground left that the card does not look like a cropped banner.
+target_w = round(CARD_W * 0.62)
+target_h = max(1, round(target_w * lw.size[1] / lw.size[0]))
+lw = lw.resize((target_w, target_h), Image.LANCZOS)
+card.paste(
+    lw, ((CARD_W - target_w) // 2, (CARD_H - target_h) // 2), lw
+)
+write(os.path.join("web", "social-card.png"), card)
 
 print("play listing icon:")
 # 512x512, RGB with no alpha and no rounding of our own: Play applies its own

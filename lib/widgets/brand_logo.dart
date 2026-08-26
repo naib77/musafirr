@@ -17,12 +17,18 @@ import '../core/theme/app_colors.dart';
 /// draw. Baking the wordmark into the PNG would freeze its colour against four
 /// admin-selectable palettes and cost the app its text.
 ///
-/// ## Why it is tinted rather than shipped in colour
+/// ## Why it ships in the brand colour and is not tinted per theme
 ///
-/// `assets/brand/logo.png` is a white silhouette. Passing [color] repaints it
-/// through [BlendMode.srcIn], so one file works on teal, indigo, crimson and
-/// near-black — see `AppPalettes`. A full-colour logo could only ever look
-/// right on one theme.
+/// `assets/brand/logo.png` is the mark in the brand rose `#C35063`, and every
+/// call site leaves [color] null. A logo is not a UI accent: repainting it teal
+/// or indigo because an admin selected that palette would swap the brand out
+/// for the theme, which is the opposite of what a logo is for. The launcher
+/// icon, the PWA manifest and the Android launch window are all fixed to the
+/// same rose for the same reason.
+///
+/// [color] still exists, and repaints the mark through [BlendMode.srcIn] for a
+/// caller that puts it on a surface the rose cannot survive — a saturated
+/// brand-coloured header, say. Nothing needs that today.
 ///
 /// Falls back to a Material glyph if the asset is missing or unreadable, so a
 /// half-finished branding change degrades to the app's previous appearance

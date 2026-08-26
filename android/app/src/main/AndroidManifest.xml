@@ -90,10 +90,16 @@
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="musafir_notifications" />
 
-        <!-- FCM default notification icon -->
+        <!-- FCM default notification icon.
+             @drawable/ic_notification, NOT @mipmap/ic_launcher. Android draws a
+             notification's small icon from its alpha channel alone, discarding
+             colour and painting the silhouette in the system tint. ic_launcher
+             is a rounded square that is 96% opaque, so using it renders a solid
+             white blob with the mark invisible. ic_notification is the mark on
+             transparency, which is what that pipeline needs. -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@mipmap/ic_launcher" />
+            android:resource="@drawable/ic_notification" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

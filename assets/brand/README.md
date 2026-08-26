@@ -4,8 +4,10 @@ Every file here is **generated**. Do not hand-edit them, and do not hand-resize
 one to make another — run the script:
 
 ```sh
-python3 tool/gen_brand_assets.py     # this directory, Android icons, Play icon
-dart run flutter_launcher_icons      # then iOS (15 files) + web (5 files)
+python3 tool/gen_brand_assets.py     # this dir, Android icons + notification
+                                     # icon, iOS launch image, social card,
+                                     # Play icon
+dart run flutter_launcher_icons      # then the iOS app icon (15) + web (5)
 ```
 
 The order matters: `flutter_launcher_icons` reads `icon.png`, which the first
@@ -36,7 +38,7 @@ away from all of them for no visible gain.
 | File | Size | Used by |
 | --- | --- | --- |
 | `logo.png` | 512² RGBA | `BrandLogo` — splash, login, sidebar rail |
-| `logo_lockup.png` | 900×224 RGBA | nothing in-app; for documents and stores |
+| `logo_lockup.png` | 900×224 RGBA | `web/social-card.png`; also for documents |
 | `icon.png` | 1024² **RGB** | `flutter_launcher_icons` → iOS + web |
 | `icon_foreground.png` | 1024² RGBA | Android adaptive foreground |
 | `icon_monochrome.png` | 1024² RGBA | Android 13+ themed icons |
@@ -82,16 +84,29 @@ everywhere:
 
 | Output | Fraction | Why |
 | --- | --- | --- |
+| Android adaptive | 0.40 | 43.2dp of the 108dp canvas |
+| Android legacy / Play | 0.60 | own baked mask, whole canvas visible |
+| `icon.png` (iOS/web) | 0.60 | iOS rounds corners but crops very little |
 | `logo.png` | 0.86 | near full-bleed; short of 1.0 so it never touches a caller's tile edge |
-| Android adaptive | 0.52 | 56dp on the 108dp canvas — 10dp inside the 66dp guaranteed circle |
-| Android legacy / Play | 0.56 | carries its own baked ground, no launcher mask to fear |
-| `icon.png` | 0.60 | iOS rounds the corners but crops very little |
+| `ic_notification` | 0.92 | the system scales a 24dp source down again, so margin here is lost twice |
+| `social-card.png` | 0.62 | the lockup, not the mark — wide enough to read as a thumbnail |
 
-The adaptive figure is the one with a hard constraint. Only the centre 66dp of
-the 108dp canvas survives every launcher mask; 0.52 leaves margin inside that,
-because the safe zone is a floor and not a target — a mark sized right up to it
-is compliant and still looks cramped once a launcher crops to its 72dp
-viewport.
+**The first three are solved, not chosen.** What a user compares is the fraction
+of the *visible* icon the mark covers, and the platforms disagree about how much
+of the file is visible: a launcher shows only the centre 72dp of the adaptive
+108dp canvas, while iOS and the legacy masks show effectively all of theirs. So
+an adaptive mark reads 1.5× larger than its fraction suggests, and matching 0.60
+visible everywhere means 0.60/1.5 = 0.40 there. The script asserts that identity
+so editing one number without the other fails loudly.
+
+Getting it wrong is what made the Android launcher icon look like a different,
+more zoomed-in logo than the web and iOS ones — 0.52 adaptive reads as 0.78
+visible against their 0.60. 0.40 also sits far inside the 66dp circle every
+launcher mask spares, so the safe zone stops being the binding constraint.
+
+The ground is **flat** `#C35063` on every one of them. Android's adaptive
+background and legacy PNGs were a vertical gradient while iOS and web were flat,
+which is the other half of why the icon differed by platform.
 
 ## Why `logo.png` is the mark alone, square, and rose
 
