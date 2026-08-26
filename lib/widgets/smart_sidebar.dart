@@ -390,7 +390,7 @@ class _SmartSidebarState extends State<SmartSidebar>
           child: const Icon(Icons.bolt_rounded, size: 18, color: Colors.white),
         ),
         const SizedBox(width: 10),
-        const Expanded(
+        Expanded(
           child: Text(
             'Quick access',
             style: TextStyle(
@@ -561,7 +561,7 @@ class _PanelLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text.toUpperCase(),
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 10.5,
         fontWeight: FontWeight.w700,
         letterSpacing: 0.9,
@@ -755,10 +755,9 @@ class _InstalledNote extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.check_circle_rounded,
-              size: 18, color: AppColors.success),
+          Icon(Icons.check_circle_rounded, size: 18, color: AppColors.success),
           const SizedBox(width: 8),
-          const Expanded(
+          Expanded(
             child: Text(
               'App installed',
               style: TextStyle(
@@ -792,7 +791,7 @@ class _IosInstallSteps extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Add Musaafir to your Home Screen',
               style: TextStyle(
                 fontSize: 17,
@@ -801,7 +800,7 @@ class _IosInstallSteps extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               'Safari has no one-tap install, so it takes two taps.',
               style: TextStyle(
                 fontSize: 13,
@@ -832,7 +831,7 @@ class _IosInstallSteps extends StatelessWidget {
                         padding: const EdgeInsets.only(top: 7),
                         child: Text(
                           steps[i].$2,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 13.5,
                             height: 1.35,
                             color: AppColors.ink,
@@ -891,7 +890,7 @@ class _ShortcutTile extends StatelessWidget {
                   shortcut.label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: AppColors.ink,

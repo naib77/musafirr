@@ -155,7 +155,7 @@ class _NoListingsView extends StatelessWidget {
           child: Container(
             width: 104,
             height: 104,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               gradient: AppColors.brandGradient,
               shape: BoxShape.circle,
             ),

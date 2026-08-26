@@ -1,7 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../../core/utils/responsive.dart';
 import '../../models/leaderboard_entry.dart';
 import '../../repositories/musafir_repository.dart';
 
@@ -66,48 +67,70 @@ class _HostLeaderboardScreenState extends State<HostLeaderboardScreen> {
     );
   }
 
+  /// Width the board's own content is allowed to reach. Rows and the podium are
+  /// a single column of text and faces; letting them span a monitor makes them
+  /// unreadable long before it makes them impressive.
+  static const double _contentMaxWidth = 760;
+
+  /// The inset that holds content to [_contentMaxWidth], applied per sliver.
+  ///
+  /// A `ResponsiveCenter` around the whole scroll view used to do this, and it
+  /// capped the header too: a full-bleed gradient clipped to 760px left grey
+  /// gutters either side of it, so on a desktop window the hero read as a
+  /// floating card rather than as the top of the screen. The hero now spans the
+  /// viewport and only the content below it is inset.
+  double _gutter(BuildContext context) =>
+      math.max(0, (MediaQuery.sizeOf(context).width - _contentMaxWidth) / 2);
+
   @override
   Widget build(BuildContext context) {
+    final gutter = _gutter(context);
+
     return Scaffold(
       backgroundColor: AppColors.scaffold,
-      body: ResponsiveCenter(
-        maxWidth: 760,
-        child: FutureBuilder<List<LeaderboardEntry>>(
-          future: _future,
-          builder: (context, snapshot) {
-            final loading = snapshot.connectionState == ConnectionState.waiting;
-            final entries = snapshot.data ?? const <LeaderboardEntry>[];
+      body: FutureBuilder<List<LeaderboardEntry>>(
+        future: _future,
+        builder: (context, snapshot) {
+          final loading = snapshot.connectionState == ConnectionState.waiting;
+          final entries = snapshot.data ?? const <LeaderboardEntry>[];
 
-            return RefreshIndicator(
-              onRefresh: _refresh,
-              child: CustomScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: [
-                  _HeroHeader(onInfo: _showScoringInfo),
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                      child: _PeriodSwitcher(
-                          period: _period, onChanged: _selectPeriod),
-                    ),
-                  ),
-                  if (loading)
-                    const SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  else if (entries.isEmpty)
-                    SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: _EmptyState(period: _period),
-                    )
-                  else
-                    ..._buildBoard(entries),
-                ],
+          final content = <Widget>[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                child:
+                    _PeriodSwitcher(period: _period, onChanged: _selectPeriod),
               ),
-            );
-          },
-        ),
+            ),
+            if (loading)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (entries.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: _EmptyState(period: _period),
+              )
+            else
+              ..._buildBoard(entries),
+          ];
+
+          return RefreshIndicator(
+            onRefresh: _refresh,
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                _HeroHeader(onInfo: _showScoringInfo),
+                for (final sliver in content)
+                  SliverPadding(
+                    padding: EdgeInsets.symmetric(horizontal: gutter),
+                    sliver: sliver,
+                  ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -151,19 +174,71 @@ class _HostLeaderboardScreenState extends State<HostLeaderboardScreen> {
 }
 
 /// Gradient hero with a glowing trophy — the first thing the eye lands on.
+///
+/// The title is the app bar's own, NOT `FlexibleSpaceBar.title`. That slot was
+/// what made the header look wrong, in two ways at once:
+///
+///  * **Colour.** `FlexibleSpaceBar` styles its title from
+///    `theme.textTheme.titleLarge` and consults neither the app bar's
+///    `foregroundColor` nor `appBarTheme.titleTextStyle`
+///    (material/flexible_space_bar.dart, `titleStyle`). This app's `titleLarge`
+///    carries `color: palette.ink` — near-black — so "Top Hosts" rendered at
+///    roughly 1.6:1 on the dark brand gradient while the action icons next to
+///    it were correctly white. Setting `foregroundColor: Colors.white` on the
+///    SliverAppBar could not fix it, and did not.
+///  * **Collision.** It also draws that title `expandedTitleScale` (1.5) times
+///    larger, pinned to the bottom of the header, which put a huge heading
+///    across the tagline; at a 1.6x text scale the two overlapped outright.
+///
+/// In the toolbar the title is one size, states its own colour, and cannot
+/// collide with anything. Everything else in the header shares its centre
+/// line, so the hero reads as a single column rather than a centred graphic
+/// sitting beside a left-aligned heading.
 class _HeroHeader extends StatelessWidget {
   const _HeroHeader({required this.onInfo});
 
   final VoidCallback onInfo;
 
+  /// The trophy badge: a 30px icon inside 14px of padding, both borders.
+  static const double _badgeExtent = 58;
+  static const double _toolbarToBadge = 10;
+  static const double _badgeToTagline = 12;
+  static const double _taglineToBottom = 16;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final media = MediaQuery.of(context);
+
+    final taglineStyle = theme.textTheme.bodyMedium!.copyWith(
+      color: Colors.white.withValues(alpha: 0.92),
+      height: 1.3,
+    );
+    // Two lines of tagline at whatever font size the reader has chosen. The
+    // header's height has to be derived from that rather than fixed: the old
+    // hard-coded 168 was what clipped the tagline once the text scaler grew it.
+    final taglineExtent = media.textScaler.scale(taglineStyle.fontSize!) *
+        taglineStyle.height! *
+        2;
+
     return SliverAppBar(
       pinned: true,
-      expandedHeight: 168,
-      backgroundColor: AppColors.brand,
+      // One centre line for the toolbar title, the badge and the tagline.
+      centerTitle: true,
+      expandedHeight: kToolbarHeight +
+          _toolbarToBadge +
+          _badgeExtent +
+          _badgeToTagline +
+          taglineExtent +
+          _taglineToBottom,
+      // The gradient's first stop, so the bar the hero collapses into is the
+      // same colour as the top of the hero itself — no seam mid-scroll.
+      backgroundColor: AppColors.brandGradient.colors.first,
       foregroundColor: Colors.white,
+      title: const Text(
+        'Top Hosts',
+        style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white),
+      ),
       actions: [
         IconButton(
           icon: const Icon(Icons.help_outline_rounded),
@@ -172,11 +247,8 @@ class _HeroHeader extends StatelessWidget {
         ),
       ],
       flexibleSpace: FlexibleSpaceBar(
-        title: const Text('Top Hosts',
-            style: TextStyle(fontWeight: FontWeight.w800)),
-        titlePadding: const EdgeInsets.only(left: 56, bottom: 16),
-        background: Container(
-          decoration: const BoxDecoration(gradient: AppColors.brandGradient),
+        background: DecoratedBox(
+          decoration: BoxDecoration(gradient: AppColors.brandGradient),
           child: Stack(
             children: [
               // Soft decorative glow circles
@@ -190,13 +262,16 @@ class _HeroHeader extends StatelessWidget {
                 bottom: -30,
                 child: _glow(140, Colors.white.withValues(alpha: 0.07)),
               ),
-              Align(
-                alignment: const Alignment(0, -0.15),
+              // Starts below the toolbar rather than being centred in the whole
+              // header: the background fills the status bar too, so centring it
+              // there is what pushed the badge up behind the title row.
+              Positioned.fill(
+                top: media.padding.top + kToolbarHeight + _toolbarToBadge,
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(14),
+                      width: _badgeExtent,
+                      height: _badgeExtent,
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.18),
                         shape: BoxShape.circle,
@@ -208,11 +283,17 @@ class _HeroHeader extends StatelessWidget {
                       child: const Icon(Icons.emoji_events_rounded,
                           color: Color(0xFFFFD54F), size: 30),
                     ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'The most loved hosts on Musaafir',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: Colors.white.withValues(alpha: 0.92),
+                    const SizedBox(height: _badgeToTagline),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Text(
+                        'The most loved hosts on Musaafir',
+                        textAlign: TextAlign.center,
+                        // Two lines is what the header was measured for; a
+                        // third would be clipped, so it ellipsises instead.
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: taglineStyle,
                       ),
                     ),
                   ],
@@ -255,8 +336,7 @@ class _YourStandingBanner extends StatelessWidget {
         ),
         child: Row(
           children: [
-            const Icon(Icons.rocket_launch_rounded,
-                color: AppColors.brand, size: 22),
+            Icon(Icons.rocket_launch_rounded, color: AppColors.brand, size: 22),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -431,7 +511,7 @@ class _PodiumSpot extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (crown)
-          const Icon(Icons.workspace_premium_rounded,
+          Icon(Icons.workspace_premium_rounded,
               color: AppColors.amber, size: 28)
         else
           const SizedBox(height: 28),
@@ -622,8 +702,7 @@ class _LeaderRow extends StatelessWidget {
                 const SizedBox(height: 3),
                 Row(
                   children: [
-                    const Icon(Icons.star_rounded,
-                        size: 14, color: AppColors.amber),
+                    Icon(Icons.star_rounded, size: 14, color: AppColors.amber),
                     const SizedBox(width: 2),
                     Text(
                       entry.rating.toStringAsFixed(1),
@@ -833,7 +912,7 @@ class _ScoringInfoSheet extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.emoji_events_rounded,
+              Icon(Icons.emoji_events_rounded,
                   color: AppColors.amber, size: 26),
               const SizedBox(width: 10),
               Text(
@@ -853,21 +932,21 @@ class _ScoringInfoSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          const _ScoreFactor(
+          _ScoreFactor(
             icon: Icons.star_rounded,
             color: AppColors.amber,
             weight: '50%',
             title: 'Guest ratings',
             detail: 'Your average review score from guests.',
           ),
-          const _ScoreFactor(
+          _ScoreFactor(
             icon: Icons.event_available_rounded,
             color: AppColors.brand,
             weight: '30%',
             title: 'Completed stays',
             detail: 'How many bookings you’ve successfully hosted.',
           ),
-          const _ScoreFactor(
+          _ScoreFactor(
             icon: Icons.bolt_rounded,
             color: AppColors.blue,
             weight: '20%',
@@ -883,7 +962,7 @@ class _ScoringInfoSheet extends StatelessWidget {
             ),
             child: Row(
               children: [
-                const Icon(Icons.lightbulb_outline_rounded,
+                Icon(Icons.lightbulb_outline_rounded,
                     color: AppColors.warning, size: 20),
                 const SizedBox(width: 10),
                 Expanded(

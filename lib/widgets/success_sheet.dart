@@ -24,7 +24,7 @@ class SuccessSheet extends StatefulWidget {
     super.key,
     required this.title,
     required this.message,
-    this.accent = AppColors.success,
+    this.accent,
     this.icon = Icons.check_rounded,
     this.primaryLabel = 'Done',
     this.onPrimary,
@@ -35,7 +35,12 @@ class SuccessSheet extends StatefulWidget {
 
   final String title;
   final String message;
-  final Color accent;
+
+  /// The sheet's celebratory colour. Null means "whatever the active theme calls
+  /// success" — resolved in [build] rather than defaulted here, because
+  /// `AppColors.success` is now a getter over the admin-selected palette and a
+  /// default parameter value has to be a compile-time constant.
+  final Color? accent;
   final IconData icon;
   final String primaryLabel;
   final VoidCallback? onPrimary;
@@ -51,7 +56,7 @@ class SuccessSheet extends StatefulWidget {
     BuildContext context, {
     required String title,
     required String message,
-    Color accent = AppColors.success,
+    Color? accent,
     IconData icon = Icons.check_rounded,
     String primaryLabel = 'Done',
     VoidCallback? onPrimary,
@@ -139,9 +144,12 @@ class _SuccessSheetState extends State<SuccessSheet>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Resolved per build, not per construction: the active palette can change
+    // under a live sheet when the admin's theme lands mid-session.
+    final accent = widget.accent ?? AppColors.success;
 
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
@@ -178,7 +186,7 @@ class _SuccessSheetState extends State<SuccessSheet>
                     clipBehavior: Clip.antiAlias,
                     child: InkWell(
                       onTap: _dismiss,
-                      child: const Padding(
+                      child: Padding(
                         padding: EdgeInsets.all(6),
                         child: Icon(Icons.close_rounded,
                             size: 18, color: AppColors.inkMuted),
@@ -209,7 +217,7 @@ class _SuccessSheetState extends State<SuccessSheet>
                         child: Container(
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: widget.accent.withValues(alpha: 0.25),
+                            color: accent.withValues(alpha: 0.25),
                           ),
                         ),
                       ),
@@ -229,15 +237,15 @@ class _SuccessSheetState extends State<SuccessSheet>
                   shape: BoxShape.circle,
                   gradient: LinearGradient(
                     colors: [
-                      widget.accent,
-                      Color.lerp(widget.accent, Colors.black, 0.18)!,
+                      accent,
+                      Color.lerp(accent, Colors.black, 0.18)!,
                     ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: widget.accent.withValues(alpha: 0.35),
+                      color: accent.withValues(alpha: 0.35),
                       blurRadius: 24,
                       offset: const Offset(0, 8),
                     ),
@@ -282,7 +290,7 @@ class _SuccessSheetState extends State<SuccessSheet>
                     child: FilledButton(
                       onPressed: () => _dismiss(then: widget.onPrimary),
                       style: FilledButton.styleFrom(
-                        backgroundColor: widget.accent,
+                        backgroundColor: accent,
                         minimumSize: const Size.fromHeight(54),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),

@@ -445,18 +445,25 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
               ]
             : [
-                IconButton(
-                  icon: const Icon(Icons.phone),
-                  onPressed: () {
-                    ModernBanner.showInfo(context, 'Voice calls coming soon');
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.videocam),
-                  onPressed: () {
-                    ModernBanner.showInfo(context, 'Video calls coming soon');
-                  },
-                ),
+                // Voice and video calling are hidden until the feature is real.
+                // Both buttons only ever raised a "coming soon" banner, and a
+                // control that answers every tap with an apology reads as
+                // broken rather than as forthcoming — the calls will arrive
+                // later, so the markup is kept rather than deleted. Restore by
+                // uncommenting; nothing else was removed.
+                //
+                // IconButton(
+                //   icon: const Icon(Icons.phone),
+                //   onPressed: () {
+                //     ModernBanner.showInfo(context, 'Voice calls coming soon');
+                //   },
+                // ),
+                // IconButton(
+                //   icon: const Icon(Icons.videocam),
+                //   onPressed: () {
+                //     ModernBanner.showInfo(context, 'Video calls coming soon');
+                //   },
+                // ),
                 PopupMenuButton<String>(
                   onSelected: (value) {
                     switch (value) {

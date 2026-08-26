@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../widgets/brand_logo.dart';
+
 /// Splash screen shown during app initialization.
 ///
 /// Displays the app logo and a loading indicator while
@@ -33,11 +35,11 @@ class SplashScreen extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Icon(
-                Icons.travel_explore_rounded,
-                size: 64,
-                color: colorScheme.primary,
-              ),
+              // No tint: the tile behind the mark is white, so the artwork's
+              // own rose is exactly right. Repainting it in the theme's primary
+              // would swap the brand colour out for whichever palette an admin
+              // happens to have selected.
+              child: const Center(child: BrandLogo(size: 64)),
             ),
             const SizedBox(height: 24),
             // App name

@@ -1,35 +1,45 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import 'app_colors.dart';
+import 'app_palette.dart';
 import 'app_typography.dart';
 
 /// Assembles the Musaafir [ThemeData]. Single source of truth for colors,
 /// typography, component shapes, and page transitions — every screen inherits
 /// this, so modernizing here lifts the whole app.
+///
+/// [forPalette] takes its colours as an argument rather than reading the
+/// `AppColors` globals, so building a theme is a pure function of a palette:
+/// swapping themes at runtime is then just calling it again with a different
+/// one, and a test can inspect a palette's theme without installing it.
 class AppTheme {
   AppTheme._();
 
   static const double _radius = 16;
 
-  static ThemeData get light {
+  /// Builds the theme for [p]. There is deliberately no zero-argument default:
+  /// the palette is an admin setting, and a convenience getter that quietly
+  /// returned the fallback theme is exactly how a screen ends up painted in the
+  /// wrong colours. Callers with no palette to hand want
+  /// `AppTheme.forPalette(AppPalettes.fallback)` and should say so.
+  static ThemeData forPalette(AppPalette p) {
     final scheme = ColorScheme.fromSeed(
-      seedColor: AppColors.brand,
+      seedColor: p.brand,
       brightness: Brightness.light,
     ).copyWith(
-      primary: AppColors.brand,
-      secondary: AppColors.coral,
-      tertiary: AppColors.violet,
-      surface: AppColors.surface,
-      error: AppColors.error,
-      outlineVariant: AppColors.outline,
+      primary: p.brand,
+      secondary: p.accent,
+      tertiary: p.violet,
+      surface: p.surface,
+      error: p.error,
+      outlineVariant: p.outline,
     );
 
     final base = ThemeData(useMaterial3: true, colorScheme: scheme);
-    final textTheme = AppTypography.textTheme(base.textTheme);
+    final textTheme = AppTypography.textTheme(base.textTheme, p);
 
     return base.copyWith(
-      scaffoldBackgroundColor: AppColors.scaffold,
+      scaffoldBackgroundColor: p.scaffold,
       textTheme: textTheme,
       splashFactory: InkSparkle.splashFactory,
 
@@ -42,9 +52,9 @@ class AppTheme {
       ),
 
       appBarTheme: AppBarTheme(
-        backgroundColor: AppColors.scaffold,
+        backgroundColor: p.scaffold,
         surfaceTintColor: Colors.transparent,
-        foregroundColor: AppColors.ink,
+        foregroundColor: p.ink,
         elevation: 0,
         scrolledUnderElevation: 0.5,
         centerTitle: false,
@@ -52,7 +62,7 @@ class AppTheme {
       ),
 
       cardTheme: CardThemeData(
-        color: AppColors.surface,
+        color: p.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         margin: EdgeInsets.zero,
@@ -62,8 +72,14 @@ class AppTheme {
         ),
       ),
 
+      // Filled buttons take p.cta, not scheme.primary. That is the seam a
+      // blue-led/red-actioned palette needs: navigation and focus stay brand
+      // coloured while the thing being asked for is not. A palette whose cta IS
+      // its brand (oceanTeal) gets exactly the old behaviour.
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
+          backgroundColor: p.cta,
+          foregroundColor: p.onCta,
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
@@ -79,7 +95,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
-          side: const BorderSide(color: AppColors.outline),
+          side: BorderSide(color: p.outline),
           textStyle: textTheme.labelLarge,
         ),
       ),
@@ -93,10 +109,10 @@ class AppTheme {
 
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppColors.surfaceMuted,
+        fillColor: p.surfaceMuted,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        hintStyle: textTheme.bodyMedium?.copyWith(color: AppColors.inkMuted),
+        hintStyle: textTheme.bodyMedium?.copyWith(color: p.inkMuted),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
@@ -107,18 +123,18 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.brand, width: 1.5),
+          borderSide: BorderSide(color: p.brand, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.error, width: 1.5),
+          borderSide: BorderSide(color: p.error, width: 1.5),
         ),
       ),
 
       chipTheme: ChipThemeData(
-        backgroundColor: AppColors.surfaceMuted,
-        selectedColor: AppColors.brand.withValues(alpha: 0.14),
-        checkmarkColor: AppColors.brand,
+        backgroundColor: p.surfaceMuted,
+        selectedColor: p.brand.withValues(alpha: 0.14),
+        checkmarkColor: p.brand,
         side: BorderSide.none,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
@@ -127,16 +143,16 @@ class AppTheme {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       ),
 
-      dividerTheme: const DividerThemeData(
-        color: AppColors.outline,
+      dividerTheme: DividerThemeData(
+        color: p.outline,
         thickness: 1,
         space: 1,
       ),
 
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        backgroundColor: AppColors.surface,
-        selectedItemColor: AppColors.brand,
-        unselectedItemColor: AppColors.inkMuted,
+        backgroundColor: p.surface,
+        selectedItemColor: p.brand,
+        unselectedItemColor: p.inkMuted,
         type: BottomNavigationBarType.fixed,
         elevation: 8,
       ),
@@ -145,7 +161,7 @@ class AppTheme {
       // indicator, tinted icon as the only selection cue.
       navigationBarTheme: NavigationBarThemeData(
         height: 64,
-        backgroundColor: AppColors.surface,
+        backgroundColor: p.surface,
         surfaceTintColor: Colors.transparent,
         indicatorColor: Colors.transparent,
         elevation: 0,
@@ -157,15 +173,13 @@ class AppTheme {
             height: 1.2,
             letterSpacing: 0,
             fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-            color: selected ? AppColors.brand : AppColors.inkMuted,
+            color: selected ? p.brand : p.inkMuted,
           );
         }),
         iconTheme: WidgetStateProperty.resolveWith((states) {
           return IconThemeData(
             size: 24,
-            color: states.contains(WidgetState.selected)
-                ? AppColors.brand
-                : AppColors.inkMuted,
+            color: states.contains(WidgetState.selected) ? p.brand : p.inkMuted,
           );
         }),
       ),

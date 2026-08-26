@@ -45,7 +45,7 @@ class HostVerificationBadges extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Icon(Icons.check_circle, size: 16, color: AppColors.success),
+        Icon(Icons.check_circle, size: 16, color: AppColors.success),
         const SizedBox(width: 5),
         Text(
           label,

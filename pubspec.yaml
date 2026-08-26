@@ -25,6 +25,16 @@ dependencies:
   share_plus: ^10.1.4
   google_fonts: ^6.2.1
   image_picker: ^1.0.7
+  # Direct dependency purely to reach ImagePickerAndroid and turn on the
+  # Android Photo Picker (see lib/main.dart). Without that the plugin falls
+  # back to ACTION_GET_CONTENT, which is what pushed the app under Play's
+  # Photo and Video Permissions policy.
+  image_picker_android: ^0.8.13
+  # Same reason: main.dart reads ImagePickerPlatform.instance to reach the
+  # Android implementation, so the interface package is referenced directly and
+  # has to be declared directly (depend_on_referenced_packages). It arrives
+  # transitively via image_picker either way; this only makes the use honest.
+  image_picker_platform_interface: ^2.11.1
   file_picker: ^8.0.0+1
   mime: ^1.0.5
   path: ^1.9.0
@@ -48,6 +58,65 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   # Lets timeout behaviour be tested without spending the timeout in real time.
   fake_async: ^1.3.1
+  # Generates the 30 platform icon files from assets/brand/. Dev-only: it is a
+  # code generator run by hand, never at build time.
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
+  assets:
+    # ONLY the runtime asset is declared. assets/brand/icon*.png are read off
+    # the filesystem by flutter_launcher_icons when it generates, so bundling
+    # them would ship two unused 1024x1024 PNGs inside the app and inside the
+    # fingerprinted web bundle every user downloads.
+    - assets/brand/logo.png
+
+# Run with: dart run flutter_launcher_icons
+#
+# Writes the iOS AppIcon set (15) and web/icons/*.png + web/favicon.png (5).
+# Android is excluded on purpose — see the `android:` key below. The web files
+# then still need
+# `sh tool/build_web.sh` and a commit of build/web to reach anyone — see
+# CLAUDE.md; build/web is a committed artifact and wrangler uploads it verbatim.
+#
+# The colour below is fixed and does NOT follow the admin-selected theme: a
+# launcher icon is baked into the installed app and the PWA manifest, so it
+# cannot change at runtime. #C35063 is the brand rose, measured from the
+# supplied artwork — it is the BRAND colour, not the active UI theme.
+flutter_launcher_icons:
+  image_path: "assets/brand/icon.png"
+  # Android is OFF, and must stay off unless you mean to discard work.
+  #
+  # The Android icons are maintained BY HAND and are better than this package
+  # would produce: a gradient adaptive background
+  # (drawable/ic_launcher_background.xml), a foreground authored to the 72dp
+  # safe zone, and an Android 13+ monochrome layer. Running the generator with
+  # `android: "ic_launcher"` overwrites all five ic_launcher.png densities,
+  # replaces mipmap-anydpi-v26/ic_launcher.xml, and flattens that gradient
+  # background to a solid colour.
+  #
+  # So the generator owns iOS and web only. Flip this to "ic_launcher" only if
+  # you have decided to let it own Android too.
+  android: false
+  ios: true
+  # iOS rejects an App Store icon with an alpha channel; if the source has one,
+  # it is flattened onto this colour rather than onto black.
+  remove_alpha_ios: true
+  background_color_ios: "#C35063"
+  min_sdk_android: 21
+  # Adaptive-icon keys are intentionally absent: they only apply when `android`
+  # is enabled above, and the hand-maintained files already cover this ground.
+  # If you ever turn Android on, the foreground artwork must carry its own
+  # safe-zone padding and `adaptive_icon_foreground_inset: 0` must accompany it
+  # — the package default of 16 would inset an already-padded mark twice.
+  web:
+    generate: true
+    # Both are the brand rose, matching the icon's own background so the PWA
+    # install splash (which paints the icon on background_color) has no seam.
+    #
+    # NOTE: this is the BRAND colour, not the app's UI theme. The default palette
+    # is still ocean_teal, so a PWA launch shows a rose splash and then a teal
+    # app. Either pick a crimson palette as the default in app_settings, or
+    # accept the handover — but it is a choice, not an oversight.
+    background_color: "#C35063"
+    theme_color: "#C35063"

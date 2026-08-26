@@ -86,10 +86,24 @@ App-wide knobs live in the `app_settings` table and are edited from the admin
 portal — reads are public, writes are admin-only. `AppSettingsService` loads
 them at startup and **fails open** to compiled-in defaults.
 
-Current keys include the proof-of-address requirement, cash payments, and the
+Current keys include the proof-of-address requirement, cash payments, the
 search area (`search_radius_tiers_m`, `search_landmark_radius_m`,
-`search_nearest_fallback_limit`). Migration 097 validates the search keys on
-write, so a bad value is refused at the source rather than silently sanitised.
+`search_nearest_fallback_limit`), and the colour theme (`active_theme`).
+Migration 097 validates the search keys on write, so a bad value is refused at
+the source rather than silently sanitised.
+
+`active_theme` names one of the palettes in `lib/core/theme/app_palettes.dart`.
+The app can only wear a palette it was compiled with, so **adding one means
+adding its id to `AppPalettes.all` AND to `fn_validate_setting_active_theme`
+(created in 105, id list last extended by 106)** — a test
+pins the slug list so the two drifting apart fails rather than silently shipping
+a theme no admin can select. That test also holds every palette to WCAG: 4.5:1
+for tokens that carry text, 3:1 for ones that only ever tint an icon. There are
+no exemptions and the tiers are not advisory — a new palette that fails is a
+failing build, so pick colours against a background, not in isolation. Note that `web/manifest.json` and the
+`index.html` spinner still hardcode the teal brand: those are the browser's
+splash/chrome colours, baked into the static shell, so they do not follow the
+theme.
 
 Before hardcoding a number a human might want to change, check whether it
 belongs here instead.
@@ -113,11 +127,31 @@ merger folds it in, so it needs no entry of its own.
 
 ## QA
 
-A master OTP (`1234`) logs into **any** phone number, kept on deliberately for
-QA. It must be unset before production, and must not be turned off without
-asking. Login goes through the `send-otp` Supabase edge function rather than the
-Dart `ConsoleSmsGateway`, so driving a login can attempt a real SMS — do not
-automate it against a number you do not own.
+**The master OTP is OFF as of 2026-08-26.** `MASTER_OTP` and `MASTER_OTP_PHONES`
+were unset from the live project on the owner's explicit instruction, while
+preparing the Play submission (`docs/PLAY_STORE_RELEASE.md` §6.4). There is no
+login bypass any more; every login needs a real SMS code.
+
+It had been `1234` against `MASTER_OTP_PHONES='*'` — the wildcard, so it really
+did log into **any** phone number, not an allowlist. `README.md` still shows the
+command that set it to a single number; that is stale, and the live value was
+confirmed by hashing candidates against the Management API's SHA-256 of the
+secret. The secret is server-side: `OtpConfig.masterOtpEnabled` defaults to
+false, so a plain `flutter build` never carried a bypass regardless.
+
+If you re-enable it — the Play reviewer needs a login that does not require
+receiving a Bangladeshi SMS, so you probably will — use an **explicit allowlist,
+never `*`**, and mind the format. `masterOtpAllowlist()` runs each entry through
+`normalizePhone()`, which collapses `+880…`/`880…` to a **leading `0`**. So
+`01673293542` and `+8801673293542` both work; **`1673293542` without the leading
+zero never matches anything** and the bypass silently fails to apply. The stale
+`README.md` command has exactly that bug, which is the likeliest reason it was
+widened to `*` in the first place.
+
+Login goes through the `send-otp` Supabase edge function rather than the Dart
+`ConsoleSmsGateway`, so driving a login can attempt a real SMS — do not automate
+it against a number you do not own. That is also why the unset above was *not*
+verified by attempting a login.
 
 ## Conventions
 
