@@ -7,14 +7,37 @@
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="Musaafir - Modern Rental Marketplace">
 
+  <!-- Link previews (WhatsApp, Messenger, Facebook, X, iMessage). Without
+       these a shared link renders as a bare URL with no image, which for a
+       marketplace is the most public surface the brand has.
+
+       og:image must be an ABSOLUTE url — scrapers do not resolve relative
+       paths — so the origin is repeated here from lib/config/legal_links.dart.
+       If the deploy origin ever moves, both change together. -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Musaafir">
+  <meta property="og:title" content="Musaafir — find your perfect stay">
+  <meta property="og:description" content="Rooms, seats and whole houses across Bangladesh, booked direct with the host.">
+  <meta property="og:url" content="https://musafirr.knaib77.workers.dev/">
+  <meta property="og:image" content="https://musafirr.knaib77.workers.dev/social-card.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://musafirr.knaib77.workers.dev/social-card.png">
+
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="Musaafir">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
+  <!-- Favicon. Two sizes on purpose: flutter_launcher_icons only emits
+       favicon.png at 16x16, and a hi-DPI tab renders the icon at 32px or more
+       physical, so a lone 16px source is upscaled and the mark's thin strokes
+       turn to mush. Browsers pick the closest size, so declaring the 192 lets
+       them downscale a good source instead; the 16 stays as the fallback. -->
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon.png"/>
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/Icon-192.png"/>
 
   <title>Musaafir</title>
   <link rel="manifest" href="manifest.json">
@@ -223,6 +246,18 @@
        This static markup paints immediately and is removed on the engine's
        'flutter-first-frame' event. Inline only — no extra network requests. -->
   <style>
+    /* Brand rose, #C35063 — the same value as manifest.json's
+       background_color, the Android launch window and the iOS launch screen.
+       It was #F6F8F7 with a #0E1F23 dark-mode variant, both derived from the
+       old teal identity: on a dark-mode browser the first paint was a dark
+       green-teal, and since this background paints the instant the CSS parses
+       while the icon is still arriving, that showed as a greenish blank
+       window before anything branded appeared.
+
+       There is deliberately no dark-mode override any more. A brand colour
+       does not have a dark variant, and the whole point of this element is to
+       be the same colour as the four native surfaces above, none of which
+       change with the OS theme. */
     #splash {
       position: fixed;
       inset: 0;
@@ -232,22 +267,30 @@
       align-items: center;
       justify-content: center;
       gap: 28px;
-      background: #F6F8F7;
+      background: #C35063;
       opacity: 1;
       transition: opacity 0.35s ease;
     }
     #splash.splash--hide { opacity: 0; pointer-events: none; }
+    /* No rounding and no shadow: Icon-192's own background is flat #C35063,
+       identical to the splash behind it, so what shows is the white mark
+       sitting directly on the rose — matching the OS launch screens and the
+       Dart SplashScreen that replaces this one. Rounding it would draw a
+       visible tile edge around a square that is otherwise invisible. */
+    /* 140px so the mark inside it lands at 0.60*140 = 84px wide — the same
+       on-screen size as the Dart SplashScreen that replaces this element.
+       The two draw different files: Icon-192 carries the mark at 60% of its
+       own width, logo.png at 86%, so equal box sizes would NOT give equal
+       marks and the handover would visibly jump. */
     #splash img {
-      width: 88px;
-      height: 88px;
-      border-radius: 20px;
-      box-shadow: 0 10px 30px rgba(11, 114, 133, 0.18);
+      width: 140px;
+      height: 140px;
     }
     #splash .splash__spinner {
       width: 34px;
       height: 34px;
-      border: 3px solid rgba(11, 114, 133, 0.18);
-      border-top-color: #0B7285;
+      border: 3px solid rgba(255, 255, 255, 0.28);
+      border-top-color: #FFFFFF;
       border-radius: 50%;
       animation: splash-spin 0.8s linear infinite;
     }
@@ -256,15 +299,11 @@
       font-size: 15px;
       letter-spacing: 0.12em;
       text-transform: uppercase;
-      color: #5B6B70;
+      color: rgba(255, 255, 255, 0.92);
     }
     @keyframes splash-spin { to { transform: rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) {
       #splash .splash__spinner { animation: none; }
-    }
-    @media (prefers-color-scheme: dark) {
-      #splash { background: #0E1F23; }
-      #splash .splash__word { color: #9FB0B4; }
     }
   </style>
 
@@ -286,7 +325,7 @@
 </head>
 <body>
   <div id="splash">
-    <img src="icons/Icon-192.png" alt="Musaafir" width="88" height="88">
+    <img src="icons/Icon-192.png" alt="Musaafir" width="140" height="140">
     <div class="splash__spinner"></div>
     <div class="splash__word">Musaafir</div>
   </div>

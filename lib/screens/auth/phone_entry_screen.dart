@@ -4,6 +4,7 @@ import '../../core/utils/responsive.dart';
 import '../../state/otp_state.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/phone_input_field.dart';
+import '../../widgets/brand_logo.dart';
 
 /// Screen for entering phone number for OTP-based registration
 class PhoneEntryScreen extends StatefulWidget {
@@ -57,11 +58,9 @@ class _PhoneEntryScreenState extends State<PhoneEntryScreen> {
                 children: [
                   const SizedBox(height: 48),
                   // Logo/Brand
-                  Icon(
-                    Icons.home_work_rounded,
-                    size: 80,
-                    color: theme.colorScheme.primary,
-                  ),
+                  // Untinted — see BrandLogo: the artwork carries the brand
+                  // colour and the surface behind it is light.
+                  const Center(child: BrandLogo(size: 80)),
                   const SizedBox(height: 16),
                   Text(
                     'Musaafir',

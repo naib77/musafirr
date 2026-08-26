@@ -914,8 +914,7 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
             ),
             child: Row(
               children: [
-                const Icon(Icons.payments_outlined,
-                    size: 16, color: AppColors.brand),
+                Icon(Icons.payments_outlined, size: 16, color: AppColors.brand),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(

@@ -283,7 +283,7 @@ flutter build apk --release \
   flutter build apk --release \
     --dart-define=MASTER_OTP_ENABLED=true \
     --dart-define=MASTER_OTP=1234 \
-    --dart-define=GOOGLE_MAPS_API_KEY=AIzaSyBw1uyOoZ2tS8-NS_83ov8rE3OusmmDWRM \
+    --dart-define=GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_API_KEY \
     --build-name=1.0.1 \
     --build-number=1 \
   && mv build/app/outputs/flutter-apk/app-release.apk \
@@ -295,13 +295,13 @@ flutter build apk --release \
 flutter build apk --release --split-per-abi \
     --dart-define=MASTER_OTP_ENABLED=true \
     --dart-define=MASTER_OTP=1234 \
-    --dart-define=GOOGLE_MAPS_API_KEY=AIzaSyBw1uyOoZ2tS8-NS_83ov8rE3OusmmDWRM \
+    --dart-define=GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_API_KEY \
     --build-name=1.0.1 --build-number=1
 
 
 flutter clean && flutter pub get && \
 flutter build apk --release \
-  --dart-define=GOOGLE_MAPS_API_KEY=AIzaSyBw1uyOoZ2tS8-NS_83ov8rE3OusmmDWRM \
+  --dart-define=GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_API_KEY \
   --build-name=0.0.1 --build-number=1 && \
 mv build/app/outputs/flutter-apk/app-release.apk \
    build/app/outputs/flutter-apk/musaafir-beta-v0.0.1.apk
@@ -313,7 +313,7 @@ mv build/app/outputs/flutter-apk/app-release.apk \
 # No GenNet token needed here: OTP SMS goes through the `send-otp` Edge
 # Function, which holds the token server-side (see "SMS provider" below).
 flutter build apk --release --split-per-abi \
-    --dart-define=GOOGLE_MAPS_API_KEY=AIzaSyBw1uyOoZ2tS8-NS_83ov8rE3OusmmDWRM \
+    --dart-define=GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_API_KEY \
     --build-name=1.0.1 --build-number=1
 ```
 
@@ -534,7 +534,7 @@ flutter pub get
 # 2. Build one APK per CPU architecture (smaller downloads)
 #    Bump --build-name / --build-number for each release.
 flutter build apk --release --split-per-abi \
-    --dart-define=GOOGLE_MAPS_API_KEY=AIzaSyBw1uyOoZ2tS8-NS_83ov8rE3OusmmDWRM \
+    --dart-define=GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_API_KEY \
     --build-name=1.0.6 --build-number=6
 
 # 3. Grab the arm64 APK (works on ~all modern phones) and rename it
@@ -641,7 +641,7 @@ steps 6–9 for every release.
    cd /Users/naib/workspaces/personal/projects/musafirr
    flutter pub get
    flutter build appbundle --release \
-       --dart-define=GOOGLE_MAPS_API_KEY=AIzaSyBw1uyOoZ2tS8-NS_83ov8rE3OusmmDWRM
+       --dart-define=GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_API_KEY
    ```
    Output: `build/app/outputs/bundle/release/app-release.aab`
 

@@ -106,8 +106,14 @@ class FirebasePushNotificationService implements PushNotificationService {
   }
 
   Future<void> _initializeLocalNotifications() async {
+    // ic_notification, not ic_launcher: Android builds a notification's small
+    // icon from the alpha channel alone, so a launcher icon with an opaque
+    // background renders as a featureless white blob. See
+    // tool/gen_brand_assets.py, which draws this one as the mark on
+    // transparency, and the matching meta-data in AndroidManifest.xml for the
+    // messages FCM renders while the app is not running.
     const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+        AndroidInitializationSettings('@drawable/ic_notification');
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: false,
       requestBadgePermission: false,
@@ -183,7 +189,8 @@ class FirebasePushNotificationService implements PushNotificationService {
       channelDescription: _channel.description,
       importance: Importance.high,
       priority: Priority.high,
-      icon: '@mipmap/ic_launcher',
+      // Same reason as the init setting above: alpha-only rendering.
+      icon: '@drawable/ic_notification',
     );
 
     const iosDetails = DarwinNotificationDetails(

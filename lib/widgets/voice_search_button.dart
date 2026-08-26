@@ -36,7 +36,7 @@ class VoiceSearchMicButton extends StatelessWidget {
             onTap: onTap,
             // 40x44 fills the pill's height, which is the axis a thumb
             // actually misses on.
-            child: const SizedBox(
+            child: SizedBox(
               width: 40,
               height: 44,
               child: Icon(

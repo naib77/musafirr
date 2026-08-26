@@ -519,7 +519,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.info_outline_rounded,
+                                Icon(Icons.info_outline_rounded,
                                     size: 18, color: AppColors.amber),
                                 const SizedBox(width: 8),
                                 Expanded(

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12 replaced the windowBackground splash with the SplashScreen
+         API, which ignores @drawable/launch_background. Without this file the
+         cold start on any modern device falls back to the system default — the
+         launcher icon on the app's default window background — rather than the
+         brand colour the pre-12 path uses.
+
+         windowSplashScreenAnimatedIcon is the FOREGROUND layer, not
+         @mipmap/ic_launcher: the system already paints
+         windowSplashScreenBackground behind it, so handing it the full adaptive
+         icon would draw that icon's own background on top of the colour. The
+         system masks this to a circle and reliably shows only its centre
+         two-thirds — the same safe zone the adaptive foreground is authored
+         for, which is what makes it the right source. -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowSplashScreenBackground">@color/brand_launch_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">?android:colorBackground</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+</resources>

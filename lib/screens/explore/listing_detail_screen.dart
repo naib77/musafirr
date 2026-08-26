@@ -818,7 +818,7 @@ class _RatingPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.star_rounded, size: 16, color: AppColors.amber),
+          Icon(Icons.star_rounded, size: 16, color: AppColors.amber),
           const SizedBox(width: 4),
           Text(
             listing.rating!.toStringAsFixed(2),
@@ -1027,7 +1027,7 @@ class _HostInfoCard extends StatelessWidget {
       children: [
         Container(
           padding: const EdgeInsets.all(1.5),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: AppColors.brandGradient,
           ),
@@ -1064,7 +1064,7 @@ class _HostInfoCard extends StatelessWidget {
               if (listing.isSuperhost)
                 Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.workspace_premium,
                       size: 13,
                       color: AppColors.amber,
@@ -1879,8 +1879,7 @@ class _BookingSheetState extends State<_BookingSheet> {
     if (_coupon?.valid ?? false) {
       return Row(
         children: [
-          const Icon(Icons.local_offer_rounded,
-              size: 18, color: AppColors.success),
+          Icon(Icons.local_offer_rounded, size: 18, color: AppColors.success),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -2473,7 +2472,7 @@ class _BookingSheetState extends State<_BookingSheet> {
 
                       // User conflict warning (you already have a booking)
                       if (_hasUserConflict) ...[
-                        const _StatusBanner(
+                        _StatusBanner(
                           icon: Icons.person_off_rounded,
                           color: AppColors.warning,
                           title: 'You have another booking',
@@ -2493,7 +2492,7 @@ class _BookingSheetState extends State<_BookingSheet> {
                                 ),
                                 child: Row(
                                   children: [
-                                    const Icon(
+                                    Icon(
                                       Icons.event_busy_rounded,
                                       size: 16,
                                       color: AppColors.warning,
@@ -2564,7 +2563,7 @@ class _BookingSheetState extends State<_BookingSheet> {
                       if (_isSelectionComplete &&
                           !_hasConflict &&
                           !_isCheckingAvailability) ...[
-                        const _StatusBanner(
+                        _StatusBanner(
                           icon: Icons.check_circle_rounded,
                           color: AppColors.success,
                           title: 'This time slot is available',
