@@ -261,7 +261,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen>
                     border: Border.all(color: Colors.white24, width: 4),
                   ),
                   child: _capturing
-                      ? const Padding(
+                      ? Padding(
                           padding: EdgeInsets.all(22),
                           child: CircularProgressIndicator(
                             strokeWidth: 2,

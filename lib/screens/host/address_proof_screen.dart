@@ -341,7 +341,7 @@ class _AddressProofScreenState extends State<AddressProofScreen> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Icon(Icons.check_circle,
+                      Icon(Icons.check_circle,
                           size: 15, color: AppColors.success),
                       const SizedBox(width: 5),
                       Expanded(

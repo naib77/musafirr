@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- Required for map tiles, Directions API and network images in release
          builds. Flutter only auto-adds INTERNET to the debug/profile manifests,
          so without this a release APK/AAB has no network access. -->
@@ -11,11 +12,33 @@
     <!-- Camera for photos -->
     <uses-permission android:name="android.permission.CAMERA" />
 
-    <!-- Storage for gallery access (Android 12 and below) -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- Removing READ_MEDIA_IMAGES below is not enough on its own.
+         camera_android_camerax requests WRITE_EXTERNAL_STORAGE, and the manifest
+         merger then IMPLIES READ_EXTERNAL_STORAGE from it — with no
+         maxSdkVersion, so it would apply on every API level and hand the app
+         broad read access to the user's storage that no code here ever asked
+         for. `tools:node="remove"` is the only way to refuse an implied
+         permission.
 
-    <!-- Media access (Android 13+) -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+         Verify after any plugin bump, because a new dependency can re-imply it
+         and nothing in the build will complain:
+             aapt2 dump permissions build/app/outputs/flutter-apk/app-release.apk
+
+         WRITE_EXTERNAL_STORAGE itself is left alone: the merger caps it at
+         maxSdkVersion=28 and camerax may still need it on API 24-28. It is the
+         uncapped READ that is the Play policy problem. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        tools:node="remove" />
+
+    <!-- NO gallery/storage permission, deliberately.
+         Picking images goes through the Android Photo Picker
+         (ImagePickerAndroid.useAndroidPhotoPicker, set in lib/main.dart), which
+         hands back a per-URI grant and needs no permission at all. Re-adding
+         READ_MEDIA_IMAGES here would put the app back under Play's Photo and
+         Video Permissions policy — a declaration form Google only grants where
+         broad library access is core to the app, which picking a few listing
+         photos is not. image_picker's own manifest declares no storage
+         permission either, so this file is the only thing that could grant one. -->
 
     <!-- Voice search. The recogniser itself is Google's, on-device or via
          Play services — free, keyless, and unmetered. -->
@@ -29,7 +52,8 @@
     <application
         android:label="Musaafir"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round">
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="${GOOGLE_MAPS_API_KEY}" />
@@ -66,10 +90,16 @@
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="musafir_notifications" />
 
-        <!-- FCM default notification icon -->
+        <!-- FCM default notification icon.
+             @drawable/ic_notification, NOT @mipmap/ic_launcher. Android draws a
+             notification's small icon from its alpha channel alone, discarding
+             colour and painting the silhouette in the system tint. ic_launcher
+             is a rounded square that is 96% opaque, so using it renders a solid
+             white blob with the mark invisible. ic_notification is the mark on
+             transparency, which is what that pipeline needs. -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@mipmap/ic_launcher" />
+            android:resource="@drawable/ic_notification" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

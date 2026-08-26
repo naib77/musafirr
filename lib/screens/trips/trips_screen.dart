@@ -690,14 +690,13 @@ class _TripsScreenState extends State<TripsScreen> {
                       )),
             ),
             ListTile(
-              leading: const Icon(Icons.lock_outline, color: AppColors.brand),
+              leading: Icon(Icons.lock_outline, color: AppColors.brand),
               title: const Text('Pay online'),
               subtitle: Text('Card, bKash, or bank — pay $amount now'),
               onTap: () => Navigator.pop(ctx, _PayMethod.online),
             ),
             ListTile(
-              leading:
-                  const Icon(Icons.payments_outlined, color: AppColors.brand),
+              leading: Icon(Icons.payments_outlined, color: AppColors.brand),
               title: const Text('Hand cash'),
               subtitle:
                   const Text('Pay the host directly; they confirm receipt'),
@@ -994,7 +993,7 @@ class _EnhancedBookingCard extends StatelessWidget {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          const Icon(Icons.payments_outlined,
+                          Icon(Icons.payments_outlined,
                               size: 15, color: AppColors.brand),
                           const SizedBox(width: 6),
                           Expanded(
@@ -1259,7 +1258,7 @@ class _PaidBadge extends StatelessWidget {
         color: AppColors.success.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.check_circle, size: 12, color: AppColors.success),

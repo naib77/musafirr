@@ -318,7 +318,7 @@ class _VoiceListeningSheetState extends State<VoiceListeningSheet>
   Widget _header() {
     return Row(
       children: [
-        const Expanded(
+        Expanded(
           child: Text(
             'Voice search',
             style: TextStyle(
@@ -370,7 +370,7 @@ class _VoiceListeningSheetState extends State<VoiceListeningSheet>
         const SizedBox(height: 18),
         _languageToggle(),
         const SizedBox(height: 14),
-        const Text(
+        Text(
           'Searches on its own when you stop speaking',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 12, color: AppColors.inkMuted),
@@ -414,7 +414,7 @@ class _VoiceListeningSheetState extends State<VoiceListeningSheet>
       children: [
         _TranscriptBox(text: query.transcript, caption: null),
         const SizedBox(height: 18),
-        const Align(
+        Align(
           alignment: Alignment.centerLeft,
           child: Text(
             'SEARCHING FOR',
@@ -435,7 +435,7 @@ class _VoiceListeningSheetState extends State<VoiceListeningSheet>
         const SizedBox(height: 22),
         // No button: the search is already on its way. This says so rather
         // than leaving a still frame that looks like it is waiting for a tap.
-        const Row(
+        Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             SizedBox(
@@ -474,11 +474,11 @@ class _VoiceListeningSheetState extends State<VoiceListeningSheet>
             width: 56,
             height: 56,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: AppColors.surfaceMuted,
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.mic_off_rounded,
+            child: Icon(Icons.mic_off_rounded,
                 color: AppColors.inkMuted, size: 26),
           ),
         ),
@@ -486,7 +486,7 @@ class _VoiceListeningSheetState extends State<VoiceListeningSheet>
         Text(
           _failureMessage,
           textAlign: TextAlign.center,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 14,
             height: 1.45,
             color: AppColors.inkMuted,
@@ -584,7 +584,7 @@ class _MicOrb extends StatelessWidget {
           child: Container(
             width: 62,
             height: 62,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: AppColors.brandGradient,
             ),
@@ -640,7 +640,7 @@ class _ExampleHints extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        const Text(
+        Text(
           'Try saying',
           style: TextStyle(
             fontSize: 11,
@@ -665,7 +665,7 @@ class _ExampleHints extends StatelessWidget {
                 ),
                 child: Text(
                   e,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     color: AppColors.inkMuted,
                   ),
@@ -694,7 +694,7 @@ class _SlotChip extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 13,
           fontWeight: FontWeight.w600,
           color: AppColors.brandDark,

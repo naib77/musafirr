@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'core/theme/app_palette.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/theme_controller.dart';
 import 'models/notification.dart';
 import 'repositories/supabase_musafir_repository.dart';
 import 'screens/auth/otp_verification_screen.dart';
@@ -271,6 +273,23 @@ class _MusafirAppState extends State<MusafirApp> {
 
   @override
   Widget build(BuildContext context) {
+    // Which palette the app wears is an admin setting, not a compile-time fact,
+    // and it can land mid-session: boot paints the locally cached theme and the
+    // background app_settings load confirms or corrects it a moment later. So
+    // MaterialApp is rebuilt from the controller rather than given a fixed theme.
+    //
+    // The whole subtree rebuilds with it, which matters beyond ThemeData: most
+    // screens read `AppColors.brand` and friends directly rather than going
+    // through Theme.of(context), and those getters answer from the active
+    // palette. ThemeController updates AppColors before notifying, so a rebuild
+    // triggered here always sees consistent values.
+    return ValueListenableBuilder<AppPalette>(
+      valueListenable: ThemeController.instance,
+      builder: (context, palette, _) => _buildApp(AppTheme.forPalette(palette)),
+    );
+  }
+
+  Widget _buildApp(ThemeData theme) {
     return MaterialApp(
       title: 'Musaafir',
       navigatorKey: _navigatorKey,
@@ -279,9 +298,18 @@ class _MusafirAppState extends State<MusafirApp> {
       // The design system is light-only; pinning themeMode (plus
       // forceDarkAllowed=false in the Android styles) stops OEM "force dark"
       // from auto-inverting the UI into an unreadable mix.
-      theme: AppTheme.light,
-      darkTheme: AppTheme.light,
+      theme: theme,
+      darkTheme: theme,
       themeMode: ThemeMode.light,
+      // No crossfade on a theme swap. MaterialApp lerps theme changes over
+      // 200ms by default, and during that lerp Theme.of(context) is still
+      // part-way to the new palette while the AppColors getters — which most
+      // screens read directly — have already snapped. That renders frames with
+      // two different brand colours on them. A palette arriving from
+      // app_settings is a correction, not a gesture the user made, so it has
+      // nothing to animate; swapping instantly keeps every frame internally
+      // consistent. Guarded by theme_controller_test's live-swap test.
+      themeAnimationDuration: Duration.zero,
       home: ListenableBuilder(
         listenable: authState,
         builder: (context, _) {

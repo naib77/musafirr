@@ -16,6 +16,7 @@ import '../state/notification_state.dart';
 import '../state/search_state.dart';
 import '../state/shell_nav_state.dart';
 import '../widgets/app_page_header.dart';
+import '../widgets/brand_logo.dart';
 import '../widgets/modern_banner.dart';
 import '../widgets/notification_bell.dart';
 import '../widgets/review_prompt_handler.dart';
@@ -316,7 +317,7 @@ class _MainShellState extends State<MainShell> {
   /// system fonts.
   Widget _navBarShell(Widget bar) {
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border(
           top: BorderSide(color: AppColors.outline, width: 0.5),
@@ -337,7 +338,7 @@ class _MainShellState extends State<MainShell> {
   /// the vertical counterpart of [_navBarShell].
   Widget _navRailShell(Widget rail) {
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border(
           right: BorderSide(color: AppColors.outline, width: 0.5),
@@ -358,8 +359,9 @@ class _MainShellState extends State<MainShell> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.travel_explore_rounded,
-              color: AppColors.brand, size: 26),
+          // Untinted: on the white rail the brand rose is the point. Tinting to
+          // AppColors.brand would recolour the logo per theme.
+          const BrandLogo(size: 26),
           const SizedBox(width: 8),
           Text(
             'Musaafir',
@@ -379,13 +381,13 @@ class _MainShellState extends State<MainShell> {
   NavigationRailThemeData get _railTheme => NavigationRailThemeData(
         backgroundColor: AppColors.surface,
         indicatorColor: AppColors.brand.withValues(alpha: 0.12),
-        selectedIconTheme: const IconThemeData(color: AppColors.brand),
-        unselectedIconTheme: const IconThemeData(color: AppColors.inkMuted),
-        selectedLabelTextStyle: const TextStyle(
+        selectedIconTheme: IconThemeData(color: AppColors.brand),
+        unselectedIconTheme: IconThemeData(color: AppColors.inkMuted),
+        selectedLabelTextStyle: TextStyle(
           color: AppColors.brand,
           fontWeight: FontWeight.w600,
         ),
-        unselectedLabelTextStyle: const TextStyle(color: AppColors.inkMuted),
+        unselectedLabelTextStyle: TextStyle(color: AppColors.inkMuted),
       );
 
   Widget _buildGuestNavigationRail() {

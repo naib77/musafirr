@@ -1,70 +1,90 @@
 import 'package:flutter/material.dart';
 
+import 'app_palette.dart';
+import 'app_palettes.dart';
+
 /// Centralized color tokens for the Musaafir design system.
 ///
-/// Brand stays teal; accents lean colorful and modern (multi-accent system).
-/// Light theme only for now — values are grouped so a dark variant can be
-/// layered on later without touching call sites.
+/// These used to be `static const` values. They are now **getters over the
+/// active [AppPalette]**, because which colours the app wears is chosen by an
+/// admin (the `active_theme` row in `app_settings`) rather than fixed at compile
+/// time. Call sites did not have to change: `AppColors.brand` still reads as a
+/// plain colour token, it just answers with the current theme's blue or teal.
+///
+/// The cost of that is `const`: a getter cannot appear in a const expression, so
+/// the handful of `const BoxDecoration(color: AppColors.brand)` sites had to drop
+/// the keyword. That is the whole reason this file is getters rather than a
+/// `ThemeExtension` the call sites read through `Theme.of(context)` — the
+/// extension is the more orthodox Flutter answer, but it would have meant
+/// rewriting 298 references across 27 files and threading a BuildContext into
+/// places that currently need none.
+///
+/// Light theme only, as before.
+///
+/// ## Mutating this
+///
+/// [usePalette] is the only writer, and [ThemeController] is the only thing that
+/// should call it: the palette and the [ThemeData] built from it have to change
+/// together, or screens reading these getters would disagree with the widgets
+/// reading `Theme.of(context)`.
 class AppColors {
   AppColors._();
 
+  static AppPalette _palette = AppPalettes.fallback;
+
+  /// The palette currently in force.
+  static AppPalette get palette => _palette;
+
+  /// Swap the active palette. Callers are responsible for rebuilding the widget
+  /// tree afterwards — this changes what the getters answer, nothing more.
+  static void usePalette(AppPalette palette) => _palette = palette;
+
   // ---- Brand ----
-  static const Color brand = Color(0xFF0B7285); // teal
-  static const Color brandDark = Color(0xFF075460);
-  static const Color brandLight = Color(0xFF0E9AA7);
+  static Color get brand => _palette.brand;
+  static Color get brandDark => _palette.brandDark;
+  static Color get brandLight => _palette.brandLight;
+
+  // ---- Accent / call-to-action ----
+  static Color get accent => _palette.accent;
+  static Color get cta => _palette.cta;
+  static Color get onCta => _palette.onCta;
 
   // ---- Accents (multi-accent system) ----
-  static const Color coral = Color(0xFFFF6B6B);
-  static const Color amber = Color(0xFFF59E0B);
-  static const Color violet = Color(0xFF7C3AED);
-  static const Color blue = Color(0xFF2563EB);
-  static const Color green = Color(0xFF10B981);
-  static const Color pink = Color(0xFFEC4899);
-  static const Color indigo = Color(0xFF4F46E5);
+  static Color get coral => _palette.coral;
+  static Color get amber => _palette.amber;
+  static Color get violet => _palette.violet;
+  static Color get blue => _palette.blue;
+  static Color get green => _palette.green;
+  static Color get pink => _palette.pink;
+  static Color get indigo => _palette.indigo;
 
   // ---- Semantic ----
-  static const Color success = Color(0xFF059669);
-  static const Color warning = Color(0xFFD97706);
-  static const Color error = Color(0xFFDC2626);
-  static const Color info = Color(0xFF2563EB);
+  static Color get success => _palette.success;
+  static Color get warning => _palette.warning;
+  static Color get error => _palette.error;
+  static Color get info => _palette.info;
 
   // ---- Surfaces ----
-  static const Color scaffold = Color(0xFFF6F8F7);
-  static const Color surface = Colors.white;
-  static const Color surfaceMuted = Color(0xFFEDF1F1);
+  static Color get scaffold => _palette.scaffold;
+  static Color get surface => _palette.surface;
+  static Color get surfaceMuted => _palette.surfaceMuted;
 
   // ---- Neutrals / text ----
-  static const Color ink = Color(0xFF0E1F23); // near-black with a teal tint
-  static const Color inkMuted = Color(0xFF5B6B70);
-  static const Color outline = Color(0xFFE2E8E9);
+  static Color get ink => _palette.ink;
+  static Color get inkMuted => _palette.inkMuted;
+  static Color get outline => _palette.outline;
 
   // ---- Gradients ----
-  static const LinearGradient brandGradient = LinearGradient(
-    colors: [brand, brandLight],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
-  static const LinearGradient sunsetGradient = LinearGradient(
-    colors: [coral, amber],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
+  static LinearGradient get brandGradient => _palette.brandGradient;
+  static LinearGradient get sunsetGradient => _palette.sunsetGradient;
 
   // ---- Category accents (listing type) ----
-  static const Color seat = blue;
-  static const Color room = violet;
-  static const Color fullHouse = brand;
+  static Color get seat => _palette.seat;
+  static Color get room => _palette.room;
+  static Color get fullHouse => _palette.fullHouse;
 
   /// A vivid, stable accent for an arbitrary index (list items, chips, badges).
-  static const List<Color> accentCycle = [
-    coral,
-    amber,
-    violet,
-    blue,
-    green,
-    pink,
-    indigo,
-  ];
+  static List<Color> get accentCycle => _palette.accentCycle;
 
-  static Color accentForIndex(int i) => accentCycle[i % accentCycle.length];
+  static Color accentForIndex(int i) => _palette.accentForIndex(i);
 }

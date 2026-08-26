@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../config/legal_links.dart';
+import '../../models/support_links.dart';
 import '../../repositories/musafir_repository.dart';
+import '../../services/app_settings_service.dart';
 import '../../services/image_upload_service.dart';
 import '../../state/auth_state.dart';
 import '../../state/notification_state.dart';
@@ -11,6 +12,7 @@ import '../../widgets/modern_banner.dart';
 import '../host/become_host_screen.dart';
 import '../host/create_listing_screen.dart';
 import '../host/host_dashboard_screen.dart';
+import '../host/scheduled_messages_screen.dart';
 import '../notifications/notification_settings_screen.dart';
 import '../safety/safety_screen.dart';
 import '../verification/identity_verification_screen.dart';
@@ -68,11 +70,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? _verificationStatus;
   String? _loadedForUserId;
 
+  /// Help / terms / privacy destinations, admin-configurable. Starts at the
+  /// compiled-in defaults so the Support rows are never dead while the settings
+  /// request is in flight — the same fail-open rule AppSettingsService applies.
+  SupportLinks _supportLinks = SupportLinks.defaults;
+
   @override
   void initState() {
     super.initState();
     authState.addListener(_onAuthChanged);
     _loadVerificationStatus();
+    _loadSupportLinks();
+  }
+
+  Future<void> _loadSupportLinks() async {
+    // ensure-, not the plain getter: startup kicks load() off unawaited, and a
+    // user who goes straight to Profile can arrive before it has landed.
+    final links = await AppSettingsService.instance.ensureSupportLinks();
+    if (!mounted) return;
+    setState(() => _supportLinks = links);
   }
 
   @override
@@ -320,6 +336,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       title: 'Create New Listing',
                       onTap: () => _navigateToCreateListing(context),
                     ),
+                    // Also reachable from the host dashboard. Duplicated on
+                    // purpose: this is where the language of every automated
+                    // guest message is chosen (English / বাংলা), and hosts
+                    // looked for it under their profile settings rather than
+                    // inside the dashboard's action cards. It was dropped from
+                    // here when this screen was split into host and guest
+                    // contexts, and its absence read as the feature being gone.
+                    _SettingsItem(
+                      icon: Icons.schedule_send_outlined,
+                      title: 'Scheduled messages',
+                      subtitle: 'Automatic guest messages, English or বাংলা',
+                      onTap: () => _navigateToScheduledMessages(context),
+                    ),
                   ],
                 ],
               ),
@@ -332,19 +361,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _SettingsItem(
                     icon: Icons.help_outline,
                     title: 'Get help',
-                    onTap: () => _openExternalLink(context, LegalLinks.helpUrl),
+                    onTap: () =>
+                        _openExternalLink(context, _supportLinks.helpUrl),
                   ),
                   _SettingsItem(
                     icon: Icons.article_outlined,
                     title: 'Terms of service',
                     onTap: () =>
-                        _openExternalLink(context, LegalLinks.termsUrl),
+                        _openExternalLink(context, _supportLinks.termsUrl),
                   ),
                   _SettingsItem(
                     icon: Icons.privacy_tip_outlined,
                     title: 'Privacy policy',
                     onTap: () =>
-                        _openExternalLink(context, LegalLinks.privacyUrl),
+                        _openExternalLink(context, _supportLinks.privacyUrl),
                   ),
                 ],
               ),
@@ -483,6 +513,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
             authState: authState,
           ),
         ),
+      ),
+    );
+  }
+
+  void _navigateToScheduledMessages(BuildContext context) {
+    // Guarded the same way the host dashboard guards it: hostId comes from the
+    // signed-in user, and the templates screen has no meaning without one.
+    final hostId = authState.currentUser?.id;
+    if (hostId == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ScheduledMessagesScreen(hostId: hostId),
       ),
     );
   }

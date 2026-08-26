@@ -255,7 +255,7 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
               Expanded(
                 child: Text(
                   widget.message,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppColors.ink,
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
@@ -279,7 +279,7 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
                 IconButton(
                   onPressed: _dismiss,
                   visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.close_rounded,
+                  icon: Icon(Icons.close_rounded,
                       size: 18, color: AppColors.inkMuted),
                 ),
             ],

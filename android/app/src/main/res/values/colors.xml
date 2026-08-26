@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand rose #C35063, measured from the supplied logo artwork and matching
+         the adaptive launcher icon's background. Referenced by
+         launch_background.xml and values-v31/styles.xml so the cold-start window
+         matches the launcher icon the user just tapped.
+
+         Deliberately a single source of truth for both: they are two different
+         Android mechanisms drawing what the user reads as one screen, and they
+         drifting apart is the bug this file prevents. -->
+    <color name="brand_launch_background">#C35063</color>
+</resources>

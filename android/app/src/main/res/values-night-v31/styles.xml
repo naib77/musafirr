@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark mode on Android 12+. This directory exists because of a resource
+         qualifier precedence trap, not because the splash should look different
+         at night — it should not, and does not.
+
+         Android's qualifier precedence table ranks NIGHT MODE above PLATFORM
+         VERSION. So on an API 31+ device with dark mode on, both values-night
+         and values-v31 match, and values-night wins. That directory is the
+         untouched Flutter template: it sets android:windowBackground, which the
+         Android 12+ SplashScreen API ignores, and it does NOT set
+         windowSplashScreenBackground. The result was that every dark-mode
+         device on Android 12 or newer — most of them — skipped the branded
+         splash entirely and fell back to the theme's colorBackground, while
+         light mode got the rose one.
+
+         So this file duplicates values-v31 exactly. If you change that file,
+         change this one with it; there is no inheritance between qualified
+         resource directories. See values-v31/styles.xml for why the animated
+         icon is the foreground layer rather than @mipmap/ic_launcher. -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowSplashScreenBackground">@color/brand_launch_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">?android:colorBackground</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+</resources>
