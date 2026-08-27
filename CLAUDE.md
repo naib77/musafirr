@@ -168,6 +168,13 @@ Two footguns after any regeneration: `flutter_launcher_icons` strips the
 trailing newline from `web/manifest.json`, and `landing/favicon.png` +
 `landing/Icon-192.png` are separate copies that it does not touch.
 
+**The favicon needs a URL change, not a cache header.** Browsers keep favicons
+in a private store that ignores `Cache-Control`, so a correct deploy still
+leaves the old icon in the tab. `tool/build_web.sh` therefore appends
+`?v=<content hash>` to every icon URL in `index.html`; `assets/brand/README.md`
+explains it, along with why `web/favicon.ico` has to exist at all (the SPA
+not-found rule made `/favicon.ico` answer 200 with an HTML page).
+
 ## The admin portal is a separate repo
 
 `../musafir-admin` — Next.js App Router, **Base UI** (the `render` prop), *not*

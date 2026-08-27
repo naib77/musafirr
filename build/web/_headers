@@ -48,3 +48,29 @@
 
 /canvaskit/*
   Cache-Control: no-cache, must-revalidate
+
+# Icons and the social card. These matched no rule above and fell through to
+# Cloudflare's default for static assets, which happens to be
+# `public, max-age=0, must-revalidate` — the behaviour we want, but by accident
+# rather than by decision, and not something to leave a brand asset resting on.
+# Stated explicitly so it survives a platform default changing.
+#
+# NOT immutable: the paths are stable across builds while the bytes change, so
+# an immutable cache here strands users on an old icon for a year. Freshness
+# comes from the ?v=<content hash> that tool/build_web.sh appends to every icon
+# URL in index.html — necessary because browsers keep favicons in a private
+# store that Cache-Control does not reach.
+/favicon.png
+  Cache-Control: no-cache, must-revalidate
+
+# The path browsers probe by convention. It has no <link> tag and therefore no
+# ?v= either, so revalidation is the only freshness it gets — which is why it
+# must not be immutable.
+/favicon.ico
+  Cache-Control: no-cache, must-revalidate
+
+/icons/*
+  Cache-Control: no-cache, must-revalidate
+
+/social-card.png
+  Cache-Control: no-cache, must-revalidate
