@@ -209,16 +209,57 @@ false, so a plain `flutter build` never carried a bypass regardless.
 If you re-enable it — the Play reviewer needs a login that does not require
 receiving a Bangladeshi SMS, so you probably will — use an **explicit allowlist,
 never `*`**, and mind the format. `masterOtpAllowlist()` runs each entry through
-`normalizePhone()`, which collapses `+880…`/`880…` to a **leading `0`**. So
-`01673293542` and `+8801673293542` both work; **`1673293542` without the leading
-zero never matches anything** and the bypass silently fails to apply. The stale
-`README.md` command has exactly that bug, which is the likeliest reason it was
-widened to `*` in the first place.
+`normalizePhone()`, which reduces every spelling to the **11-digit leading-`0`**
+form, so `01673293542`, `+8801673293542` and now the bare `1673293542` all match
+the same entry. The bare form used to match nothing, which is the likeliest
+reason the allowlist was widened to `*` in the first place — see the section
+below for the account-duplication bug that same gap caused. The stale
+`README.md` command still shows the pre-fix single-number form.
 
 Login goes through the `send-otp` Supabase edge function rather than the Dart
 `ConsoleSmsGateway`, so driving a login can attempt a real SMS — do not automate
 it against a number you do not own. That is also why the unset above was *not*
 verified by attempting a login.
+
+## One phone number, one account
+
+`normalizePhone` in `supabase/functions/_shared/otp.ts` is not formatting — it
+**decides which account a login lands on.** `verify-otp` turns its output into
+the synthetic auth identity `phone.<canonical>@musaafir.app` and creates one
+account per distinct value, so two spellings of one number that canonicalise
+differently are two different people: separate listings, separate bookings, and
+a separate identity verification to submit and have approved.
+
+It shipped with a hole. `+880…`, `880…` and an already-canonical `01…` were all
+handled, but a **bare 10-digit** number matched no branch and passed through
+unchanged — while `phone_input_field.dart` renders `+880` as a decorative
+`prefixIcon` and submits the raw field text, so the UI actively invites you to
+omit the zero. Four production accounts were duplicated before anyone noticed,
+with users submitting documents twice and their listings split across two
+logins. Migration 109 merged them (**applied 2026-08-27**).
+
+Two things guard it now, and both matter:
+
+- **`lib/services/auth/phone_number.dart` is the only Dart implementation.**
+  There used to be three — `OtpService`, a diverged private copy on
+  `SupabaseAuthService`, and `MockAuthService` — plus the TypeScript one, and
+  **none had a test**. A shared "keep these in step" comment was already false.
+- **`sh tool/verify_phone_parity.sh`** runs the same 16 inputs through the Dart
+  and the TypeScript and diffs them. Run it whenever you touch either side; it
+  is not in CI, which has no node step.
+
+Existing rows are deliberately **not** renamed to the canonical form. The stored
+email is an opaque key that `admin.generateLink` consumes and the client echoes
+back to redeem the token, so a bulk rename would have to land in the same
+instant as the function deploy — every returning user in the gap gets a brand-new
+empty account, and 33 of 38 accounts are the legacy spelling. `verify-otp` reads
+the canonical identity and then the legacy one instead, which is
+order-independent and needs no data change.
+
+For the same reason `otpLookupPhones` makes `verify-otp` accept an `otp_attempts`
+row stored under **either** spelling. `send-otp` writes that row and `verify-otp`
+reads it, but they are separate deploys — without this, the minutes between them
+fail every bare-form login with "No active code".
 
 ## Conventions
 
