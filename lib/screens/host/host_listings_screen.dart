@@ -13,6 +13,7 @@ import '../../widgets/modern_banner.dart';
 import 'address_proof_screen.dart';
 import 'create_listing_screen.dart';
 import 'edit_listing_screen.dart';
+import 'listing_availability_screen.dart';
 import '../../widgets/app_network_image.dart';
 
 class HostListingsScreen extends StatelessWidget {
@@ -61,6 +62,7 @@ class HostListingsScreen extends StatelessWidget {
                   onDelete: () => _confirmDelete(context, listing),
                   onToggleAvailability: () =>
                       _toggleAvailability(context, listing),
+                  onManageDates: () => _manageDates(context, listing),
                   repository: repository,
                 );
               },
@@ -219,6 +221,18 @@ class HostListingsScreen extends StatelessWidget {
     );
   }
 
+  void _manageDates(BuildContext context, Listing listing) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ListingAvailabilityScreen(
+          repository: repository,
+          listing: listing,
+        ),
+      ),
+    );
+  }
+
   Future<void> _toggleAvailability(
       BuildContext context, Listing listing) async {
     final hiding = listing.available;
@@ -269,6 +283,7 @@ class _ListingCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onToggleAvailability,
+    required this.onManageDates,
     required this.repository,
   });
 
@@ -276,6 +291,7 @@ class _ListingCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onToggleAvailability;
+  final VoidCallback onManageDates;
   final MusafirRepository repository;
 
   @override
@@ -411,6 +427,18 @@ class _ListingCard extends StatelessWidget {
                           size: 18,
                         ),
                         label: Text(listing.available ? 'Hide' : 'Show'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Sits next to Hide/Show because the two answer the same
+                    // question at different granularities: Hide takes the
+                    // listing off the market entirely, Dates takes specific
+                    // days off it.
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: onManageDates,
+                        icon: const Icon(Icons.event_busy_outlined, size: 18),
+                        label: const Text('Dates'),
                       ),
                     ),
                     const SizedBox(width: 8),

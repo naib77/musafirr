@@ -80,6 +80,59 @@ the `Supabase CLI` keychain entry.
 Migrations are not automatically applied by any pipeline. Applying one to the
 live database is a real, outward-facing action — say so and confirm first.
 
+## Availability rules belong in the database, not the booking form
+
+Migration 070 moved the *price* server-side because the client was deciding it.
+It left every other booking rule in Dart, and each one turned out to be
+unenforced. Migrations 110–111 close that; the pattern is worth remembering,
+because **"the booking form checks it" is not enforcement** — the form is
+skippable, and the RPC is a public endpoint.
+
+What 111 fixed, and what to check before adding a rule:
+
+- **`host_available` (038) was never enforced at booking time.** That
+  migration's own comment claims it is "enforced at the Reserve step". It was
+  not — it was only ever a search/browse filter, so a guest with the listing
+  already open, deep-linked, or reached from wishlist/trips booked an away host
+  fine. Do not trust that comment; it predates the fix.
+- **Per-plan min/max duration (055) was form-only.** `BookingLimits.minFor`'s
+  `?? 1` and the RPC's `coalesce(v_min, 1)` are now two implementations of one
+  rule. A test in `booking_limits_test.dart` pins the default so they can't
+  drift; if you change one, change both.
+- **`is_booking_available` was `SECURITY INVOKER`.** `bookings` has RLS and no
+  policy admits another guest's row, so the function the client calls
+  "server-authoritative" returned **true for slots that were already taken**.
+  The guest was told the dates were free and only found out at checkout. It is
+  `SECURITY DEFINER` now. Any function that has to see across users needs the
+  same, and the Dart-side comment claiming a plain RPC "sees ALL bookings" was
+  simply wrong.
+
+Two exclusion constraints are the real backstop, not the RPC's `if exists`
+guards — those are check-then-insert and lose races by construction:
+`bookings_no_overlap` (078, per listing) and `bookings_no_tenant_overlap` (111,
+per guest). Both raise `23P01`.
+
+**Never tell the two conflicts apart by their message text.** That is what the
+repository used to do (`contains('already have a booking')`), matching English
+written in a SQL file — rewording a migration silently showed guests the wrong
+message. Both raises now carry a `hint` (`listing_overlap` / `tenant_overlap`)
+and `bookingConflictTypeFrom` reads it, with the constraint name and then the
+legacy prose as ordered fallbacks. It has tests; keep them passing.
+
+Host date blocks live in `listing_availability_blocks` (110). Writes go through
+`block_listing_dates` / `unblock_listing_dates` — the table has **no** INSERT
+policy, deliberately, so the "are these dates already booked?" check can't be
+skipped by writing through PostgREST. The host's `note` is private, which is
+why the SELECT policy is owner-scoped and guests read
+`listing_blocked_ranges()` instead. Every range in the schema is half-open
+`'[)'`: a block ending when a stay begins does not collide.
+
+There is deliberately **no** constraint spanning blocks and bookings — a block
+is not a `bookings` row. A host blocking dates in the same millisecond a guest
+commits can lose; the cost is one booking to decline by hand, and the
+alternative (blocks as `bookings` rows under a sentinel status) would drag them
+through earnings, commission, payouts and the reservations list.
+
 ## Nothing user-tunable belongs in Dart
 
 App-wide knobs live in the `app_settings` table and are edited from the admin
