@@ -39,6 +39,10 @@ class _ListingAvailabilityScreenState extends State<ListingAvailabilityScreen> {
   List<AvailabilityBlock> _blocks = const [];
   bool _loading = true;
   bool _saving = false;
+
+  /// True while the pick-dates → add-note → save flow is open. Deliberately not
+  /// part of setState/`_saving`: it guards re-entry, it isn't drawn.
+  bool _flowOpen = false;
   String? _loadError;
 
   @override
@@ -83,6 +87,20 @@ class _ListingAvailabilityScreenState extends State<ListingAvailabilityScreen> {
   }
 
   Future<void> _addBlock() async {
+    // Re-entrancy guard, not cosmetic. `_saving` is false for the whole time
+    // the picker and the note dialog are open, so the FAB stays live
+    // underneath them — and a second click (trivial on web) opened a second
+    // picker on top of the first, then raced two identical block writes.
+    if (_flowOpen) return;
+    _flowOpen = true;
+    try {
+      await _addBlockFlow();
+    } finally {
+      _flowOpen = false;
+    }
+  }
+
+  Future<void> _addBlockFlow() async {
     final now = DateTime.now();
     final range = await showDateRangePicker(
       context: context,
@@ -129,33 +147,7 @@ class _ListingAvailabilityScreenState extends State<ListingAvailabilityScreen> {
   }
 
   Future<String?> _askForNote() async {
-    final controller = TextEditingController();
-    final note = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Add a note?'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 200,
-          decoration: const InputDecoration(
-            hintText: 'e.g. Family visit',
-            helperText: 'Only you can see this',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Skip'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
+    final note = await showBlockNoteDialog(context);
     final trimmed = note?.trim();
     return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
   }
@@ -279,6 +271,67 @@ class _ListingAvailabilityScreenState extends State<ListingAvailabilityScreen> {
         icon: const Icon(Icons.event_busy),
         label: const Text('Block dates'),
       ),
+    );
+  }
+}
+
+/// Asks for the optional, host-private note on a block. Returns null when the
+/// host skips or dismisses it.
+///
+/// A function plus a StatefulWidget rather than an inline `showDialog`, for one
+/// specific reason: `showDialog`'s future completes the moment `Navigator.pop`
+/// runs, but the route stays mounted for its ~150ms exit animation. Creating
+/// the `TextEditingController` in the caller and disposing it after the await
+/// therefore disposes it while the `TextField` is still reading it — and with
+/// `autofocus` the focus machinery is still attached too, so the failure is not
+/// a clean error but a cascade of framework assertions
+/// (`_dependents.isEmpty`, then spurious "Duplicate GlobalKeys") and a visible
+/// flicker. Owning the controller in the dialog's own State ties its lifetime
+/// to the route, which is the only thing that actually knows when the dialog is
+/// gone.
+Future<String?> showBlockNoteDialog(BuildContext context) =>
+    showDialog<String>(context: context, builder: (_) => const _NoteDialog());
+
+class _NoteDialog extends StatefulWidget {
+  const _NoteDialog();
+
+  @override
+  State<_NoteDialog> createState() => _NoteDialogState();
+}
+
+class _NoteDialogState extends State<_NoteDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add a note?'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLength: 200,
+        onSubmitted: (value) => Navigator.pop(context, value),
+        decoration: const InputDecoration(
+          hintText: 'e.g. Family visit',
+          helperText: 'Only you can see this',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Skip'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }
