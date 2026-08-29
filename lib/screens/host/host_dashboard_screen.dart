@@ -16,6 +16,7 @@ import '../../widgets/modern_banner.dart';
 import '../leaderboard/host_leaderboard_screen.dart';
 import 'create_listing_screen.dart';
 import 'host_listings_screen.dart';
+import 'listing_availability_screen.dart';
 import 'host_reservations_screen.dart';
 import 'scheduled_messages_screen.dart';
 
@@ -252,6 +253,22 @@ class HostDashboardScreen extends StatelessWidget {
                   theme: theme,
                 ),
                 const SizedBox(height: 8),
+                // Blocks are per-listing, so this can only ever be a way in.
+                // It exists anyway because the dashboard is where a host who
+                // thinks "I'm away next week" actually looks — without it the
+                // only route is knowing to open a listing first, which is how
+                // the feature stays invisible.
+                if (hostListings.isNotEmpty)
+                  _ActionCard(
+                    icon: Icons.event_busy,
+                    title: 'Availability',
+                    description: hostListings.length == 1
+                        ? 'Block dates without hiding your listing'
+                        : 'Block dates on any of your listings',
+                    onTap: () => _navigateToAvailability(context, hostListings),
+                    theme: theme,
+                  ),
+                if (hostListings.isNotEmpty) const SizedBox(height: 8),
                 _ActionCard(
                   icon: Icons.schedule_send,
                   title: 'Scheduled messages',
@@ -367,6 +384,28 @@ class HostDashboardScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  void _navigateToAvailability(
+      BuildContext context, List<Listing> hostListings) {
+    // One listing is the common case for this marketplace, and making that host
+    // pick their only property from a list before they can block a date is
+    // friction for nothing. More than one and there is a real choice to make,
+    // so send them to the listing list, where every card has its own Dates
+    // button.
+    if (hostListings.length == 1) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ListingAvailabilityScreen(
+            repository: repository,
+            listing: hostListings.first,
+          ),
+        ),
+      );
+      return;
+    }
+    _navigateToListings(context);
   }
 
   void _navigateToScheduledMessages(BuildContext context) {

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../models/disbursement.dart';
 import '../../models/payment_record.dart';
+import '../../models/payout_method.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
+import 'payout_methods_screen.dart';
 
 /// Payments & payouts.
 ///
@@ -11,6 +14,11 @@ import '../../state/auth_state.dart';
 /// - Hosts additionally see a **payouts** summary — money earned (paid bookings)
 ///   and money still pending — reusing the same realized/pending definition as
 ///   the Earnings tab ([Booking.isEarnedRevenue] / [Booking.isPendingPayout]).
+/// - Everyone sees **where their money goes** (their default payout method) and
+///   **what has actually been sent** (the `disbursements` ledger, migration
+///   100). Before that ledger existed this screen promised payouts were
+///   "settled to your registered account" — an account the system had no
+///   record of, and a settlement nothing tracked. Both halves are real now.
 class PaymentsPayoutsScreen extends StatefulWidget {
   const PaymentsPayoutsScreen({
     super.key,
@@ -27,14 +35,41 @@ class PaymentsPayoutsScreen extends StatefulWidget {
 
 class _PaymentsPayoutsScreenState extends State<PaymentsPayoutsScreen> {
   late Future<List<PaymentRecord>> _paymentsFuture;
+  late Future<List<Disbursement>> _disbursementsFuture;
+  late Future<List<PayoutMethod>> _methodsFuture;
 
   @override
   void initState() {
     super.initState();
+    _loadAll();
+  }
+
+  void _loadAll() {
     final userId = widget.authState.currentUser?.id;
-    _paymentsFuture = userId == null
-        ? Future.value(const [])
-        : widget.repository.fetchUserPayments(userId);
+    if (userId == null) {
+      _paymentsFuture = Future.value(const []);
+      _disbursementsFuture = Future.value(const []);
+      _methodsFuture = Future.value(const []);
+      return;
+    }
+    _paymentsFuture = widget.repository.fetchUserPayments(userId);
+    _disbursementsFuture = widget.repository.fetchDisbursements(userId);
+    _methodsFuture = widget.repository.fetchPayoutMethods(userId);
+  }
+
+  /// Re-reads the payout method after the user has been to manage them —
+  /// otherwise the card still advertises an account they just removed.
+  Future<void> _openPayoutMethods() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PayoutMethodsScreen(
+          repository: widget.repository,
+          authState: widget.authState,
+        ),
+      ),
+    );
+    if (mounted) setState(_loadAll);
   }
 
   String _money(num amount, [String currency = 'BDT']) {
@@ -84,6 +119,10 @@ class _PaymentsPayoutsScreenState extends State<PaymentsPayoutsScreen> {
             _buildPayoutSummary(theme, user!.id),
             const SizedBox(height: 24),
           ],
+          _buildPayoutMethodCard(theme),
+          const SizedBox(height: 24),
+          _buildDisbursements(theme),
+          const SizedBox(height: 24),
           Text('Your payments', style: theme.textTheme.titleMedium),
           const SizedBox(height: 4),
           Text(
@@ -156,13 +195,164 @@ class _PaymentsPayoutsScreenState extends State<PaymentsPayoutsScreen> {
           ),
           const SizedBox(height: 12),
           Text(
-            'Earned reflects money collected from paid bookings. Payouts for '
-            'completed stays are settled to your registered account; contact '
-            'support for payout questions.',
+            'Earned reflects money collected from paid bookings. What has '
+            'actually reached you is listed under Payouts received below.',
             style: theme.textTheme.bodySmall
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Where the user's money goes. Deliberately shown to guests as well as
+  /// hosts: a guest only discovers they need this at the worst possible
+  /// moment — when a refund is owed — and asking for bank details mid-dispute
+  /// is both slower and more suspicious-looking than having them on file.
+  Widget _buildPayoutMethodCard(ThemeData theme) {
+    return FutureBuilder<List<PayoutMethod>>(
+      future: _methodsFuture,
+      builder: (context, snapshot) {
+        final methods = snapshot.data ?? const <PayoutMethod>[];
+        // The default is what a payout would actually use, so it is the one
+        // worth surfacing; the rest are one tap away.
+        final primary = methods.where((m) => m.isDefault).firstOrNull ??
+            (methods.isEmpty ? null : methods.first);
+
+        final (icon, title, subtitle, tint) = switch (primary) {
+          null => (
+              Icons.add_card_rounded,
+              'Add a payout account',
+              'Tell us where to send your earnings and refunds',
+              theme.colorScheme.primary,
+            ),
+          final m when m.status == PayoutMethodStatus.verified => (
+              m.channel.icon,
+              m.shortDescription,
+              'Verified · ${m.accountName}',
+              Colors.green.shade700,
+            ),
+          final m when m.status == PayoutMethodStatus.rejected => (
+              Icons.error_rounded,
+              m.shortDescription,
+              m.rejectionReason ?? 'Rejected — add another account',
+              theme.colorScheme.error,
+            ),
+          final m => (
+              m.channel.icon,
+              m.shortDescription,
+              'Awaiting review — payouts start once approved',
+              Colors.orange.shade800,
+            ),
+        };
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Payout method', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Card(
+              margin: EdgeInsets.zero,
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: tint.withValues(alpha: 0.12),
+                  child: Icon(icon, size: 20, color: tint),
+                ),
+                title:
+                    Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(subtitle,
+                    maxLines: 2, overflow: TextOverflow.ellipsis),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _openPayoutMethods,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Money the platform has actually sent. Hidden entirely when there is none,
+  /// rather than showing an empty "Payouts received" heading — for a guest who
+  /// has never been refunded, that heading is a question they didn't ask.
+  Widget _buildDisbursements(ThemeData theme) {
+    return FutureBuilder<List<Disbursement>>(
+      future: _disbursementsFuture,
+      builder: (context, snapshot) {
+        final rows = snapshot.data ?? const <Disbursement>[];
+        if (rows.isEmpty) return const SizedBox.shrink();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Payouts received', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              'Money we\'ve sent to your payout account.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            for (final d in rows) _disbursementTile(theme, d),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _disbursementTile(ThemeData theme, Disbursement d) {
+    final (statusColor, statusIcon) = switch (d.status) {
+      DisbursementStatus.sent => (
+          Colors.green.shade700,
+          Icons.north_east_rounded
+        ),
+      DisbursementStatus.failed => (
+          theme.colorScheme.error,
+          Icons.error_rounded
+        ),
+      DisbursementStatus.pending => (
+          Colors.orange.shade800,
+          Icons.hourglass_top_rounded
+        ),
+    };
+
+    // The destination is the whole point of the row: "we paid you" is not
+    // useful without "…to this account", which is the first thing someone
+    // checks when they think the money never arrived.
+    final destination = d.method?.shortDescription ?? 'your payout account';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: statusColor.withValues(alpha: 0.12),
+          child: Icon(statusIcon, color: statusColor, size: 20),
+        ),
+        title: Text('${d.kind.label} · $destination',
+            maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: Text(
+          [
+            _date(d.effectiveDate),
+            if (d.reference != null) 'Ref ${d.reference}',
+            if (d.status == DisbursementStatus.failed &&
+                d.failureReason != null)
+              d.failureReason!,
+          ].where((s) => s.isNotEmpty).join(' · '),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(_money(d.amount, d.currency),
+                style: theme.textTheme.titleSmall
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+            Text(d.status.label,
+                style:
+                    theme.textTheme.labelSmall?.copyWith(color: statusColor)),
+          ],
+        ),
       ),
     );
   }

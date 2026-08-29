@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/utils/responsive.dart';
 import '../../models/booking.dart';
 import '../../models/guest_review_ratings.dart';
+import '../../widgets/app_network_image.dart';
 
 /// Screen for guests to submit a review for a listing/host.
 /// Includes 6 category ratings and optional text comment.
@@ -89,13 +90,13 @@ class _GuestReviewScreenState extends State<GuestReviewScreen> {
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
                         child: widget.booking.listingImageUrl != null
-                            ? Image.network(
-                                widget.booking.listingImageUrl!,
+                            ? AppNetworkImage(
+                                url: widget.booking.listingImageUrl!,
                                 width: 64,
                                 height: 64,
+                                decodeWidth: 64,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                    _buildPlaceholder(theme),
+                                errorWidget: _buildPlaceholder(theme),
                               )
                             : _buildPlaceholder(theme),
                       ),

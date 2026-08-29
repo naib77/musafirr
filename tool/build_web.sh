@@ -26,6 +26,59 @@ fi
 # shellcheck disable=SC2086
 flutter build web --release $DEFINES "$@"
 
+# ── Guard: the generated web plugin registrant must be current ──────────────
+# Flutter caches a generated web_plugin_registrant.dart per build configuration,
+# and has been observed reusing a STALE one — a registrant produced before a
+# plugin was added to the project. Nothing catches this: the build succeeds,
+# every test passes, and `flutter run -d chrome` works (it uses a different
+# build directory with a fresh registrant). Only the deployed bundle is broken,
+# and only at runtime:
+#
+#   MissingPluginException(No implementation found for method initialize
+#                          on channel plugin.csdcorp.com/speech_to_text)
+#
+# That shipped once already — voice search was deployed for a day with
+# speech_to_text unregistered, working perfectly in debug the whole time. This
+# check compares the registrant that produced THIS bundle against the plugin
+# list the build itself resolved, and refuses to fingerprint a bundle that is
+# missing any of them.
+REGISTRANT=""
+for d in .dart_tool/flutter_build/*/; do
+  [ -f "${d}main.dart.js" ] || continue
+  if cmp -s "${d}main.dart.js" build/web/main.dart.js; then
+    REGISTRANT="${d}web_plugin_registrant.dart"
+    break
+  fi
+done
+
+if [ -z "$REGISTRANT" ] || [ ! -f "$REGISTRANT" ] || [ ! -f .flutter-plugins-dependencies ]; then
+  # Not a failure: a future Flutter may lay the build out differently. Say so
+  # loudly rather than reporting a check that did not actually run.
+  echo "NOTE: could not locate this bundle's plugin registrant — staleness check SKIPPED."
+else
+  MISSING="$(python3 - "$REGISTRANT" <<'PYEOF'
+import json, sys
+registrant = open(sys.argv[1]).read()
+plugins = json.load(open('.flutter-plugins-dependencies'))['plugins'].get('web', [])
+print(' '.join(p['name'] for p in plugins if p['name'] not in registrant))
+PYEOF
+)"
+  if [ -n "$MISSING" ]; then
+    echo ""
+    echo "BUILD REJECTED: these web plugins are NOT registered in the bundle:"
+    for m in $MISSING; do echo "  - $m"; done
+    echo ""
+    echo "Flutter reused a stale web_plugin_registrant.dart. Deploying this would"
+    echo "fail at runtime with MissingPluginException, while debug builds keep"
+    echo "working. Fix it with a clean build:"
+    echo ""
+    echo "    flutter clean && sh tool/build_web.sh"
+    echo ""
+    exit 1
+  fi
+  echo "Plugin registrant OK ($(grep -c registerWith "$REGISTRANT") web plugins registered)"
+fi
+
 # ── Content-hash the app bundle (main.dart.js) ──────────────────────────────
 # main.dart.js is ~1.2 MB over the wire and is the load-time bottleneck (the
 # CanvasKit engine is served from the gstatic CDN, not our origin). Because its
@@ -61,6 +114,52 @@ mv build/web/flutter_bootstrap.js.tmp build/web/flutter_bootstrap.js
 sed "s#</head>#  <link rel=\"preload\" as=\"script\" href=\"$HASHED\"></head>#" build/web/index.html > build/web/index.html.tmp
 mv build/web/index.html.tmp build/web/index.html
 echo "Fingerprinted app bundle -> $HASHED (preloaded, immutable)"
+
+# ── Version the icon URLs referenced from index.html ────────────────────────
+# The favicon would not update after a deploy. Not an HTTP caching fault: these
+# files answer with `max-age=0, must-revalidate`, so a normal image is
+# revalidated and refreshed. Favicons are the exception — browsers keep them in
+# a separate, long-lived store (Chrome's favicon database) that is NOT driven by
+# Cache-Control, so a tab can keep painting last month's icon indefinitely even
+# though the bytes on the origin changed. "Clear your cache" is not a fix you
+# can ship to users.
+#
+# What browsers cannot ignore is a different URL. So each icon href gets a
+# ?v=<content hash> — same trick as the bundle above, expressed as a query
+# because these paths are also named in manifest.json and by external
+# scrapers. index.html is `no-store`, so a changed hash is discovered on the
+# very next load, and the icon is then fetched as a URL the favicon store has
+# never seen. An unchanged icon keeps its hash and stays cached.
+#
+# social-card.png is versioned for the same reason and a different cache:
+# WhatsApp, Messenger, Facebook and X cache an og:image per URL, sometimes for
+# weeks, so without this a changed card never reaches a re-shared link.
+short_hash() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -c1-8
+  else
+    shasum -a 256 "$1" | cut -c1-8
+  fi
+}
+
+# Every href/src that names one of these, INCLUDING the <link rel=preload> for
+# Icon-192: a preload whose URL does not match the request the page later makes
+# is not merely useless, it downloads the image twice.
+ICON_REWRITES=""
+for icon in favicon.png icons/Icon-192.png social-card.png; do
+  [ -f "build/web/$icon" ] || continue
+  v="$(short_hash "build/web/$icon")"
+  # Anchored on the quote so a path is never rewritten twice, and so
+  # icons/Icon-192.png cannot also match icons/Icon-192.png?v=... on a re-run.
+  ICON_REWRITES="$ICON_REWRITES -e s#\"$icon\"#\"$icon?v=$v\"#g"
+  ICON_REWRITES="$ICON_REWRITES -e s#/$icon\"#/$icon?v=$v\"#g"
+done
+if [ -n "$ICON_REWRITES" ]; then
+  # shellcheck disable=SC2086
+  sed $ICON_REWRITES build/web/index.html > build/web/index.html.tmp
+  mv build/web/index.html.tmp build/web/index.html
+  echo "Versioned icon URLs in index.html (favicon, Icon-192, social card)"
+fi
 
 # Symbol maps are only used to symbolicate stack traces offline; they are never
 # fetched by the running app and add ~13 MB of dead weight to the deploy.

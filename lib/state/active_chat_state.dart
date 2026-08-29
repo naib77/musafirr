@@ -127,6 +127,15 @@ class ActiveChatState extends ChangeNotifier with SafeNotifier {
     _typingTimer?.cancel();
     _typingTimer = null;
 
+    // Cancelling the Dart subscriptions above leaves the websocket channels
+    // subscribed server-side. Without this, every chat opened in a session kept
+    // receiving inserts — and the typing channel costs a write per keystroke of
+    // the other person — for as long as the app stayed running.
+    final closed = _conversation?.id;
+    if (closed != null) {
+      unawaited(_messagingService.unsubscribeFromConversation(closed));
+    }
+
     _conversation = null;
     _messages = [];
     _typingIndicators = [];

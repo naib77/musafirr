@@ -16,11 +16,13 @@ import '../state/notification_state.dart';
 import '../state/search_state.dart';
 import '../state/shell_nav_state.dart';
 import '../widgets/app_page_header.dart';
+import '../widgets/brand_logo.dart';
 import '../widgets/modern_banner.dart';
 import '../widgets/notification_bell.dart';
 import '../widgets/review_prompt_handler.dart';
 import '../widgets/smart_sidebar.dart';
 import 'explore/explore_screen.dart';
+import 'host/become_host_screen.dart';
 import 'hosting/earnings_screen.dart';
 import 'host/host_dashboard_screen.dart';
 import 'host/host_reservations_screen.dart';
@@ -98,8 +100,11 @@ class _MainShellState extends State<MainShell> {
       if (guestTab != null) _guestTabIndex = guestTab;
       if (hostTab != null) _hostTabIndex = hostTab;
     });
-    // The Reservations screen is kept alive in an IndexedStack, so its inner
-    // tab is switched imperatively via its state.
+    // The Reservations screen stays mounted once visited (see
+    // _LazyIndexedStack), so its inner tab is switched imperatively via its
+    // state. Safe with lazy mounting because openHostReservations() always
+    // sets the host tab too, so the screen is built in the frame before this
+    // callback runs.
     if (reservationsTab != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _hostReservationsKey.currentState?.goToTab(reservationsTab);
@@ -275,6 +280,7 @@ class _MainShellState extends State<MainShell> {
         // everywhere the navigation rail or a native build already applies.
         result = SmartSidebar(
           shortcuts: isGuest ? _guestShortcuts() : _hostShortcuts(),
+          cta: _hostCta(isGuest),
           child: result,
         );
 
@@ -311,7 +317,7 @@ class _MainShellState extends State<MainShell> {
   /// system fonts.
   Widget _navBarShell(Widget bar) {
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border(
           top: BorderSide(color: AppColors.outline, width: 0.5),
@@ -332,7 +338,7 @@ class _MainShellState extends State<MainShell> {
   /// the vertical counterpart of [_navBarShell].
   Widget _navRailShell(Widget rail) {
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border(
           right: BorderSide(color: AppColors.outline, width: 0.5),
@@ -353,8 +359,9 @@ class _MainShellState extends State<MainShell> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.travel_explore_rounded,
-              color: AppColors.brand, size: 26),
+          // Untinted: on the white rail the brand rose is the point. Tinting to
+          // AppColors.brand would recolour the logo per theme.
+          const BrandLogo(size: 26),
           const SizedBox(width: 8),
           Text(
             'Musaafir',
@@ -374,13 +381,13 @@ class _MainShellState extends State<MainShell> {
   NavigationRailThemeData get _railTheme => NavigationRailThemeData(
         backgroundColor: AppColors.surface,
         indicatorColor: AppColors.brand.withValues(alpha: 0.12),
-        selectedIconTheme: const IconThemeData(color: AppColors.brand),
-        unselectedIconTheme: const IconThemeData(color: AppColors.inkMuted),
-        selectedLabelTextStyle: const TextStyle(
+        selectedIconTheme: IconThemeData(color: AppColors.brand),
+        unselectedIconTheme: IconThemeData(color: AppColors.inkMuted),
+        selectedLabelTextStyle: TextStyle(
           color: AppColors.brand,
           fontWeight: FontWeight.w600,
         ),
-        unselectedLabelTextStyle: const TextStyle(color: AppColors.inkMuted),
+        unselectedLabelTextStyle: TextStyle(color: AppColors.inkMuted),
       );
 
   Widget _buildGuestNavigationRail() {
@@ -615,7 +622,7 @@ class _MainShellState extends State<MainShell> {
         ],
       ),
     ];
-    return IndexedStack(
+    return _LazyIndexedStack(
       key: const ValueKey('guest'),
       index: _guestTabIndex,
       children: [
@@ -750,7 +757,7 @@ class _MainShellState extends State<MainShell> {
         ],
       ),
     ];
-    return IndexedStack(
+    return _LazyIndexedStack(
       key: const ValueKey('host'),
       index: _hostTabIndex,
       children: [
@@ -855,6 +862,61 @@ class _MainShellState extends State<MainShell> {
         onTap: () => _goToHostTab(4),
       ),
     ];
+  }
+
+  /// The panel's headline action: the way into hosting. Only the guest panel
+  /// carries it — the host portal is already where it leads. Which of the
+  /// three states applies mirrors the Profile tab's hosting section, so the
+  /// two entry points never disagree about what the user can do next.
+  SmartSidebarCta? _hostCta(bool isGuest) {
+    if (!isGuest) return null;
+
+    final user = widget.authState.currentUser;
+    if (user == null) {
+      // Hosting needs an account; the Profile tab is where the login prompt
+      // lives, so send them there rather than to a screen that would fail.
+      return SmartSidebarCta(
+        icon: Icons.home_work_rounded,
+        label: 'Become a host',
+        description: 'Sign in to start earning',
+        onTap: () => _goToGuestTab(4),
+      );
+    }
+
+    if (user.isHost) {
+      return SmartSidebarCta(
+        icon: Icons.swap_horiz_rounded,
+        label: 'Switch to hosting',
+        description: _hasHostNotification
+            ? 'New booking request waiting'
+            : 'Go to your host dashboard',
+        onTap: () => _switchMode(AppMode.host),
+      );
+    }
+
+    return SmartSidebarCta(
+      icon: Icons.home_work_rounded,
+      label: 'Become a host',
+      description: 'Start earning by sharing your space',
+      onTap: _openBecomeHost,
+    );
+  }
+
+  /// Signs the user up as a host and lands them in the host portal, the same
+  /// way the Profile tab's "Become a Host" row does.
+  void _openBecomeHost() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BecomeHostScreen(
+          authState: widget.authState,
+          onBecomeHost: () {
+            Navigator.pop(context);
+            _switchMode(AppMode.host);
+          },
+        ),
+      ),
+    );
   }
 
   void _goToGuestTab(int index) {
@@ -971,6 +1033,61 @@ class _LeaderboardHeaderButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// An [IndexedStack] that only builds a tab once it has actually been visited.
+///
+/// A plain IndexedStack mounts every child immediately: all five tabs ran their
+/// initState and fired their startup fetches before the user had chosen
+/// anything, and the map tab kept a live GL surface rendering behind whatever
+/// was on screen — GPU work and radio traffic for screens nobody was looking
+/// at. Visited tabs stay mounted, so switching back is still instant and their
+/// scroll position and state survive, which is the reason IndexedStack was
+/// chosen in the first place.
+class _LazyIndexedStack extends StatefulWidget {
+  const _LazyIndexedStack({
+    super.key,
+    required this.index,
+    required this.children,
+  });
+
+  final int index;
+  final List<Widget> children;
+
+  @override
+  State<_LazyIndexedStack> createState() => _LazyIndexedStackState();
+}
+
+class _LazyIndexedStackState extends State<_LazyIndexedStack> {
+  final Set<int> _visited = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _visited.add(widget.index);
+  }
+
+  @override
+  void didUpdateWidget(covariant _LazyIndexedStack oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _visited.add(widget.index);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IndexedStack(
+      index: widget.index,
+      children: [
+        for (var i = 0; i < widget.children.length; i++)
+          // A zero-size box holds the slot so the stack's indices still line up
+          // with the navigation bar's.
+          if (_visited.contains(i))
+            widget.children[i]
+          else
+            const SizedBox.shrink(),
+      ],
     );
   }
 }

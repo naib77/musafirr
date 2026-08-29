@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cold-start window, Android 11 and below.
+     Android 12+ ignores this entirely and uses the SplashScreen API instead —
+     see values-v31/styles.xml, which has to be kept in step with it.
+
+     This was the untouched Flutter template (a bare white window with the image
+     slot commented out), so every cold start flashed white before Dart's own
+     splash painted. The ground is now @color/brand_launch_background — the
+     brand rose, the same value the adaptive launcher icon uses — so the icon
+     the user just tapped and the window that replaces it are one colour.
+
+     src is ic_launcher_FOREGROUND, not ic_launcher. From API 26 the latter
+     resolves to mipmap-anydpi-v26/ic_launcher.xml — an <adaptive-icon>, not a
+     bitmap — and a <bitmap> tag pointing at an XML drawable fails to inflate,
+     which takes out the launch window on every device from Oreo up. The
+     foreground layer has no anydpi override, so it is always a real PNG, and it
+     is the correct layer anyway: the solid colour beneath is already drawn.
+
+     The colour is fixed rather than theme-aware because a launch window is
+     drawn by the OS before any Dart runs: it cannot read the admin-selected
+     `active_theme`. Note that this is therefore the BRAND colour and not the
+     active palette, so with the default ocean_teal theme the rose window does
+     hand over to a teal Scaffold. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/brand_launch_background" />
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@mipmap/ic_launcher_foreground" />
+    </item>
+</layer-list>

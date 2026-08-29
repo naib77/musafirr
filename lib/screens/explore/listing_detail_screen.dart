@@ -13,6 +13,8 @@ import '../../core/utils/responsive.dart';
 import '../../widgets/app_network_image.dart';
 import '../../models/booking.dart';
 import '../../models/booking_conflict_exception.dart';
+import '../../models/booking_rejected_exception.dart';
+import '../../models/host_verifications.dart';
 import '../../models/listing.dart';
 import '../../models/listing_exact_address.dart';
 import '../../models/listing_purpose.dart';
@@ -28,6 +30,7 @@ import '../../state/messaging_state.dart';
 import '../../state/shell_nav_state.dart';
 import '../messaging/chat_screen.dart';
 import 'listing_gallery_screen.dart';
+import '../../widgets/host_verification_badges.dart';
 import '../../widgets/map_focus_button.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/price_breakdown_card.dart';
@@ -75,6 +78,25 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   ListingExactAddress? _exactAddress;
   bool _loadingExactAddress = false;
 
+  /// The host's verified credentials, once fetched. Null until then, which the
+  /// badge strip reads as "claim nothing yet".
+  HostVerifications? _hostVerifications;
+
+  /// True while the conversation is being created. Drives the button's spinner
+  /// and blocks a duplicate tap.
+  bool _openingChat = false;
+
+  /// Asks the server which of the host's credentials are verified. Fails
+  /// closed: anything other than a clear yes leaves the badge unshown.
+  Future<void> _loadHostVerifications() async {
+    final hostId = widget.listing.hostId;
+    if (hostId == null || hostId.isEmpty) return;
+    final verifications =
+        await widget.repository.fetchHostVerifications(hostId);
+    if (!mounted) return;
+    setState(() => _hostVerifications = verifications);
+  }
+
   /// How much of this listing's location the viewer gets. Decided entirely by
   /// what came back from `listing_addresses`, whose RLS is the actual gate.
   ListingLocation get _viewerLocation =>
@@ -113,6 +135,14 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
 
   /// Opens (or creates) the general conversation with the host — no booking
   /// required, like Airbnb's pre-booking inquiry.
+  ///
+  /// Waits on ONE round trip (the conversation has to exist server-side before
+  /// there is anything to open) and then navigates. It used to wait on four:
+  /// the create, then the conversation row, the host's profile and the unread
+  /// count — none of which this screen uses, because it passes ChatScreen the
+  /// host's name and avatar itself and ChatScreen loads its own messages. On a
+  /// remote database that was three extra seconds of a screen that had not
+  /// visibly changed.
   Future<void> _contactHost() async {
     final messagingState = widget.messagingState;
     final hostId = widget.listing.hostId;
@@ -122,14 +152,20 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       ModernBanner.showInfo(context, 'Please log in to message the host.');
       return;
     }
+    // Guard against a second tap while the first is in flight: without it, an
+    // impatient guest gets two conversations opened on top of each other.
+    if (_openingChat) return;
+    setState(() => _openingChat = true);
 
-    final conversation = await messagingState.startConversation(
+    final conversationId = await messagingState.startConversationId(
       otherUserId: hostId,
       listingId: widget.listing.id,
     );
 
     if (!mounted) return;
-    if (conversation == null) {
+    setState(() => _openingChat = false);
+
+    if (conversationId == null) {
       ModernBanner.showError(
         context,
         'Could not start the conversation. Please try again.',
@@ -141,11 +177,11 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => ChatScreen(
-          conversationId: conversation.id,
+          conversationId: conversationId,
           messagingState: messagingState,
-          otherParticipantName: widget.listing.ownerName.isNotEmpty
-              ? widget.listing.ownerName
-              : conversation.displayName,
+          // The listing already knows who the host is, so the chat header is
+          // correct on the first frame with nothing left to fetch for it.
+          otherParticipantName: widget.listing.ownerName,
           otherParticipantAvatarUrl: widget.listing.hostAvatarUrl,
           repository: widget.repository,
           otherParticipantId: hostId,
@@ -158,6 +194,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   void initState() {
     super.initState();
     _loadExactAddress();
+    _loadHostVerifications();
     widget.repository.addListener(_onRepositoryChanged);
   }
 
@@ -307,8 +344,10 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                           // Host info
                           _HostInfoCard(
                             listing: listing,
+                            verifications: _hostVerifications,
                             onContactHost:
                                 _canContactHost ? _contactHost : null,
+                            openingChat: _openingChat,
                           ),
                           const SizedBox(height: 16),
 
@@ -779,7 +818,7 @@ class _RatingPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.star_rounded, size: 16, color: AppColors.amber),
+          Icon(Icons.star_rounded, size: 16, color: AppColors.amber),
           const SizedBox(width: 4),
           Text(
             listing.rating!.toStringAsFixed(2),
@@ -911,12 +950,25 @@ class _GradientButton extends StatelessWidget {
 }
 
 class _HostInfoCard extends StatelessWidget {
-  const _HostInfoCard({required this.listing, this.onContactHost});
+  const _HostInfoCard({
+    required this.listing,
+    required this.verifications,
+    this.onContactHost,
+    this.openingChat = false,
+  });
 
   final Listing listing;
 
+  /// The host's real verification flags, or null while the lookup is in flight.
+  final HostVerifications? verifications;
+
   /// When provided, shows the pre-booking "Message host" action.
   final VoidCallback? onContactHost;
+
+  /// Whether the conversation is being created right now. Creating it needs a
+  /// network round trip, and a button that looks idle through it reads as a
+  /// button that did not register the tap.
+  final bool openingChat;
 
   @override
   Widget build(BuildContext context) {
@@ -932,16 +984,28 @@ class _HostInfoCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildHostRow(theme),
-          const SizedBox(height: 12),
-          _buildVerifications(theme),
+          // An unverified host shows no strip at all, so no empty gap either.
+          if (verifications?.hasAny ?? false) ...[
+            const SizedBox(height: 12),
+            HostVerificationBadges(verifications: verifications),
+          ],
           if (onContactHost != null) ...[
             const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed: onContactHost,
-                icon: const Icon(Icons.chat_bubble_outline, size: 20),
-                label: const Text('Message host'),
+                onPressed: openingChat ? null : onContactHost,
+                icon: openingChat
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.chat_bubble_outline, size: 20),
+                label: Text(openingChat ? 'Opening…' : 'Message host'),
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.brand,
                   foregroundColor: Colors.white,
@@ -958,45 +1022,12 @@ class _HostInfoCard extends StatelessWidget {
     );
   }
 
-  /// Host trust badges, styled after the profile verification strip. NOTE:
-  /// these currently reflect the platform's host requirements (phone OTP at
-  /// sign-up, admin identity check before a listing can go live) rather than
-  /// per-host flags, which aren't carried on [Listing]. Wire to real host
-  /// verification data once the feed exposes it.
-  Widget _buildVerifications(ThemeData theme) {
-    Widget badge(String label) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.check_circle, size: 16, color: AppColors.success),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: theme.textTheme.labelMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      );
-    }
-
-    return Wrap(
-      spacing: 14,
-      runSpacing: 8,
-      children: [
-        badge('Phone number'),
-        badge('Email'),
-        badge('Identity verification'),
-      ],
-    );
-  }
-
   Widget _buildHostRow(ThemeData theme) {
     return Row(
       children: [
         Container(
           padding: const EdgeInsets.all(1.5),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: AppColors.brandGradient,
           ),
@@ -1033,7 +1064,7 @@ class _HostInfoCard extends StatelessWidget {
               if (listing.isSuperhost)
                 Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.workspace_premium,
                       size: 13,
                       color: AppColors.amber,
@@ -1848,8 +1879,7 @@ class _BookingSheetState extends State<_BookingSheet> {
     if (_coupon?.valid ?? false) {
       return Row(
         children: [
-          const Icon(Icons.local_offer_rounded,
-              size: 18, color: AppColors.success),
+          Icon(Icons.local_offer_rounded, size: 18, color: AppColors.success),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -2237,6 +2267,13 @@ class _BookingSheetState extends State<_BookingSheet> {
 
         _showErrorBanner(message);
       }
+    } on BookingRejectedException catch (e) {
+      // The server refused for a reason the guest can fix (capacity, dates,
+      // duration, coupon, an expired session). Its sentence names the field to
+      // change; "please try again" would send them round the same loop.
+      if (mounted) {
+        _showErrorBanner(e.message);
+      }
     } catch (e) {
       if (mounted) {
         _showErrorBanner('Booking failed. Please try again.');
@@ -2435,7 +2472,7 @@ class _BookingSheetState extends State<_BookingSheet> {
 
                       // User conflict warning (you already have a booking)
                       if (_hasUserConflict) ...[
-                        const _StatusBanner(
+                        _StatusBanner(
                           icon: Icons.person_off_rounded,
                           color: AppColors.warning,
                           title: 'You have another booking',
@@ -2455,7 +2492,7 @@ class _BookingSheetState extends State<_BookingSheet> {
                                 ),
                                 child: Row(
                                   children: [
-                                    const Icon(
+                                    Icon(
                                       Icons.event_busy_rounded,
                                       size: 16,
                                       color: AppColors.warning,
@@ -2526,7 +2563,7 @@ class _BookingSheetState extends State<_BookingSheet> {
                       if (_isSelectionComplete &&
                           !_hasConflict &&
                           !_isCheckingAvailability) ...[
-                        const _StatusBanner(
+                        _StatusBanner(
                           icon: Icons.check_circle_rounded,
                           color: AppColors.success,
                           title: 'This time slot is available',

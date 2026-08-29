@@ -13,6 +13,8 @@ import '../../widgets/modern_banner.dart';
 import 'address_proof_screen.dart';
 import 'create_listing_screen.dart';
 import 'edit_listing_screen.dart';
+import 'listing_availability_screen.dart';
+import '../../widgets/app_network_image.dart';
 
 class HostListingsScreen extends StatelessWidget {
   const HostListingsScreen({
@@ -60,6 +62,7 @@ class HostListingsScreen extends StatelessWidget {
                   onDelete: () => _confirmDelete(context, listing),
                   onToggleAvailability: () =>
                       _toggleAvailability(context, listing),
+                  onManageDates: () => _manageDates(context, listing),
                   repository: repository,
                 );
               },
@@ -128,14 +131,21 @@ class HostListingsScreen extends StatelessWidget {
       if (!verified) return;
     }
 
-    // When configured, a host must also have a proof-of-address document on
-    // file before publishing a listing. Upload is enough to unlock (no approval).
+    // When configured, a host must have submitted their address — the billed
+    // copy AND the address in writing — before publishing a listing.
+    //
+    // SUBMITTING is the gate, not the verdict: an admin's physical visit takes
+    // days, and a host who has done their part must not sit on an unpublishable
+    // listing waiting for one. The "Address verified" badge is what waits for
+    // the visit. A rejected submission is also allowed through — the host is
+    // told why on the profile screen and can resubmit; blocking them here would
+    // pull a live host's ability to list out from under them over a bad photo.
     if (!context.mounted) return;
     if (userId != null &&
         await AppSettingsService.instance.ensureRequireListingAddressProof()) {
-      final hasProof =
-          await ImageUploadService.instance.hasAddressProof(userId);
-      if (!hasProof) {
+      final address =
+          await ImageUploadService.instance.addressVerification(userId);
+      if (!address.isSubmitted) {
         if (!context.mounted) return;
         final uploaded = await Navigator.push<bool>(
           context,
@@ -143,7 +153,7 @@ class HostListingsScreen extends StatelessWidget {
             builder: (context) => AddressProofScreen(userId: userId),
           ),
         );
-        // User backed out without uploading — don't proceed to the form.
+        // Host backed out without submitting — don't proceed to the form.
         if (uploaded != true) return;
       }
     }
@@ -211,6 +221,18 @@ class HostListingsScreen extends StatelessWidget {
     );
   }
 
+  void _manageDates(BuildContext context, Listing listing) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ListingAvailabilityScreen(
+          repository: repository,
+          listing: listing,
+        ),
+      ),
+    );
+  }
+
   Future<void> _toggleAvailability(
       BuildContext context, Listing listing) async {
     final hiding = listing.available;
@@ -261,6 +283,7 @@ class _ListingCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onToggleAvailability,
+    required this.onManageDates,
     required this.repository,
   });
 
@@ -268,6 +291,7 @@ class _ListingCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onToggleAvailability;
+  final VoidCallback onManageDates;
   final MusafirRepository repository;
 
   @override
@@ -289,10 +313,12 @@ class _ListingCard extends StatelessWidget {
               AspectRatio(
                 aspectRatio: 2.5,
                 child: listing.primaryImage != null
-                    ? Image.network(
-                        listing.primaryImage!,
+                    ? AppNetworkImage(
+                        url: listing.primaryImage!,
+                        // Card-width hero in a scrolling list, never full-screen.
+                        decodeWidth: 600,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _buildPlaceholder(theme),
+                        errorWidget: _buildPlaceholder(theme),
                       )
                     : _buildPlaceholder(theme),
               ),
@@ -401,6 +427,18 @@ class _ListingCard extends StatelessWidget {
                           size: 18,
                         ),
                         label: Text(listing.available ? 'Hide' : 'Show'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Sits next to Hide/Show because the two answer the same
+                    // question at different granularities: Hide takes the
+                    // listing off the market entirely, Dates takes specific
+                    // days off it.
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: onManageDates,
+                        icon: const Icon(Icons.event_busy_outlined, size: 18),
+                        label: const Text('Dates'),
                       ),
                     ),
                     const SizedBox(width: 8),

@@ -26,6 +26,7 @@ import '../messaging/chat_screen.dart';
 import '../payment/payment_webview_screen.dart';
 import '../safety/safety_screen.dart';
 import '../review/guest_review_screen.dart';
+import '../../widgets/app_network_image.dart';
 
 class TripsScreen extends StatefulWidget {
   const TripsScreen({
@@ -552,24 +553,40 @@ class _TripsScreenState extends State<TripsScreen> {
     );
   }
 
+  /// Blocks a second tap while the first is still creating the
+  /// conversation — without it an impatient tap opens the chat twice.
+  bool _openingChat = false;
+
   Future<void> _openChatForBooking(Booking booking) async {
     if (widget.messagingState == null) return;
 
     final user = widget.authState.currentUser;
     if (user == null) return;
 
-    // Find the conversation for this booking
+    // Already in the local list? Then the chat opens with no network at all.
     final conversations = widget.messagingState!.conversations;
-    var conversation =
+    final existing =
         conversations.where((c) => c.bookingId == booking.id).firstOrNull;
 
-    // If no conversation exists, create one
-    if (conversation == null) {
-      // Get the host ID from the listing
-      final listing = widget.repository.listings
-          .where((l) => l.id == booking.listingId)
-          .firstOrNull;
+    // Who the guest is talking to. Taken from the cached conversation when
+    // there is one, otherwise from the listing — which is where the host's
+    // name and picture come from anyway, so there is nothing to fetch for the
+    // chat header either way.
+    final listing = widget.repository.listings
+        .where((l) => l.id == booking.listingId)
+        .firstOrNull;
 
+    String? conversationId = existing?.id;
+    String? otherId = existing != null &&
+            widget.messagingState!.currentUserId != null
+        ? existing.getOtherParticipantId(widget.messagingState!.currentUserId!)
+        : listing?.hostId;
+    var otherName =
+        existing?.otherParticipant?.name ?? listing?.ownerName ?? 'Host';
+    final otherAvatar = existing?.avatarUrl ?? listing?.hostAvatarUrl;
+
+    // If no conversation exists, create one
+    if (conversationId == null) {
       final hostId = listing?.hostId;
       if (hostId == null) {
         if (mounted) {
@@ -578,6 +595,8 @@ class _TripsScreenState extends State<TripsScreen> {
         }
         return;
       }
+      otherId = hostId;
+      if (otherName.isEmpty) otherName = 'Host';
 
       // Show loading indicator
       if (mounted) {
@@ -589,14 +608,21 @@ class _TripsScreenState extends State<TripsScreen> {
         );
       }
 
-      // Create the conversation
-      conversation = await widget.messagingState!.startConversation(
+      if (_openingChat) return;
+      _openingChat = true;
+
+      // One round trip: create the conversation. The booking-context write and
+      // the hydrated read-back used to be awaited here too — five more trips
+      // of a screen that had not visibly changed — and now happen behind the
+      // chat instead.
+      conversationId = await widget.messagingState!.startConversationId(
         otherUserId: hostId,
         bookingId: booking.id,
         listingId: booking.listingId,
       );
+      _openingChat = false;
 
-      if (conversation == null) {
+      if (conversationId == null) {
         if (mounted) {
           ModernBanner.showError(
               context, 'Failed to start conversation. Please try again.');
@@ -605,24 +631,25 @@ class _TripsScreenState extends State<TripsScreen> {
       }
     }
 
-    if (mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ChatScreen(
-            conversationId: conversation!.id,
-            messagingState: widget.messagingState!,
-            otherParticipantName: conversation.displayName,
-            otherParticipantAvatarUrl: conversation.avatarUrl,
-            repository: widget.repository,
-            otherParticipantId: widget.messagingState!.currentUserId == null
-                ? null
-                : conversation.getOtherParticipantId(
-                    widget.messagingState!.currentUserId!),
-          ),
+    if (!mounted) return;
+    // Final copies: the builder closure captures these, and a captured mutable
+    // local doesn't keep its promoted non-null type.
+    final id = conversationId;
+    final participantId = otherId;
+    final participantName = otherName;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          conversationId: id,
+          messagingState: widget.messagingState!,
+          otherParticipantName: participantName,
+          otherParticipantAvatarUrl: otherAvatar,
+          repository: widget.repository,
+          otherParticipantId: participantId,
         ),
-      );
-    }
+      ),
+    );
   }
 
   /// Entry point for the "Pay" button. If the admin has enabled hand cash, the
@@ -663,14 +690,13 @@ class _TripsScreenState extends State<TripsScreen> {
                       )),
             ),
             ListTile(
-              leading: const Icon(Icons.lock_outline, color: AppColors.brand),
+              leading: Icon(Icons.lock_outline, color: AppColors.brand),
               title: const Text('Pay online'),
               subtitle: Text('Card, bKash, or bank — pay $amount now'),
               onTap: () => Navigator.pop(ctx, _PayMethod.online),
             ),
             ListTile(
-              leading:
-                  const Icon(Icons.payments_outlined, color: AppColors.brand),
+              leading: Icon(Icons.payments_outlined, color: AppColors.brand),
               title: const Text('Hand cash'),
               subtitle:
                   const Text('Pay the host directly; they confirm receipt'),
@@ -967,7 +993,7 @@ class _EnhancedBookingCard extends StatelessWidget {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          const Icon(Icons.payments_outlined,
+                          Icon(Icons.payments_outlined,
                               size: 15, color: AppColors.brand),
                           const SizedBox(width: 6),
                           Expanded(
@@ -1044,11 +1070,15 @@ class _EnhancedBookingCard extends StatelessWidget {
       child: SizedBox(
         width: 84,
         height: 84,
+        // 84 logical px, not the 1920px master. Image.network decodes at full
+        // resolution regardless of the box it is painted into, so a screen of
+        // these held tens of megabytes of pixels and thrashed the image cache.
         child: booking.listingImageUrl != null
-            ? Image.network(
-                booking.listingImageUrl!,
+            ? AppNetworkImage(
+                url: booking.listingImageUrl!,
+                decodeWidth: 84,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _placeholder(theme),
+                errorWidget: _placeholder(theme),
               )
             : _placeholder(theme),
       ),
@@ -1228,7 +1258,7 @@ class _PaidBadge extends StatelessWidget {
         color: AppColors.success.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.check_circle, size: 12, color: AppColors.success),

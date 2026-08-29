@@ -7,13 +7,18 @@ import 'package:supabase_flutter/supabase_flutter.dart'
 import 'package:supabase_flutter/supabase_flutter.dart' show RealtimeChannel;
 
 import '../data/facility_catalog.dart';
+import '../models/availability_block.dart';
 import '../models/booking.dart';
 import '../models/booking_conflict_exception.dart';
 import '../models/booking_contacts.dart';
+import '../models/booking_rejected_exception.dart';
+import '../models/disbursement.dart';
 import '../models/payment_record.dart';
+import '../models/payout_method.dart';
 import '../models/booking_duration.dart';
 import '../models/booking_status.dart';
 import '../models/facility.dart';
+import '../models/host_verifications.dart';
 import '../models/landmark.dart';
 import '../models/leaderboard_entry.dart';
 import '../models/listing.dart';
@@ -25,6 +30,7 @@ import '../models/review.dart';
 import '../models/search_filters.dart';
 import '../models/user.dart';
 import '../models/user_role.dart';
+import '../services/app_settings_service.dart';
 import 'musafir_repository.dart';
 
 /// Supabase-backed implementation of [MusafirRepository].
@@ -445,10 +451,6 @@ class SupabaseMusafirRepository extends ChangeNotifier
     }
   }
 
-  /// Expanding proximity rings for point searches: try the nearest first,
-  /// widen until something matches (the RPC falls back to nearest-N beyond).
-  static const List<int> _radiusTiers = [1000, 3000, 5000, 10000];
-
   /// Full-catalog listing search via the `search_listings` RPC. Every filter is
   /// applied server-side and results are ranked (rating desc, reviews desc,
   /// newest). Used both for the default feed (empty filters) and Explore search.
@@ -476,6 +478,11 @@ class SupabaseMusafirRepository extends ChangeNotifier
           !hasBounds &&
           filters.latitude != null &&
           filters.longitude != null;
+      // Expanding proximity rings, and the landmark ring, are admin-configured
+      // (app_settings → SearchAreaSettings). Awaited rather than read from the
+      // cached getter because startup calls load() unawaited, and the first
+      // search can beat it.
+      final searchArea = await AppSettingsService.instance.ensureSearchArea();
       final rows = await _client.rpc('search_listings', params: {
         'p_property_types': filters.propertyTypes.isEmpty
             ? null
@@ -505,8 +512,10 @@ class SupabaseMusafirRepository extends ChangeNotifier
             : filters.purposeTags.map((p) => p.wireName).toList(),
         'p_center_lat': landmark?.latitude ?? filters.latitude,
         'p_center_lng': landmark?.longitude ?? filters.longitude,
-        'p_radius_m': landmark != null ? (filters.radiusMeters ?? 15000) : null,
-        'p_radii': useTiers ? _radiusTiers : null,
+        'p_radius_m': landmark != null
+            ? (filters.radiusMeters ?? searchArea.landmarkRadiusMeters)
+            : null,
+        'p_radii': useTiers ? searchArea.radiusTiersMeters : null,
         // The place's box. When set, the RPC filters to listings inside it
         // (distance-ranked to the center) and ignores the radius paths.
         'p_ne_lat': hasBounds ? bounds.neLat : null,
@@ -1469,6 +1478,49 @@ class SupabaseMusafirRepository extends ChangeNotifier
   }
 
   @override
+  Future<List<AvailabilityBlock>> listingAvailabilityBlocks(
+      String listingId) async {
+    // Read straight from the table rather than through listing_blocked_ranges:
+    // that RPC deliberately withholds `note`, and this is the host's own screen,
+    // where the note is the whole point. The owner-scoped SELECT policy on
+    // listing_availability_blocks is what makes this safe.
+    final rows = await _client
+        .from('listing_availability_blocks')
+        .select()
+        .eq('listing_id', listingId)
+        .order('starts_at');
+    return (rows as List)
+        .map((r) => AvailabilityBlock.fromJson(r as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<AvailabilityBlock> blockListingDates({
+    required String listingId,
+    required DateTime startsAt,
+    required DateTime endsAt,
+    String? note,
+  }) async {
+    // Through the RPC, not a direct insert: the table has no INSERT policy, and
+    // the "are these dates already booked?" check lives inside the function so
+    // it can't be skipped by writing to PostgREST directly.
+    final row = await _client.rpc('block_listing_dates', params: {
+      'p_listing_id': listingId,
+      'p_starts_at': startsAt.toUtc().toIso8601String(),
+      'p_ends_at': endsAt.toUtc().toIso8601String(),
+      'p_note': note,
+    });
+    return AvailabilityBlock.fromJson(row as Map<String, dynamic>);
+  }
+
+  @override
+  Future<void> unblockListingDates(String blockId) async {
+    await _client.rpc('unblock_listing_dates', params: {
+      'p_block_id': blockId,
+    });
+  }
+
+  @override
   Future<void> deleteListing(String listingId) async {
     // Refuse to delete a listing that still has live bookings. bookings.listing_id
     // is ON DELETE CASCADE, so deleting would silently destroy guests' pending/
@@ -1720,6 +1772,27 @@ class SupabaseMusafirRepository extends ChangeNotifier
   }
 
   @override
+  Future<HostVerifications> fetchHostVerifications(String hostId) async {
+    // Cross-user read → public_profiles, which carries the three flags and no
+    // document detail (migration 094). The base `profiles` table is own-row
+    // only under RLS (061), so a guest asking about a host must come here.
+    try {
+      final row = await _client
+          .from('public_profiles')
+          .select('phone_verified, identity_verified, address_verified')
+          .eq('id', hostId)
+          .maybeSingle();
+      if (row == null) return HostVerifications.none;
+      return HostVerifications.fromJson(row);
+    } catch (e) {
+      debugPrint('Error fetching host verifications: $e');
+      // Fail CLOSED, unlike availability above: a lookup error must not paint
+      // badges the database never granted.
+      return HostVerifications.none;
+    }
+  }
+
+  @override
   Future<List<LeaderboardEntry>> getHostLeaderboard({
     required LeaderboardPeriod period,
     int limit = 100,
@@ -1891,24 +1964,43 @@ class SupabaseMusafirRepository extends ChangeNotifier
     } catch (e) {
       _bookings.removeWhere((b) => b.id == booking.id);
       notifyListeners();
+      // Always log the raw failure. Every branch below narrows it to something
+      // showable, and the fallback rethrow reaches a generic banner — so this
+      // line is the only place the server's actual words survive. A booking
+      // that "just fails" with no trace is undiagnosable from a bug report.
+      debugPrint('createMarketplaceBooking failed: $e');
       // Translate the server's conflict (the manual guard AND the
       // bookings_no_overlap exclusion constraint both raise SQLSTATE 23P01) into
       // a typed BookingConflictException, so the UI shows a specific "slot was
       // just taken" message instead of a generic failure. Without this the
       // server race-loss surfaces as a bare PostgrestException → generic banner.
       if (e is PostgrestException && e.code == '23P01') {
-        final isUserConflict =
-            e.message.toLowerCase().contains('already have a booking');
+        // Which of the two sentences to show is decided by
+        // [bookingConflictTypeFrom] — a pure function with its own tests —
+        // rather than by grepping the server's English here, which is how a
+        // reworded migration used to be able to silently flip the message.
+        final conflictType =
+            bookingConflictTypeFrom(hint: e.hint, message: e.message);
+        final isUserConflict = conflictType == ConflictType.user;
         throw BookingConflictException(
           isUserConflict
               ? 'You already have a booking during this time period'
               : 'This time slot was just booked by someone else',
-          conflictType:
-              isUserConflict ? ConflictType.user : ConflictType.listing,
+          conflictType: conflictType,
           // The conflicting booking belongs to another guest — RLS keeps it out
           // of this client, so there is nothing to list.
           conflictingBookings: const [],
         );
+      }
+      // The RPC's other refusals are raised with guest-facing sentences under
+      // three deliberate SQLSTATEs: 22023 (capacity, dates, duration, an
+      // unbookable rate, a rejected coupon), P0002 (listing vanished) and 42501
+      // (session expired mid-booking). Those explain exactly which field to
+      // change, so pass the server's own words through instead of flattening
+      // them. Anything else is a fault, not a refusal — it keeps the generic
+      // banner, because its text is for us, not the guest.
+      if (e is PostgrestException && isGuestFacingBookingRefusal(e.code)) {
+        throw BookingRejectedException(e.message, code: e.code);
       }
       rethrow;
     }
@@ -2389,6 +2481,109 @@ class SupabaseMusafirRepository extends ChangeNotifier
     } catch (e) {
       debugPrint('Error fetching booking counts: $e');
       return {'upcoming': 0, 'current': 0, 'past': 0};
+    }
+  }
+
+  // ── Payout methods & disbursements (migration 100) ─────────────────────────
+
+  @override
+  Future<List<PayoutMethod>> fetchPayoutMethods(String userId) async {
+    try {
+      final rows = await _client
+          .from('payout_methods')
+          .select()
+          .eq('user_id', userId)
+          .isFilter('retired_at', null)
+          .order('is_default', ascending: false)
+          .order('created_at');
+      return (rows as List)
+          .map((r) => PayoutMethod.fromJson((r as Map).cast<String, dynamic>()))
+          .toList();
+    } catch (e) {
+      debugPrint('Error fetching payout methods: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<String?> addPayoutMethod({
+    required PayoutChannel channel,
+    required String accountName,
+    required String accountNumber,
+    String? bankName,
+    String? branchName,
+    String? routingNumber,
+  }) async {
+    return _payoutRpc('add_payout_method', {
+      'p_channel': channel.wireName,
+      'p_account_name': accountName,
+      'p_account_number': accountNumber,
+      'p_bank_name': bankName,
+      'p_branch_name': branchName,
+      'p_routing_number': routingNumber,
+    });
+  }
+
+  @override
+  Future<String?> setDefaultPayoutMethod(String payoutMethodId) =>
+      _payoutRpc('set_default_payout_method', {'p_id': payoutMethodId});
+
+  @override
+  Future<String?> retirePayoutMethod(String payoutMethodId) =>
+      _payoutRpc('retire_payout_method', {'p_id': payoutMethodId});
+
+  /// Calls a payout RPC and turns whatever comes back into either null
+  /// (success) or a sentence worth showing someone.
+  ///
+  /// The RPCs in migration 100 raise with deliberately user-facing messages
+  /// ("you have already added that account"), because the alternative — a
+  /// generic "Something went wrong" over a specific, fixable problem — is how
+  /// a user ends up adding the same wallet four times. Anything that is NOT
+  /// one of those deliberate raises (a network drop, a missing migration) is
+  /// logged and reported generically, since its text is for us, not them.
+  Future<String?> _payoutRpc(String fn, Map<String, dynamic> params) async {
+    try {
+      await _client.rpc(fn, params: params);
+      return null;
+    } on PostgrestException catch (e) {
+      debugPrint('Payout RPC $fn failed: ${e.code} ${e.message}');
+      // 22023 invalid_parameter_value, 23505 unique_violation and 42501
+      // insufficient_privilege are the codes the RPCs raise on purpose; their
+      // messages are written to be read by the person who caused them.
+      const speakable = {'22023', '23505', '42501'};
+      if (speakable.contains(e.code) && e.message.trim().isNotEmpty) {
+        return e.message;
+      }
+      // PGRST202 = the function isn't there. Almost always migration 100 has
+      // not been applied to this environment, which is worth saying plainly
+      // rather than dressing up as a payment failure.
+      if (e.code == 'PGRST202') {
+        return 'Payouts aren\'t set up on this server yet.';
+      }
+      return 'Could not save that right now. Please try again.';
+    } catch (e) {
+      debugPrint('Payout RPC $fn failed: $e');
+      return 'Could not save that right now. Please try again.';
+    }
+  }
+
+  @override
+  Future<List<Disbursement>> fetchDisbursements(String userId) async {
+    try {
+      // The joined method is what makes a row readable — "৳8,000 to bKash
+      // ••••5678" instead of "৳8,000 to some uuid". Because payout methods are
+      // immutable, this join can never rewrite where a past payout went.
+      final rows = await _client
+          .from('disbursements')
+          .select('*, payout_methods(*)')
+          .eq('user_id', userId)
+          .order('created_at', ascending: false);
+      return (rows as List)
+          .map((r) => Disbursement.fromJson((r as Map).cast<String, dynamic>()))
+          .toList();
+    } catch (e) {
+      debugPrint('Error fetching disbursements: $e');
+      return [];
     }
   }
 }

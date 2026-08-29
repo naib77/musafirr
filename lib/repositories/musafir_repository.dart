@@ -2,15 +2,19 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../models/availability_block.dart';
 import '../models/booking.dart';
 import '../models/booking_contacts.dart';
 import '../models/booking_duration.dart';
+import '../models/disbursement.dart';
+import '../models/host_verifications.dart';
 import '../models/listing_exact_address.dart';
 import '../models/landmark.dart';
 import '../models/leaderboard_entry.dart';
 import '../models/listing.dart';
 import '../models/owner_registration_draft.dart';
 import '../models/payment_record.dart';
+import '../models/payout_method.dart';
 import '../models/review.dart';
 import '../models/search_filters.dart';
 import '../models/user.dart';
@@ -89,6 +93,11 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   /// Defaults to true if the host can't be resolved.
   Future<bool> isHostAvailable(String hostId);
 
+  /// The host's verified-credential flags, for the trust badges on a listing
+  /// page. Returns [HostVerifications.none] when the host can't be resolved —
+  /// a lookup failure must never present as a verified host.
+  Future<HostVerifications> fetchHostVerifications(String hostId);
+
   /// Ranked hosts for the public leaderboard (composite "Host Score").
   /// Computed server-side; the app only reads the ranked rows.
   Future<List<LeaderboardEntry>> getHostLeaderboard({
@@ -133,6 +142,30 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   /// Hide/Show toggle can't wipe check-in details (which aren't loaded into the
   /// in-memory listing) or get rolled back by an unrelated secondary write.
   Future<void> setListingAvailability(String listingId, bool available);
+
+  /// The host's own blocked date ranges for a listing, earliest first.
+  ///
+  /// Owner-only: the rows carry the host's private `note`, so the table's
+  /// SELECT policy is scoped to the listing's owner. A guest asking the same
+  /// question goes through `is_booking_available`, which answers yes/no without
+  /// revealing why.
+  Future<List<AvailabilityBlock>> listingAvailabilityBlocks(String listingId);
+
+  /// Marks [startsAt]–[endsAt] unavailable on a listing the caller owns.
+  ///
+  /// Throws if the range already holds a pending/confirmed/active booking —
+  /// the host has to decline that booking explicitly rather than have it
+  /// quietly stranded behind a block — or if it overlaps a block they already
+  /// have.
+  Future<AvailabilityBlock> blockListingDates({
+    required String listingId,
+    required DateTime startsAt,
+    required DateTime endsAt,
+    String? note,
+  });
+
+  /// Removes one block. Only the owning host (or an admin) can.
+  Future<void> unblockListingDates(String blockId);
 
   /// Loads the host-only check-in access details for a listing (or null if
   /// none / not the owner). Kept separate from the main listing fetch so the
@@ -258,6 +291,47 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   /// The signed-in user's own payment history (payments they made as a guest),
   /// most recent first. Backed by the `payments` table's own-row RLS.
   Future<List<PaymentRecord>> fetchUserPayments(String userId);
+
+  // ── Payout methods (migration 100) ─────────────────────────────────────────
+  //
+  // Where the user wants to be paid: host earnings, or a guest refund. Every
+  // write goes through a SECURITY DEFINER RPC rather than a table write —
+  // `payout_methods` has no INSERT/UPDATE/DELETE policy at all, because a
+  // silently repointed payout is the most expensive thing that can happen to
+  // an account here.
+
+  /// The signed-in user's live payout methods, default first. Retired ones are
+  /// excluded: they exist only so past disbursements still name a real
+  /// account.
+  Future<List<PayoutMethod>> fetchPayoutMethods(String userId);
+
+  /// Adds a payout method. It lands as `pending` and cannot receive money
+  /// until an admin verifies it.
+  ///
+  /// Returns null on success, or a human-readable reason it was refused —
+  /// duplicate account, channel not currently accepted, malformed number. The
+  /// caller shows that string; there is nothing useful to do with a thrown
+  /// PostgrestException at the UI layer.
+  Future<String?> addPayoutMethod({
+    required PayoutChannel channel,
+    required String accountName,
+    required String accountNumber,
+    String? bankName,
+    String? branchName,
+    String? routingNumber,
+  });
+
+  /// Makes [payoutMethodId] the destination for future payouts.
+  Future<String?> setDefaultPayoutMethod(String payoutMethodId);
+
+  /// Retires a method. It stops being usable but is never deleted, so the
+  /// disbursements pointing at it keep their meaning.
+  Future<String?> retirePayoutMethod(String payoutMethodId);
+
+  /// Money the platform has actually paid out to this user — host payouts and
+  /// guest refunds — most recent first, each with the destination account it
+  /// went to.
+  Future<List<Disbursement>> fetchDisbursements(String userId);
 
   /// Authoritative, server-side availability check for a listing/interval.
   ///

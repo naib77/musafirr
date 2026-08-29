@@ -1,17 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:geocoding/geocoding.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:mime/mime.dart';
 
 import '../../core/utils/responsive.dart';
 import '../../models/message.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../widgets/report_sheet.dart';
+import '../../services/location_service.dart';
 import '../../services/image_compression_service.dart';
 import '../../services/image_upload_service.dart';
-import '../../services/messaging/message_router.dart';
 import '../../state/messaging_state.dart';
-import '../../widgets/messaging/channel_selector.dart';
 import '../../widgets/messaging/message_bubble.dart';
 import '../../widgets/messaging/message_input.dart';
 import '../../widgets/messaging/typing_indicator.dart';
@@ -59,10 +56,6 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-
-  // Channel state
-  MessagingChannel _selectedChannel = MessagingChannel.inApp;
-  List<MessagingChannel> _availableChannels = [MessagingChannel.inApp];
 
   Future<void> _confirmBlock() async {
     final repository = widget.repository;
@@ -221,12 +214,14 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Shares the sender's current location as a map message.
   Future<void> _sendLocation() async {
     try {
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
+      // Routed through LocationService rather than Geolocator directly. A bare
+      // getCurrentPosition() has NO timeout, and on web the browser's own
+      // PositionOptions.timeout is in microseconds — indoors, or with location
+      // services wedged, the share button hung forever with no way to cancel.
+      // LocationService exists to bound exactly this (10 s position, 60 s
+      // permission) and was simply not being used here.
+      final location = LocationService();
+      if (!await location.requestPermission()) {
         if (mounted) {
           ModernBanner.showWarning(
             context,
@@ -236,25 +231,24 @@ class _ChatScreenState extends State<ChatScreen> {
         return;
       }
 
-      final position = await Geolocator.getCurrentPosition();
+      final position = await location.getCurrentLocation();
+      if (position == null) {
+        if (mounted) {
+          ModernBanner.showWarning(
+            context,
+            'Could not get your location in time. Try again outdoors, or '
+            'check that location services are on.',
+          );
+        }
+        return;
+      }
 
       // Reverse-geocode for a readable label; not supported on web, and never
       // worth failing the send over.
-      String? address;
-      try {
-        final placemarks = await placemarkFromCoordinates(
-          position.latitude,
-          position.longitude,
-        );
-        if (placemarks.isNotEmpty) {
-          final p = placemarks.first;
-          address = [p.street, p.subLocality, p.locality]
-              .whereType<String>()
-              .where((part) => part.isNotEmpty)
-              .join(', ');
-          if (address.isEmpty) address = null;
-        }
-      } catch (_) {}
+      final address = await location.getAddressFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
 
       final sent = await widget.messagingState.sendLocationMessage(
         latitude: position.latitude,
@@ -314,38 +308,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _copyMessage(Message message) {
     ModernBanner.showSuccess(context, 'Message copied to clipboard');
-  }
-
-  void _onChannelSelected(MessagingChannel channel) {
-    setState(() => _selectedChannel = channel);
-    ModernBanner.showInfo(context, 'Switched to ${channel.displayName}');
-  }
-
-  void _showChannelSettings() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => ChannelPreferencesSheet(
-        preferences: UserChannelPreferences(
-          userId: widget.messagingState.currentUserId ?? '',
-          preferredChannel: _selectedChannel,
-        ),
-        onPreferencesChanged: (prefs) {
-          setState(() {
-            _selectedChannel = prefs.preferredChannel;
-            _availableChannels = prefs.availableChannels;
-          });
-        },
-        onConnectWhatsApp: () {
-          Navigator.pop(context);
-          ModernBanner.showInfo(context, 'WhatsApp connection coming soon');
-        },
-        onConnectMessenger: () {
-          Navigator.pop(context);
-          ModernBanner.showInfo(context, 'Messenger connection coming soon');
-        },
-      ),
-    );
   }
 
   @override
@@ -469,15 +431,6 @@ class _ChatScreenState extends State<ChatScreen> {
                       ],
                     ),
                   ),
-
-                  // Channel indicator (if multiple channels available)
-                  if (_availableChannels.length > 1)
-                    ChannelSelector(
-                      selectedChannel: _selectedChannel,
-                      availableChannels: _availableChannels,
-                      onChannelSelected: _onChannelSelected,
-                      compact: true,
-                    ),
                 ],
               ),
         actions: _isSearching
@@ -492,18 +445,25 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
               ]
             : [
-                IconButton(
-                  icon: const Icon(Icons.phone),
-                  onPressed: () {
-                    ModernBanner.showInfo(context, 'Voice calls coming soon');
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.videocam),
-                  onPressed: () {
-                    ModernBanner.showInfo(context, 'Video calls coming soon');
-                  },
-                ),
+                // Voice and video calling are hidden until the feature is real.
+                // Both buttons only ever raised a "coming soon" banner, and a
+                // control that answers every tap with an apology reads as
+                // broken rather than as forthcoming — the calls will arrive
+                // later, so the markup is kept rather than deleted. Restore by
+                // uncommenting; nothing else was removed.
+                //
+                // IconButton(
+                //   icon: const Icon(Icons.phone),
+                //   onPressed: () {
+                //     ModernBanner.showInfo(context, 'Voice calls coming soon');
+                //   },
+                // ),
+                // IconButton(
+                //   icon: const Icon(Icons.videocam),
+                //   onPressed: () {
+                //     ModernBanner.showInfo(context, 'Video calls coming soon');
+                //   },
+                // ),
                 PopupMenuButton<String>(
                   onSelected: (value) {
                     switch (value) {
@@ -512,9 +472,6 @@ class _ChatScreenState extends State<ChatScreen> {
                         break;
                       case 'media':
                         _openMediaGallery();
-                        break;
-                      case 'channels':
-                        _showChannelSettings();
                         break;
                       case 'mute':
                         ModernBanner.showSuccess(
@@ -552,16 +509,6 @@ class _ChatScreenState extends State<ChatScreen> {
                           Icon(Icons.photo_library),
                           SizedBox(width: 12),
                           Text('Media & Links'),
-                        ],
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      value: 'channels',
-                      child: Row(
-                        children: [
-                          Icon(Icons.multiple_stop),
-                          SizedBox(width: 12),
-                          Text('Message Channels'),
                         ],
                       ),
                     ),

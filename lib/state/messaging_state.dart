@@ -146,7 +146,14 @@ class MessagingStateNotifier extends ChangeNotifier with SafeNotifier {
     return _conversationList.archiveConversation(conversationId);
   }
 
-  /// Start a new conversation.
+  /// Start a new conversation and return the hydrated object.
+  ///
+  /// Costs four round trips (create, booking context read + write, then the
+  /// conversation row, participant and unread count). If the next thing you do
+  /// is navigate to the chat, use [startConversationId] instead — every screen
+  /// that opens a chat does, because ChatScreen loads its own messages and is
+  /// handed the other participant's name by its caller. Kept for callers that
+  /// genuinely need the Conversation itself.
   Future<Conversation?> startConversation({
     required String otherUserId,
     String? bookingId,
@@ -167,6 +174,67 @@ class MessagingStateNotifier extends ChangeNotifier with SafeNotifier {
     }
 
     return null;
+  }
+
+  /// Start a conversation and return just its ID, in a single round trip.
+  ///
+  /// For the case where the next thing that happens is navigating to the chat:
+  /// [ChatScreen] loads its own messages and is given the other participant's
+  /// name and avatar by its caller, so waiting on the hydrated conversation
+  /// object first buys nothing and costs three more sequential round trips of
+  /// completely unchanged UI.
+  ///
+  /// The conversation row is still fetched — after this returns, off the
+  /// critical path — so the Messages list picks up a newly created thread
+  /// without the guest waiting for it.
+  Future<String?> startConversationId({
+    required String otherUserId,
+    String? bookingId,
+    String? listingId,
+  }) async {
+    final userId = _currentUserId;
+    if (userId == null) return null;
+
+    final result = await _messagingService.getOrCreateConversationId(
+      currentUserId: userId,
+      otherUserId: otherUserId,
+      bookingId: bookingId,
+      listingId: listingId,
+    );
+
+    if (!result.isSuccess || result.data == null) return null;
+    final conversationId = result.data!;
+
+    // Fire and forget: the chat is already opening. A failure here costs the
+    // Messages list a row until its next refresh, which is not worth blocking
+    // the guest for.
+    unawaited(_finishInBackground(conversationId, userId, bookingId));
+
+    return conversationId;
+  }
+
+  /// The round trips that were being waited out for no reason: stamping the
+  /// booking context onto the conversation and reading the hydrated row back
+  /// for the Messages list. Sequenced, so the row we read already carries the
+  /// context we just wrote.
+  Future<void> _finishInBackground(
+    String conversationId,
+    String userId,
+    String? bookingId,
+  ) async {
+    if (bookingId != null) {
+      await _messagingService.populateBookingContext(
+        conversationId,
+        bookingId,
+      );
+    }
+    final full = await _messagingService.getConversation(
+      conversationId,
+      userId,
+    );
+    if (full.isSuccess && full.data != null) {
+      _conversationList.addConversation(full.data!);
+    }
   }
 
   // ============================================

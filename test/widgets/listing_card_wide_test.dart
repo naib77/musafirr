@@ -223,6 +223,119 @@ void main() {
     expect(find.byType(PageView), findsNothing);
   });
 
+  group('the photo slider buttons', () {
+    // A swipe is the only other way through the photos, and a desktop browser
+    // has no swipe — so without these the extra photos are unreachable there.
+    final next = find.byIcon(Icons.chevron_right_rounded);
+    final previous = find.byIcon(Icons.chevron_left_rounded);
+
+    testWidgets('a single photo gets no buttons to step through',
+        (tester) async {
+      await pumpCard(
+          tester, listingOf(daily: 1500, imageUrls: const ['a.jpg']));
+
+      expect(next, findsNothing);
+      expect(previous, findsNothing);
+    });
+
+    testWidgets('steps forward, and back again', (tester) async {
+      await pumpCard(
+        tester,
+        listingOf(daily: 1500, imageUrls: const ['a.jpg', 'b.jpg', 'c.jpg']),
+      );
+      final page = tester.widget<PageView>(find.byType(PageView)).controller!;
+
+      await tester.tap(next);
+      await tester.pumpAndSettle();
+      expect(page.page, 1);
+
+      await tester.tap(previous);
+      await tester.pumpAndSettle();
+      expect(page.page, 0);
+    });
+
+    testWidgets('stepping a photo does not open the listing', (tester) async {
+      // The whole card is tappable, so the arrow has to win its own taps or
+      // reaching photo two would push the detail screen instead.
+      var opened = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 390,
+              child: ListingCardWide(
+                listing: listingOf(
+                  daily: 1500,
+                  imageUrls: const ['a.jpg', 'b.jpg'],
+                ),
+                isFavorite: false,
+                onTap: () => opened = true,
+                onFavoriteTap: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byIcon(Icons.chevron_right_rounded));
+      await tester.pumpAndSettle();
+
+      expect(opened, isFalse);
+    });
+
+    testWidgets('no arrow points past either end of the carousel',
+        (tester) async {
+      await pumpCard(
+        tester,
+        listingOf(daily: 1500, imageUrls: const ['a.jpg', 'b.jpg']),
+      );
+
+      // Laid out but faded out, so the photo does not twitch as it appears.
+      double opacityOf(Finder button) => tester
+          .widget<AnimatedOpacity>(
+            find
+                .ancestor(of: button, matching: find.byType(AnimatedOpacity))
+                .first,
+          )
+          .opacity;
+
+      expect(opacityOf(previous), 0, reason: 'nothing before the first photo');
+      expect(opacityOf(next), 1);
+
+      await tester.tap(next);
+      await tester.pumpAndSettle();
+
+      expect(opacityOf(previous), 1);
+      expect(opacityOf(next), 0, reason: 'nothing after the last photo');
+    });
+
+    testWidgets('a screen reader is told which way each arrow goes',
+        (tester) async {
+      // The chevrons say nothing on their own.
+      final semantics = tester.ensureSemantics();
+      await pumpCard(
+        tester,
+        listingOf(daily: 1500, imageUrls: const ['a.jpg', 'b.jpg']),
+      );
+
+      expect(find.bySemanticsLabel('Next photo'), findsOneWidget);
+      // The arrow that points nowhere is inert, so it is not announced either —
+      // a screen reader is offered only the step that exists.
+      expect(find.bySemanticsLabel('Previous photo'), findsNothing);
+
+      // And the tap target is a comfortable one, not the 30px circle drawn.
+      final box = tester.getSize(find.bySemanticsLabel('Next photo'));
+      expect(box.width, greaterThanOrEqualTo(44));
+      expect(box.height, greaterThanOrEqualTo(44));
+
+      await tester.tap(find.byIcon(Icons.chevron_right_rounded));
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('Previous photo'), findsOneWidget);
+
+      semantics.dispose();
+    });
+  });
+
   testWidgets('nothing overflows on a narrow phone', (tester) async {
     // Everything at once, on the narrowest screen we support.
     await pumpCard(
