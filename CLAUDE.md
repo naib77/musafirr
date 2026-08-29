@@ -80,6 +80,59 @@ the `Supabase CLI` keychain entry.
 Migrations are not automatically applied by any pipeline. Applying one to the
 live database is a real, outward-facing action — say so and confirm first.
 
+## Availability rules belong in the database, not the booking form
+
+Migration 070 moved the *price* server-side because the client was deciding it.
+It left every other booking rule in Dart, and each one turned out to be
+unenforced. Migrations 110–111 close that; the pattern is worth remembering,
+because **"the booking form checks it" is not enforcement** — the form is
+skippable, and the RPC is a public endpoint.
+
+What 111 fixed, and what to check before adding a rule:
+
+- **`host_available` (038) was never enforced at booking time.** That
+  migration's own comment claims it is "enforced at the Reserve step". It was
+  not — it was only ever a search/browse filter, so a guest with the listing
+  already open, deep-linked, or reached from wishlist/trips booked an away host
+  fine. Do not trust that comment; it predates the fix.
+- **Per-plan min/max duration (055) was form-only.** `BookingLimits.minFor`'s
+  `?? 1` and the RPC's `coalesce(v_min, 1)` are now two implementations of one
+  rule. A test in `booking_limits_test.dart` pins the default so they can't
+  drift; if you change one, change both.
+- **`is_booking_available` was `SECURITY INVOKER`.** `bookings` has RLS and no
+  policy admits another guest's row, so the function the client calls
+  "server-authoritative" returned **true for slots that were already taken**.
+  The guest was told the dates were free and only found out at checkout. It is
+  `SECURITY DEFINER` now. Any function that has to see across users needs the
+  same, and the Dart-side comment claiming a plain RPC "sees ALL bookings" was
+  simply wrong.
+
+Two exclusion constraints are the real backstop, not the RPC's `if exists`
+guards — those are check-then-insert and lose races by construction:
+`bookings_no_overlap` (078, per listing) and `bookings_no_tenant_overlap` (111,
+per guest). Both raise `23P01`.
+
+**Never tell the two conflicts apart by their message text.** That is what the
+repository used to do (`contains('already have a booking')`), matching English
+written in a SQL file — rewording a migration silently showed guests the wrong
+message. Both raises now carry a `hint` (`listing_overlap` / `tenant_overlap`)
+and `bookingConflictTypeFrom` reads it, with the constraint name and then the
+legacy prose as ordered fallbacks. It has tests; keep them passing.
+
+Host date blocks live in `listing_availability_blocks` (110). Writes go through
+`block_listing_dates` / `unblock_listing_dates` — the table has **no** INSERT
+policy, deliberately, so the "are these dates already booked?" check can't be
+skipped by writing through PostgREST. The host's `note` is private, which is
+why the SELECT policy is owner-scoped and guests read
+`listing_blocked_ranges()` instead. Every range in the schema is half-open
+`'[)'`: a block ending when a stay begins does not collide.
+
+There is deliberately **no** constraint spanning blocks and bookings — a block
+is not a `bookings` row. A host blocking dates in the same millisecond a guest
+commits can lose; the cost is one booking to decline by hand, and the
+alternative (blocks as `bookings` rows under a sentinel status) would drag them
+through earnings, commission, payouts and the reservations list.
+
 ## Nothing user-tunable belongs in Dart
 
 App-wide knobs live in the `app_settings` table and are edited from the admin
@@ -168,6 +221,13 @@ Two footguns after any regeneration: `flutter_launcher_icons` strips the
 trailing newline from `web/manifest.json`, and `landing/favicon.png` +
 `landing/Icon-192.png` are separate copies that it does not touch.
 
+**The favicon needs a URL change, not a cache header.** Browsers keep favicons
+in a private store that ignores `Cache-Control`, so a correct deploy still
+leaves the old icon in the tab. `tool/build_web.sh` therefore appends
+`?v=<content hash>` to every icon URL in `index.html`; `assets/brand/README.md`
+explains it, along with why `web/favicon.ico` has to exist at all (the SPA
+not-found rule made `/favicon.ico` answer 200 with an HTML page).
+
 ## The admin portal is a separate repo
 
 `../musafir-admin` — Next.js App Router, **Base UI** (the `render` prop), *not*
@@ -202,16 +262,57 @@ false, so a plain `flutter build` never carried a bypass regardless.
 If you re-enable it — the Play reviewer needs a login that does not require
 receiving a Bangladeshi SMS, so you probably will — use an **explicit allowlist,
 never `*`**, and mind the format. `masterOtpAllowlist()` runs each entry through
-`normalizePhone()`, which collapses `+880…`/`880…` to a **leading `0`**. So
-`01673293542` and `+8801673293542` both work; **`1673293542` without the leading
-zero never matches anything** and the bypass silently fails to apply. The stale
-`README.md` command has exactly that bug, which is the likeliest reason it was
-widened to `*` in the first place.
+`normalizePhone()`, which reduces every spelling to the **11-digit leading-`0`**
+form, so `01673293542`, `+8801673293542` and now the bare `1673293542` all match
+the same entry. The bare form used to match nothing, which is the likeliest
+reason the allowlist was widened to `*` in the first place — see the section
+below for the account-duplication bug that same gap caused. The stale
+`README.md` command still shows the pre-fix single-number form.
 
 Login goes through the `send-otp` Supabase edge function rather than the Dart
 `ConsoleSmsGateway`, so driving a login can attempt a real SMS — do not automate
 it against a number you do not own. That is also why the unset above was *not*
 verified by attempting a login.
+
+## One phone number, one account
+
+`normalizePhone` in `supabase/functions/_shared/otp.ts` is not formatting — it
+**decides which account a login lands on.** `verify-otp` turns its output into
+the synthetic auth identity `phone.<canonical>@musaafir.app` and creates one
+account per distinct value, so two spellings of one number that canonicalise
+differently are two different people: separate listings, separate bookings, and
+a separate identity verification to submit and have approved.
+
+It shipped with a hole. `+880…`, `880…` and an already-canonical `01…` were all
+handled, but a **bare 10-digit** number matched no branch and passed through
+unchanged — while `phone_input_field.dart` renders `+880` as a decorative
+`prefixIcon` and submits the raw field text, so the UI actively invites you to
+omit the zero. Four production accounts were duplicated before anyone noticed,
+with users submitting documents twice and their listings split across two
+logins. Migration 109 merged them (**applied 2026-08-27**).
+
+Two things guard it now, and both matter:
+
+- **`lib/services/auth/phone_number.dart` is the only Dart implementation.**
+  There used to be three — `OtpService`, a diverged private copy on
+  `SupabaseAuthService`, and `MockAuthService` — plus the TypeScript one, and
+  **none had a test**. A shared "keep these in step" comment was already false.
+- **`sh tool/verify_phone_parity.sh`** runs the same 16 inputs through the Dart
+  and the TypeScript and diffs them. Run it whenever you touch either side; it
+  is not in CI, which has no node step.
+
+Existing rows are deliberately **not** renamed to the canonical form. The stored
+email is an opaque key that `admin.generateLink` consumes and the client echoes
+back to redeem the token, so a bulk rename would have to land in the same
+instant as the function deploy — every returning user in the gap gets a brand-new
+empty account, and 33 of 38 accounts are the legacy spelling. `verify-otp` reads
+the canonical identity and then the legacy one instead, which is
+order-independent and needs no data change.
+
+For the same reason `otpLookupPhones` makes `verify-otp` accept an `otp_attempts`
+row stored under **either** spelling. `send-otp` writes that row and `verify-otp`
+reads it, but they are separate deploys — without this, the minutes between them
+fail every bare-form login with "No active code".
 
 ## Conventions
 

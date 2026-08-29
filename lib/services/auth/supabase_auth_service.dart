@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' as supabase show User;
 import '../../models/user.dart';
 import '../../models/user_role.dart';
 import '../otp_service.dart';
+import 'phone_number.dart';
 import 'auth_service.dart';
 
 /// Supabase-backed implementation of [AuthService].
@@ -461,14 +462,15 @@ class SupabaseAuthService implements AuthService {
     }
   }
 
-  /// Normalize phone number for comparison
-  String _normalizePhone(String phone) {
-    var normalized = phone.replaceAll(RegExp(r'[\s\-\(\)\+]'), '');
-    if (normalized.startsWith('880')) {
-      normalized = '0${normalized.substring(3)}';
-    }
-    return normalized;
-  }
+  /// Normalize phone number for comparison.
+  ///
+  /// Delegates to [canonicalBdPhone] rather than keeping a second rule. This
+  /// copy had already drifted: it stripped `+` before testing for `880`, so it
+  /// agreed with the shared rule by accident on `+880…` and disagreed on
+  /// anything else, and it never handled a bare number missing its leading
+  /// zero. Comparison and identity must use one rule — a lookup that
+  /// normalises differently from the account it is looking for finds nothing.
+  String _normalizePhone(String phone) => canonicalBdPhone(phone);
 
   @override
   void dispose() {

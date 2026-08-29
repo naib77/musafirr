@@ -130,3 +130,30 @@ Web icons land in `web/`, which is only the source. They reach users only after
 
 `flutter_launcher_icons` also strips the trailing newline from
 `web/manifest.json` every run. Put it back.
+
+## Why the favicon appears not to update
+
+It was the one brand surface that stayed stale after a deploy, and the cause is
+not HTTP caching — `favicon.png` answers `no-cache, must-revalidate`, so a
+normal image would refresh. **Browsers keep favicons in a separate, long-lived
+store** (Chrome has a favicon database) that is not driven by `Cache-Control`,
+so a tab can keep painting an old icon indefinitely. "Clear your cache" is not
+a fix you can ship to users.
+
+What a browser cannot ignore is a *different URL*. So `tool/build_web.sh`
+appends `?v=<content hash>` to every icon URL in `index.html` — favicon,
+`Icon-192` (including its `rel=preload`, which must match or the image
+downloads twice) and `social-card.png`. `index.html` is `no-store`, so a
+changed hash is found on the next load and the icon is fetched as a URL the
+favicon store has never seen. An unchanged icon keeps its hash and stays
+cached.
+
+`web/favicon.ico` exists for a second reason: clients probe `/favicon.ico` by
+convention, and because `wrangler.jsonc` sets `not_found_handling` to
+`single-page-application`, that request used to answer **200 with a 16KB HTML
+document**. Nothing points a `<link>` at it — modern browsers prefer the PNG
+links — it just makes the conventional path return an image. It carries 16/32/
+48/64 so no client upscales 16px artwork.
+
+The social card gets the same treatment against a different cache: WhatsApp,
+Messenger, Facebook and X cache an `og:image` per URL, sometimes for weeks.

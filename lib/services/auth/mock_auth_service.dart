@@ -6,6 +6,7 @@ import '../../models/user.dart';
 import '../../models/user_role.dart';
 import '../otp_service.dart';
 import 'auth_service.dart';
+import 'phone_number.dart';
 
 /// Mock implementation of [AuthService] for development and demo mode.
 ///
@@ -81,14 +82,13 @@ class MockAuthService implements AuthService {
     _authStateController.add(user);
   }
 
-  /// Normalize phone number for storage
-  String _normalizePhone(String phone) {
-    var normalized = phone.replaceAll(RegExp(r'[\s\-\(\)\+]'), '');
-    if (normalized.startsWith('880')) {
-      normalized = '0${normalized.substring(3)}';
-    }
-    return normalized;
-  }
+  /// Normalize phone number for storage.
+  ///
+  /// Delegates to [canonicalBdPhone] — the fourth copy of this rule that had
+  /// drifted. A mock that normalises differently from production is how a bug
+  /// like this stays hidden: every dev-mode login looks fine because the mock
+  /// agrees with itself.
+  String _normalizePhone(String phone) => canonicalBdPhone(phone);
 
   @override
   Future<OtpResult> sendOtp(String phoneNumber) async {

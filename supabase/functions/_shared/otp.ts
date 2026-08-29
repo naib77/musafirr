@@ -7,20 +7,83 @@ export const OTP_LENGTH = 4;
 export const OTP_TTL_MINUTES = 5;
 export const OTP_MAX_ATTEMPTS = 3;
 
+/// The assigned BD mobile operator prefixes with the national leading zero
+/// stripped: 013-019 -> 1[3-9], then eight more digits.
+const BARE_BD_MOBILE = /^1[3-9][0-9]{8}$/;
+
 /// App-normalized BD number: strip formatting, collapse +880/880 to a leading 0
 /// (e.g. "+880 1673-293542" and "8801673293542" -> "01673293542").
+///
+/// THIS DECIDES WHICH ACCOUNT A USER LOGS INTO. phoneToEmail below turns the
+/// result into the Supabase auth identity, and verify-otp creates one account
+/// per distinct value — so any two spellings of one number that come out
+/// different here are two different people to the app, with separate listings,
+/// bookings and identity verifications.
+///
+/// The bare-10-digit branch is not cosmetic. The login screen renders "+880" as
+/// a decorative prefix and submits the raw field text, so users are invited to
+/// omit the leading zero — visually the "+880" replaces it. Without that branch
+/// "1711165212" matched nothing and passed through unchanged, producing
+/// phone.1711165212@musaafir.app beside phone.01711165212@musaafir.app for one
+/// human. Four production accounts were duplicated that way before it was
+/// noticed; migration 109 merges the pairs that already exist. Existing rows
+/// are NOT renamed to the canonical form — see legacyPhoneToEmail below for why.
+///
+/// Keep in step with lib/services/auth/phone_number.dart (canonicalBdPhone),
+/// which is pinned by test/services/phone_number_test.dart.
 export function normalizePhone(phone: string): string {
   let n = phone.replace(/[\s\-()]/g, "");
   if (n.startsWith("+880")) n = "0" + n.slice(4);
   else if (n.startsWith("880")) n = "0" + n.slice(3);
   else if (n.startsWith("+")) n = n.slice(1);
+  // Only the exact "10 digits starting 1[3-9]" shape is assumed to be a BD
+  // mobile missing its zero. Guessing more widely would rewrite a mistyped
+  // number into somebody else's account, which is worse than failing to log in.
+  if (BARE_BD_MOBILE.test(n)) n = "0" + n;
   return n;
 }
 
 /// Internal Supabase-auth email derived from the phone. Must match the Flutter
-/// client's _phoneToEmail exactly.
+/// client's phoneToAuthEmail exactly.
 export function phoneToEmail(normalizedPhone: string): string {
   return `phone.${normalizedPhone}@musaafir.app`;
+}
+
+/// The identity this number would have been given BEFORE normalizePhone learned
+/// to restore a missing leading zero — i.e. the bare 10-digit form. Null when
+/// there is no older spelling to look for.
+///
+/// Existing accounts are NOT renamed to the canonical form. The stored email is
+/// an opaque key that admin.generateLink consumes and the client echoes back, so
+/// rewriting it would mean renaming 33 live accounts and landing that rename in
+/// the same instant as the edge-function deploy — every returning user in the
+/// gap gets a new empty account. verify-otp instead looks for both spellings and
+/// keeps whichever one it finds.
+export function legacyPhoneToEmail(canonicalPhone: string): string | null {
+  const m = /^0(1[3-9][0-9]{8})$/.exec(canonicalPhone);
+  return m ? `phone.${m[1]}@musaafir.app` : null;
+}
+
+/// Every spelling the otp_attempts row for this number might be stored under.
+///
+/// send-otp writes the row keyed by normalizePhone(input) and verify-otp reads
+/// it back the same way, so the two functions must agree on that key — but they
+/// are separate deploys. While one carries the bare-10-digit branch and the
+/// other does not, a user typing "1711165212" has their code stored under one
+/// spelling and looked up under the other, and every such login fails with
+/// "No active code". That is 33 of 38 accounts, for as long as the gap lasts.
+///
+/// Reading both spellings removes the gap in the only direction that matters:
+/// a verify-otp carrying this accepts a code minted by either version of
+/// send-otp, so the deploys can land in any order. Safe because the codes are
+/// short-lived, single-use and hashed, and because the two spellings are the
+/// same phone number by definition — nothing widens who can redeem a code.
+///
+/// Once both functions are deployed everywhere, only the canonical key is ever
+/// written and the second candidate simply never matches.
+export function otpLookupPhones(normalizedPhone: string): string[] {
+  const legacy = /^0(1[3-9][0-9]{8})$/.exec(normalizedPhone);
+  return legacy ? [normalizedPhone, legacy[1]] : [normalizedPhone];
 }
 
 /// GenNet msisdn format (8801673293542) from an app-normalized number.
