@@ -30,3 +30,7 @@ local.properties
 # Build outputs (build/web is tracked for the web stage deployment)
 /build/*
 !/build/web
+
+# Local wrangler dev state (workerd cache, asset manifest). Created by
+# `wrangler dev` — e.g. tool/verify_link_previews.sh. Never deployed.
+.wrangler/
