@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/otp_config.dart';
 import '../config/sms_config.dart';
+import 'auth/phone_number.dart';
 import 'sms/sms_gateway_factory.dart';
 import 'sms/sms_send_result.dart';
 
@@ -113,20 +114,14 @@ class OtpService {
     }
   }
 
-  /// Normalize phone number to standard format
-  String normalizePhoneNumber(String phone) {
-    // Remove spaces, dashes, and other formatting
-    var normalized = phone.replaceAll(RegExp(r'[\s\-\(\)]'), '');
-
-    // Handle +880 prefix
-    if (normalized.startsWith('+880')) {
-      normalized = '0${normalized.substring(4)}';
-    } else if (normalized.startsWith('880')) {
-      normalized = '0${normalized.substring(3)}';
-    }
-
-    return normalized;
-  }
+  /// Normalize phone number to standard format.
+  ///
+  /// Delegates to [canonicalBdPhone]. The rule used to be inlined here, where it
+  /// could not be unit-tested (this class reaches Supabase in its constructor)
+  /// and had drifted from both `SupabaseAuthService._normalizePhone` and the
+  /// TypeScript copy that actually decides account identity. Three
+  /// implementations, no tests, and four duplicated production accounts.
+  String normalizePhoneNumber(String phone) => canonicalBdPhone(phone);
 
   /// Check if resend cooldown is active
   bool isResendCooldownActive(String phoneNumber) {

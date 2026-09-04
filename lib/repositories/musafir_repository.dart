@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../models/availability_block.dart';
 import '../models/booking.dart';
 import '../models/booking_contacts.dart';
 import '../models/booking_duration.dart';
@@ -141,6 +142,30 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   /// Hide/Show toggle can't wipe check-in details (which aren't loaded into the
   /// in-memory listing) or get rolled back by an unrelated secondary write.
   Future<void> setListingAvailability(String listingId, bool available);
+
+  /// The host's own blocked date ranges for a listing, earliest first.
+  ///
+  /// Owner-only: the rows carry the host's private `note`, so the table's
+  /// SELECT policy is scoped to the listing's owner. A guest asking the same
+  /// question goes through `is_booking_available`, which answers yes/no without
+  /// revealing why.
+  Future<List<AvailabilityBlock>> listingAvailabilityBlocks(String listingId);
+
+  /// Marks [startsAt]–[endsAt] unavailable on a listing the caller owns.
+  ///
+  /// Throws if the range already holds a pending/confirmed/active booking —
+  /// the host has to decline that booking explicitly rather than have it
+  /// quietly stranded behind a block — or if it overlaps a block they already
+  /// have.
+  Future<AvailabilityBlock> blockListingDates({
+    required String listingId,
+    required DateTime startsAt,
+    required DateTime endsAt,
+    String? note,
+  });
+
+  /// Removes one block. Only the owning host (or an admin) can.
+  Future<void> unblockListingDates(String blockId);
 
   /// Loads the host-only check-in access details for a listing (or null if
   /// none / not the owner). Kept separate from the main listing fetch so the

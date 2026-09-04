@@ -480,24 +480,74 @@ year or so, so treat the *names* as the stable part and the nesting as a hint.
 | Default language | English (United States) unless you want Bengali as the default. The app already ships Bangla date formatting, so a `bn-BD` translation is a natural follow-up, added later under the store listing. |
 | App or game | App |
 | Free or paid | **Free.** One-way door — see §1. |
-| Declarations | Developer Program Policies, and US export laws. Both required. |
+| Contact email | Collected here, not just in store settings. **Public on your listing**, and where Google writes to you — see the §7.5 warning about `support@musaafir.app` not existing yet. |
+| Declarations | Developer Program Policies, **and** US export laws. Both required. |
+| Play App Signing | You must accept the **Play App Signing Terms of Service**. Not optional and not reversible — it is what makes §2.3 and §7.7 work. |
 
 That lands you on the app **Dashboard**, whose URL now contains the app id. Keep
 that tab; every path below is inside it.
 
-### 7.2 The Dashboard task list
+### 7.2 The Dashboard, card by card
 
-The Dashboard shows two groups. Work them in this order, because the second one
-cannot be completed until the first is:
+The Dashboard does **not** present the left-nav structure. It presents collapsible
+**task cards**, each with a **View tasks** link that expands into a checklist.
+Completed tasks get a green tick and strikethrough. That guided flow is the thing
+you actually click through; the left-nav paths in §§7.3–7.8 are just where each
+task lives if you'd rather navigate straight to it.
 
-1. **Set up your app** — the policy declarations and store listing (§7.3–§7.5).
-2. **Release your app** — testing tracks, then production (§7.6–§7.8).
+You will see roughly these three cards. Google reorders and renames them, and
+the exact set varies with the app, so **tick against your own screen, not against
+this list**:
 
-### 7.3 App content declarations
+| Card | What it is | Covered in |
+|---|---|---|
+| **"Start testing now"** — *"Release your app early for internal testing without review"* | Internal test track. The operative words are **without review**: no policy review, so a build reaches testers in minutes instead of days. | §7.6 |
+| **"Set up your app"** — *"Provide information about your app and set up your store listing"* | The policy declarations plus the store listing. This is the long one, ~13 tasks. | §7.3, §7.4, §7.5 |
+| **"Publish your app on Google Play"** | Select countries and regions, then create the production release. | §7.8 |
 
-**Policy and programmes → App content.** Every row must be green before you can
-release to production. Answers for Musaafir, most of them verified against the
-built APK rather than guessed:
+There is usually a **Pre-registration** option too. Skip it — it publishes a
+store listing before the app exists to collect sign-ups, which is a launch-marketing
+tactic, not a step toward being live.
+
+#### The order that actually saves you time
+
+The cards are listed testing-first for a reason, and it is the opposite of how
+§§7.3–7.8 are numbered:
+
+1. **Try the internal-testing card first** (§7.6). "Without review" means minutes
+   rather than days, so it is the cheapest way to get the real signed artifact
+   onto a real device — and this build has three things that have never run on
+   physical hardware: the Android Photo Picker (§6.3), the new adaptive icon, and
+   a login with no master OTP. Find those before you spend an afternoon on
+   declarations. If the Console makes you finish setup tasks first, fine — do
+   them, they were mandatory regardless (see the callout below).
+2. **Then the "Set up your app" card** (§7.3–§7.5), which is where the waiting is:
+   the privacy policy URL has to be live, the support mailbox has to exist, and
+   the content-rating questionnaire has to be answered.
+3. **Then publish** (§7.8).
+
+> **If "Create new release" is greyed out, the button is not broken.** Google's
+> instruction is the same on every track page, internal included: *complete the
+> outstanding setup tasks listed on your Dashboard.* So go back to the "Set up
+> your app" card and find the unticked task.
+>
+> What "without review" buys you is the **review wait**, not a blanket exemption
+> from setup — an internal release skips policy review and reaches testers in
+> minutes, where production review takes days. How much of the card the internal
+> track insists on first is not something this doc can promise; find out by
+> trying it, which costs one click. If it lets you upload, you have saved
+> yourself a day. If it doesn't, work the card and come back — you lose nothing,
+> because those tasks were mandatory anyway.
+
+### 7.3 "Provide information about your app" — the declaration tasks
+
+This is the bulk of the **"Set up your app"** card. Each row below is one task in
+that checklist; they also all live under **Policy and programmes → App content**
+if you prefer navigating directly. Every one must be ticked before the production
+**Create new release** button un-greys (§7.2).
+
+Answers for Musaafir, most of them verified against the built APK rather than
+guessed:
 
 | Declaration | Answer | Why |
 |---|---|---|
@@ -568,38 +618,71 @@ live and stable.
 The alternative — a permanent demo account with a hardcoded bypass — is more code
 and a broader hole. Do not use `1234`, and do not use `*`.
 
-### 7.5 Store listing and settings
+### 7.5 The store-listing tasks on the same card
 
-**Grow → Store presence → Main store listing.** Assets and limits are in §4.
-`store/play/icon-512.png` is already generated and correct (512×512, RGB, no
-alpha). Still to produce: the **1024×500 feature graphic** (required) and 2–8
-phone screenshots, plus 7" and 10" tablet screenshots if you care about tablet
-ranking.
+The **"Set up your app"** card finishes with three tasks that are about
+presentation rather than policy. In the left nav they are under **Grow → Store
+presence**.
 
-**Grow → Store presence → Store settings:** app category (**Travel & Local** fits
-guest↔host stays better than House & Home), tags, and contact details.
+**"Set up your store listing"** → *Main store listing.* Assets and character
+limits are in §4. `store/play/icon-512.png` is already generated and correct
+(512×512, RGB, no alpha). Still to produce:
 
-> The contact email is public on your listing and is where Google writes to you.
-> `support@musaafir.app` does not exist today — the domain does not resolve. Fix
-> that before you paste it here (§5).
+- **Feature graphic, 1024×500** — required, and the single most common thing
+  people discover is missing at the last minute.
+- **2–8 phone screenshots** — real UI, not marketing collateral with fake bezels.
+- 7" and 10" **tablet screenshots** — optional, but the listing is down-ranked on
+  tablets without them.
 
-### 7.6 Internal testing first
+**"Select an app category and provide contact details"** → *Store settings.*
+Category: **Travel & Local** fits guest↔host stays better than House & Home.
+Contact details: the **support email is required**; phone number and website are
+recommended and worth filling, because a listing with only an email reads as
+less trustworthy for a marketplace handling money and ID documents.
 
-**Test and release → Testing → Internal testing → Create new release.**
+> The support email is public on your listing and is where Google writes to you.
+> `support@musaafir.app` **does not exist today** — the `musaafir.app` domain does
+> not resolve (§5). This is also the address your privacy policy and
+> account-deletion page both promise a reply from. Fix it before you paste it
+> anywhere.
+
+**"Manage how your app is organised and presented"** — tags and similar
+discoverability metadata. Low stakes; fill it in and move on.
+
+### 7.6 "Release your app early for internal testing without review"
+
+**Do this first** (§7.2). Left nav: **Test and release → Testing → Internal
+testing**.
 
 Not required for you — the 12-testers rule does not apply to organization
-accounts — but do it anyway for a day. It is the only way to hold the *actual
-signed artifact Play processed* on a real device, and it is where the
-release-only failures show up.
+accounts (§1) — but **"without review"** is the point: an internal release skips
+policy review entirely and reaches testers within minutes, where a production
+review takes days. If **Create new release** is greyed out here, finish the
+flagged Dashboard tasks and return (§7.2).
 
-1. Upload `build/app/outputs/bundle/release/app-release.aab` (§8).
-2. Add testers by email — up to 100, no wait, and no full policy review.
-3. Install from the opt-in link and exercise **maps, voice search, camera/selfie,
-   image upload, push, and a full OTP login** against production Supabase.
+1. **Testers tab → create a tester list.** Up to 100 testers, added by email
+   address or Google Group. They must be real Google accounts. Add yourself.
+2. Add a **feedback email or URL** so testers have somewhere to report.
+3. **Create new release** → upload
+   `build/app/outputs/bundle/release/app-release.aab` (§8).
+4. **Copy the shareable opt-in link**, open it as a tester, accept, and install
+   from the Play Store.
+5. **Save changes** — then remember the Dashboard's batching rule (§7) if the
+   release does not appear.
 
-The image-upload path deserves particular attention on this build: it now goes
-through the Android Photo Picker rather than `ACTION_GET_CONTENT` (§6.3), which is
-a different system UI that has never run on a real device here.
+Then exercise, on a physical device, against **production** Supabase:
+
+- **Image upload** — this build routes gallery picks through the Android Photo
+  Picker instead of `ACTION_GET_CONTENT` (§6.3). Different system UI, never yet
+  run on real hardware.
+- **A full OTP login** — the master OTP is off (§6.4), so this is the first time
+  the real SMS path is the only path.
+- **Maps** — expect these to work now and break after §2.4 if you get the
+  app-signing SHA-1 wrong.
+- Voice search, camera/selfie, push.
+
+Note that installs from the internal track are signed with the **Play app signing
+key**, not your upload key — so this is also the first honest test of §7.7.
 
 ### 7.7 Collect the app-signing certificate
 
@@ -612,12 +695,16 @@ it. Skip this and maps render blank for every store user while working perfectly
 on your machine — the single most common "it worked in testing" failure for a
 Flutter app with maps.
 
-### 7.8 Production
+### 7.8 "Publish your app on Google Play"
 
-**Test and release → Production → Create new release.**
+The last Dashboard card, two tasks. Left nav: **Test and release → Production**.
 
-1. Upload the same AAB (or promote the internal-testing release).
-2. Set **countries** — Bangladesh at minimum.
+1. **"Select countries and regions"** — Bangladesh at minimum. This is its own
+   task on the card and is easy to skip past; a production release with no
+   countries selected cannot roll out.
+2. **"Create a new release"** — greyed out until every "Set up your app" task is
+   ticked (§7.2). Upload the same AAB, or **promote** the internal-testing
+   release, which is better: it ships the exact bytes you just tested.
 3. Write release notes.
 4. **Staged rollout**: start at 10–20%. A staged rollout can be halted; a 100%
    rollout cannot be un-shipped.
@@ -693,8 +780,11 @@ Still on you:
 - [ ] `versionCode` bumped from 1; `versionName` decided (§2.5) — consider starting at `1.0.0`
 - [ ] Store name spelling settled: `Musaafir` vs `Musafir` (§3)
 - [ ] **Reviewer credentials that actually work** — set `MASTER_OTP_PHONES` to a single reviewer number, code not `1234` (§7.4). Most likely single cause of a first rejection
-- [ ] App created in the Console; free-vs-paid chosen deliberately (one-way door) (§7.1)
-- [ ] All **App content** declarations green (§7.3)
+- [ ] App created in the Console; free-vs-paid chosen deliberately (one-way door), Play App Signing ToS accepted (§7.1)
+- [ ] **Internal testing done first** — "without review", so it needs none of the below (§7.6)
+- [ ] All **"Set up your app"** card tasks ticked — production's *Create new release* stays greyed out until they are (§7.2, §7.3)
+- [ ] Feature graphic 1024×500 + screenshots uploaded; category and contact details set (§7.5)
+- [ ] **"Select countries and regions"** done — its own task, easy to miss (§7.8)
 - [ ] After first upload: app-signing SHA-1 collected and fed into the Maps restriction (§7.7)
 - [ ] **Publishing overview → Send changes for review** actually clicked (§7)
 - [ ] Feature graphic 1024×500 + screenshots produced (§4)

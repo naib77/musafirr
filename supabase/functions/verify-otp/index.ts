@@ -24,7 +24,9 @@ import {
   hashOtp,
   isMasterOtp,
   jsonResponse,
+  legacyPhoneToEmail,
   normalizePhone,
+  otpLookupPhones,
   OTP_MAX_ATTEMPTS,
   phoneToEmail,
 } from "../_shared/otp.ts";
@@ -61,7 +63,9 @@ serve(async (req) => {
       const { data: rows, error } = await supabase
         .from("otp_attempts")
         .select("id, otp_hash, attempts, expires_at")
-        .eq("phone", phone)
+        // Either spelling — see otpLookupPhones. Lets this deploy land
+        // before or after send-otp's without breaking logins in between.
+        .in("phone", otpLookupPhones(phone))
         .eq("is_used", false)
         .gt("expires_at", new Date().toISOString())
         .order("created_at", { ascending: false })
@@ -107,19 +111,46 @@ serve(async (req) => {
     }
 
     // ---- ensure the auth user, rotate password, mint session -------------
-    const email = phoneToEmail(phone);
+    //
+    // TWO candidate identities. normalizePhone used to leave a bare 10-digit
+    // number alone, so accounts created before that fix are stored as
+    // phone.1711165212@ rather than phone.01711165212@ — and the login screen
+    // renders "+880" as a decorative prefix while submitting the raw text, so
+    // most users typed it that way. 33 of 38 accounts are the bare form.
+    //
+    // Their stored email is NOT rewritten, here or by a migration. It is an
+    // opaque key that admin.generateLink consumes and that the client echoes
+    // back to verify the token, so a rename would have to land in the same
+    // instant as this function's deploy; every returning user in the gap would
+    // be handed a brand-new empty account. Looking for both spellings instead
+    // is order-independent and needs no migration: whichever row exists keeps
+    // its own address, and only genuinely new accounts get the canonical one.
+    const canonicalEmail = phoneToEmail(phone);
+    const legacyEmail = legacyPhoneToEmail(phone);
     const admin = supabase.auth.admin;
 
-    let userId: string | null = null;
+    const lookupByEmail = async (candidate: string): Promise<string | null> => {
+      const { data } = await supabase.rpc(
+        "get_auth_user_id_by_email",
+        { p_email: candidate },
+      );
+      return (data as string | null) ?? null;
+    };
+
+    // Canonical first, so that once the duplicate pairs are merged the legacy
+    // branch is only ever reached by accounts that have no canonical twin.
+    let email = canonicalEmail;
+    let userId: string | null = await lookupByEmail(canonicalEmail);
+    if (!userId && legacyEmail) {
+      const legacyId = await lookupByEmail(legacyEmail);
+      if (legacyId) {
+        userId = legacyId;
+        email = legacyEmail;
+      }
+    }
     let isExistingUser = false;
 
-    const { data: existingId } = await supabase.rpc(
-      "get_auth_user_id_by_email",
-      { p_email: email },
-    );
-
-    if (existingId) {
-      userId = existingId as string;
+    if (userId) {
       // Rotate away any old phone-derived password.
       await admin.updateUserById(userId, { password: randomPassword() });
       const { data: profile } = await supabase
@@ -130,7 +161,7 @@ serve(async (req) => {
       isExistingUser = profile?.signup_completed === true;
     } else {
       const { data: created, error: createError } = await admin.createUser({
-        email,
+        email: canonicalEmail,
         email_confirm: true,
         password: randomPassword(),
         user_metadata: { mobile: formatPhoneForDisplay(phone) },
@@ -144,6 +175,7 @@ serve(async (req) => {
       }
       userId = created.user.id;
       isExistingUser = false; // brand-new: client goes to profile completion
+      email = canonicalEmail; // new accounts are always canonical
     }
 
     const { data: link, error: linkError } = await admin.generateLink({

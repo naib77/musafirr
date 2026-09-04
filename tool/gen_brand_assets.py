@@ -24,6 +24,8 @@ Writes (nothing else in the repo is generated from the artwork):
     android/.../mipmap-<d>/ic_launcher_monochrome.png adaptive monochrome
     android/.../drawable-<d>/ic_notification.png      status-bar icon
     ios/.../LaunchImage.imageset/LaunchImage*.png     iOS launch screen
+    web/favicon.ico                                  /favicon.ico probe path
+    web/social-card.png                              link-preview card
     store/play/icon-512.png                          Play listing icon
 
 The iOS *app icon* and the web icons are NOT written here —
@@ -378,6 +380,28 @@ card.paste(
     lw, ((CARD_W - target_w) // 2, (CARD_H - target_h) // 2), lw
 )
 write(os.path.join("web", "social-card.png"), card)
+
+print("web favicon.ico:")
+# Browsers, crawlers and feed readers probe /favicon.ico by convention. There
+# was no such file, and wrangler.jsonc sets not_found_handling to
+# single-page-application, so that request answered **200 with a 16KB HTML
+# document**. A 404 would at least let the client fall back cleanly to the
+# <link rel="icon"> tags; a 200 hands it a page where it expected an image, on
+# every cold load.
+#
+# flutter_launcher_icons does not emit .ico, and its favicon.png is 16x16 only.
+# A multi-size .ico covers the tab at 1x, 2x and the bookmark bar without
+# asking any client to upscale 16px artwork.
+#
+# No <link> tag points at this: modern browsers prefer the PNG links in
+# index.html, and adding an .ico link would only compete with them. This file
+# exists purely so the conventional path returns an image.
+ICO_SIZES = [(16, 16), (32, 32), (48, 48), (64, 64)]
+ico = place(mark_white, 256, FRAC_ICON, Image.new("RGB", (256, 256), BRAND))
+ico.convert("RGB").save(
+    os.path.join("web", "favicon.ico"), format="ICO", sizes=ICO_SIZES
+)
+print(f"  web/favicon.ico  {'/'.join(str(w) for w, _ in ICO_SIZES)}")
 
 print("play listing icon:")
 # 512x512, RGB with no alpha and no rounding of our own: Play applies its own

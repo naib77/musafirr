@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart'
 import 'package:supabase_flutter/supabase_flutter.dart' show RealtimeChannel;
 
 import '../data/facility_catalog.dart';
+import '../models/availability_block.dart';
 import '../models/booking.dart';
 import '../models/booking_conflict_exception.dart';
 import '../models/booking_contacts.dart';
@@ -1477,6 +1478,49 @@ class SupabaseMusafirRepository extends ChangeNotifier
   }
 
   @override
+  Future<List<AvailabilityBlock>> listingAvailabilityBlocks(
+      String listingId) async {
+    // Read straight from the table rather than through listing_blocked_ranges:
+    // that RPC deliberately withholds `note`, and this is the host's own screen,
+    // where the note is the whole point. The owner-scoped SELECT policy on
+    // listing_availability_blocks is what makes this safe.
+    final rows = await _client
+        .from('listing_availability_blocks')
+        .select()
+        .eq('listing_id', listingId)
+        .order('starts_at');
+    return (rows as List)
+        .map((r) => AvailabilityBlock.fromJson(r as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<AvailabilityBlock> blockListingDates({
+    required String listingId,
+    required DateTime startsAt,
+    required DateTime endsAt,
+    String? note,
+  }) async {
+    // Through the RPC, not a direct insert: the table has no INSERT policy, and
+    // the "are these dates already booked?" check lives inside the function so
+    // it can't be skipped by writing to PostgREST directly.
+    final row = await _client.rpc('block_listing_dates', params: {
+      'p_listing_id': listingId,
+      'p_starts_at': startsAt.toUtc().toIso8601String(),
+      'p_ends_at': endsAt.toUtc().toIso8601String(),
+      'p_note': note,
+    });
+    return AvailabilityBlock.fromJson(row as Map<String, dynamic>);
+  }
+
+  @override
+  Future<void> unblockListingDates(String blockId) async {
+    await _client.rpc('unblock_listing_dates', params: {
+      'p_block_id': blockId,
+    });
+  }
+
+  @override
   Future<void> deleteListing(String listingId) async {
     // Refuse to delete a listing that still has live bookings. bookings.listing_id
     // is ON DELETE CASCADE, so deleting would silently destroy guests' pending/
@@ -1931,14 +1975,18 @@ class SupabaseMusafirRepository extends ChangeNotifier
       // just taken" message instead of a generic failure. Without this the
       // server race-loss surfaces as a bare PostgrestException → generic banner.
       if (e is PostgrestException && e.code == '23P01') {
-        final isUserConflict =
-            e.message.toLowerCase().contains('already have a booking');
+        // Which of the two sentences to show is decided by
+        // [bookingConflictTypeFrom] — a pure function with its own tests —
+        // rather than by grepping the server's English here, which is how a
+        // reworded migration used to be able to silently flip the message.
+        final conflictType =
+            bookingConflictTypeFrom(hint: e.hint, message: e.message);
+        final isUserConflict = conflictType == ConflictType.user;
         throw BookingConflictException(
           isUserConflict
               ? 'You already have a booking during this time period'
               : 'This time slot was just booked by someone else',
-          conflictType:
-              isUserConflict ? ConflictType.user : ConflictType.listing,
+          conflictType: conflictType,
           // The conflicting booking belongs to another guest — RLS keeps it out
           // of this client, so there is nothing to list.
           conflictingBookings: const [],
