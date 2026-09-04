@@ -327,6 +327,11 @@ class _MusafirAppState extends State<MusafirApp> {
       // Named routes exist for one reason: a listing needs a URL somebody can
       // send to a friend. Everything else still navigates by pushing a
       // constructed screen, which is fine — those have no shareable identity.
+      //
+      // There is deliberately NO `home:` here. MaterialApp asserts
+      // `home == null || onGenerateInitialRoutes == null` ("the home argument
+      // will be redundant"), so the shell is produced by both callbacks below
+      // instead — _onGenerateRoute answers '/' with it.
       onGenerateRoute: _onGenerateRoute,
       // A cold `/listing/<id>` must open with the shell UNDERNEATH it, so Back
       // (and the browser's back button) lands on Explore instead of exiting to
@@ -334,16 +339,20 @@ class _MusafirAppState extends State<MusafirApp> {
       // segment, which for '/listing/abc' means asking for '/listing' too —
       // a route that does not exist.
       onGenerateInitialRoutes: (initialRoute) => [
-        MaterialPageRoute(builder: (_) => _root()),
+        _rootRoute(),
         if (listingIdFromRoute(initialRoute) case final id?)
           MaterialPageRoute(
             settings: RouteSettings(name: initialRoute),
             builder: (_) => _listingRoute(id),
           ),
       ],
-      home: _root(),
     );
   }
+
+  MaterialPageRoute<dynamic> _rootRoute() => MaterialPageRoute(
+        settings: const RouteSettings(name: '/'),
+        builder: (_) => _root(),
+      );
 
   /// The app itself: shell once auth has resolved, splash until then.
   Widget _root() {
@@ -397,8 +406,18 @@ class _MusafirAppState extends State<MusafirApp> {
       );
 
   Route<dynamic>? _onGenerateRoute(RouteSettings settings) {
-    final id = listingIdFromRoute(settings.name ?? '');
-    if (id == null) return null;
+    final name = settings.name ?? '';
+
+    final id = listingIdFromRoute(name);
+    if (id == null) {
+      // With no `home:`, this is the only thing that can answer '/'. Any other
+      // name gets the shell too rather than null: returning null here leaves
+      // the app with no route at all, and every in-app path ('/trips' as a
+      // cold URL, since the SPA rule serves index.html for it) is a tab inside
+      // the shell, not a route.
+      return _rootRoute();
+    }
+
     return MaterialPageRoute(
       settings: settings,
       // A tap on a card passes the Listing through `arguments`, so the screen
