@@ -133,6 +133,54 @@ commits can lose; the cost is one booking to decline by hand, and the
 alternative (blocks as `bookings` rows under a sentinel status) would drag them
 through earnings, commission, payouts and the reservations list.
 
+### Search filters on dates through `is_booking_available`, not its own copy
+
+`search_listings` took no date until 112, so a guest searching 10-15 September
+was shown listings blocked for exactly those days and listings already booked
+solid — then refused at Reserve. `SearchFilters` had carried `checkIn`/`checkOut`
+all along; the client simply never sent them.
+
+A block hides a listing **only from searches whose dates overlap it**. Do not
+"fix" this into hiding the listing outright: one blocked weekend would then cost
+the host every other booking, which is the problem 110 was built to solve, and
+`host_available` (038) plus `is_active` already exist for stepping out entirely.
+An undated search — including the default explore feed, which is
+`searchListingsFromDb(const SearchFilters())` — filters on nothing.
+
+Three things about it that are easy to undo by accident:
+
+- **The predicate lives in the `base` CTE, not the outer `where`.** `chosen`
+  (the smallest radius tier holding a match) reads `base`, so a blocked listing
+  must not be allowed to win a tier and then be filtered out of it — a dated
+  tiered search would answer with an **empty ring**. Verified: moving the
+  predicate outward turns one scenario from two results into zero.
+- **It is a `case`, not an `or` chain.** Postgres does not promise
+  left-to-right `or` evaluation, and a reversed window reaches
+  `tstzrange(lower > upper)`, which aborts the whole search with `22000`.
+  `searchDateWindowFor` drops such a window client-side too, but a public RPC
+  cannot lean on that.
+- **112 grants `is_booking_available` to `anon`.** 111 granted it to
+  `authenticated` only, and `search_listings` is `SECURITY INVOKER` and open to
+  `anon`, so without the grant every not-signed-in dated search fails with
+  `42501` and the client's `catch` renders it as "no results".
+
+The rule itself is *not* reimplemented — search calls `is_booking_available`,
+same as the booking form. `searchDateWindowFor`
+(`lib/services/search/search_date_window.dart`) is the only place that decides
+whether a search has a usable window, and it has tests.
+
+The client omits `p_check_in`/`p_check_out` **entirely** when there is no
+window rather than sending nulls, so the deploy order between `build/web` and
+this migration does not matter: PostgREST picks the overload by the keys
+present, so a null key would still demand the 19-argument function and, against
+a pre-112 database, resolve to nothing and empty out every search.
+
+`searchListings` (synchronous, cache-local, `supabase_musafir_repository.dart`)
+has **no callers** and cannot see blocks at all — they are not in the listing
+cache. `search_listings_by_location` is likewise dead in both the app and the
+admin portal. Neither is a live discovery path; do not add one without giving it
+the same date filter.
+
 ## Nothing user-tunable belongs in Dart
 
 App-wide knobs live in the `app_settings` table and are edited from the admin
