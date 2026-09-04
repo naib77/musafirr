@@ -9,6 +9,7 @@ import '../services/auth/auth_flow.dart';
 import '../services/booking/booking_messaging_coordinator.dart';
 import '../repositories/supabase_musafir_repository.dart';
 import '../services/booking/booking_lifecycle_service.dart';
+import '../services/search/search_summary.dart';
 import '../state/app_mode_state.dart';
 import '../state/auth_state.dart';
 import '../state/favorites_state.dart';
@@ -17,11 +18,13 @@ import '../state/notification_state.dart';
 import '../state/search_state.dart';
 import '../state/shell_nav_state.dart';
 import '../widgets/app_page_header.dart';
-import '../widgets/brand_logo.dart';
+import '../widgets/desktop_top_nav.dart';
+import '../widgets/dialogs/confirm_logout_dialog.dart';
 import '../widgets/modern_banner.dart';
 import '../widgets/notification_bell.dart';
 import '../widgets/review_prompt_handler.dart';
 import '../widgets/smart_sidebar.dart';
+import '../widgets/top_hosts_button.dart';
 import 'explore/explore_screen.dart';
 import 'host/become_host_screen.dart';
 import 'hosting/earnings_screen.dart';
@@ -226,28 +229,21 @@ class _MainShellState extends State<MainShell> {
         final Widget scaffold;
         if (Responsive.isWide(context)) {
           // ── Desktop framing ──────────────────────────────────────────────
-          // A left navigation rail replaces the stretched bottom bar. Each tab
-          // centers its own content at a readable width over the soft grey page
-          // (see the per-tab ResponsiveCenter wraps in _buildGuestContent /
-          // _buildHostContent), so lists and forms don't stretch edge-to-edge.
-          // Phones/tablets (< 1000px) fall through to the bottom-bar layout
-          // below, unchanged.
+          // A top header replaces the stretched bottom bar: brand, centred
+          // destinations, account menu, and — on Explore — the search pill.
+          // It used to be a left navigation rail; see [DesktopTopNav] for why
+          // that moved. Each tab still centers its own content at a readable
+          // width over the soft grey page (the per-tab ResponsiveCenter wraps
+          // in _buildGuestContent / _buildHostContent), so lists and forms
+          // don't stretch edge-to-edge. Phones/tablets (< 1000px) fall through
+          // to the bottom-bar layout below, unchanged.
           scaffold = Scaffold(
             backgroundColor: AppColors.scaffold,
-            body: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            body: Column(
               children: [
-                isGuest
-                    ? _buildGuestNavigationRail()
-                    : _buildHostNavigationRail(),
-                Expanded(
-                  child: Column(
-                    children: [
-                      statusBarShim,
-                      Expanded(child: content),
-                    ],
-                  ),
-                ),
+                statusBarShim,
+                _buildDesktopTopNav(isGuest),
+                Expanded(child: content),
               ],
             ),
           );
@@ -332,198 +328,260 @@ class _MainShellState extends State<MainShell> {
   }
 
   // ============================================================
-  // DESKTOP NAVIGATION RAIL (wide screens only)
+  // DESKTOP TOP NAVIGATION (wide screens only)
   // ============================================================
 
-  /// White rail column with a hairline right border and clamped text scaling —
-  /// the vertical counterpart of [_navBarShell].
-  Widget _navRailShell(Widget rail) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: Border(
-          right: BorderSide(color: AppColors.outline, width: 0.5),
-        ),
-      ),
-      child: MediaQuery.withClampedTextScaling(
-        maxScaleFactor: 1.1,
-        child: rail,
-      ),
+  /// The desktop header, in place of the left navigation rail this used to be.
+  ///
+  /// It drives the very same `_guestTabIndex` / `_hostTabIndex` the bottom bar
+  /// does — no second navigation model — which is also why every destination
+  /// selection goes through `_goToGuestTab`, keeping its signed-out guard.
+  ///
+  /// Listens to [SearchStateNotifier] here rather than in the shell's
+  /// top-level merge: the pill's Where/When/Who summary is the only thing in
+  /// the shell that cares about filters, and rebuilding every mounted tab on
+  /// each change inside the search sheet would be a lot to pay for three
+  /// labels.
+  Widget _buildDesktopTopNav(bool isGuest) {
+    return ListenableBuilder(
+      listenable: widget.searchState,
+      builder: (context, _) => isGuest ? _guestTopNav() : _hostTopNav(),
     );
   }
 
-  /// Brand wordmark shown at the top of the rail — gives the desktop layout a
-  /// proper app identity instead of a floating icon strip.
-  Widget _railBrandHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 22, 20, 14),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Untinted: on the white rail the brand rose is the point. Tinting to
-          // AppColors.brand would recolour the logo per theme.
-          const BrandLogo(size: 26),
-          const SizedBox(width: 8),
-          Text(
-            'Musaafir',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: AppColors.ink,
-              letterSpacing: -0.5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Brand-tinted selection styling so the active destination pops.
-  NavigationRailThemeData get _railTheme => NavigationRailThemeData(
-        backgroundColor: AppColors.surface,
-        indicatorColor: AppColors.brand.withValues(alpha: 0.12),
-        selectedIconTheme: IconThemeData(color: AppColors.brand),
-        unselectedIconTheme: IconThemeData(color: AppColors.inkMuted),
-        selectedLabelTextStyle: TextStyle(
-          color: AppColors.brand,
-          fontWeight: FontWeight.w600,
-        ),
-        unselectedLabelTextStyle: TextStyle(color: AppColors.inkMuted),
-      );
-
-  Widget _buildGuestNavigationRail() {
+  Widget _guestTopNav() {
+    final user = widget.authState.currentUser;
     final unreadMessageCount = widget.messagingState?.totalUnreadCount ?? 0;
 
-    // Desktop mirror of the signed-out bottom bar — same two destinations,
-    // same reason the logical index never moves off 0.
-    if (!_isLoggedIn) {
-      return _navRailShell(NavigationRailTheme(
-        data: _railTheme,
-        child: NavigationRail(
-          extended: true,
-          minExtendedWidth: 220,
-          leading: _railBrandHeader(),
-          selectedIndex: 0,
-          onDestinationSelected: (index) {
-            if (index == 0) {
-              _exploreScreenKey.currentState?.resetFromTabTap();
-              return;
-            }
-            _promptSignIn();
-          },
-          destinations: const [
-            NavigationRailDestination(
-              icon: Icon(Icons.search_outlined),
-              selectedIcon: Icon(Icons.search),
-              label: Text('Explore'),
-            ),
-            NavigationRailDestination(
-              icon: Icon(Icons.login_outlined),
-              selectedIcon: Icon(Icons.login),
-              label: Text('Log in'),
-            ),
-          ],
+    return DesktopTopNav(
+      // Signed out, Explore is the only destination — same reason the
+      // signed-out bottom bar has two items and not five: nothing behind
+      // Wishlists, Trips, Messages or Profile can render without a user. The
+      // way in is the header's primary action AND the first row of the account
+      // menu, both visible without opening anything, because a login reachable
+      // only from inside a hamburger is a login most visitors never find.
+      destinations: [
+        const DesktopNavDestination(
+          icon: Icons.search_outlined,
+          selectedIcon: Icons.search,
+          label: 'Explore',
         ),
-      ));
+        if (_isLoggedIn) ...[
+          const DesktopNavDestination(
+            icon: Icons.favorite_outline,
+            selectedIcon: Icons.favorite,
+            label: 'Wishlists',
+          ),
+          const DesktopNavDestination(
+            icon: Icons.luggage_outlined,
+            selectedIcon: Icons.luggage,
+            label: 'Trips',
+          ),
+          DesktopNavDestination(
+            icon: Icons.chat_bubble_outline,
+            selectedIcon: Icons.chat_bubble,
+            label: 'Messages',
+            badgeCount: unreadMessageCount,
+          ),
+        ],
+      ],
+      // Profile is logical tab 4 and lives in the account menu, not the strip,
+      // so while it is on screen no destination is current. The account
+      // button's brand ring is what says "you are here" instead.
+      selectedIndex: _guestTabIndex == 4 ? -1 : _guestTabIndex,
+      accountHighlighted: _guestTabIndex == 4,
+      onDestinationSelected: _onDesktopGuestDestination,
+      onBrandTap: () => _goToGuestTab(0),
+      primaryAction: _guestHeaderAction(),
+      trailing: _headerTrailing(),
+      avatarUrl: user?.avatarUrl,
+      displayName: user?.name,
+      accountMenu: _guestAccountMenu(),
+      // Explore only. A Where/When/Who pill above the Trips list would be
+      // furniture — and worse, it would suggest that searching from there
+      // filters what is on screen.
+      search: _guestTabIndex == 0 ? _searchSummary() : null,
+    );
+  }
+
+  Widget _hostTopNav() {
+    final user = widget.authState.currentUser;
+    final unreadMessageCount = widget.messagingState?.totalUnreadCount ?? 0;
+
+    return DesktopTopNav(
+      destinations: [
+        const DesktopNavDestination(
+          icon: Icons.dashboard_outlined,
+          selectedIcon: Icons.dashboard,
+          label: 'Dashboard',
+        ),
+        DesktopNavDestination(
+          icon: Icons.calendar_month_outlined,
+          selectedIcon: Icons.calendar_month,
+          label: 'Reservations',
+          showDot: _hasHostNotification,
+        ),
+        const DesktopNavDestination(
+          icon: Icons.account_balance_wallet_outlined,
+          selectedIcon: Icons.account_balance_wallet,
+          label: 'Earnings',
+        ),
+        DesktopNavDestination(
+          icon: Icons.chat_bubble_outline,
+          selectedIcon: Icons.chat_bubble,
+          label: 'Messages',
+          badgeCount: unreadMessageCount,
+        ),
+      ],
+      selectedIndex: _hostTabIndex == 4 ? -1 : _hostTabIndex,
+      accountHighlighted: _hostTabIndex == 4,
+      onDestinationSelected: _goToHostTab,
+      onBrandTap: () => _goToHostTab(0),
+      primaryAction: DesktopTopNavAction(
+        label: 'Switch to travelling',
+        tooltip: 'Find and book stays',
+        onTap: () => _switchMode(AppMode.guest),
+      ),
+      trailing: _headerTrailing(),
+      avatarUrl: user?.avatarUrl,
+      displayName: user?.name,
+      accountMenu: [
+        DesktopAccountMenuItem(
+          label: 'Profile',
+          icon: Icons.person_outline,
+          onTap: () => _goToHostTab(4),
+        ),
+        DesktopAccountMenuItem(
+          label: 'Log out',
+          icon: Icons.logout_rounded,
+          dividerAbove: true,
+          onTap: _confirmLogout,
+        ),
+      ],
+      search: null,
+    );
+  }
+
+  /// Re-selecting the destination already showing mirrors the bottom bar:
+  /// Explore drops an active search, Trips refreshes. The header's indices are
+  /// 1:1 with the logical guest tabs 0–3, so nothing needs remapping.
+  void _onDesktopGuestDestination(int index) {
+    if (index == _guestTabIndex) {
+      if (index == 0) _exploreScreenKey.currentState?.resetFromTabTap();
+      if (index == 2) _tripsScreenKey.currentState?.refreshFromTabTap();
+      return;
     }
-
-    return _navRailShell(NavigationRailTheme(
-      data: _railTheme,
-      child: NavigationRail(
-        extended: true,
-        minExtendedWidth: 220,
-        leading: _railBrandHeader(),
-        selectedIndex: _guestTabIndex,
-        onDestinationSelected: (index) {
-          // Re-tapping the active tab, matching the bottom bar: Explore (0)
-          // drops any active search back to the feed; Trips (2) refreshes.
-          if (index == _guestTabIndex) {
-            if (index == 0) _exploreScreenKey.currentState?.resetFromTabTap();
-            if (index == 2) _tripsScreenKey.currentState?.refreshFromTabTap();
-          }
-          setState(() => _guestTabIndex = index);
-        },
-        destinations: [
-          const NavigationRailDestination(
-            icon: Icon(Icons.search_outlined),
-            selectedIcon: Icon(Icons.search),
-            label: Text('Explore'),
-          ),
-          const NavigationRailDestination(
-            icon: Icon(Icons.favorite_outline),
-            selectedIcon: Icon(Icons.favorite),
-            label: Text('Wishlists'),
-          ),
-          const NavigationRailDestination(
-            icon: Icon(Icons.luggage_outlined),
-            selectedIcon: Icon(Icons.luggage),
-            label: Text('Trips'),
-          ),
-          NavigationRailDestination(
-            icon: _MessagesNavIcon(count: unreadMessageCount, selected: false),
-            selectedIcon:
-                _MessagesNavIcon(count: unreadMessageCount, selected: true),
-            label: const Text('Messages'),
-          ),
-          const NavigationRailDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: Text('Profile'),
-          ),
-        ],
-      ),
-    ));
+    _goToGuestTab(index);
   }
 
-  Widget _buildHostNavigationRail() {
-    final unreadMessageCount = widget.messagingState?.totalUnreadCount ?? 0;
+  /// The header's single text action.
+  ///
+  /// For a signed-in guest it is the hosting CTA, taken from the same
+  /// three-state [_hostCta] the mobile sidebar uses, so the entry points into
+  /// hosting cannot start disagreeing about what this user can do next.
+  DesktopTopNavAction? _guestHeaderAction() {
+    if (!_isLoggedIn) {
+      return DesktopTopNavAction(
+        label: 'Log in or sign up',
+        onTap: _promptSignIn,
+      );
+    }
+    final cta = _hostCta(true);
+    if (cta == null) return null;
+    return DesktopTopNavAction(
+      label: cta.label,
+      tooltip: cta.description,
+      onTap: cta.onTap,
+    );
+  }
 
-    return _navRailShell(NavigationRailTheme(
-      data: _railTheme,
-      child: NavigationRail(
-        extended: true,
-        minExtendedWidth: 220,
-        leading: _railBrandHeader(),
-        selectedIndex: _hostTabIndex,
-        onDestinationSelected: (index) {
-          setState(() => _hostTabIndex = index);
-        },
-        destinations: [
-          const NavigationRailDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
-            label: Text('Dashboard'),
-          ),
-          NavigationRailDestination(
-            icon: Badge(
-              isLabelVisible: _hasHostNotification,
-              child: const Icon(Icons.calendar_month_outlined),
-            ),
-            selectedIcon: Badge(
-              isLabelVisible: _hasHostNotification,
-              child: const Icon(Icons.calendar_month),
-            ),
-            label: const Text('Reservations'),
-          ),
-          const NavigationRailDestination(
-            icon: Icon(Icons.account_balance_wallet_outlined),
-            selectedIcon: Icon(Icons.account_balance_wallet),
-            label: Text('Earnings'),
-          ),
-          NavigationRailDestination(
-            icon: _MessagesNavIcon(count: unreadMessageCount, selected: false),
-            selectedIcon:
-                _MessagesNavIcon(count: unreadMessageCount, selected: true),
-            label: const Text('Messages'),
-          ),
-          const NavigationRailDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: Text('Profile'),
-          ),
-        ],
+  /// The header's icon actions: the Top Hosts leaderboard and the notification
+  /// bell.
+  ///
+  /// Both used to live inside the Explore tab's own search row — which is why
+  /// that row is hidden on desktop (see `ExploreScreen.searchInShell`). They
+  /// are app chrome, not part of the feed, and in the header they stay
+  /// reachable from every tab instead of only from Explore.
+  List<Widget> _headerTrailing() {
+    return [
+      TopHostsButton(onTap: _openLeaderboard),
+      // Hidden while signed out: notifications are per-user and
+      // notificationState is only ever initialize()d on login, so for a
+      // visitor the bell could never be anything but an empty list behind a
+      // dead badge.
+      if (widget.notificationState != null && _isLoggedIn)
+        AnimatedNotificationBell(
+          notificationState: widget.notificationState!,
+          onTap: _openNotificationCenter,
+        ),
+    ];
+  }
+
+  List<DesktopAccountMenuItem> _guestAccountMenu() {
+    if (!_isLoggedIn) {
+      return [
+        DesktopAccountMenuItem(
+          label: 'Log in or sign up',
+          icon: Icons.login_rounded,
+          emphasized: true,
+          onTap: _promptSignIn,
+        ),
+        DesktopAccountMenuItem(
+          label: 'Become a host',
+          icon: Icons.home_work_outlined,
+          dividerAbove: true,
+          // Hosting needs an account, so this is the same login prompt rather
+          // than a dead end that explains it later.
+          onTap: _promptSignIn,
+        ),
+      ];
+    }
+    return [
+      DesktopAccountMenuItem(
+        label: 'Profile',
+        icon: Icons.person_outline,
+        onTap: () => _goToGuestTab(4),
       ),
-    ));
+      DesktopAccountMenuItem(
+        label: 'Log out',
+        icon: Icons.logout_rounded,
+        dividerAbove: true,
+        onTap: _confirmLogout,
+      ),
+    ];
+  }
+
+  /// What the search pill shows, and what each of its parts does.
+  ///
+  /// The pill is chrome owned by the shell, but the search itself belongs to
+  /// the Explore tab — it holds the sheet, the text controller and the voice
+  /// flow. So the three callbacks reach into that state through
+  /// [_exploreScreenKey] rather than duplicating any of it here. A null state
+  /// (Explore not yet mounted) makes them inert, which is correct: the pill
+  /// only renders while Explore is the current tab.
+  DesktopSearchSummary _searchSummary() {
+    final filters = widget.searchState.filters;
+    final summary = searchPillSummaryFor(filters);
+    return DesktopSearchSummary(
+      where: summary.where,
+      when: summary.when,
+      who: summary.who,
+      onTap: () => _exploreScreenKey.currentState?.openSearchFromShell(),
+      onVoice: () =>
+          _exploreScreenKey.currentState?.startVoiceSearchFromShell(),
+      // hasActiveFilters, not the summary: a property type or an amenity is an
+      // active search the pill has no segment for, and leaving it with no ✕
+      // would strand the guest in results they cannot clear from the header.
+      onClear: filters.hasActiveFilters
+          ? () => _exploreScreenKey.currentState?.clearSearchFromShell()
+          : null,
+    );
+  }
+
+  /// Shares its dialog with the Profile tab's log-out row, so the two cannot
+  /// drift into asking differently (or one of them into not asking at all).
+  Future<void> _confirmLogout() async {
+    if (await confirmLogout(context)) widget.authState.logout();
   }
 
   // ============================================================
@@ -636,6 +694,11 @@ class _MainShellState extends State<MainShell> {
       ExploreScreen(
         key: _exploreScreenKey,
         isActiveTab: _guestTabIndex == 0,
+        // On desktop the header carries the search pill, the leaderboard and
+        // the bell, so Explore renders the feed alone. Same predicate the
+        // build method framed the layout with — told to the screen rather than
+        // re-derived inside it.
+        searchInShell: Responsive.isWide(context),
         repository: widget.repository,
         authState: widget.authState,
         favoritesState: widget.favoritesState,

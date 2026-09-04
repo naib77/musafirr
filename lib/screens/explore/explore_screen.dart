@@ -40,6 +40,7 @@ import 'show_all_listings_screen.dart';
 import '../../widgets/listing_price_map.dart';
 import '../../widgets/notification_bell.dart';
 import '../../widgets/results_map_sheet.dart';
+import '../../widgets/top_hosts_button.dart';
 import '../notifications/notification_center_screen.dart';
 
 class ExploreScreen extends StatefulWidget {
@@ -54,7 +55,20 @@ class ExploreScreen extends StatefulWidget {
     this.bookingMessagingCoordinator,
     this.messagingState,
     this.isActiveTab = true,
+    this.searchInShell = false,
   });
+
+  /// True when the shell's own chrome already carries the search control — the
+  /// desktop header's Where/When/Who pill, the leaderboard trophy and the
+  /// notification bell (see `DesktopTopNav`). This screen then renders its feed
+  /// alone, because two search fields on one page is one too many and the
+  /// header's is the one that survives scrolling.
+  ///
+  /// An explicit flag rather than this screen re-deriving `Responsive.isWide`:
+  /// the shell decides when it shows a header, and a second copy of that
+  /// predicate is a second thing to keep in step. The public methods below are
+  /// what the header drives this screen's search with.
+  final bool searchInShell;
 
   /// Whether Explore is the currently-shown shell tab. Explore is kept alive in
   /// the shell's IndexedStack, so its [PopScope] stays registered on the shell
@@ -148,6 +162,28 @@ class _ExploreScreenState extends State<ExploreScreen> {
   /// search and returns to the main feed. No-op when no search is active.
   void resetFromTabTap() {
     if (_showAllActive) _closeShowAll();
+    if (_searchActive) _clearSearch();
+  }
+
+  // ── Driven by the desktop header ──────────────────────────────────────────
+  //
+  // With [ExploreScreen.searchInShell] the search control lives in the shell's
+  // header, but the search itself still lives here: the sheet, the text
+  // controller, the voice flow and the results are all this screen's state.
+  // So the header calls in rather than owning a second copy of any of it —
+  // there is exactly one search implementation, and the header is a remote for
+  // it. MainShell reaches these through its Explore GlobalKey.
+
+  /// Opens the search sheet — the same sheet the mobile search bar opens.
+  void openSearchFromShell() => _openSearch();
+
+  /// Starts voice search, including its microphone permission prompt.
+  void startVoiceSearchFromShell() => _startVoiceSearch();
+
+  /// Drops the active search and returns to the browse feed. Unlike
+  /// [resetFromTabTap] this leaves a "See all" grid alone: the header's ✕ is
+  /// about the search, and a guest inside a category grid has not searched.
+  void clearSearchFromShell() {
     if (_searchActive) _clearSearch();
   }
 
@@ -338,187 +374,169 @@ class _ExploreScreenState extends State<ExploreScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Desktop hero title — gives the landing an identity above the
-            // search field. Hidden on mobile, which keeps its compact layout.
-            if (wide)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 22, 24, 2),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Find your stay',
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Rooms, seats and full houses across Bangladesh',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            // Search bar with notification bell
-            Padding(
-              padding: wide
-                  ? const EdgeInsets.fromLTRB(24, 12, 24, 10)
-                  : const EdgeInsets.fromLTRB(16, 10, 16, 8),
-              child: Row(
-                children: [
-                  // Leaving the results is a navigation, so it gets the
-                  // affordance guests look for. Only shown once a search is
-                  // running — while browsing there is nothing to go back to.
-                  if (_searchActive) ...[
-                    IconButton(
-                      onPressed: _clearSearch,
-                      icon: const Icon(Icons.arrow_back),
-                      tooltip: 'Back to browsing',
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 40,
-                        minHeight: 40,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                  ],
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: _openSearch,
-                      child: Container(
-                        height: 44,
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surface,
-                          borderRadius: BorderRadius.circular(32),
-                          border: Border.all(
-                            color: theme.colorScheme.outlineVariant,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.05),
-                              blurRadius: 10,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            // Balances the trailing mic so the label stays
-                            // visually centered.
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.search,
-                                    size: 20,
-                                    color: theme.colorScheme.primary,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Flexible(
-                                    child: Text(
-                                      widget.searchState.filters.location ??
-                                          'Search your comfort',
-                                      style:
-                                          theme.textTheme.bodyMedium?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (widget.searchState.filters.hasActiveFilters)
-                              GestureDetector(
-                                onTap: _clearSearch,
-                                child: Icon(
-                                  Icons.close,
-                                  size: 18,
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            // Inside the pill rather than beside it: the row
-                            // already carries a trophy and a bell, and a
-                            // fourth circle would squeeze the label off a
-                            // 360dp phone. Hides itself where the browser has
-                            // no Web Speech API.
-                            VoiceSearchMicButton(onTap: _startVoiceSearch),
-                            const SizedBox(width: 4),
-                          ],
+            // The whole in-page header — hero, search bar, trophy, bell — is
+            // the shell header's job wherever there is one, so on desktop this
+            // screen is just the feed. See [ExploreScreen.searchInShell].
+            if (!widget.searchInShell) ...[
+              // Desktop hero title — gives the landing an identity above the
+              // search field. Hidden on mobile, which keeps its compact layout.
+              if (wide)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 22, 24, 2),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Find your stay',
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.5,
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Rooms, seats and full houses across Bangladesh',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
-                  // Top Hosts leaderboard — gold chip so it reads as a reward
-                  // worth tapping, not just another grey action.
-                  const SizedBox(width: 6),
-                  Tooltip(
-                    message: 'Top Hosts',
-                    child: Material(
-                      shape: const CircleBorder(),
-                      clipBehavior: Clip.antiAlias,
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => HostLeaderboardScreen(
-                              repository: widget.repository,
-                              currentUserId: widget.authState.currentUser?.id,
-                            ),
-                          ),
+                ),
+              // Search bar with notification bell
+              Padding(
+                padding: wide
+                    ? const EdgeInsets.fromLTRB(24, 12, 24, 10)
+                    : const EdgeInsets.fromLTRB(16, 10, 16, 8),
+                child: Row(
+                  children: [
+                    // Leaving the results is a navigation, so it gets the
+                    // affordance guests look for. Only shown once a search is
+                    // running — while browsing there is nothing to go back to.
+                    if (_searchActive) ...[
+                      IconButton(
+                        onPressed: _clearSearch,
+                        icon: const Icon(Icons.arrow_back),
+                        tooltip: 'Back to browsing',
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 40,
+                          minHeight: 40,
                         ),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: _openSearch,
                         child: Container(
-                          padding: const EdgeInsets.all(9),
+                          height: 44,
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFFFB300), Color(0xFFFF8F00)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
+                            color: theme.colorScheme.surface,
+                            borderRadius: BorderRadius.circular(32),
+                            border: Border.all(
+                              color: theme.colorScheme.outlineVariant,
                             ),
-                            shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFFFFB300)
-                                    .withValues(alpha: 0.45),
-                                blurRadius: 12,
-                                offset: const Offset(0, 3),
+                                color: Colors.black.withValues(alpha: 0.05),
+                                blurRadius: 10,
+                                offset: const Offset(0, 2),
                               ),
                             ],
                           ),
-                          child: const Icon(Icons.emoji_events_rounded,
-                              size: 22, color: Colors.white),
+                          child: Row(
+                            children: [
+                              // Balances the trailing mic so the label stays
+                              // visually centered.
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.search,
+                                      size: 20,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Flexible(
+                                      child: Text(
+                                        widget.searchState.filters.location ??
+                                            'Search your comfort',
+                                        style: theme.textTheme.bodyMedium
+                                            ?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (widget.searchState.filters.hasActiveFilters)
+                                GestureDetector(
+                                  onTap: _clearSearch,
+                                  child: Icon(
+                                    Icons.close,
+                                    size: 18,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              // Inside the pill rather than beside it: the row
+                              // already carries a trophy and a bell, and a
+                              // fourth circle would squeeze the label off a
+                              // 360dp phone. Hides itself where the browser has
+                              // no Web Speech API.
+                              VoiceSearchMicButton(onTap: _startVoiceSearch),
+                              const SizedBox(width: 4),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  // Notification bell. Hidden while signed out: notifications
-                  // are per-user and notificationState is only ever
-                  // initialize()d on login, so for a visitor the bell can
-                  // never be anything but an empty list behind a dead badge.
-                  if (widget.notificationState != null &&
-                      widget.authState.isLoggedIn) ...[
-                    const SizedBox(width: 4),
-                    AnimatedNotificationBell(
-                      notificationState: widget.notificationState!,
-                      onTap: _openNotificationCenter,
+                    // Top Hosts leaderboard — gold chip so it reads as a reward
+                    // worth tapping, not just another grey action. Shared with
+                    // the desktop header's action group.
+                    const SizedBox(width: 6),
+                    TopHostsButton(
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => HostLeaderboardScreen(
+                            repository: widget.repository,
+                            currentUserId: widget.authState.currentUser?.id,
+                          ),
+                        ),
+                      ),
                     ),
+                    // Notification bell. Hidden while signed out: notifications
+                    // are per-user and notificationState is only ever
+                    // initialize()d on login, so for a visitor the bell can
+                    // never be anything but an empty list behind a dead badge.
+                    if (widget.notificationState != null &&
+                        widget.authState.isLoggedIn) ...[
+                      const SizedBox(width: 4),
+                      AnimatedNotificationBell(
+                        notificationState: widget.notificationState!,
+                        onTap: _openNotificationCenter,
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
 
-            // Property-type and purpose filters live inside the search sheet
-            // (_SearchSheet) — the page itself stays a clean browse feed.
-            const Divider(height: 1),
+              // Property-type and purpose filters live inside the search sheet
+              // (_SearchSheet) — the page itself stays a clean browse feed.
+              //
+              // Inside the wrapper on purpose: where the shell header carries
+              // the search row, its own bottom border already separates chrome
+              // from feed, and a second hairline right beneath it reads as a
+              // rendering fault.
+              const Divider(height: 1),
+            ],
 
             // Listings grid with pull-to-refresh
             Expanded(

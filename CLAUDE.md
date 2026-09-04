@@ -314,13 +314,29 @@ merger folds it in, so it needs no entry of its own.
 
 ## QA
 
-**The master OTP is OFF as of 2026-08-26.** `MASTER_OTP` and `MASTER_OTP_PHONES`
-were unset from the live project on the owner's explicit instruction, while
-preparing the Play submission (`docs/PLAY_STORE_RELEASE.md` §6.4). There is no
-login bypass any more; every login needs a real SMS code.
+**The master OTP is ON as of 2026-09-03, scoped to one number.**
+`MASTER_OTP_PHONES` is the single entry `01673293542` — an explicit allowlist,
+never `*` — because a Play reviewer cannot receive a Bangladeshi SMS and the
+Console's *Sign in details* declaration needs credentials that work. That number
+is the existing `naib1` account (verified host, real listings and bookings), so
+the reviewer sees a populated app; `verify-otp` resolves it to the **legacy**
+identity `phone.1673293542@musaafir.app`, not a fresh empty account.  otp = 3969
 
-It had been `1234` against `MASTER_OTP_PHONES='*'` — the wildcard, so it really
-did log into **any** phone number, not an allowlist. `README.md` still shows the
+It had been OFF since 2026-08-26, when the secrets were unset on the owner's
+instruction. Both functions read secrets at runtime, so neither the re-enable nor
+a future unset needs a redeploy.
+
+**The master path is not rate-limited, and cannot be given a longer code.** A
+wrong guess makes `isMasterOtp` return false and falls through to the normal
+path, which finds no `otp_attempts` row and answers "No active code" *without
+incrementing anything* — so `OTP_MAX_ATTEMPTS` never applies. `OTP_LENGTH` is 4
+and `OtpInputField` renders exactly 4 auto-submitting boxes, so the keyspace is
+10,000 and a five-digit code could not be typed. Anyone who guesses that this
+number is allowlisted can brute-force it unthrottled and take the account. Unset
+the two secrets once a review passes, and re-set them for the next one.
+
+Before the 2026-08-26 shutdown it was `1234` against `MASTER_OTP_PHONES='*'` —
+the wildcard, so it really did log into **any** phone number, not an allowlist. `README.md` still shows the
 command that set it to a single number; that is stale, and the live value was
 confirmed by hashing candidates against the Management API's SHA-256 of the
 secret. The secret is server-side: `OtpConfig.masterOtpEnabled` defaults to
@@ -429,6 +445,45 @@ new shortcut cannot reintroduce that hole. The signed-out nav bar is a
 `_guestTabIndex` is a logical id that `_buildGuestContent`,
 `_goToGuestTab(0..4)` and `ShellNavState.openGuestTrips()` all index with —
 renumbering the destinations would silently repoint every one of them.
+
+### Desktop wears a top header, not a rail
+
+Above `Responsive.wide` (1000px) the shell renders [`DesktopTopNav`
+](lib/widgets/desktop_top_nav.dart) — brand, centred destinations, account
+menu, plus a Where/When/Who search pill on Explore. It replaced an extended
+`NavigationRail`, which spent ~220px of every viewport on five fixed labels and
+left the search field buried inside a scrolling tab.
+
+Below that breakpoint **nothing changes** — the bottom bar and Explore's own
+in-page search row are untouched. There is deliberately no drawer fallback in
+that file; the hamburger is the account affordance, not a responsive collapse.
+
+Three things there that are easy to break:
+
+- **The header owns no state.** Destinations, actions and menu items all come
+  from `MainShell`, and every selection goes back through `_goToGuestTab` so it
+  keeps that gate. A header that tracked its own index is a second navigation
+  model, which is exactly what the shared `_guestTabIndex` above exists to
+  prevent.
+- **`selectedIndex: -1` is a real state, not a bug.** Profile is logical tab 4
+  and lives in the account menu rather than the strip, so while it is showing,
+  no destination is current — `accountHighlighted` rings the account button
+  instead. Do not "fix" it by adding Profile as a fifth destination; the
+  indices are shared with the bottom bar (see above).
+- **`ExploreScreen.searchInShell` is passed, not re-derived.** The header
+  carries the search pill, the leaderboard trophy and the notification bell, so
+  Explore hides its whole in-page header row on desktop. The shell decides when
+  it draws a header; a second copy of `Responsive.isWide` inside Explore would
+  be a second thing to keep in step. The pill drives Explore's *existing*
+  search through three public methods on its state — there is one search
+  implementation and the header is a remote for it.
+
+`searchPillSummaryFor` (`lib/services/search/search_summary.dart`) is the only
+place that renders a whole `SearchFilters` into one line, and it has tests. It
+shows nothing for `guestCount == 1`, matching `hasActiveFilters` — otherwise
+every untouched pill would look like it was already narrowing the feed. The ✕,
+though, keys off `hasActiveFilters` rather than the summary, because a property
+type or an amenity is an active search the pill has no segment for.
 
 ### What the database had to change, and what it did not
 
