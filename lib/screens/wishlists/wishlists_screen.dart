@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../core/routing/listing_path.dart';
 import '../../models/listing.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
 import '../../state/messaging_state.dart';
 import '../../widgets/listing_card_modern.dart';
-import '../explore/listing_detail_screen.dart';
 
 class WishlistsScreen extends StatelessWidget {
   const WishlistsScreen({
@@ -116,16 +116,9 @@ class WishlistsScreen extends StatelessWidget {
   }
 
   void _openListingDetail(BuildContext context, Listing listing) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ListingDetailScreen(
-          listing: listing,
-          repository: repository,
-          authState: authState,
-          favoritesState: favoritesState,
-          messagingState: messagingState,
-        ),
-      ),
-    );
+    // See explore_screen: named for the shareable URL, Listing passed through
+    // so there is no re-fetch.
+    Navigator.of(context)
+        .pushNamed(listingRoutePath(listing.id), arguments: listing);
   }
 }

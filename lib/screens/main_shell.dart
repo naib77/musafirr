@@ -5,6 +5,7 @@ import '../core/theme/app_colors.dart';
 import '../core/utils/responsive.dart';
 import '../models/booking_status.dart';
 import '../repositories/musafir_repository.dart';
+import '../services/auth/auth_flow.dart';
 import '../services/booking/booking_messaging_coordinator.dart';
 import '../repositories/supabase_musafir_repository.dart';
 import '../services/booking/booking_lifecycle_service.dart';
@@ -393,6 +394,39 @@ class _MainShellState extends State<MainShell> {
   Widget _buildGuestNavigationRail() {
     final unreadMessageCount = widget.messagingState?.totalUnreadCount ?? 0;
 
+    // Desktop mirror of the signed-out bottom bar — same two destinations,
+    // same reason the logical index never moves off 0.
+    if (!_isLoggedIn) {
+      return _navRailShell(NavigationRailTheme(
+        data: _railTheme,
+        child: NavigationRail(
+          extended: true,
+          minExtendedWidth: 220,
+          leading: _railBrandHeader(),
+          selectedIndex: 0,
+          onDestinationSelected: (index) {
+            if (index == 0) {
+              _exploreScreenKey.currentState?.resetFromTabTap();
+              return;
+            }
+            _promptSignIn();
+          },
+          destinations: const [
+            NavigationRailDestination(
+              icon: Icon(Icons.search_outlined),
+              selectedIcon: Icon(Icons.search),
+              label: Text('Explore'),
+            ),
+            NavigationRailDestination(
+              icon: Icon(Icons.login_outlined),
+              selectedIcon: Icon(Icons.login),
+              label: Text('Log in'),
+            ),
+          ],
+        ),
+      ));
+    }
+
     return _navRailShell(NavigationRailTheme(
       data: _railTheme,
       child: NavigationRail(
@@ -496,8 +530,53 @@ class _MainShellState extends State<MainShell> {
   // GUEST MODE
   // ============================================================
 
+  /// Asks a signed-out visitor to log in, for anything account-shaped.
+  ///
+  /// Nothing behind Wishlists, Trips, Messages or Profile can render without a
+  /// user, so a signed-out visitor gets Explore plus this instead of four tabs
+  /// that each explain they are empty.
+  Future<void> _promptSignIn() async {
+    await AuthFlow.ensureSignedIn(
+      context,
+      widget.authState,
+      reason: 'to see your trips, saved places and messages',
+    );
+  }
+
   Widget _buildGuestNavigationBar() {
     final unreadMessageCount = widget.messagingState?.totalUnreadCount ?? 0;
+
+    // Signed out: Explore and a way in, nothing else.
+    //
+    // Deliberately a SEPARATE bar rather than a filter over the five-item
+    // list. `_guestTabIndex` is a logical tab id that `_buildGuestContent`,
+    // `_goToGuestTab(0..4)` and `ShellNavState.openGuestTrips()` all index
+    // with; renumbering the destinations would silently repoint every one of
+    // those. Here the index never leaves 0.
+    if (!_isLoggedIn) {
+      return _navBarShell(NavigationBar(
+        selectedIndex: 0,
+        onDestinationSelected: (index) {
+          if (index == 0) {
+            _exploreScreenKey.currentState?.resetFromTabTap();
+            return;
+          }
+          _promptSignIn();
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.search_outlined),
+            selectedIcon: Icon(Icons.search),
+            label: 'Explore',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.login_outlined),
+            selectedIcon: Icon(Icons.login),
+            label: 'Log in',
+          ),
+        ],
+      ));
+    }
 
     return _navBarShell(NavigationBar(
       selectedIndex: _guestTabIndex,
@@ -873,13 +952,14 @@ class _MainShellState extends State<MainShell> {
 
     final user = widget.authState.currentUser;
     if (user == null) {
-      // Hosting needs an account; the Profile tab is where the login prompt
-      // lives, so send them there rather than to a screen that would fail.
+      // Hosting needs an account. This used to send them to the Profile tab
+      // because that is where the login prompt lived — a tab a signed-out
+      // visitor no longer has. Ask for the login directly instead.
       return SmartSidebarCta(
         icon: Icons.home_work_rounded,
         label: 'Become a host',
         description: 'Sign in to start earning',
-        onTap: () => _goToGuestTab(4),
+        onTap: _promptSignIn,
       );
     }
 
@@ -921,6 +1001,15 @@ class _MainShellState extends State<MainShell> {
 
   void _goToGuestTab(int index) {
     if (!mounted) return;
+    // Every guest tab but Explore needs a user, and a signed-out visitor has
+    // no way to navigate to one — so any request to switch to one arrived from
+    // a shortcut or a deep screen (the smart sidebar, ShellNavState) that did
+    // not check. Guarding centrally here rather than at each caller means a
+    // new caller cannot reintroduce the hole.
+    if (!_isLoggedIn && index != 0) {
+      _promptSignIn();
+      return;
+    }
     setState(() => _guestTabIndex = index);
   }
 

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/routing/listing_path.dart';
 import '../../core/utils/responsive.dart';
 import '../../models/geo_bounds.dart';
 import '../../models/listing.dart';
@@ -40,7 +41,6 @@ import '../../widgets/listing_price_map.dart';
 import '../../widgets/notification_bell.dart';
 import '../../widgets/results_map_sheet.dart';
 import '../notifications/notification_center_screen.dart';
-import 'listing_detail_screen.dart';
 
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({
@@ -175,17 +175,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   void _openListingDetail(Listing listing) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => ListingDetailScreen(
-          listing: listing,
-          repository: widget.repository,
-          authState: widget.authState,
-          favoritesState: widget.favoritesState,
-          messagingState: widget.messagingState,
-        ),
-      ),
-    );
+    // Named, so the address bar shows /listing/<id> and the visitor can send
+    // it to someone. The Listing rides along as `arguments`, so the screen
+    // renders from what is already in hand — app.dart's route only falls back
+    // to fetching when the id arrived from a pasted link.
+    Navigator.of(context)
+        .pushNamed(listingRoutePath(listing.id), arguments: listing);
   }
 
   void _openSearch() {
@@ -505,8 +500,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       ),
                     ),
                   ),
-                  // Notification bell
-                  if (widget.notificationState != null) ...[
+                  // Notification bell. Hidden while signed out: notifications
+                  // are per-user and notificationState is only ever
+                  // initialize()d on login, so for a visitor the bell can
+                  // never be anything but an empty list behind a dead badge.
+                  if (widget.notificationState != null &&
+                      widget.authState.isLoggedIn) ...[
                     const SizedBox(width: 4),
                     AnimatedNotificationBell(
                       notificationState: widget.notificationState!,

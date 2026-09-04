@@ -159,10 +159,29 @@ Three things about it that are easy to undo by accident:
   `tstzrange(lower > upper)`, which aborts the whole search with `22000`.
   `searchDateWindowFor` drops such a window client-side too, but a public RPC
   cannot lean on that.
-- **112 grants `is_booking_available` to `anon`.** 111 granted it to
-  `authenticated` only, and `search_listings` is `SECURITY INVOKER` and open to
-  `anon`, so without the grant every not-signed-in dated search fails with
-  `42501` and the client's `catch` renders it as "no results".
+- **112 grants `is_booking_available` to `anon`** because `search_listings` is
+  `SECURITY INVOKER` and open to `anon`, and 111 had granted it to
+  `authenticated` only. On a *plain* Postgres that grant is load-bearing —
+  without it a not-signed-in dated search dies with `42501` and the client's
+  `catch` renders it as "no results". On **this** database it is not: see the
+  default-privileges note below. Keep it anyway; it stops the repo depending on
+  an accident.
+
+**Do not reason about anon access from the migrations alone.** Supabase's
+`ALTER DEFAULT PRIVILEGES` on schema `public` grants `anon` and `authenticated`
+at CREATE time, and the `revoke all ... from public` this repo writes after a
+`SECURITY DEFINER` function strips only the PUBLIC pseudo-role — it leaves that
+explicit anon grant untouched. Verified on live via `pg_proc.proacl` /
+`pg_class.relacl`: anon already holds EXECUTE on `is_booking_available` and
+`listing_blocked_ranges`, and SELECT on `listing_ratings`, in flat
+contradiction of what 110/111/016 appear to say.
+
+So **an RLS policy is the only one of the two that actually gates `anon`.**
+Default privileges hand out the grant; nothing hands out a policy. That is why
+`facilities` was the single thing broken for signed-out visitors (113) — it was
+a `to authenticated` *policy*, not a missing grant. When you need to know what a
+visitor can read, impersonate one (`begin; set local role anon; …; rollback;`)
+rather than reading the SQL.
 
 The rule itself is *not* reimplemented — search calls `is_booking_available`,
 same as the booking form. `searchDateWindowFor`
@@ -361,6 +380,97 @@ For the same reason `otpLookupPhones` makes `verify-otp` accept an `otp_attempts
 row stored under **either** spelling. `send-otp` writes that row and `verify-otp`
 reads it, but they are separate deploys — without this, the minutes between them
 fail every bare-form login with "No active code".
+
+## Browsing is public; acting is not
+
+The whole app used to sit behind one `switch` arm — `unauthenticated →
+AuthNavigator` in `app.dart` — so nothing rendered without a session. It now
+renders `MainShell` for a visitor too, and login is reached from whatever they
+tried to do.
+
+**Return the same widget type from both post-`initializing` arms.** Flutter
+updates an element in place when the type and key match, so signing in
+mid-session keeps `MainShell`'s state: the selected tab, each tab's scroll
+offset, the `_LazyIndexedStack`'s already-built children. Branching to a
+different widget would rebuild all of it, which is what the old arm did on
+every login.
+
+**Login is a pushed route, and that IS the "return them to what they were
+doing" mechanism.** `AuthFlow.ensureSignedIn` pushes and awaits; the listing
+detail screen with its dates chosen stays mounted underneath, so the caller
+just carries on. There is no pending-intent store to keep in sync — do not add
+one. It works because `MainShell` has **no Navigator of its own** (it is a
+`_LazyIndexedStack`), so pushes land on the root navigator as siblings of
+`home:`, where an auth-driven rebuild of `home:` cannot touch them.
+
+Three gates, all shaped alike — `false` means stop, and the gate has already
+said why:
+
+| Gate | Question |
+| --- | --- |
+| `AuthFlow.ensureSignedIn` | is there a session? |
+| `IdentityGate.ensure` | is the identity admin-approved? |
+| `PublishGate.ensure` | may this person publish? (composes the other two + address proof) |
+
+`PublishGate` exists because `CreateListingScreen` is pushed from **three**
+places and two of them — the host dashboard and the profile screen — were bare
+`Navigator.push` calls with no checks at all. Duplicating the guard would have
+left the same trap for the fourth caller. Never push that screen directly.
+
+**`if (userId != null)` is not a gate, it is a bypass.** Both identity checks
+were written that way, which was safe only while the app was unreachable
+without a login: a null user took the `else` branch and got the whole booking
+sheet — dates, guests, coupon, Confirm — before a dead-end "Please log in to
+book". Require the login; do not tolerate its absence.
+
+`_goToGuestTab` refuses any tab but Explore while signed out, centrally, so a
+new shortcut cannot reintroduce that hole. The signed-out nav bar is a
+*separate* two-item bar rather than a filter over the five-item list, because
+`_guestTabIndex` is a logical id that `_buildGuestContent`,
+`_goToGuestTab(0..4)` and `ShellNavState.openGuestTrips()` all index with —
+renumbering the destinations would silently repoint every one of them.
+
+### What the database had to change, and what it did not
+
+Almost nothing: `listings`, `listing_facilities`, `reviews` (revealed),
+`app_settings`, `landmarks`, `public_profiles` and the `listing-images` bucket
+were already `to public`. Search, voice search and the Supabase client needed no
+changes at all — the compiled-in key is already the `anon` role.
+
+**113** fixed the one real gap: `facilities` had a `to authenticated` policy, so
+a visitor saw **no amenity chips anywhere and got zero results from any search
+with an amenity ticked** — silently, because the inner join just collapsed. See
+the default-privileges note under Supabase for why a *policy* was the only
+thing that could have been broken.
+
+**114** moved the identity gate into the database. Before it, live had 8
+bookings from guests with `verification_status = 'none'` and 3 listings owned by
+a `role='tenant'` account with no verification — the client gate leaked, and the
+live listings INSERT policy checked only `owner_id` (001's version, with the
+role clause, never ran here). It is INSERT-time only, so existing rows are
+untouched; two owners must finish verification before publishing again.
+
+Both are verified by `supabase/tests/113_114_public_browse_and_identity_test.sql`
+— a rolled-back impersonation matrix, 16 rows, run against live. Six of them go
+red without the migrations; keep it that way.
+
+### Shareable listing URLs
+
+`/listing/<uuid>` is the only named route; everything else still navigates by
+pushing a constructed screen, which is fine — those have no shareable identity.
+A card tap passes the `Listing` through `arguments` so nothing re-fetches;
+`ListingRoute` fetches by id only when the id came from a pasted link.
+
+`listingIdFromRoute` (`lib/core/routing/listing_path.dart`) is deliberately
+strict about the uuid shape, because `not_found_handling:
+"single-page-application"` means Cloudflare answers **every** unknown path with
+`index.html` — so that function is handed whatever a crawler or a probe asked
+for, and a loose pattern would turn `/wp-admin` into a PostgREST query
+comparing a uuid column against junk. It has tests; they include the junk.
+
+Per-listing Open Graph tags are **not** done. A Flutter SPA cannot emit them
+client-side; it needs a Worker injecting meta into `index.html` for
+`/listing/*`. Until then a shared link previews as the generic social card.
 
 ## Conventions
 

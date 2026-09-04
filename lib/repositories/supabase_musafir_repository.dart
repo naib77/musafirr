@@ -1305,6 +1305,34 @@ class SupabaseMusafirRepository extends ChangeNotifier
   }
 
   @override
+  Future<Listing?> fetchListingById(String id) async {
+    // Serve the cache when it has it — the common case is a tap on a card
+    // that is already on screen, and a shared link opened in a warm tab.
+    final cached = getListingById(id);
+    if (cached != null) return cached;
+
+    try {
+      final row = await _client
+          .from('listings')
+          .select('*, listing_facilities(facility_id, facilities(name))')
+          .eq('id', id)
+          .maybeSingle();
+      if (row == null) return null;
+
+      final listing = _listingFromJson(row);
+      // Cache it, so the detail screen and anything else keyed on the cache
+      // (reviews, the host card) find it the way they would for a listing that
+      // arrived through the feed.
+      _listings.add(listing);
+      notifyListeners();
+      return listing;
+    } catch (e) {
+      debugPrint('Error fetching listing $id: $e');
+      return null;
+    }
+  }
+
+  @override
   List<Listing> searchListings(SearchFilters filters) {
     return _listings.where((listing) {
       if (!listing.available) return false;
