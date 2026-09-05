@@ -218,6 +218,62 @@ So when a Supabase lint names a table you did not create, check who owns it
 before writing the fix — and check `relacl` *after* applying it, because
 "succeeded" is not evidence.
 
+### A SECURITY DEFINER function is public unless you say otherwise
+
+Same root cause as the note above, one level down: `ALTER DEFAULT PRIVILEGES`
+grants `anon` and `authenticated` EXECUTE on **every function created in
+`public`**, and PostgREST publishes anything in `public` at
+`/rest/v1/rpc/<name>`. So a `SECURITY DEFINER` function is a public,
+unauthenticated endpoint running as `postgres` from the moment it is created,
+and the only thing standing between it and the internet is a check you wrote
+inside its body.
+
+116 found fourteen with no such check. The worst was **`otp_log_send`**, and it
+was full account takeover:
+
+- it inserts into `otp_attempts` with a **caller-supplied** `otp_hash`,
+- `hashOtp` (`supabase/functions/_shared/otp.ts`) is unsalted, unpeppered
+  SHA-256 of the code, so the hash for `1234` is a public constant,
+- `verify-otp` picks its row with `order by created_at desc limit 1`, so a row
+  inserted just now **outranks the code that was actually texted**.
+
+Three requests with the anon key that ships in the bundle — `otp_log_send`,
+`verify-otp`, redeem the token — and you hold anyone's session, admin included.
+Verified live to step one (HTTP 200 + row id, for a nonexistent phone, row
+deleted immediately); the chain was not completed. This is not the master-OTP
+risk in the QA section — that needs the number allowlisted; this needed nothing.
+
+Two rules follow, and 116 is the worked example:
+
+- **Revoke from `public` AND `anon` AND `authenticated`.** Nearly every one of
+  these carried both a PUBLIC `=X/postgres` and an explicit `anon=X/postgres`.
+  Dropping either alone leaves EXECUTE intact through the other — 115's lesson
+  exactly inverted.
+- **The grant is not the control if the body already guards.** `admin_*`
+  raise `Only service_role can execute this function` and were left alone;
+  functions checking `auth.uid()` likewise. Don't revoke blind: three
+  (`is_admin`, `can_see_listing_address`, `get_listing_owner`) are called from
+  inside RLS policy expressions, where a role lacking EXECUTE gets an **error
+  instead of an empty result**, and `is_conversation_member` is the same for
+  `authenticated`. Check `pg_policy` before touching a grant.
+
+Safe to revoke the OTP four because the live login path never calls them: both
+OTP edge functions build their client with `SUPABASE_SERVICE_ROLE_KEY` and hit
+`otp_attempts` through PostgREST directly. The Dart callers in
+`lib/services/otp_service.dart` sit behind
+`OtpState._useSupabase => SupabaseConfig.isConfigured`, true in every shipped
+build, so that branch is the mock path. Login was **not** driven to test this —
+see the QA section on why automating a login can send a real SMS.
+
+Still open after 116, in rough priority order: **20 `SECURITY DEFINER`
+functions with a mutable `search_path`** (a schema-shadowing escalation vector,
+mechanical to fix with `alter function … set search_path`), the three
+`security_definer_view`s (`public_profiles`, `listing_ratings`,
+`guest_ratings` — believed deliberate, since they are how a signed-out visitor
+reads host names past 061's PII lockdown, but unaudited), and
+`get_unread_count` / `is_conversation_member` never checking that `p_user_id`
+is the caller, so one signed-in user can still read another's counts.
+
 The rule itself is *not* reimplemented — search calls `is_booking_available`,
 same as the booking form. `searchDateWindowFor`
 (`lib/services/search/search_date_window.dart`) is the only place that decides
