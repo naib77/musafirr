@@ -267,12 +267,50 @@ see the QA section on why automating a login can send a real SMS.
 
 Still open after 116, in rough priority order: **20 `SECURITY DEFINER`
 functions with a mutable `search_path`** (a schema-shadowing escalation vector,
-mechanical to fix with `alter function … set search_path`), the three
-`security_definer_view`s (`public_profiles`, `listing_ratings`,
-`guest_ratings` — believed deliberate, since they are how a signed-out visitor
-reads host names past 061's PII lockdown, but unaudited), and
+mechanical to fix with `alter function … set search_path`), and
 `get_unread_count` / `is_conversation_member` never checking that `p_user_id`
 is the caller, so one signed-in user can still read another's counts.
+
+### A SECURITY DEFINER *view* can be written through, as postgres
+
+The three `security_definer_view` advisor ERRORs looked cosmetic and one was a
+full **anon → admin escalation** (117). A view with neither `security_invoker=on`
+nor an owner clause runs as its OWNER — `postgres` — for reads *and writes*, and
+a single-table view is auto-updatable, so PostgREST accepts a PATCH on it and
+the write lands on the base table **as postgres, outside RLS and before any
+guard trigger**. `public_profiles` is `select <safe columns> from profiles`, so:
+
+```
+PATCH /rest/v1/public_profiles?id=eq.<host>  {"role":"admin"}   →  204
+```
+
+with the bundled anon key promoted any account to admin. The direct path is
+safe — `update profiles` as anon hits RLS (no matching row) and an
+authenticated self-`role` change is stopped by `fn_guard_verification_verdicts`
+— but the definer view launders the actor into `postgres` and slips both. Fix
+was to **revoke INSERT/UPDATE/DELETE on the view**; reads run as postgres either
+way, so nothing broke.
+
+Two rules from it:
+
+- **A definer view over an RLS table is a write hole unless you revoke writes
+  on the view.** Auto-updatability is silent — nothing in the view definition
+  says "writable".
+- **`security_invoker=on` is the lint's fix but not always yours.**
+  `listing_ratings`/`guest_ratings` are aggregates (not updatable), and flipping
+  them to invoker cleared the lint *and* fixed a real leak — as definer they
+  averaged in **unrevealed** reviews (`reviews_select_revealed` is `to public`,
+  so reading as the caller drops them; live count went 37→36). But flipping
+  **`public_profiles`** to invoker would read as the caller: an anon caller sees
+  zero rows and every host name in the app vanishes. Making it work again needs
+  a `to public using(true)` SELECT policy on `profiles`, and anon holds column
+  SELECT on all 31 columns (mobile, nid, email included — only RLS hides them),
+  so that policy would leak PII instantly. **`public_profiles` stays a definer
+  view on purpose; its lint (0010) does not clear**, same category as
+  `spatial_ref_sys`'s 0013 (see 115). 117 also revoked anon's now-purposeless
+  direct grants on `profiles` (it reads through the definer view, never the
+  table) so those PII column grants stop being one careless policy away from a
+  leak.
 
 The rule itself is *not* reimplemented — search calls `is_booking_available`,
 same as the booking form. `searchDateWindowFor`
