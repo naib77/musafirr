@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/utils/responsive.dart';
+import '../../services/auth/auth_flow.dart';
 import '../../state/auth_state.dart';
 
 class BecomeHostScreen extends StatelessWidget {
@@ -162,6 +163,18 @@ class BecomeHostScreen extends StatelessWidget {
                         onPressed: authState.isLoading
                             ? null
                             : () async {
+                                // becomeHost() writes role/is_host onto the
+                                // signed-in profile, so without a session it
+                                // silently did nothing at all. Reachable
+                                // signed-out now that browsing is public.
+                                if (!await AuthFlow.ensureSignedIn(
+                                  context,
+                                  authState,
+                                  reason: 'to start hosting',
+                                )) {
+                                  return;
+                                }
+                                if (!context.mounted) return;
                                 final success = await authState.becomeHost();
                                 if (success && context.mounted) {
                                   onBecomeHost();

@@ -5,9 +5,11 @@ import '../../models/support_links.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../services/app_settings_service.dart';
 import '../../services/image_upload_service.dart';
+import '../../services/verification/publish_gate.dart';
 import '../../state/auth_state.dart';
 import '../../state/notification_state.dart';
 import '../../widgets/avatar_upload.dart';
+import '../../widgets/dialogs/confirm_logout_dialog.dart';
 import '../../widgets/modern_banner.dart';
 import '../host/become_host_screen.dart';
 import '../host/create_listing_screen.dart';
@@ -530,7 +532,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _navigateToCreateListing(BuildContext context) {
+  // Was a bare push, i.e. no sign-in, identity or address-proof check at all —
+  // one of the two routes by which an unverified account reached the publish
+  // form. PublishGate is the single answer to "may this person list?".
+  Future<void> _navigateToCreateListing(BuildContext context) async {
+    if (!await PublishGate.ensure(context, authState)) return;
+    if (!context.mounted) return;
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -600,27 +607,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  void _confirmLogout(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Log out'),
-        content: const Text('Are you sure you want to log out?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(context);
-              authState.logout();
-            },
-            child: const Text('Log out'),
-          ),
-        ],
-      ),
-    );
+  // The dialog itself lives in confirm_logout_dialog.dart because the desktop
+  // header's account menu offers the same action — see MainShell.
+  Future<void> _confirmLogout(BuildContext context) async {
+    if (await confirmLogout(context)) authState.logout();
   }
 }
 

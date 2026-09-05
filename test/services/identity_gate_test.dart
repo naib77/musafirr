@@ -63,6 +63,26 @@ void main() {
     expect(result, isFalse);
   });
 
+  testWidgets('a rejected identity is sent back to upload, not waved through',
+      (tester) async {
+    // 'rejected' is the status an admin sets after refusing a document, and it
+    // was the one case with no test. It must behave like 'none' — offer the
+    // upload again — rather than like 'pending', which shows no screen at all
+    // and would leave a rejected host with nothing to do and no explanation.
+    IdentityGate.statusOf = (_) async => 'rejected';
+    bool? result;
+    await _pumpGate(tester, onResult: (r) => result = r);
+
+    await tester.tap(find.text('go'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(IdentityVerificationScreen), findsOneWidget);
+
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    expect(result, isFalse);
+  });
+
   testWidgets('prompts for upload and blocks when the user backs out',
       (tester) async {
     IdentityGate.statusOf = (_) async => 'none';

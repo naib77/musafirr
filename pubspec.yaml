@@ -1,13 +1,18 @@
 name: musafir
 description: Musafir rental marketplace for tenants, house owners, and admins.
 publish_to: "none"
-version: 0.1.0+1
+version: 0.1.0+2
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
 
 dependencies:
   flutter:
+    sdk: flutter
+  # Ships with the SDK; declared only so main.dart's usePathUrlStrategy()
+  # import isn't an implicit dependency. Gives shared listing links a real
+  # path instead of a `#` fragment.
+  flutter_web_plugins:
     sdk: flutter
   uuid: ^4.3.3
   google_maps_flutter: ^2.6.1
