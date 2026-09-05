@@ -31,16 +31,23 @@ extension SearchSegmentX on SearchSegment {
         SearchSegment.who => SearchPopoverAlign.right,
         SearchSegment.filters => SearchPopoverAlign.right,
       };
-
-  double get panelWidth => switch (this) {
-        SearchSegment.where => 460,
-        // The calendar plus its shortcut rail; narrower and the month grid
-        // starts squeezing its 40px cells.
-        SearchSegment.when => 560,
-        SearchSegment.who => 400,
-        SearchSegment.filters => 420,
-      };
 }
+
+/// One width for every panel.
+///
+/// They used to differ per segment and the card's width animated between them,
+/// which looked right for about one frame and then wasn't: mid-morph the
+/// calendar was laid out at the Who panel's width and its month grid — 7 fixed
+/// 40px cells beside a 132px shortcut rail — overflowed by 45 pixels, striping
+/// the panel. Cross-fading two panels means BOTH are laid out during the
+/// transition, so any width either one cannot survive is a width neither can
+/// use.
+///
+/// 560 is what the calendar needs; everything else has room to spare, and a
+/// bar whose dropdown is always the same size reads as one control rather than
+/// four. It also means only the position animates, which is the movement that
+/// actually communicates "the panel moved to this segment".
+const double kSearchPanelWidth = 560;
 
 /// The bar: three segments, a mic, a ✕ and the Search button.
 ///
@@ -56,7 +63,7 @@ extension SearchSegmentX on SearchSegment {
 class SearchPillBar extends StatelessWidget {
   const SearchPillBar({
     super.key,
-    required this.links,
+    required this.segmentKeys,
     required this.open,
     required this.onSegmentTap,
     required this.onSubmit,
@@ -68,7 +75,10 @@ class SearchPillBar extends StatelessWidget {
     this.busy = false,
   });
 
-  final Map<SearchSegment, LayerLink> links;
+  /// Attached to each segment so `SearchPill` can measure where they are —
+  /// the panel animates between those rectangles, which needs numbers rather
+  /// than a LayerLink.
+  final Map<SearchSegment, GlobalKey> segmentKeys;
   final SearchSegment? open;
   final ValueChanged<SearchSegment> onSegmentTap;
 
@@ -102,6 +112,7 @@ class SearchPillBar extends StatelessWidget {
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 780),
       child: AnimatedContainer(
+        key: const ValueKey('search-bar'),
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
         height: 68,
@@ -131,15 +142,13 @@ class SearchPillBar extends StatelessWidget {
                 ),
               Expanded(
                 flex: _segments[i] == SearchSegment.where ? 4 : 3,
-                child: CompositedTransformTarget(
-                  link: links[_segments[i]]!,
-                  child: _Segment(
-                    segment: _segments[i],
-                    value: _valueFor(_segments[i]),
-                    active: open == _segments[i],
-                    dimmed: _anyOpen && open != _segments[i],
-                    onTap: () => onSegmentTap(_segments[i]),
-                  ),
+                child: _Segment(
+                  key: segmentKeys[_segments[i]],
+                  segment: _segments[i],
+                  value: _valueFor(_segments[i]),
+                  active: open == _segments[i],
+                  dimmed: _anyOpen && open != _segments[i],
+                  onTap: () => onSegmentTap(_segments[i]),
                 ),
               ),
             ],
@@ -186,6 +195,7 @@ class _Divider extends StatelessWidget {
 
 class _Segment extends StatefulWidget {
   const _Segment({
+    super.key,
     required this.segment,
     required this.value,
     required this.active,

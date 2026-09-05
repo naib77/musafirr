@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
@@ -96,7 +97,7 @@ class SearchPill extends StatefulWidget {
   State<SearchPill> createState() => _SearchPillState();
 }
 
-class _SearchPillState extends State<SearchPill> {
+class _SearchPillState extends State<SearchPill> with WidgetsBindingObserver {
   late SearchDraft _draft;
   SearchSegment? _open;
 
@@ -104,15 +105,39 @@ class _SearchPillState extends State<SearchPill> {
   /// sheet's `_resolvingPlace` does, so a second press cannot race the first.
   bool _resolving = false;
 
-  final _links = {
-    for (final segment in SearchSegment.values) segment: LayerLink(),
-  };
+  /// Shown and hidden from event handlers, never from build.
+  ///
+  /// `OverlayPortalController.show()` asserts it is not called during the
+  /// build phase, and an assertion thrown inside the overlay child paints a
+  /// full-screen dark red ErrorWidget — that child covers the window. The
+  /// first version drove this from `initState`/`didUpdateWidget`, both of which
+  /// run during build.
+  final _portal = OverlayPortalController();
+
   final _barKey = GlobalKey();
+  final _segmentKeys = {
+    for (final segment in SearchSegment.values) segment: GlobalKey(),
+  };
+
+  /// Where the bar and each segment actually are, in global coordinates.
+  ///
+  /// Measured in a post-frame callback and held in state — **never read during
+  /// build**. The first version called `localToGlobal` inside `build` to place
+  /// the scrim, which reads layout from a tree that may be mid-update: it can
+  /// hand back a stale rectangle (the scrim jumps for a frame) or assert
+  /// outright, and an assertion in the overlay child paints a full-screen dark
+  /// red ErrorWidget because that child covers the window.
+  Rect? _barRect;
+  final Map<SearchSegment, Rect> _segmentRects = {};
 
   @override
   void initState() {
     super.initState();
     _draft = SearchDraft.from(widget.filters);
+    WidgetsBinding.instance.addObserver(this);
+    // Measured before anything can be opened, so a panel never has to render a
+    // frame without knowing where to go.
+    _scheduleMeasure();
   }
 
   @override
@@ -123,32 +148,73 @@ class _SearchPillState extends State<SearchPill> {
     // otherwise typing in the Where panel would be wiped by the next repaint.
     if (!identical(widget.filters, oldWidget.filters) &&
         widget.filters != oldWidget.filters) {
+      _draft.dispose();
       _draft = SearchDraft.from(widget.filters);
     }
   }
 
+  /// The window resized, so every rectangle moved.
+  @override
+  void didChangeMetrics() => _scheduleMeasure();
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _draft.dispose();
     super.dispose();
   }
 
-  void _toggle(SearchSegment segment) {
-    setState(() => _open = _open == segment ? null : segment);
+  void _scheduleMeasure() {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
   }
 
-  void _close() {
-    if (_open != null) setState(() => _open = null);
+  void _measure() {
+    if (!mounted) return;
+    final barBox = _barKey.currentContext?.findRenderObject() as RenderBox?;
+    // `attached` as well as `hasSize`: this runs a frame late, by which time
+    // the bar may have been taken off screen, and localToGlobal on a detached
+    // render object asserts.
+    if (barBox == null || !barBox.attached || !barBox.hasSize) return;
+    final barRect = barBox.localToGlobal(Offset.zero) & barBox.size;
+
+    final rects = <SearchSegment, Rect>{};
+    for (final entry in _segmentKeys.entries) {
+      final box = entry.value.currentContext?.findRenderObject() as RenderBox?;
+      if (box == null || !box.attached || !box.hasSize) continue;
+      rects[entry.key] = box.localToGlobal(Offset.zero) & box.size;
+    }
+
+    // Guard the setState or this loops forever: a post-frame callback that
+    // always rebuilds schedules another frame, which schedules another.
+    if (barRect == _barRect && mapEquals(rects, _segmentRects)) return;
+    setState(() {
+      _barRect = barRect;
+      _segmentRects
+        ..clear()
+        ..addAll(rects);
+    });
   }
 
-  /// Global Y of the header's bottom edge, so the scrim starts below the bar
-  /// rather than dimming it.
-  double get _scrimTop {
-    final box = _barKey.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize) return 0;
-    // The header pads 16 below the pill; dimming from the pill's own bottom
-    // would leave a bright strip that looks like a rendering seam.
-    return box.localToGlobal(Offset.zero).dy + box.size.height + 16;
+  void _toggle(SearchSegment segment) =>
+      _setOpen(_open == segment ? null : segment);
+
+  void _close() => _setOpen(null);
+
+  /// The single writer of [_open].
+  ///
+  /// Callers are all event handlers — a tap, an Escape, the end of an await —
+  /// which is what keeps the portal calls out of the build phase.
+  void _setOpen(SearchSegment? next) {
+    if (_open == next) return;
+    setState(() => _open = next);
+    if (next == null) {
+      _portal.hide();
+    } else {
+      _portal.show();
+    }
+    // The bar's own layout shifts a little when a segment lifts, so the anchor
+    // is re-read once the new frame exists.
+    _scheduleMeasure();
   }
 
   Future<void> _submit() async {
@@ -212,7 +278,7 @@ class _SearchPillState extends State<SearchPill> {
             Flexible(
               child: SearchPillBar(
                 key: _barKey,
-                links: _links,
+                segmentKeys: _segmentKeys,
                 open: _open,
                 where: summary.where,
                 when: summary.when,
@@ -228,30 +294,49 @@ class _SearchPillState extends State<SearchPill> {
             ),
             const SizedBox(width: 10),
             FiltersButton(
+              key: _segmentKeys[SearchSegment.filters],
               count: _activeFilterCount,
               open: _open == SearchSegment.filters,
-              link: _links[SearchSegment.filters]!,
               onTap: () => _toggle(SearchSegment.filters),
             ),
-            if (_open != null)
-              // Zero-sized: the panel itself lives in the Overlay. This is only
-              // where the OverlayPortal is anchored in the tree.
-              _PanelPortal(
-                open: true,
-                child: SearchPopover(
-                  link: _links[_open!]!,
-                  align: _open!.align,
-                  scrimTop: _scrimTop,
-                  onDismiss: _close,
-                  width: _open!.panelWidth,
-                  child: _panelFor(_open!, today),
-                ),
-              ),
+            // Zero-sized here: the panel itself lives in the Overlay, and this
+            // is only where it is anchored in the tree. Always mounted — the
+            // controller decides whether anything shows, so nothing has to be
+            // added to or removed from the tree during a build.
+            OverlayPortal(
+              controller: _portal,
+              overlayChildBuilder: (context) => _overlay(today),
+              child: const SizedBox.shrink(),
+            ),
           ],
         );
       },
     );
   }
+
+  Widget _overlay(DateTime today) {
+    final segment = _open;
+    // Between hide() and the overlay's next build the segment can already be
+    // null; and on the very first frame the anchor may not be measured yet.
+    // Either way there is nothing to place, and guessing a position would show
+    // the panel at the window's origin and then jump it.
+    if (segment == null) return const SizedBox.shrink();
+    final anchor = _segmentRects[segment];
+    if (anchor == null) return const SizedBox.shrink();
+
+    return SearchPopover(
+      anchor: anchor,
+      scrimTop: _scrimTop,
+      align: segment.align,
+      width: kSearchPanelWidth,
+      contentKey: segment,
+      onDismiss: _close,
+      child: _panelFor(segment, today),
+    );
+  }
+
+  /// Where the dim starts: the bar's bottom edge, so the header stays bright.
+  double get _scrimTop => (_barRect?.bottom ?? 0) + 16;
 
   int get _activeFilterCount =>
       _draft.propertyTypes.length + (_draft.purpose == null ? 0 : 1);
@@ -277,60 +362,17 @@ class _SearchPillState extends State<SearchPill> {
   }
 }
 
-/// Mounts [child] into the [Overlay] while [open].
-///
-/// A tiny wrapper so the pill's build method stays readable: [OverlayPortal]
-/// needs a controller whose lifetime is a State, and inlining that would put
-/// three more fields on the bar for no gain.
-class _PanelPortal extends StatefulWidget {
-  const _PanelPortal({required this.open, required this.child});
-
-  final bool open;
-  final Widget child;
-
-  @override
-  State<_PanelPortal> createState() => _PanelPortalState();
-}
-
-class _PanelPortalState extends State<_PanelPortal> {
-  final _controller = OverlayPortalController();
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.open) _controller.show();
-  }
-
-  @override
-  void didUpdateWidget(_PanelPortal oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.open && !_controller.isShowing) _controller.show();
-    if (!widget.open && _controller.isShowing) _controller.hide();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return OverlayPortal(
-      controller: _controller,
-      overlayChildBuilder: (context) => widget.child,
-      child: const SizedBox.shrink(),
-    );
-  }
-}
-
 /// The count badge on the Filters button.
 class FiltersButton extends StatefulWidget {
   const FiltersButton({
     super.key,
     required this.count,
     required this.open,
-    required this.link,
     required this.onTap,
   });
 
   final int count;
   final bool open;
-  final LayerLink link;
   final VoidCallback onTap;
 
   @override
@@ -342,80 +384,77 @@ class _FiltersButtonState extends State<FiltersButton> {
 
   @override
   Widget build(BuildContext context) {
-    return CompositedTransformTarget(
-      link: widget.link,
-      child: Semantics(
-        button: true,
-        expanded: widget.open,
-        label: widget.count == 0 ? 'Filters' : 'Filters, ${widget.count} on',
-        excludeSemantics: true,
-        child: Tooltip(
-          message: 'More filters',
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            onEnter: (_) => setState(() => _hovered = true),
-            onExit: (_) => setState(() => _hovered = false),
-            child: InkWell(
-              onTap: widget.onTap,
-              borderRadius: BorderRadius.circular(24),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                height: 48,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: widget.open || widget.count > 0
-                        ? AppColors.brand
-                        : AppColors.outline,
-                    width: widget.open || widget.count > 0 ? 1.4 : 1,
-                  ),
-                  boxShadow: _hovered || widget.open
-                      ? [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.10),
-                            blurRadius: 10,
-                            offset: const Offset(0, 2),
-                          ),
-                        ]
-                      : const [],
+    return Semantics(
+      button: true,
+      expanded: widget.open,
+      label: widget.count == 0 ? 'Filters' : 'Filters, ${widget.count} on',
+      excludeSemantics: true,
+      child: Tooltip(
+        message: 'More filters',
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          child: InkWell(
+            onTap: widget.onTap,
+            borderRadius: BorderRadius.circular(24),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              height: 48,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: widget.open || widget.count > 0
+                      ? AppColors.brand
+                      : AppColors.outline,
+                  width: widget.open || widget.count > 0 ? 1.4 : 1,
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.tune_rounded, size: 18, color: AppColors.ink),
+                boxShadow: _hovered || widget.open
+                    ? [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.10),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]
+                    : const [],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.tune_rounded, size: 18, color: AppColors.ink),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Filters',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.ink,
+                    ),
+                  ),
+                  if (widget.count > 0) ...[
                     const SizedBox(width: 8),
-                    Text(
-                      'Filters',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.ink,
+                    Container(
+                      width: 20,
+                      height: 20,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppColors.brand,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        '${widget.count}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
-                    if (widget.count > 0) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        width: 20,
-                        height: 20,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: AppColors.brand,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Text(
-                          '${widget.count}',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
                   ],
-                ),
+                ],
               ),
             ),
           ),

@@ -505,10 +505,26 @@ is worth paying for, is rebuilding the sheet as a stack of these panels.
   an hourly window used to leave a stale `singleDate` keeping
   `hasActiveFilters` true. It clears both modes' fields first, then writes back
   only the active one. Three tests go red if that is undone.
-- **A popover's follower must size to the panel.** An `Align` around it expands
-  to the loose overlay constraints, so the follower measured the full viewport
-  width and `followerAnchor: topRight` threw the panel hundreds of pixels off
-  the left of the window. Panels take a fixed `width`, not a maximum.
+- **`OverlayPortalController.show()` must never be called from build.** It
+  asserts on it, and an assertion thrown inside the overlay child paints a
+  **full-screen dark red `ErrorWidget`** — that child covers the window, which
+  is what "the whole screen goes red" was. `_setOpen` is the only writer of
+  which segment is open and the only caller of `show`/`hide`, and every caller
+  of it is an event handler.
+- **Nothing reads layout during build.** The scrim used to be positioned from a
+  `localToGlobal` inside `build`. `SearchPill` now measures the bar and each
+  segment in a post-frame callback and holds the rectangles in state (guarded
+  on `attached` as well as `hasSize`, since it runs a frame late). The panel is
+  an `AnimatedPositioned` over those numbers.
+- **Every panel is the same width, and that is load-bearing.** They differed
+  per segment and the card animated between them — but the cross-fade lays
+  *both* panels out during the transition, so the calendar got laid out at the
+  Who panel's width and its fixed 40px month grid overflowed by 45 pixels. Any
+  width one panel cannot survive is a width neither can use.
+- **Switching segments is a slide and a cross-fade, not a swap.** Position,
+  width and contents all changing in one frame is what "it flicks" described.
+  `search_pill_motion_test.dart` asserts on the frames *between* states; four
+  of its five tests go red if the durations are zeroed.
 - **`CallbackShortcuts` needs something focused inside it.** The panel's
   `FocusScope` is `autofocus: true` or Escape does nothing in a panel with no
   text field (Who, Filters).

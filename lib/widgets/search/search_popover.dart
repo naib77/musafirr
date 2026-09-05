@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -11,66 +13,77 @@ import '../../core/theme/app_colors.dart';
 /// simpler and more predictable than measuring at open time.
 enum SearchPopoverAlign { left, center, right }
 
-/// The floating panel behind one search segment.
+/// How long the panel takes to travel between segments. Long enough to read as
+/// motion, short enough not to get in the way of a second click.
+const Duration kSearchPanelMotion = Duration(milliseconds: 260);
+
+/// The floating panel behind the search bar.
 ///
-/// ## Why an overlay rather than a route
+/// ## One panel that moves, not four that appear
 ///
-/// The existing search is a full-screen `showModalBottomSheet` — a route. A
-/// route cannot be anchored under the control that opened it, and pushing one
-/// per segment would put a page transition between "tap Where" and "type a
-/// place". These panels are chrome attached to a bar that is itself chrome, so
-/// they live in the [Overlay], positioned against their own segment through a
-/// [LayerLink].
+/// The first version anchored a separate panel under each segment with a
+/// [CompositedTransformFollower] and rebuilt it from scratch on every switch.
+/// Position, width and contents all changed in the same frame, which is exactly
+/// what "it flicks" describes — there was no transition, just a cut. Airbnb's
+/// panel is a single card that slides along the bar and morphs.
 ///
-/// ## The scrim starts below the header, deliberately
+/// So this is one [AnimatedPositioned] card whose left edge and width animate,
+/// with an [AnimatedSwitcher] cross-fading the contents. Both panels are
+/// briefly on screen together, which is what makes the change read as movement
+/// rather than as a flash.
+///
+/// ## Why it takes measured rectangles instead of a LayerLink
+///
+/// A follower cannot be animated between two different links, and animating a
+/// position needs the geometry as *numbers*. Those are measured after layout by
+/// `SearchPill` and passed in — never read during build, which is what the
+/// previous version did and is the one mechanism here capable of throwing
+/// during a rebuild. An exception in this subtree paints a full-screen dark red
+/// [ErrorWidget], because the overlay child covers the window.
+///
+/// ## The scrim starts below the bar, deliberately
 ///
 /// Airbnb dims the page behind an open panel but leaves the bar itself bright,
 /// so you can see which segment is active and click straight to another one. A
 /// full-screen scrim would grey the header too and make the whole bar read as
-/// disabled. So [scrimTop] is the header's bottom in global coordinates, and
-/// the dim starts there.
-///
-/// The scrim is also what dismisses the panel. It is a real hit-testing
-/// surface rather than a `TapRegion`, which additionally stops a click landing
-/// on a listing card the guest could not actually see properly.
+/// disabled.
 class SearchPopover extends StatelessWidget {
   const SearchPopover({
     super.key,
-    required this.link,
-    required this.align,
+    required this.anchor,
     required this.scrimTop,
-    required this.onDismiss,
     required this.width,
+    required this.align,
+    required this.contentKey,
+    required this.onDismiss,
     required this.child,
   });
 
-  /// The active segment's link. The panel follows it, so the panel moves if the
-  /// bar ever does.
-  final LayerLink link;
-  final SearchPopoverAlign align;
+  /// The active segment's rectangle, in global coordinates.
+  final Rect anchor;
 
-  /// Global Y at which the dim begins — the header's bottom edge.
+  /// Global Y at which the dim begins — the bar's bottom edge.
   final double scrimTop;
 
-  final VoidCallback onDismiss;
-
   /// Fixed, not a maximum: a panel that resized to its contents would jump
-  /// under the cursor as suggestions arrive, and the anchor maths needs a width
-  /// it can rely on.
+  /// under the cursor as suggestions arrive, and the travel animation needs a
+  /// width it can tween.
   final double width;
 
+  final SearchPopoverAlign align;
+
+  /// Identifies the contents, so the cross-fade knows one panel from another.
+  final Object contentKey;
+
+  final VoidCallback onDismiss;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final (target, follower) = switch (align) {
-      SearchPopoverAlign.left => (Alignment.bottomLeft, Alignment.topLeft),
-      SearchPopoverAlign.center => (
-          Alignment.bottomCenter,
-          Alignment.topCenter
-        ),
-      SearchPopoverAlign.right => (Alignment.bottomRight, Alignment.topRight),
-    };
+    final screen = MediaQuery.sizeOf(context);
+    // A short window must not clip a panel — the calendar is the tall one — so
+    // the height is capped and the content scrolls inside.
+    final maxHeight = screen.height * 0.72;
 
     return Stack(
       children: [
@@ -82,49 +95,58 @@ class SearchPopover extends StatelessWidget {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: onDismiss,
-            child: const ColoredBox(color: Color(0x14000000)),
+            child: const ColoredBox(
+              key: ValueKey('search-scrim'),
+              color: Color(0x14000000),
+            ),
           ),
         ),
-        CompositedTransformFollower(
-          link: link,
-          targetAnchor: target,
-          followerAnchor: follower,
-          // Clear of the pill's own shadow, so the two do not merge into one
+        AnimatedPositioned(
+          duration: kSearchPanelMotion,
+          curve: Curves.easeOutCubic,
+          left: _left(screen.width),
+          // Clear of the bar's own shadow, so the two do not merge into one
           // grey smudge.
-          offset: const Offset(0, 12),
-          // No Align around this. An Align with no size factor expands to the
-          // loose constraints it is given — the whole overlay — so the follower
-          // measured 1440 wide and `followerAnchor: topRight` lined THAT corner
-          // up with the segment, throwing the panel hundreds of pixels off the
-          // left of the window. The follower has to size to the panel.
+          top: anchor.bottom + 12,
+          width: width,
           child: _Panel(
-            width: width,
+            maxHeight: maxHeight,
             onDismiss: onDismiss,
+            contentKey: contentKey,
             child: child,
           ),
         ),
       ],
     );
   }
+
+  double _left(double screenWidth) {
+    final raw = switch (align) {
+      SearchPopoverAlign.left => anchor.left,
+      SearchPopoverAlign.center => anchor.center.dx - width / 2,
+      SearchPopoverAlign.right => anchor.right - width,
+    };
+    // A panel must never hang off the window, however the bar is laid out.
+    const margin = 12.0;
+    return raw.clamp(margin, math.max(margin, screenWidth - width - margin));
+  }
 }
 
 class _Panel extends StatelessWidget {
   const _Panel({
-    required this.width,
+    required this.maxHeight,
     required this.onDismiss,
+    required this.contentKey,
     required this.child,
   });
 
-  final double width;
+  final double maxHeight;
   final VoidCallback onDismiss;
+  final Object contentKey;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    // A short window must not clip a panel — the calendar is the tall one — so
-    // the height is capped against the viewport and the content scrolls inside.
-    final maxHeight = MediaQuery.sizeOf(context).height * 0.72;
-
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): onDismiss,
@@ -139,12 +161,11 @@ class _Panel extends StatelessWidget {
         // Escape entirely.
         autofocus: true,
         child: Material(
+          key: const ValueKey('search-panel'),
           color: AppColors.surface,
-          elevation: 0,
           borderRadius: BorderRadius.circular(28),
           clipBehavior: Clip.antiAlias,
           child: Container(
-            width: width,
             constraints: BoxConstraints(maxHeight: maxHeight),
             decoration: BoxDecoration(
               color: AppColors.surface,
@@ -158,7 +179,30 @@ class _Panel extends StatelessWidget {
                 ),
               ],
             ),
-            child: child,
+            // The height changes between panels too. Animating it as well means
+            // the card grows and shrinks rather than snapping, which is the
+            // other half of what made the switch feel like a cut.
+            child: AnimatedSize(
+              duration: kSearchPanelMotion,
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                // topCenter, not the default centre: the two panels are
+                // different heights, and centring them would make the outgoing
+                // one drift upwards as it fades.
+                layoutBuilder: (current, previous) => Stack(
+                  alignment: Alignment.topCenter,
+                  children: [
+                    ...previous,
+                    if (current != null) current,
+                  ],
+                ),
+                child: KeyedSubtree(key: ValueKey(contentKey), child: child),
+              ),
+            ),
           ),
         ),
       ),
