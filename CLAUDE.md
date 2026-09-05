@@ -183,6 +183,41 @@ a `to authenticated` *policy*, not a missing grant. When you need to know what a
 visitor can read, impersonate one (`begin; set local role anon; …; rollback;`)
 rather than reading the SQL.
 
+### PostGIS lives in `public`, and its tables are not ours to fix
+
+001 runs `create extension if not exists postgis` with no schema, so PostGIS's
+reference tables land in the schema PostgREST exposes, carrying the extension's
+own grants: `anon=arwdDxtm` on `spatial_ref_sys` — INSERT, UPDATE, DELETE **and
+TRUNCATE**, not just read. Verified, not inferred: `DELETE
+/rest/v1/spatial_ref_sys` with the compiled-in anon key answered **204**. An
+emptied table is a full search outage, because geography operations resolve
+their spheroid through it and every one of them then raises `Cannot find SRID
+(4326)` — `search_listings`, the radius tiers, the landmark ring, the geog
+trigger, the default explore feed.
+
+115 closes it, and the shape of that migration is the lesson. Three obvious
+fixes are all refused here — the table is owned by `supabase_admin`, and our
+`postgres` is neither a superuser nor a member of it:
+
+| Attempt | Result |
+| --- | --- |
+| `enable row level security` | `42501: must be owner` — the linter's own advice |
+| `owner to postgres` | `42501: must be owner` |
+| `alter extension postgis set schema` | refused; postgis is `extrelocatable = false` |
+
+**The `revoke` is the dangerous one: it is permitted, reports success, and does
+nothing.** A non-owner may only revoke grants it made itself, and these were
+made by `supabase_admin`, so `relacl` comes back byte-identical. A migration
+built on it applies green and records itself as done with the hole untouched.
+`postgres` holds `t` (TRIGGER) and nothing else useful, so the guard is a
+trigger — **two** of them, because TRUNCATE does not fire row-level triggers
+and a row-only guard loses the table to a one-word statement. Reads stay open
+deliberately: search runs as `anon` and needs them.
+
+So when a Supabase lint names a table you did not create, check who owns it
+before writing the fix — and check `relacl` *after* applying it, because
+"succeeded" is not evidence.
+
 The rule itself is *not* reimplemented — search calls `is_booking_available`,
 same as the booking form. `searchDateWindowFor`
 (`lib/services/search/search_date_window.dart`) is the only place that decides
