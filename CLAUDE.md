@@ -133,6 +133,73 @@ commits can lose; the cost is one booking to decline by hand, and the
 alternative (blocks as `bookings` rows under a sentinel status) would drag them
 through earnings, commission, payouts and the reservations list.
 
+### Search filters on dates through `is_booking_available`, not its own copy
+
+`search_listings` took no date until 112, so a guest searching 10-15 September
+was shown listings blocked for exactly those days and listings already booked
+solid — then refused at Reserve. `SearchFilters` had carried `checkIn`/`checkOut`
+all along; the client simply never sent them.
+
+A block hides a listing **only from searches whose dates overlap it**. Do not
+"fix" this into hiding the listing outright: one blocked weekend would then cost
+the host every other booking, which is the problem 110 was built to solve, and
+`host_available` (038) plus `is_active` already exist for stepping out entirely.
+An undated search — including the default explore feed, which is
+`searchListingsFromDb(const SearchFilters())` — filters on nothing.
+
+Three things about it that are easy to undo by accident:
+
+- **The predicate lives in the `base` CTE, not the outer `where`.** `chosen`
+  (the smallest radius tier holding a match) reads `base`, so a blocked listing
+  must not be allowed to win a tier and then be filtered out of it — a dated
+  tiered search would answer with an **empty ring**. Verified: moving the
+  predicate outward turns one scenario from two results into zero.
+- **It is a `case`, not an `or` chain.** Postgres does not promise
+  left-to-right `or` evaluation, and a reversed window reaches
+  `tstzrange(lower > upper)`, which aborts the whole search with `22000`.
+  `searchDateWindowFor` drops such a window client-side too, but a public RPC
+  cannot lean on that.
+- **112 grants `is_booking_available` to `anon`** because `search_listings` is
+  `SECURITY INVOKER` and open to `anon`, and 111 had granted it to
+  `authenticated` only. On a *plain* Postgres that grant is load-bearing —
+  without it a not-signed-in dated search dies with `42501` and the client's
+  `catch` renders it as "no results". On **this** database it is not: see the
+  default-privileges note below. Keep it anyway; it stops the repo depending on
+  an accident.
+
+**Do not reason about anon access from the migrations alone.** Supabase's
+`ALTER DEFAULT PRIVILEGES` on schema `public` grants `anon` and `authenticated`
+at CREATE time, and the `revoke all ... from public` this repo writes after a
+`SECURITY DEFINER` function strips only the PUBLIC pseudo-role — it leaves that
+explicit anon grant untouched. Verified on live via `pg_proc.proacl` /
+`pg_class.relacl`: anon already holds EXECUTE on `is_booking_available` and
+`listing_blocked_ranges`, and SELECT on `listing_ratings`, in flat
+contradiction of what 110/111/016 appear to say.
+
+So **an RLS policy is the only one of the two that actually gates `anon`.**
+Default privileges hand out the grant; nothing hands out a policy. That is why
+`facilities` was the single thing broken for signed-out visitors (113) — it was
+a `to authenticated` *policy*, not a missing grant. When you need to know what a
+visitor can read, impersonate one (`begin; set local role anon; …; rollback;`)
+rather than reading the SQL.
+
+The rule itself is *not* reimplemented — search calls `is_booking_available`,
+same as the booking form. `searchDateWindowFor`
+(`lib/services/search/search_date_window.dart`) is the only place that decides
+whether a search has a usable window, and it has tests.
+
+The client omits `p_check_in`/`p_check_out` **entirely** when there is no
+window rather than sending nulls, so the deploy order between `build/web` and
+this migration does not matter: PostgREST picks the overload by the keys
+present, so a null key would still demand the 19-argument function and, against
+a pre-112 database, resolve to nothing and empty out every search.
+
+`searchListings` (synchronous, cache-local, `supabase_musafir_repository.dart`)
+has **no callers** and cannot see blocks at all — they are not in the listing
+cache. `search_listings_by_location` is likewise dead in both the app and the
+admin portal. Neither is a live discovery path; do not add one without giving it
+the same date filter.
+
 ## Nothing user-tunable belongs in Dart
 
 App-wide knobs live in the `app_settings` table and are edited from the admin
@@ -247,13 +314,29 @@ merger folds it in, so it needs no entry of its own.
 
 ## QA
 
-**The master OTP is OFF as of 2026-08-26.** `MASTER_OTP` and `MASTER_OTP_PHONES`
-were unset from the live project on the owner's explicit instruction, while
-preparing the Play submission (`docs/PLAY_STORE_RELEASE.md` §6.4). There is no
-login bypass any more; every login needs a real SMS code.
+**The master OTP is ON as of 2026-09-03, scoped to one number.**
+`MASTER_OTP_PHONES` is the single entry `01673293542` — an explicit allowlist,
+never `*` — because a Play reviewer cannot receive a Bangladeshi SMS and the
+Console's *Sign in details* declaration needs credentials that work. That number
+is the existing `naib1` account (verified host, real listings and bookings), so
+the reviewer sees a populated app; `verify-otp` resolves it to the **legacy**
+identity `phone.1673293542@musaafir.app`, not a fresh empty account.  otp = 3969
 
-It had been `1234` against `MASTER_OTP_PHONES='*'` — the wildcard, so it really
-did log into **any** phone number, not an allowlist. `README.md` still shows the
+It had been OFF since 2026-08-26, when the secrets were unset on the owner's
+instruction. Both functions read secrets at runtime, so neither the re-enable nor
+a future unset needs a redeploy.
+
+**The master path is not rate-limited, and cannot be given a longer code.** A
+wrong guess makes `isMasterOtp` return false and falls through to the normal
+path, which finds no `otp_attempts` row and answers "No active code" *without
+incrementing anything* — so `OTP_MAX_ATTEMPTS` never applies. `OTP_LENGTH` is 4
+and `OtpInputField` renders exactly 4 auto-submitting boxes, so the keyspace is
+10,000 and a five-digit code could not be typed. Anyone who guesses that this
+number is allowlisted can brute-force it unthrottled and take the account. Unset
+the two secrets once a review passes, and re-set them for the next one.
+
+Before the 2026-08-26 shutdown it was `1234` against `MASTER_OTP_PHONES='*'` —
+the wildcard, so it really did log into **any** phone number, not an allowlist. `README.md` still shows the
 command that set it to a single number; that is stale, and the live value was
 confirmed by hashing candidates against the Management API's SHA-256 of the
 secret. The secret is server-side: `OtpConfig.masterOtpEnabled` defaults to
@@ -313,6 +396,238 @@ For the same reason `otpLookupPhones` makes `verify-otp` accept an `otp_attempts
 row stored under **either** spelling. `send-otp` writes that row and `verify-otp`
 reads it, but they are separate deploys — without this, the minutes between them
 fail every bare-form login with "No active code".
+
+## Browsing is public; acting is not
+
+The whole app used to sit behind one `switch` arm — `unauthenticated →
+AuthNavigator` in `app.dart` — so nothing rendered without a session. It now
+renders `MainShell` for a visitor too, and login is reached from whatever they
+tried to do.
+
+**Return the same widget type from both post-`initializing` arms.** Flutter
+updates an element in place when the type and key match, so signing in
+mid-session keeps `MainShell`'s state: the selected tab, each tab's scroll
+offset, the `_LazyIndexedStack`'s already-built children. Branching to a
+different widget would rebuild all of it, which is what the old arm did on
+every login.
+
+**Login is a pushed route, and that IS the "return them to what they were
+doing" mechanism.** `AuthFlow.ensureSignedIn` pushes and awaits; the listing
+detail screen with its dates chosen stays mounted underneath, so the caller
+just carries on. There is no pending-intent store to keep in sync — do not add
+one. It works because `MainShell` has **no Navigator of its own** (it is a
+`_LazyIndexedStack`), so pushes land on the root navigator as siblings of
+`home:`, where an auth-driven rebuild of `home:` cannot touch them.
+
+Three gates, all shaped alike — `false` means stop, and the gate has already
+said why:
+
+| Gate | Question |
+| --- | --- |
+| `AuthFlow.ensureSignedIn` | is there a session? |
+| `IdentityGate.ensure` | is the identity admin-approved? |
+| `PublishGate.ensure` | may this person publish? (composes the other two + address proof) |
+
+`PublishGate` exists because `CreateListingScreen` is pushed from **three**
+places and two of them — the host dashboard and the profile screen — were bare
+`Navigator.push` calls with no checks at all. Duplicating the guard would have
+left the same trap for the fourth caller. Never push that screen directly.
+
+**`if (userId != null)` is not a gate, it is a bypass.** Both identity checks
+were written that way, which was safe only while the app was unreachable
+without a login: a null user took the `else` branch and got the whole booking
+sheet — dates, guests, coupon, Confirm — before a dead-end "Please log in to
+book". Require the login; do not tolerate its absence.
+
+`_goToGuestTab` refuses any tab but Explore while signed out, centrally, so a
+new shortcut cannot reintroduce that hole. The signed-out nav bar is a
+*separate* two-item bar rather than a filter over the five-item list, because
+`_guestTabIndex` is a logical id that `_buildGuestContent`,
+`_goToGuestTab(0..4)` and `ShellNavState.openGuestTrips()` all index with —
+renumbering the destinations would silently repoint every one of them.
+
+### Desktop wears a top header, not a rail
+
+Above `Responsive.wide` (1000px) the shell renders [`DesktopTopNav`
+](lib/widgets/desktop_top_nav.dart) — brand, centred destinations, account
+menu, plus a Where/When/Who search pill on Explore. It replaced an extended
+`NavigationRail`, which spent ~220px of every viewport on five fixed labels and
+left the search field buried inside a scrolling tab.
+
+Below that breakpoint **nothing changes** — the bottom bar and Explore's own
+in-page search row are untouched. There is deliberately no drawer fallback in
+that file; the hamburger is the account affordance, not a responsive collapse.
+
+Three things there that are easy to break:
+
+- **The header owns no state.** Destinations, actions and menu items all come
+  from `MainShell`, and every selection goes back through `_goToGuestTab` so it
+  keeps that gate. A header that tracked its own index is a second navigation
+  model, which is exactly what the shared `_guestTabIndex` above exists to
+  prevent.
+- **`selectedIndex: -1` is a real state, not a bug.** Profile is logical tab 4
+  and lives in the account menu rather than the strip, so while it is showing,
+  no destination is current — `accountHighlighted` rings the account button
+  instead. Do not "fix" it by adding Profile as a fifth destination; the
+  indices are shared with the bottom bar (see above).
+- **`ExploreScreen.searchInShell` is passed, not re-derived.** The header
+  carries the search pill, the leaderboard trophy and the notification bell, so
+  Explore hides its whole in-page header row on desktop. The shell decides when
+  it draws a header; a second copy of `Responsive.isWide` inside Explore would
+  be a second thing to keep in step. The pill drives Explore's *existing*
+  search through three public methods on its state — there is one search
+  implementation and the header is a remote for it.
+
+`searchPillSummaryFor` (`lib/services/search/search_summary.dart`) is the only
+place that renders a whole `SearchFilters` into one line, and it has tests. It
+shows nothing for `guestCount == 1`, matching `hasActiveFilters` — otherwise
+every untouched pill would look like it was already narrowing the feed. The ✕,
+though, keys off `hasActiveFilters` rather than the summary, because a property
+type or an amenity is an active search the pill has no segment for.
+
+### The search bar is four panels over one draft
+
+`lib/widgets/search/` is the desktop search: Where / When / Who each open their
+own popover anchored under that segment, plus a Filters button for type and
+purpose. **`_SearchSheet` in `explore_screen.dart` is untouched and still the
+whole of mobile** — so the Where field, the date cards and the guest counter
+now exist twice and will drift. That was a deliberate call; the cure, when it
+is worth paying for, is rebuilding the sheet as a stack of these panels.
+
+- **Every `SearchStateNotifier` mutator runs a search immediately.** So the
+  panels write to a `SearchDraft` and exactly **one** `updateFilters` fires,
+  from the Search button. Three panels committing on close would be three
+  `search_listings` round trips for one search. `search_pill_test.dart` asserts
+  the commit count, not just the result — keep it that way.
+- **`filtersFromDraft` is pure and wipes before it sets.** The two date modes
+  store their shapes side by side, and passing `null` for the inactive one does
+  *not* clear it (`copyWith` reads null as "unchanged"), so a range picked after
+  an hourly window used to leave a stale `singleDate` keeping
+  `hasActiveFilters` true. It clears both modes' fields first, then writes back
+  only the active one. Three tests go red if that is undone.
+- **`OverlayPortalController.show()` must never be called from build.** It
+  asserts on it, and an assertion thrown inside the overlay child paints a
+  **full-screen dark red `ErrorWidget`** — that child covers the window, which
+  is what "the whole screen goes red" was. `_setOpen` is the only writer of
+  which segment is open and the only caller of `show`/`hide`, and every caller
+  of it is an event handler.
+- **Nothing reads layout during build.** The scrim used to be positioned from a
+  `localToGlobal` inside `build`. `SearchPill` now measures the bar and each
+  segment in a post-frame callback and holds the rectangles in state (guarded
+  on `attached` as well as `hasSize`, since it runs a frame late). The panel is
+  an `AnimatedPositioned` over those numbers.
+- **Every panel is the same width, and that is load-bearing.** They differed
+  per segment and the card animated between them — but the cross-fade lays
+  *both* panels out during the transition, so the calendar got laid out at the
+  Who panel's width and its fixed 40px month grid overflowed by 45 pixels. Any
+  width one panel cannot survive is a width neither can use.
+- **Switching segments is a slide and a cross-fade, not a swap.** Position,
+  width and contents all changing in one frame is what "it flicks" described.
+  `search_pill_motion_test.dart` asserts on the frames *between* states; four
+  of its five tests go red if the durations are zeroed.
+- **`CallbackShortcuts` needs something focused inside it.** The panel's
+  `FocusScope` is `autofocus: true` or Escape does nothing in a panel with no
+  text field (Who, Filters).
+- **Focusing a text field notifies its controller with unchanged text.** The
+  Where panel's listener therefore treats an empty query as "show the default
+  destinations", not "show nothing" — the earlier version emptied the list the
+  instant the panel opened.
+- The landmark picker is a route-level modal sheet, so `SearchPill` closes the
+  popover, awaits the pick and reopens it. A bottom sheet over a dropdown reads
+  as two competing surfaces.
+
+`SearchFilters` gained `adults`/`children`/`infants`. `guestCount` is still the
+only one that reaches the RPC, derived through `guestCountFor` (infants never
+count, floor 1, cap `maxSearchGuests`). **The split is search-only** — bookings,
+the price breakdown and the host's reservation list all still carry one number,
+so a stay found as "2 adults, 1 child, 1 infant" is booked as 3 guests.
+
+### What the database had to change, and what it did not
+
+Almost nothing: `listings`, `listing_facilities`, `reviews` (revealed),
+`app_settings`, `landmarks`, `public_profiles` and the `listing-images` bucket
+were already `to public`. Search, voice search and the Supabase client needed no
+changes at all — the compiled-in key is already the `anon` role.
+
+**113** fixed the one real gap: `facilities` had a `to authenticated` policy, so
+a visitor saw **no amenity chips anywhere and got zero results from any search
+with an amenity ticked** — silently, because the inner join just collapsed. See
+the default-privileges note under Supabase for why a *policy* was the only
+thing that could have been broken.
+
+**114** moved the identity gate into the database. Before it, live had 8
+bookings from guests with `verification_status = 'none'` and 3 listings owned by
+a `role='tenant'` account with no verification — the client gate leaked, and the
+live listings INSERT policy checked only `owner_id` (001's version, with the
+role clause, never ran here). It is INSERT-time only, so existing rows are
+untouched; two owners must finish verification before publishing again.
+
+Both are verified by `supabase/tests/113_114_public_browse_and_identity_test.sql`
+— a rolled-back impersonation matrix, 16 rows, run against live. Six of them go
+red without the migrations; keep it that way.
+
+### Shareable listing URLs
+
+`/listing/<uuid>` is the only named route; everything else still navigates by
+pushing a constructed screen, which is fine — those have no shareable identity.
+A card tap passes the `Listing` through `arguments` so nothing re-fetches;
+`ListingRoute` fetches by id only when the id came from a pasted link.
+
+`listingIdFromRoute` (`lib/core/routing/listing_path.dart`) is deliberately
+strict about the uuid shape, because `not_found_handling:
+"single-page-application"` means Cloudflare answers **every** unknown path with
+`index.html` — so that function is handed whatever a crawler or a probe asked
+for, and a loose pattern would turn `/wp-admin` into a PostgREST query
+comparing a uuid column against junk. It has tests; they include the junk.
+
+### The site is now a Worker, for link previews only
+
+`worker/index.js` rewrites the Open Graph tags on `/listing/<uuid>` so a stay
+shared to WhatsApp previews as itself. This *has* to happen at the edge: a
+crawler reads the HTML and never runs the Dart, so the app cannot set a `<meta>`
+in time.
+
+Nothing else changed cost. With both `main` and `assets` set, Cloudflare serves
+any request matching a file straight from the asset store **without invoking the
+Worker** — `/`, the bundle and every image are exactly as before. Only paths
+with no file behind them reach it, and everything but a listing URL is handed
+back to `env.ASSETS.fetch` immediately.
+
+Four things in there that are not obvious, and one of them is a security
+property:
+
+- **`setAttribute`, never string concatenation.** A listing title is
+  host-supplied and lands inside `content="…"`. `HTMLRewriter` escapes it;
+  a template string would have injected into every crawler and chat client
+  that renders the card. Proven, not assumed — the verify script feeds it a
+  `"><script>` title through a stub and a control that swaps in `el.replace`
+  goes red.
+- **Fetch the shell as `/`, not `/index.html`.** The asset server answers
+  `/index.html` with a **307 to `/`**, and returning that redirect verbatim
+  sends the crawler to the un-rewritten home page — which looks exactly like
+  the Worker never running.
+- **A handler object must not have a `text` field.** `HTMLRewriter` reads
+  `element`/`text`/`comments` off whatever it is given, so a class with
+  `this.text` is silently taken to be declaring a text handler and the whole
+  transform dies with *"the provided value is not of type 'function'"*. Hence
+  plain handlers.
+- **Cache the lookup, never the rewritten HTML.** Caching the page at the edge
+  would pin the `main.<hash>.dart.js` reference inside it, and the next deploy
+  would hand visitors a shell pointing at a bundle that no longer exists.
+
+It reads `listings.address`, which is the **area** label — 093 moved exact
+addresses behind a booking check. Never widen that select to a door number: this
+string goes on a public card.
+
+`SUPABASE_URL`/`SUPABASE_ANON_KEY` are `vars` in `wrangler.jsonc` for the same
+reason `SupabaseConfig` takes them as `--dart-define`: the two deploy branches
+go to different Cloudflare accounts and may point at different projects. Point a
+build elsewhere and these need pointing too, or previews describe the wrong
+database.
+
+**`sh tool/verify_link_previews.sh`** is the loop — real listing from live, then
+the hostile-title stub. Like `verify_phone_parity.sh` it is not in CI, which has
+no node step.
 
 ## Conventions
 

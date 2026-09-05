@@ -31,6 +31,7 @@ import '../models/search_filters.dart';
 import '../models/user.dart';
 import '../models/user_role.dart';
 import '../services/app_settings_service.dart';
+import '../services/search/search_date_window.dart';
 import 'musafir_repository.dart';
 
 /// Supabase-backed implementation of [MusafirRepository].
@@ -483,6 +484,9 @@ class SupabaseMusafirRepository extends ChangeNotifier
       // cached getter because startup calls load() unawaited, and the first
       // search can beat it.
       final searchArea = await AppSettingsService.instance.ensureSearchArea();
+      // Null unless the guest actually picked a usable window — see
+      // searchDateWindowFor. Only then does the RPC filter on availability.
+      final dates = searchDateWindowFor(filters);
       final rows = await _client.rpc('search_listings', params: {
         'p_property_types': filters.propertyTypes.isEmpty
             ? null
@@ -522,6 +526,19 @@ class SupabaseMusafirRepository extends ChangeNotifier
         'p_ne_lng': hasBounds ? bounds.neLng : null,
         'p_sw_lat': hasBounds ? bounds.swLat : null,
         'p_sw_lng': hasBounds ? bounds.swLng : null,
+        // Dated search: the RPC drops listings the host has blocked (110) or
+        // that are already booked across this window, so a guest is no longer
+        // shown a listing the Reserve step will refuse. (112)
+        //
+        // Omitted entirely rather than sent as null, which makes the deploy
+        // order between this bundle and migration 112 irrelevant. PostgREST
+        // picks the overload by the KEYS present, so a null p_check_in still
+        // demands the 19-argument function: against a pre-112 database that
+        // resolves to nothing, and searchListingsFromDb's catch would turn
+        // every search on the site into "no results". Absent keys resolve to
+        // the old 17-argument function and simply do not filter by date.
+        if (dates != null) 'p_check_in': dates.startsAtIso,
+        if (dates != null) 'p_check_out': dates.endsAtIso,
       });
 
       final list = (rows as List).cast<Map<String, dynamic>>();
@@ -1285,6 +1302,34 @@ class SupabaseMusafirRepository extends ChangeNotifier
   @override
   Listing? getListingById(String id) {
     return _listings.where((l) => l.id == id).firstOrNull;
+  }
+
+  @override
+  Future<Listing?> fetchListingById(String id) async {
+    // Serve the cache when it has it — the common case is a tap on a card
+    // that is already on screen, and a shared link opened in a warm tab.
+    final cached = getListingById(id);
+    if (cached != null) return cached;
+
+    try {
+      final row = await _client
+          .from('listings')
+          .select('*, listing_facilities(facility_id, facilities(name))')
+          .eq('id', id)
+          .maybeSingle();
+      if (row == null) return null;
+
+      final listing = _listingFromJson(row);
+      // Cache it, so the detail screen and anything else keyed on the cache
+      // (reviews, the host card) find it the way they would for a listing that
+      // arrived through the feed.
+      _listings.add(listing);
+      notifyListeners();
+      return listing;
+    } catch (e) {
+      debugPrint('Error fetching listing $id: $e');
+      return null;
+    }
   }
 
   @override

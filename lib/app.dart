@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'core/routing/listing_path.dart';
 import 'core/theme/app_palette.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
+import 'models/listing.dart';
 import 'models/notification.dart';
 import 'repositories/supabase_musafir_repository.dart';
-import 'screens/auth/otp_verification_screen.dart';
-import 'screens/auth/phone_entry_screen.dart';
-import 'screens/auth/profile_completion_screen.dart';
+import 'screens/explore/listing_route.dart';
 import 'screens/main_shell.dart';
 import 'screens/splash/splash_screen.dart';
+import 'services/auth/auth_flow.dart';
 import 'services/booking/booking_lifecycle_service.dart';
 import 'services/booking/booking_messaging_coordinator.dart';
 import 'services/booking/booking_rules.dart';
@@ -26,7 +27,6 @@ import 'state/auth_state.dart';
 import 'state/favorites_state.dart';
 import 'state/messaging_state.dart';
 import 'state/notification_state.dart';
-import 'state/otp_state.dart';
 import 'state/search_state.dart';
 import 'widgets/modern_banner.dart';
 
@@ -137,6 +137,20 @@ class _MusafirAppState extends State<MusafirApp> {
       // "popup" on web (OS push is stubbed there) and also shows in the
       // foreground on mobile. Fires only on realtime inserts, so no startup spam.
       _showNotificationToast(notification);
+    };
+
+    // A signed-out visitor tapping the wishlist heart gets a login instead of
+    // silence. Wired here, through the app-wide navigator, because the heart
+    // lives in stateless card widgets with no context of their own — the same
+    // reason _showNotificationToast uses this key.
+    favoritesState.onSignInRequired = () async {
+      final context = _navigatorKey.currentContext;
+      if (context == null) return;
+      await AuthFlow.ensureSignedIn(
+        context,
+        authState,
+        reason: 'to save places you like',
+      );
     };
 
     // Initialize search state with listings
@@ -310,108 +324,111 @@ class _MusafirAppState extends State<MusafirApp> {
       // nothing to animate; swapping instantly keeps every frame internally
       // consistent. Guarded by theme_controller_test's live-swap test.
       themeAnimationDuration: Duration.zero,
-      home: ListenableBuilder(
-        listenable: authState,
-        builder: (context, _) {
-          // Three-state auth flow: initializing → authenticated | unauthenticated
-          switch (authState.status) {
-            case AuthStatus.initializing:
-              // Show splash screen while determining auth state
-              return const SplashScreen();
-
-            case AuthStatus.authenticated:
-              // User is logged in - show main app
-              return MainShell(
-                repository: repository,
-                authState: authState,
-                favoritesState: favoritesState,
-                searchState: searchState,
-                notificationState: notificationState,
-                messagingState: messagingState,
-                bookingLifecycleService: bookingLifecycleService,
-                bookingMessagingCoordinator: bookingMessagingCoordinator,
-              );
-
-            case AuthStatus.unauthenticated:
-              // No user - show login flow
-              return AuthNavigator(authState: authState);
-          }
-        },
-      ),
+      // Named routes exist for one reason: a listing needs a URL somebody can
+      // send to a friend. Everything else still navigates by pushing a
+      // constructed screen, which is fine — those have no shareable identity.
+      //
+      // There is deliberately NO `home:` here. MaterialApp asserts
+      // `home == null || onGenerateInitialRoutes == null` ("the home argument
+      // will be redundant"), so the shell is produced by both callbacks below
+      // instead — _onGenerateRoute answers '/' with it.
+      onGenerateRoute: _onGenerateRoute,
+      // A cold `/listing/<id>` must open with the shell UNDERNEATH it, so Back
+      // (and the browser's back button) lands on Explore instead of exiting to
+      // a blank page. Flutter's default would split the path into a route per
+      // segment, which for '/listing/abc' means asking for '/listing' too —
+      // a route that does not exist.
+      onGenerateInitialRoutes: (initialRoute) => [
+        _rootRoute(),
+        if (listingIdFromRoute(initialRoute) case final id?)
+          MaterialPageRoute(
+            settings: RouteSettings(name: initialRoute),
+            builder: (_) => _listingRoute(id),
+          ),
+      ],
     );
   }
-}
 
-/// Auth screen type for navigation
-enum AuthScreen {
-  phoneEntry,
-  otpVerification,
-  profileCompletion,
-}
+  MaterialPageRoute<dynamic> _rootRoute() => MaterialPageRoute(
+        settings: const RouteSettings(name: '/'),
+        builder: (_) => _root(),
+      );
 
-/// Handles navigation between login and signup screens
-class AuthNavigator extends StatefulWidget {
-  const AuthNavigator({super.key, required this.authState});
-
-  final AuthStateNotifier authState;
-
-  @override
-  State<AuthNavigator> createState() => _AuthNavigatorState();
-}
-
-class _AuthNavigatorState extends State<AuthNavigator> {
-  AuthScreen _currentScreen = AuthScreen.phoneEntry;
-  final OtpStateNotifier _otpState = OtpStateNotifier();
-
-  @override
-  void initState() {
-    super.initState();
-    // Listen to OTP state changes to handle navigation
-    _otpState.addListener(_onOtpStateChanged);
-  }
-
-  @override
-  void dispose() {
-    _otpState.removeListener(_onOtpStateChanged);
-    _otpState.dispose();
-    super.dispose();
-  }
-
-  void _onOtpStateChanged() {
-    setState(() {
-      switch (_otpState.currentStep) {
-        case OtpFlowStep.phoneEntry:
-          _currentScreen = AuthScreen.phoneEntry;
-          break;
-        case OtpFlowStep.otpVerification:
-          _currentScreen = AuthScreen.otpVerification;
-          break;
-        case OtpFlowStep.profileCompletion:
-          _currentScreen = AuthScreen.profileCompletion;
-          break;
-        case OtpFlowStep.complete:
-          // Auth state will handle navigation to main shell
-          break;
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    switch (_currentScreen) {
-      case AuthScreen.phoneEntry:
-        return PhoneEntryScreen(
-          otpState: _otpState,
+  /// The app itself: shell once auth has resolved, splash until then.
+  Widget _root() {
+    return ListenableBuilder(
+      listenable: authState,
+      builder: (context, _) {
+        // Browsing is public: the shell is the app for a signed-out visitor
+        // too, and login is reached from whatever they tried to do
+        // (AuthFlow.ensureSignedIn) rather than being the front door.
+        //
+        // Returning the SAME widget type from both post-initializing states
+        // is load-bearing, not tidiness. Flutter updates an element in place
+        // when the type and key match, so signing in mid-session keeps
+        // MainShell's State — the selected tab, each tab's scroll offset,
+        // the _LazyIndexedStack's already-built children. Branching to a
+        // different widget here would rebuild all of it, which is exactly
+        // what the old `unauthenticated → AuthNavigator` arm did on every
+        // login.
+        //
+        // MainShell already tolerates a null user throughout: host mode is
+        // unreachable while signed out, and the repository's refresh,
+        // own-listings load and bookings realtime subscription all
+        // early-return without a session.
+        if (authState.status == AuthStatus.initializing) {
+          // Still deciding whether a stored session is valid. Not "signed
+          // out" — showing the shell here would flash a guest feed at a
+          // returning user before their session resolves.
+          return const SplashScreen();
+        }
+        return MainShell(
+          repository: repository,
+          authState: authState,
+          favoritesState: favoritesState,
+          searchState: searchState,
+          notificationState: notificationState,
+          messagingState: messagingState,
+          bookingLifecycleService: bookingLifecycleService,
+          bookingMessagingCoordinator: bookingMessagingCoordinator,
         );
+      },
+    );
+  }
 
-      case AuthScreen.otpVerification:
-        return OtpVerificationScreen(otpState: _otpState);
+  Widget _listingRoute(String id, {Listing? listing}) => ListingRoute(
+        listingId: id,
+        listing: listing,
+        repository: repository,
+        authState: authState,
+        favoritesState: favoritesState,
+        messagingState: messagingState,
+      );
 
-      case AuthScreen.profileCompletion:
-        return ProfileCompletionScreen(
-          otpState: _otpState,
-          authState: widget.authState,
-        );
+  Route<dynamic>? _onGenerateRoute(RouteSettings settings) {
+    final name = settings.name ?? '';
+
+    final id = listingIdFromRoute(name);
+    if (id == null) {
+      // With no `home:`, this is the only thing that can answer '/'. Any other
+      // name gets the shell too rather than null: returning null here leaves
+      // the app with no route at all, and every in-app path ('/trips' as a
+      // cold URL, since the SPA rule serves index.html for it) is a tab inside
+      // the shell, not a route.
+      return _rootRoute();
     }
+
+    return MaterialPageRoute(
+      settings: settings,
+      // A tap on a card passes the Listing through `arguments`, so the screen
+      // renders immediately and the URL still changes; a pasted link has no
+      // arguments and ListingRoute fetches by id.
+      builder: (_) => _listingRoute(
+        id,
+        listing: settings.arguments is Listing
+            ? settings.arguments as Listing
+            : null,
+      ),
+    );
   }
 }

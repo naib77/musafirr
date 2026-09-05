@@ -22,6 +22,7 @@ import '../../models/listing_type.dart';
 import '../../models/rental_plan.dart';
 import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
+import '../../services/auth/auth_flow.dart';
 import '../../services/discount/coupon_service.dart';
 import '../../services/verification/identity_gate.dart';
 import '../../state/auth_state.dart';
@@ -148,10 +149,16 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     final hostId = widget.listing.hostId;
     if (messagingState == null || hostId == null || hostId.isEmpty) return;
 
-    if (!widget.authState.isLoggedIn) {
-      ModernBanner.showInfo(context, 'Please log in to message the host.');
+    // Was a banner saying "Please log in to message the host." — true, and
+    // useless, because nothing on this screen could take them there.
+    if (!await AuthFlow.ensureSignedIn(
+      context,
+      widget.authState,
+      reason: 'to message the host',
+    )) {
       return;
     }
+    if (!mounted) return;
     // Guard against a second tap while the first is in flight: without it, an
     // impatient guest gets two conversations opened on top of each other.
     if (_openingChat) return;
@@ -205,6 +212,31 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     super.dispose();
   }
 
+  /// Reporting writes a row keyed to the reporter, so it needs a session.
+  ///
+  /// `submitReport` returns false without one (`repository:280`), and the sheet
+  /// gave no sign of that — a signed-out visitor filled in a report, submitted
+  /// it, and nothing happened. Asking first is both honest and less work than
+  /// letting them type it out.
+  Future<void> _reportListing(Listing listing) async {
+    if (!await AuthFlow.ensureSignedIn(
+      context,
+      widget.authState,
+      reason: 'to report this listing',
+    )) {
+      return;
+    }
+    if (!mounted) return;
+    showReportSheet(
+      context,
+      repository: widget.repository,
+      listingId: listing.id,
+      reportedUserId: listing.hostId,
+      subjectLabel: listing.title,
+      offerBlock: true,
+    );
+  }
+
   Future<void> _openBookingSheet() async {
     // Block booking when the host has marked themselves unavailable.
     final hostId = widget.listing.hostId;
@@ -220,17 +252,34 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       }
     }
 
-    // Identity gate before booking: the guest must have an admin-approved
-    // identity (ID document + selfie, verified by an admin) to proceed.
-    final userId = widget.authState.currentUser?.id;
-    if (userId != null) {
-      if (!mounted) return;
-      final verified = await IdentityGate.ensure(
-        context,
-        userId,
-        reason: 'to confirm your booking',
-      );
-      if (!verified) return;
+    // Two gates, in this order, and BOTH before the sheet opens.
+    //
+    // This used to be `if (userId != null) { ...IdentityGate... }`, which was
+    // safe only for as long as the app was unreachable without a login. With
+    // browsing public, a null user took the else branch — no login, no identity
+    // check — and got the whole sheet: dates, guests, coupon, Confirm, and only
+    // then a "Please log in to book" banner with nowhere to go. Requiring the
+    // login here rather than tolerating its absence is the fix; migration 114
+    // enforces the same two rules server-side, because this form is skippable
+    // and create_marketplace_booking is a public endpoint.
+    if (!mounted) return;
+    if (!await AuthFlow.ensureSignedIn(
+      context,
+      widget.authState,
+      reason: 'to reserve this stay',
+    )) {
+      return;
+    }
+
+    // Non-null now: ensureSignedIn returning true means a session exists.
+    final userId = widget.authState.currentUser!.id;
+    if (!mounted) return;
+    if (!await IdentityGate.ensure(
+      context,
+      userId,
+      reason: 'to confirm your booking',
+    )) {
+      return;
     }
 
     if (!mounted) return;
@@ -443,14 +492,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                           if (!_isOwnListing)
                             Center(
                               child: TextButton.icon(
-                                onPressed: () => showReportSheet(
-                                  context,
-                                  repository: widget.repository,
-                                  listingId: listing.id,
-                                  reportedUserId: listing.hostId,
-                                  subjectLabel: listing.title,
-                                  offerBlock: true,
-                                ),
+                                onPressed: () => _reportListing(listing),
                                 icon: const Icon(Icons.flag_outlined, size: 18),
                                 label: const Text('Report this listing'),
                                 style: TextButton.styleFrom(
