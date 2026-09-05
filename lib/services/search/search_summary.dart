@@ -84,8 +84,17 @@ String _clock(TimeOfDay time) {
 /// Only a deliberate choice shows. [SearchFilters.guestCount] defaults to 1 and
 /// `hasActiveFilters` agrees that 1 is not a filter, so showing "1 guest" would
 /// make every untouched pill look like it had been narrowed.
+///
+/// Infants are listed separately because they are counted separately — they do
+/// not tell against a listing's `max_guests`, so folding them into the total
+/// would report a party the search is not actually running. They do show on
+/// their own ("1 infant") even though they narrow nothing: the guest chose
+/// them, and a segment that forgets a choice reads as broken.
 String? _who(SearchFilters filters) {
+  final parts = <String>[];
   final guests = filters.guestCount;
-  if (guests <= 1) return null;
-  return '$guests guests';
+  if (guests > 1) parts.add('$guests guests');
+  final infants = filters.infants;
+  if (infants > 0) parts.add(infants == 1 ? '1 infant' : '$infants infants');
+  return parts.isEmpty ? null : parts.join(', ');
 }

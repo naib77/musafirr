@@ -9,7 +9,6 @@ import '../services/auth/auth_flow.dart';
 import '../services/booking/booking_messaging_coordinator.dart';
 import '../repositories/supabase_musafir_repository.dart';
 import '../services/booking/booking_lifecycle_service.dart';
-import '../services/search/search_summary.dart';
 import '../state/app_mode_state.dart';
 import '../state/auth_state.dart';
 import '../state/favorites_state.dart';
@@ -18,11 +17,15 @@ import '../state/notification_state.dart';
 import '../state/search_state.dart';
 import '../state/shell_nav_state.dart';
 import '../widgets/app_page_header.dart';
+import '../models/search_filters.dart';
 import '../widgets/desktop_top_nav.dart';
 import '../widgets/dialogs/confirm_logout_dialog.dart';
 import '../widgets/modern_banner.dart';
+import '../widgets/landmark_picker_sheet.dart';
 import '../widgets/notification_bell.dart';
 import '../widgets/review_prompt_handler.dart';
+import '../widgets/search/search_pill.dart';
+import '../widgets/search/search_services.dart';
 import '../widgets/smart_sidebar.dart';
 import '../widgets/top_hosts_button.dart';
 import 'explore/explore_screen.dart';
@@ -400,7 +403,7 @@ class _MainShellState extends State<MainShell> {
       // Explore only. A Where/When/Who pill above the Trips list would be
       // furniture — and worse, it would suggest that searching from there
       // filters what is on screen.
-      search: _guestTabIndex == 0 ? _searchSummary() : null,
+      searchBar: _guestTabIndex == 0 ? _searchBar() : null,
     );
   }
 
@@ -458,7 +461,7 @@ class _MainShellState extends State<MainShell> {
           onTap: _confirmLogout,
         ),
       ],
-      search: null,
+      searchBar: null,
     );
   }
 
@@ -559,23 +562,48 @@ class _MainShellState extends State<MainShell> {
   /// [_exploreScreenKey] rather than duplicating any of it here. A null state
   /// (Explore not yet mounted) makes them inert, which is correct: the pill
   /// only renders while Explore is the current tab.
-  DesktopSearchSummary _searchSummary() {
-    final filters = widget.searchState.filters;
-    final summary = searchPillSummaryFor(filters);
-    return DesktopSearchSummary(
-      where: summary.where,
-      when: summary.when,
-      who: summary.who,
-      onTap: () => _exploreScreenKey.currentState?.openSearchFromShell(),
+  /// The desktop search bar.
+  ///
+  /// The shell supplies the wiring — the running filters, the commit, the
+  /// listing-cache city lookup and the landmark picker — and [SearchPill] owns
+  /// everything else, including the draft that keeps three panels from firing
+  /// three searches. Nothing in this file knows how a panel is laid out.
+  Widget _searchBar() {
+    final listings = widget.repository.listings;
+    return SearchPill(
+      filters: widget.searchState.filters,
+      onCommit: _runSearchFromBar,
+      cities: (query) => citySuggestionsFrom(listings, query),
+      geocode: (query) =>
+          geocodeForSearch(query, knownCity: (q) => isKnownCity(listings, q)),
+      currentLocation: currentLocationPlace,
       onVoice: () =>
           _exploreScreenKey.currentState?.startVoiceSearchFromShell(),
-      // hasActiveFilters, not the summary: a property type or an amenity is an
-      // active search the pill has no segment for, and leaving it with no ✕
-      // would strand the guest in results they cannot clear from the header.
-      onClear: filters.hasActiveFilters
+      // hasActiveFilters, not the bar's own summary: a property type is an
+      // active search no segment shows, and leaving it with no ✕ would strand
+      // the guest in results they cannot clear from the header.
+      onClear: widget.searchState.filters.hasActiveFilters
           ? () => _exploreScreenKey.currentState?.clearSearchFromShell()
           : null,
+      onPickLandmark: (context, {required type, required title}) =>
+          showLandmarkPicker(
+        context,
+        repository: widget.repository,
+        type: type,
+        title: title,
+      ),
     );
+  }
+
+  /// Runs a search the bar composed. Exactly one RPC per press — see
+  /// [SearchDraft] for why that is the whole point of the draft.
+  void _runSearchFromBar(SearchFilters filters) {
+    widget.searchState.updateFilters(filters);
+    // Explore renders results from the notifier, but its PopScope reads
+    // `_searchActive` outside that listener — so a search started from the
+    // header would leave back-to-browse unarmed until something else rebuilt
+    // the screen.
+    _exploreScreenKey.currentState?.onShellSearchCommitted();
   }
 
   /// Shares its dialog with the Profile tab's log-out row, so the two cannot

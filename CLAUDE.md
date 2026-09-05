@@ -485,6 +485,47 @@ every untouched pill would look like it was already narrowing the feed. The ✕,
 though, keys off `hasActiveFilters` rather than the summary, because a property
 type or an amenity is an active search the pill has no segment for.
 
+### The search bar is four panels over one draft
+
+`lib/widgets/search/` is the desktop search: Where / When / Who each open their
+own popover anchored under that segment, plus a Filters button for type and
+purpose. **`_SearchSheet` in `explore_screen.dart` is untouched and still the
+whole of mobile** — so the Where field, the date cards and the guest counter
+now exist twice and will drift. That was a deliberate call; the cure, when it
+is worth paying for, is rebuilding the sheet as a stack of these panels.
+
+- **Every `SearchStateNotifier` mutator runs a search immediately.** So the
+  panels write to a `SearchDraft` and exactly **one** `updateFilters` fires,
+  from the Search button. Three panels committing on close would be three
+  `search_listings` round trips for one search. `search_pill_test.dart` asserts
+  the commit count, not just the result — keep it that way.
+- **`filtersFromDraft` is pure and wipes before it sets.** The two date modes
+  store their shapes side by side, and passing `null` for the inactive one does
+  *not* clear it (`copyWith` reads null as "unchanged"), so a range picked after
+  an hourly window used to leave a stale `singleDate` keeping
+  `hasActiveFilters` true. It clears both modes' fields first, then writes back
+  only the active one. Three tests go red if that is undone.
+- **A popover's follower must size to the panel.** An `Align` around it expands
+  to the loose overlay constraints, so the follower measured the full viewport
+  width and `followerAnchor: topRight` threw the panel hundreds of pixels off
+  the left of the window. Panels take a fixed `width`, not a maximum.
+- **`CallbackShortcuts` needs something focused inside it.** The panel's
+  `FocusScope` is `autofocus: true` or Escape does nothing in a panel with no
+  text field (Who, Filters).
+- **Focusing a text field notifies its controller with unchanged text.** The
+  Where panel's listener therefore treats an empty query as "show the default
+  destinations", not "show nothing" — the earlier version emptied the list the
+  instant the panel opened.
+- The landmark picker is a route-level modal sheet, so `SearchPill` closes the
+  popover, awaits the pick and reopens it. A bottom sheet over a dropdown reads
+  as two competing surfaces.
+
+`SearchFilters` gained `adults`/`children`/`infants`. `guestCount` is still the
+only one that reaches the RPC, derived through `guestCountFor` (infants never
+count, floor 1, cap `maxSearchGuests`). **The split is search-only** — bookings,
+the price breakdown and the host's reservation list all still carry one number,
+so a stay found as "2 adults, 1 child, 1 infant" is booked as 3 guests.
+
 ### What the database had to change, and what it did not
 
 Almost nothing: `listings`, `listing_facilities`, `reviews` (revealed),

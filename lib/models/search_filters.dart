@@ -14,6 +14,25 @@ enum SearchDateMode {
   singleDateWithTime,
 }
 
+/// Upper bound on a search's guest count. Mirrors the clamp the single guest
+/// counter has always used, so splitting it into adults/children cannot start
+/// asking for a party no listing could hold.
+const int maxSearchGuests = 16;
+
+/// The one place [SearchFilters.guestCount] is derived from a Who breakdown.
+///
+/// Infants are excluded — the convention every travel site uses — and the floor
+/// is 1, because a search for nobody is not a search and this number is
+/// compared against a listing's `max_guests`. A single function rather than a
+/// sum at each call site: the two fields and the count they imply have to stay
+/// in step, and one of them is what actually reaches the database.
+int guestCountFor({required int adults, required int children}) {
+  final total = adults + children;
+  if (total < 1) return 1;
+  if (total > maxSearchGuests) return maxSearchGuests;
+  return total;
+}
+
 class SearchFilters {
   const SearchFilters({
     this.location,
@@ -22,6 +41,9 @@ class SearchFilters {
     this.checkIn,
     this.checkOut,
     this.guestCount = 1,
+    this.adults = 1,
+    this.children = 0,
+    this.infants = 0,
     this.minPrice,
     this.maxPrice,
     this.propertyTypes = const [],
@@ -47,7 +69,34 @@ class SearchFilters {
   final GeoBounds? bounds;
   final DateTime? checkIn;
   final DateTime? checkOut;
+
+  /// How many people the search must fit — the number that actually reaches
+  /// `search_listings` and gets compared against a listing's `max_guests`.
+  ///
+  /// Kept as its own stored field rather than derived from [adults] + [children]
+  /// so that every existing construction site keeps working unchanged. The two
+  /// are held in step in exactly one place, [guestCountFor], which is what the
+  /// search UI uses when it builds filters from a draft.
   final int guestCount;
+
+  /// The breakdown behind [guestCount], as the desktop "Who" panel collects it.
+  ///
+  /// This is **search state only**. It narrows which listings are shown and
+  /// nothing more: a booking still carries one guest number, so a stay searched
+  /// as "2 adults, 1 child, 1 infant" is booked as 3 guests. Carrying the split
+  /// through would mean a migration plus the booking sheet, the price
+  /// breakdown and the host's reservation list — deliberately not done here.
+  ///
+  /// They exist so that reopening the panel shows the split the guest actually
+  /// chose, instead of re-splitting a sum into "N adults".
+  final int adults;
+  final int children;
+
+  /// Infants never count towards [guestCount] — the same convention every
+  /// travel site uses, and the reason [guestCountFor] exists rather than a
+  /// plain sum at each call site.
+  final int infants;
+
   final double? minPrice;
   final double? maxPrice;
   final List<ListingType> propertyTypes;
@@ -141,6 +190,9 @@ class SearchFilters {
     DateTime? checkIn,
     DateTime? checkOut,
     int? guestCount,
+    int? adults,
+    int? children,
+    int? infants,
     double? minPrice,
     double? maxPrice,
     List<ListingType>? propertyTypes,
@@ -181,6 +233,11 @@ class SearchFilters {
       checkIn: clearDates ? null : (checkIn ?? this.checkIn),
       checkOut: clearDates ? null : (checkOut ?? this.checkOut),
       guestCount: guestCount ?? this.guestCount,
+      // Carried, or a Who edit would not survive the next Where edit — every
+      // panel commits through one copyWith over the current filters.
+      adults: adults ?? this.adults,
+      children: children ?? this.children,
+      infants: infants ?? this.infants,
       minPrice: clearPriceRange ? null : (minPrice ?? this.minPrice),
       maxPrice: clearPriceRange ? null : (maxPrice ?? this.maxPrice),
       propertyTypes: propertyTypes ?? this.propertyTypes,

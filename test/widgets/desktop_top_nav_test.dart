@@ -30,7 +30,7 @@ void main() {
     ValueChanged<int>? onDestinationSelected,
     List<DesktopAccountMenuItem> accountMenu = const [],
     DesktopTopNavAction? primaryAction,
-    DesktopSearchSummary? search,
+    Widget? searchBar,
     bool accountHighlighted = false,
   }) async {
     tester.view.physicalSize = _desktop;
@@ -45,7 +45,7 @@ void main() {
           onDestinationSelected: onDestinationSelected ?? (_) {},
           accountMenu: accountMenu,
           primaryAction: primaryAction,
-          search: search,
+          searchBar: searchBar,
           accountHighlighted: accountHighlighted,
         ),
       ),
@@ -157,73 +157,17 @@ void main() {
     });
   });
 
-  group('the search pill', () {
-    testWidgets('is absent on a tab that passes no search', (tester) async {
+  // The bar itself is tested in search_pill_test.dart. All the header owes it
+  // is a slot on a second row, on the right tab and no other.
+  group('the search row', () {
+    testWidgets('is absent on a tab that passes no bar', (tester) async {
       await pump(tester);
-      expect(find.text('Where'), findsNothing);
-      expect(find.text('Search destinations'), findsNothing);
+      expect(find.text('SEARCH BAR'), findsNothing);
     });
 
-    // An untouched pill must read as an invitation, not as a filter already
-    // narrowing the feed.
-    testWidgets('shows placeholders when nothing is chosen', (tester) async {
-      await pump(tester, search: DesktopSearchSummary(onTap: () {}));
-      expect(find.text('Where'), findsOneWidget);
-      expect(find.text('When'), findsOneWidget);
-      expect(find.text('Who'), findsOneWidget);
-      expect(find.text('Search destinations'), findsOneWidget);
-      expect(find.text('Add dates'), findsOneWidget);
-      expect(find.text('Add guests'), findsOneWidget);
-    });
-
-    testWidgets('shows the values it was given', (tester) async {
-      await pump(
-        tester,
-        search: DesktopSearchSummary(
-          where: 'Uttara, Dhaka',
-          when: '12 – 15 Sep',
-          who: '3 guests',
-          onTap: () {},
-        ),
-      );
-      expect(find.text('Uttara, Dhaka'), findsOneWidget);
-      expect(find.text('12 – 15 Sep'), findsOneWidget);
-      expect(find.text('3 guests'), findsOneWidget);
-      expect(find.text('Search destinations'), findsNothing);
-    });
-
-    testWidgets('every segment opens the same search', (tester) async {
-      var opened = 0;
-      await pump(
-        tester,
-        search: DesktopSearchSummary(onTap: () => opened++),
-      );
-      await tester.tap(find.text('Search destinations'));
-      await tester.tap(find.text('Add dates'));
-      await tester.tap(find.text('Add guests'));
-      await tester.tap(find.byTooltip('Search'));
-      expect(opened, 4);
-    });
-
-    // No active search means nothing to clear, and a ✕ that clears nothing is
-    // a button that looks broken.
-    testWidgets('offers no clear button without onClear', (tester) async {
-      await pump(tester, search: DesktopSearchSummary(onTap: () {}));
-      expect(find.byTooltip('Clear search'), findsNothing);
-    });
-
-    testWidgets('clears when asked', (tester) async {
-      var cleared = false;
-      await pump(
-        tester,
-        search: DesktopSearchSummary(
-          where: 'Uttara, Dhaka',
-          onTap: () {},
-          onClear: () => cleared = true,
-        ),
-      );
-      await tester.tap(find.byTooltip('Clear search'));
-      expect(cleared, isTrue);
+    testWidgets('renders whatever bar it was handed', (tester) async {
+      await pump(tester, searchBar: const Text('SEARCH BAR'));
+      expect(find.text('SEARCH BAR'), findsOneWidget);
     });
   });
 
@@ -256,13 +200,9 @@ void main() {
               accountMenu: [
                 DesktopAccountMenuItem(label: 'Profile', onTap: () {}),
               ],
-              search: DesktopSearchSummary(
-                where: 'Bashundhara R/A, Dhaka',
-                when: '29 Sep – 2 Oct',
-                who: '6 guests',
-                onTap: () {},
-                onClear: () {},
-              ),
+              // A stand-in as wide as the real bar's cap, so the header is
+              // measured against the widest row it will ever hold.
+              searchBar: const SizedBox(width: 780, height: 68),
             ),
           ),
         ),

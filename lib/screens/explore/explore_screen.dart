@@ -174,8 +174,16 @@ class _ExploreScreenState extends State<ExploreScreen> {
   // there is exactly one search implementation, and the header is a remote for
   // it. MainShell reaches these through its Explore GlobalKey.
 
-  /// Opens the search sheet — the same sheet the mobile search bar opens.
-  void openSearchFromShell() => _openSearch();
+  /// Re-reads the search state after the header's bar ran a search.
+  ///
+  /// The results themselves come from a [ListenableBuilder] on the notifier, so
+  /// they need no help. This is for `_searchActive`, which the [PopScope] at
+  /// the top of `build` reads directly — without it, a search started from the
+  /// header would leave back-to-browse unarmed until some unrelated rebuild
+  /// happened to come along.
+  void onShellSearchCommitted() {
+    if (mounted) setState(() {});
+  }
 
   /// Starts voice search, including its microphone permission prompt.
   void startVoiceSearchFromShell() => _startVoiceSearch();

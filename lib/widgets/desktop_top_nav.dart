@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../core/theme/app_colors.dart';
 import 'app_network_image.dart';
 import 'brand_logo.dart';
-import 'voice_search_button.dart';
 
 /// The desktop header: brand on the left, destinations centred, account and
 /// actions on the right — with an optional search pill on a second row.
@@ -44,7 +43,7 @@ class DesktopTopNav extends StatelessWidget {
     required this.accountMenu,
     this.primaryAction,
     this.trailing = const [],
-    this.search,
+    this.searchBar,
     this.onBrandTap,
     this.avatarUrl,
     this.displayName,
@@ -76,9 +75,16 @@ class DesktopTopNav extends StatelessWidget {
   /// divider above itself.
   final List<DesktopAccountMenuItem> accountMenu;
 
-  /// The second row. Null on every tab but Explore — a search pill above the
-  /// Earnings screen would be furniture.
-  final DesktopSearchSummary? search;
+  /// The second row — the search bar, supplied whole by the caller.
+  ///
+  /// Opaque on purpose. The header is a layout: it knows a row goes here and
+  /// how much space it gets, and nothing about searching. That is why
+  /// `SearchPill` lives in widgets/search/ rather than in this file, where an
+  /// earlier version of it started growing panels.
+  ///
+  /// Null on every tab but Explore — a search bar above the Earnings screen
+  /// would be furniture.
+  final Widget? searchBar;
 
   final VoidCallback? onBrandTap;
 
@@ -116,7 +122,7 @@ class DesktopTopNav extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(height: 74, child: _navRow(context)),
-              if (search != null) _searchRow(search!),
+              if (searchBar != null) _searchRow(searchBar!),
             ],
           ),
         ),
@@ -186,17 +192,10 @@ class DesktopTopNav extends StatelessWidget {
     );
   }
 
-  Widget _searchRow(DesktopSearchSummary search) {
+  Widget _searchRow(Widget bar) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 2, 24, 16),
-      child: Center(
-        child: ConstrainedBox(
-          // Wider than this and the three segments drift so far apart that the
-          // pill stops reading as one control.
-          constraints: const BoxConstraints(maxWidth: 780),
-          child: _SearchPill(search: search),
-        ),
-      ),
+      child: Center(child: bar),
     );
   }
 }
@@ -255,35 +254,6 @@ class DesktopAccountMenuItem {
   final bool emphasized;
 
   final bool dividerAbove;
-}
-
-/// What the search pill shows and what its parts do.
-class DesktopSearchSummary {
-  const DesktopSearchSummary({
-    required this.onTap,
-    this.where,
-    this.when,
-    this.who,
-    this.onVoice,
-    this.onClear,
-  });
-
-  /// Opens the search sheet. Every segment calls the same callback: the sheet
-  /// is one scrolling form rather than three panels, so there is no per-segment
-  /// field to focus, and pretending otherwise would be a promise the sheet
-  /// cannot keep.
-  final VoidCallback onTap;
-
-  final String? where;
-  final String? when;
-  final String? who;
-
-  /// Voice search. Null where the platform has no speech recognition.
-  final VoidCallback? onVoice;
-
-  /// Drops the active search. Null when there is nothing to drop, which is
-  /// what hides the ✕.
-  final VoidCallback? onClear;
 }
 
 // ---------------------------------------------------------------------------
@@ -644,219 +614,6 @@ class _Initial extends StatelessWidget {
                 color: Colors.white,
               ),
             ),
-    );
-  }
-}
-
-/// The Where / When / Who pill.
-class _SearchPill extends StatelessWidget {
-  const _SearchPill({required this.search});
-
-  final DesktopSearchSummary search;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 66,
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(40),
-        border: Border.all(color: AppColors.outline),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.07),
-            blurRadius: 16,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 4,
-            child: _PillSegment(
-              label: 'Where',
-              value: search.where,
-              placeholder: 'Search destinations',
-              onTap: search.onTap,
-            ),
-          ),
-          const _PillDivider(),
-          Expanded(
-            flex: 3,
-            child: _PillSegment(
-              label: 'When',
-              value: search.when,
-              placeholder: 'Add dates',
-              onTap: search.onTap,
-            ),
-          ),
-          const _PillDivider(),
-          Expanded(
-            flex: 3,
-            child: _PillSegment(
-              label: 'Who',
-              value: search.who,
-              placeholder: 'Add guests',
-              onTap: search.onTap,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(left: 4, right: 9),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (search.onClear != null)
-                  IconButton(
-                    onPressed: search.onClear,
-                    icon: const Icon(Icons.close, size: 19),
-                    color: AppColors.inkMuted,
-                    tooltip: 'Clear search',
-                    visualDensity: VisualDensity.compact,
-                  ),
-                // The shared mic, which renders nothing where the platform has
-                // no speech recognition — so the check stays in one place
-                // rather than being re-derived for the desktop pill.
-                if (search.onVoice != null)
-                  VoiceSearchMicButton(onTap: search.onVoice!),
-                const SizedBox(width: 4),
-                _SearchButton(onTap: search.onTap),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PillDivider extends StatelessWidget {
-  const _PillDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(width: 1, height: 30, color: AppColors.outline);
-  }
-}
-
-class _PillSegment extends StatefulWidget {
-  const _PillSegment({
-    required this.label,
-    required this.placeholder,
-    required this.onTap,
-    this.value,
-  });
-
-  final String label;
-  final String? value;
-  final String placeholder;
-  final VoidCallback onTap;
-
-  @override
-  State<_PillSegment> createState() => _PillSegmentState();
-}
-
-class _PillSegmentState extends State<_PillSegment> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final value = widget.value;
-    final hasValue = value != null && value.isNotEmpty;
-
-    return Semantics(
-      button: true,
-      // Reads as "Where, Dhaka" rather than as two loose strings, so the pill
-      // announces one control per segment instead of six fragments.
-      label: '${widget.label}, ${hasValue ? value : widget.placeholder}',
-      excludeSemantics: true,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: InkWell(
-          onTap: widget.onTap,
-          borderRadius: BorderRadius.circular(40),
-          focusColor: AppColors.brand.withValues(alpha: 0.10),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 160),
-            curve: Curves.easeOut,
-            padding: const EdgeInsets.symmetric(horizontal: 22),
-            decoration: BoxDecoration(
-              color: _hovered ? AppColors.surfaceMuted : Colors.transparent,
-              borderRadius: BorderRadius.circular(40),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.ink,
-                    height: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  hasValue ? value : widget.placeholder,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w500,
-                    // inkMuted, not a lighter grey: the placeholder still has
-                    // to clear 4.5:1 on the white pill, and every palette is
-                    // held to that (see the palette contrast test).
-                    color: hasValue ? AppColors.ink : AppColors.inkMuted,
-                    height: 1.1,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SearchButton extends StatelessWidget {
-  const _SearchButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: 'Search',
-      child: Material(
-        shape: const CircleBorder(),
-        clipBehavior: Clip.antiAlias,
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [AppColors.brand, AppColors.brandDark],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.search, size: 22, color: Colors.white),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

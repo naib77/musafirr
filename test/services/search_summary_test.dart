@@ -123,6 +123,33 @@ void main() {
         expect(searchPillSummaryFor(const SearchFilters(guestCount: 4)).who,
             '4 guests');
       });
+
+      // Listed separately because they are counted separately — they do not
+      // tell against a listing's max_guests, so folding them into the total
+      // would report a party the search is not actually running.
+      test('infants are named apart from the guest total', () {
+        expect(
+          searchPillSummaryFor(const SearchFilters(
+                  guestCount: 3, adults: 2, children: 1, infants: 1))
+              .who,
+          '3 guests, 1 infant',
+        );
+      });
+
+      test('more than one infant pluralises', () {
+        expect(
+          searchPillSummaryFor(const SearchFilters(guestCount: 2, infants: 2))
+              .who,
+          '2 guests, 2 infants',
+        );
+      });
+
+      // The guest chose them, and a segment that forgets a choice reads as
+      // broken — even though infants alone narrow nothing.
+      test('infants show on their own', () {
+        expect(searchPillSummaryFor(const SearchFilters(infants: 1)).who,
+            '1 infant');
+      });
     });
   });
 }
