@@ -31,6 +31,7 @@ import '../models/search_filters.dart';
 import '../models/user.dart';
 import '../models/user_role.dart';
 import '../services/app_settings_service.dart';
+import '../services/booking/booking_accept_window.dart';
 import '../services/search/search_date_window.dart';
 import '../services/search/search_party_params.dart';
 import 'musafir_repository.dart';
@@ -2287,7 +2288,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
 
   @override
   List<Booking> getStaleBookings({Duration? maxAge}) {
-    final threshold = maxAge ?? const Duration(hours: 24);
+    final threshold = maxAge ?? kDefaultBookingAcceptWindow;
     final cutoff = DateTime.now().subtract(threshold);
 
     return _bookings

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'booking/booking_accept_window.dart';
 import '../models/payout_method.dart';
 import '../models/search_area_settings.dart';
 import '../models/support_links.dart';
@@ -44,6 +45,12 @@ class AppSettingsService {
   // instead of a dead menu item.
   SupportLinks _supportLinks = SupportLinks.defaults;
 
+  // How long a host has to answer a booking request. The scheduled job
+  // expire_stale_bookings() is what actually enforces it; this copy only feeds
+  // the countdown the guest watches, so an unreadable table showing the old
+  // 24-hour default is a cosmetic drift, never a wrong cancellation.
+  Duration _bookingAcceptWindow = kDefaultBookingAcceptWindow;
+
   // Which payout channels a user may add. Defaults to all of them: unlike a
   // payment option, an unreadable settings table here must not silently stop
   // hosts registering somewhere to be paid — and nothing is at risk, because
@@ -74,6 +81,11 @@ class AppSettingsService {
   /// back to its compiled-in default. Prefer [ensureSupportLinks] where the
   /// value is read on a path that could run before [load] has finished.
   SupportLinks get supportLinks => _supportLinks;
+
+  /// How long a host has to accept a booking request before the server
+  /// rejects it. Prefer [ensureBookingAcceptWindow] where this is read on a
+  /// path that could run before [load] has finished.
+  Duration get bookingAcceptWindow => _bookingAcceptWindow;
 
   /// Payout channels currently on offer, in the order the enum declares them
   /// rather than the order an admin happened to type — so the add-a-method
@@ -124,6 +136,11 @@ class AppSettingsService {
             break;
           case 'privacy_url':
             privacyUrl = raw;
+            break;
+          case 'booking_accept_window_hours':
+            // Parsed here rather than stashed for the block below because it
+            // stands alone — one cell, one value, no cross-key sanitising.
+            _bookingAcceptWindow = bookingAcceptWindowFromRaw(value);
             break;
           case 'payout_channels_enabled':
             final parsed = (value ?? '')
@@ -187,5 +204,11 @@ class AppSettingsService {
   Future<SupportLinks> ensureSupportLinks() async {
     if (!_loaded) await load();
     return _supportLinks;
+  }
+
+  /// Returns the host-response window, loading settings first if needed.
+  Future<Duration> ensureBookingAcceptWindow() async {
+    if (!_loaded) await load();
+    return _bookingAcceptWindow;
   }
 }

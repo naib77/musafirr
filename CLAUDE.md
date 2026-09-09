@@ -381,9 +381,41 @@ them at startup and **fails open** to compiled-in defaults.
 
 Current keys include the proof-of-address requirement, cash payments, the
 search area (`search_radius_tiers_m`, `search_landmark_radius_m`,
-`search_nearest_fallback_limit`), and the colour theme (`active_theme`).
-Migration 097 validates the search keys on write, so a bad value is refused at
-the source rather than silently sanitised.
+`search_nearest_fallback_limit`), the colour theme (`active_theme`) and the
+host-response window (`booking_accept_window_hours`). Values are validated on
+write — `fn_validate_app_setting` is a CASE dispatching to one
+`fn_validate_setting_*` per key — so a bad value is refused at the source
+rather than silently sanitised. **Adding a key means adding an arm to that
+dispatcher**, and recreating it in full: it is a CASE, so a patch that drops an
+arm silently stops validating that key.
+
+### The host-response window is a setting, and the database is its only enforcer
+
+A booking request the host never answers is auto-rejected. That window was 24
+hours written into `expire_stale_bookings()` (018) — as an interval *and* as
+the number spelled out in three notification strings — plus a fourth copy in
+`BookingRules.expirationDuration`. It is `booking_accept_window_hours` now
+(119), 1–168, seeded at 24 so nothing changed on apply.
+
+- **Only the cron job cancels anything.** Nothing in Dart expires a real
+  booking. The Dart copy of the window (`booking_accept_window.dart`) feeds the
+  guest's countdown, and fails open to 24h when settings cannot be read — a
+  stale client shows a slightly wrong clock, which is cosmetic, where a client
+  that could expire bookings would be a second enforcer of a rule the database
+  owns. `BookingRules.isExpired` is a *read*, not an enforcement.
+- **The sweep runs every 15 minutes, not hourly.** Hourly was invisible at 24
+  hours and is not at 2 — a 2-hour window swept hourly expires somewhere
+  between 2 and 3. The window is still a floor rather than a promise: expiry
+  happens at the first tick *after* it elapses, so the guest's countdown
+  reaches zero while the row is briefly still `pending`. That is the honest way
+  round; do not "fix" it by having the client reject.
+- **`booking_accept_window_hours()` re-guards the value** with the same regex
+  the validator uses, and falls back to 24. Not redundant: rows predate guards,
+  and a function that can raise inside a cron job is a job that silently stops
+  running for *every* booking. The test writes a junk value past the trigger to
+  prove it.
+- The prose keeps today's exact wording at 24 (`fn_humanise_hours` only says
+  "days" at 48+), so the default configuration changed no visible text.
 
 `active_theme` names one of the palettes in `lib/core/theme/app_palettes.dart`.
 The app can only wear a palette it was compiled with, so **adding one means
