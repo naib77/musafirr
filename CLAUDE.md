@@ -351,6 +351,29 @@ for tokens that carry text, 3:1 for ones that only ever tint an icon. There are
 no exemptions and the tiers are not advisory — a new palette that fails is a
 failing build, so pick colours against a background, not in isolation.
 
+It holds one more axis, added after selection turned out to be invisible: **a
+selected chip has to clear 3:1 against an unselected one**, and its label 4.5:1
+against its own fill. `chipTheme` used to tint the brand at 14% alpha over
+`surfaceMuted`, which works for a colourful brand and not at all for
+`coral_ink`, whose brand is #222222 — the tint flattened to #E0E0E0 beside a
+#EBEBEB chip, 1.11:1, with `side: BorderSide.none` leaving no second cue. Seven
+of the nine selectable chips in the app take their colours from that theme
+alone, so all seven read as permanently unselected. Selection is a solid
+`brand` fill now, label and checkmark in `surface`; that pairing needs no new
+guarantee because brand-on-surface at 4.5:1 *is* surface-on-brand at 4.5:1.
+
+Two traps if you touch it. **Flatten alpha before measuring** — Flutter's
+`computeLuminance()` reads only r/g/b, so contrast against a translucent fill
+reports the ratio of the tint's source colour, a healthy 13:1 for something
+invisible; the test composites with `Color.alphaBlend` first, and without that
+line it passes on the bug it exists for. And **`RawChip` resolves only the
+label's `color` against widget states**, not the rest of the TextStyle
+(`chip.dart` calls `resolveAs<Color?>` on `effectiveLabelStyle.color` alone), so
+a `WidgetStateColor` is the single hook a theme has for a selected label and a
+`WidgetStateTextStyle` would be read as a plain style. A call site may add its
+own size or weight — `merge` only overrides non-null fields — but a `color:` of
+its own defeats that hook and paints an ink label on the dark fill.
+
 ### The boot chain is brand rose, not the palette
 
 Seven surfaces hardcode **`#C35063`** and cannot follow `active_theme`, because
