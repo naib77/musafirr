@@ -41,7 +41,10 @@ import '../../widgets/listing_price_map.dart';
 import '../../widgets/notification_bell.dart';
 import '../../widgets/results_map_sheet.dart';
 import '../../widgets/top_hosts_button.dart';
+import '../../services/search/search_summary.dart';
+import '../../widgets/search/date_calendar.dart';
 import '../../widgets/search/guest_party_fields.dart';
+import '../../widgets/search/search_section.dart';
 import '../../widgets/search/search_sheet_footer.dart';
 import '../notifications/notification_center_screen.dart';
 
@@ -1105,6 +1108,13 @@ class _CategorySection extends StatelessWidget {
   }
 }
 
+/// Which question the mobile search sheet is currently asking.
+///
+/// Exactly one is open at a time, and the sheet owns it rather than the cards
+/// — two open sections would put the month grid and the guest steppers on
+/// screen together and undo the point of folding at all.
+enum _SheetStep { where, when, who }
+
 class _SearchSheet extends StatefulWidget {
   const _SearchSheet({
     required this.searchController,
@@ -1123,6 +1133,9 @@ class _SearchSheet extends StatefulWidget {
 }
 
 class _SearchSheetState extends State<_SearchSheet> {
+  /// Opens on Where: the sheet is reached by tapping the search field, so
+  /// that is the question the guest just asked to answer.
+  _SheetStep _step = _SheetStep.where;
   // The whole party, not a headcount. Held as one value because the four
   // categories are not independent — adults and children share one cap and
   // their sum is what becomes guestCount. GuestPartyFields owns that
@@ -1300,6 +1313,10 @@ class _SearchSheetState extends State<_SearchSheet> {
       _placeSuggestions = [];
       _searchingPlaces = false;
     });
+    // Picking a place finishes the Where step, so move the sheet on — the same
+    // thing the reference does, and it saves the tap that would otherwise be
+    // needed to reach the calendar.
+    _openSection(_SheetStep.when);
   }
 
   /// A Google prediction was tapped: put its name in the field and resolve it
@@ -1332,6 +1349,9 @@ class _SearchSheetState extends State<_SearchSheet> {
         _pickedBounds = place.bounds;
       }
     });
+    // Advance even when the lookup failed: the guest still named a place, and
+    // _applySearch geocodes the text as a fallback.
+    _openSection(_SheetStep.when);
   }
 
   Future<void> _useCurrentLocation() async {
@@ -1365,6 +1385,7 @@ class _SearchSheetState extends State<_SearchSheet> {
       _suggestions = [];
       _showSuggestions = false;
     });
+    _openSection(_SheetStep.when);
   }
 
   /// Whether the query matches a city we already know listings for — then a
@@ -1374,30 +1395,6 @@ class _SearchSheetState extends State<_SearchSheet> {
     final q = query.trim().toLowerCase();
     return widget.repository.listings
         .any((l) => (l.city ?? '').trim().toLowerCase() == q);
-  }
-
-  Future<void> _selectDateRange() async {
-    final picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-      initialDateRange: _dateRange,
-    );
-    if (picked != null) {
-      setState(() => _dateRange = picked);
-    }
-  }
-
-  Future<void> _selectSingleDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _singleDate ?? DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-    if (picked != null) {
-      setState(() => _singleDate = picked);
-    }
   }
 
   Future<void> _selectStartTime() async {
@@ -1579,12 +1576,18 @@ class _SearchSheetState extends State<_SearchSheet> {
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Rendered by the SAME function the desktop pill uses, so the two surfaces
+    // cannot describe one search differently. Only the construction below is
+    // local; every formatting decision lives in searchPillSummaryFor and has
+    // tests.
+    final summary = searchPillSummaryFor(_summaryFilters());
 
     return Container(
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
+        color: theme.colorScheme.surfaceContainerLowest,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       // Keyboard inset on the OUTER container, so the pinned footer rides above
@@ -1601,14 +1604,14 @@ class _SearchSheetState extends State<_SearchSheet> {
           // between the scrolling filters and the footer.
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Drag handle + explicit close button, so the sheet is always easy
-                  // to dismiss on mobile (drag-to-dismiss can be swallowed by the
-                  // scrollable content). No title — the search field is the header.
+                  // Drag handle + explicit close button, so the sheet is always
+                  // easy to dismiss on mobile (drag-to-dismiss can be swallowed
+                  // by the scrollable content).
                   Stack(
                     alignment: Alignment.center,
                     children: [
@@ -1631,488 +1634,46 @@ class _SearchSheetState extends State<_SearchSheet> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-
-                  // Location with suggestions
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      TextField(
-                        controller: widget.searchController,
-                        decoration: InputDecoration(
-                          labelText: 'Where',
-                          hintText: 'Area, address or place — e.g. Dakshinkhan',
-                          prefixIcon: const Icon(Icons.search),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          onPressed: _locatingMe ? null : _useCurrentLocation,
-                          icon: _locatingMe
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.my_location, size: 18),
-                          label: const Text('Use my current location'),
-                        ),
-                      ),
-                      // Suggestions dropdown: listing cities first (instant), then
-                      // Google type-ahead predictions (any area / address / POI).
-                      if (_showSuggestions &&
-                          (_suggestions.isNotEmpty ||
-                              _placeSuggestions.isNotEmpty ||
-                              _searchingPlaces))
-                        Container(
-                          margin: const EdgeInsets.only(top: 4),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.surface,
-                            border:
-                                Border.all(color: theme.colorScheme.outline),
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.1),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              ..._suggestions.map((suggestion) {
-                                return InkWell(
-                                  onTap: () => _selectSuggestion(suggestion),
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 12,
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          Icons.location_on_outlined,
-                                          color: theme.colorScheme.primary,
-                                          size: 20,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Text(
-                                            '${suggestion.city} (${suggestion.count} listing${suggestion.count > 1 ? 's' : ''})',
-                                            style: theme.textTheme.bodyMedium,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }),
-                              if (_suggestions.isNotEmpty &&
-                                  (_placeSuggestions.isNotEmpty ||
-                                      _searchingPlaces))
-                                const Divider(height: 1),
-                              if (_searchingPlaces && _placeSuggestions.isEmpty)
-                                const Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 12),
-                                  child: SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
-                                  ),
-                                ),
-                              ..._placeSuggestions.map((s) {
-                                final resolving =
-                                    _resolvingSuggestionId == s.placeId;
-                                return InkWell(
-                                  onTap: _resolvingSuggestionId != null
-                                      ? null
-                                      : () => _selectPlaceSuggestion(s),
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 12,
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          Icons.travel_explore_rounded,
-                                          color: theme
-                                              .colorScheme.onSurfaceVariant,
-                                          size: 20,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                s.name,
-                                                style:
-                                                    theme.textTheme.bodyMedium,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                              if (s.label.isNotEmpty)
-                                                Text(
-                                                  s.label,
-                                                  style: theme
-                                                      .textTheme.bodySmall
-                                                      ?.copyWith(
-                                                    color: theme.colorScheme
-                                                        .onSurfaceVariant,
-                                                  ),
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                            ],
-                                          ),
-                                        ),
-                                        if (resolving)
-                                          const SizedBox(
-                                            width: 16,
-                                            height: 16,
-                                            child: CircularProgressIndicator(
-                                                strokeWidth: 2),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }),
-                            ],
-                          ),
-                        ),
-                    ],
+                  const SizedBox(height: 8),
+                  SearchSection(
+                    label: 'Where',
+                    summary: summary.where,
+                    placeholder: "I'm flexible",
+                    expanded: _step == _SheetStep.where,
+                    onTap: () => _openSection(_SheetStep.where),
+                    child: _whereContent(theme),
                   ),
-                  const SizedBox(height: 16),
-
-                  // Property type — a single compact line directly under the search
-                  // field (small text; scrolls horizontally if it can't all fit).
-                  SizedBox(
-                    height: 36,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          _buildTypeChip(
-                            'All',
-                            _selectedTypes.isEmpty,
-                            () => setState(() => _selectedTypes.clear()),
-                          ),
-                          for (final type in ListingType.values) ...[
-                            const SizedBox(width: 8),
-                            _buildTypeChip(
-                              type.title,
-                              _selectedTypes.contains(type),
-                              () => _togglePropertyType(type),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
+                  SearchSection(
+                    label: 'When',
+                    summary: summary.when,
+                    placeholder: 'Add dates',
+                    expanded: _step == _SheetStep.when,
+                    onTap: () => _openSection(_SheetStep.when),
+                    child: _whenContent(theme),
                   ),
-                  const SizedBox(height: 16),
-
-                  // Purpose of stay (near a hospital / exam center / …) — moved in
-                  // from the Explore page so every filter lives in this sheet.
-                  Text(
-                    'Purpose of stay',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
+                  SearchSection(
+                    label: 'Who',
+                    summary: summary.who,
+                    placeholder: 'Add guests',
+                    expanded: _step == _SheetStep.who,
+                    onTap: () => _openSection(_SheetStep.who),
+                    child: GuestPartyFields(
+                      party: _party,
+                      // The card already pads; the widget's own default would
+                      // inset the rows twice.
+                      padding: EdgeInsets.zero,
+                      onChanged: (party) => setState(() => _party = party),
                     ),
                   ),
                   const SizedBox(height: 8),
-                  PurposeScroll(
-                    selected: _selectedPurpose,
-                    onSelected: _onPurposeSelected,
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                  ),
-                  if (_pickedLandmark != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.place_outlined,
-                            size: 16,
-                            color: theme.colorScheme.primary,
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              'Near ${_pickedLandmark!.name}',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  const SizedBox(height: 20),
-
-                  // Date Mode Toggle
-                  Text(
-                    'When',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SegmentedButton<SearchDateMode>(
-                    segments: const [
-                      ButtonSegment(
-                        value: SearchDateMode.dateRange,
-                        label: Text('Date Range'),
-                        icon: Icon(Icons.date_range),
-                      ),
-                      ButtonSegment(
-                        value: SearchDateMode.singleDateWithTime,
-                        label: Text('Single Day'),
-                        icon: Icon(Icons.schedule),
-                      ),
-                    ],
-                    selected: {_dateMode},
-                    onSelectionChanged: (selected) {
-                      setState(() => _dateMode = selected.first);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Date Range Selection (shown when dateRange mode)
-                  if (_dateMode == SearchDateMode.dateRange) ...[
-                    GestureDetector(
-                      onTap: _selectDateRange,
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: theme.colorScheme.outline),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.calendar_today),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Check-in - Check-out',
-                                    style:
-                                        theme.textTheme.labelMedium?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                  Text(
-                                    _dateRange != null
-                                        ? '${_formatDate(_dateRange!.start)} - ${_formatDate(_dateRange!.end)}'
-                                        : 'Select dates',
-                                    style: theme.textTheme.bodyLarge,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (_dateRange != null)
-                              IconButton(
-                                icon: const Icon(Icons.close),
-                                onPressed: () =>
-                                    setState(() => _dateRange = null),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-
-                  // Single Date with Time Selection
-                  if (_dateMode == SearchDateMode.singleDateWithTime) ...[
-                    // Date picker
-                    GestureDetector(
-                      onTap: _selectSingleDate,
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: theme.colorScheme.outline),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.calendar_today),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Date',
-                                    style:
-                                        theme.textTheme.labelMedium?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                  Text(
-                                    _singleDate != null
-                                        ? _formatDate(_singleDate!)
-                                        : 'Select date',
-                                    style: theme.textTheme.bodyLarge,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (_singleDate != null)
-                              IconButton(
-                                icon: const Icon(Icons.close),
-                                onPressed: () =>
-                                    setState(() => _singleDate = null),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Time range row
-                    Row(
-                      children: [
-                        // Start time
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: _selectStartTime,
-                            child: Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                    color: theme.colorScheme.outline),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Start Time',
-                                    style:
-                                        theme.textTheme.labelMedium?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.access_time, size: 20),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        _startTime != null
-                                            ? _formatTime(_startTime!)
-                                            : 'Select',
-                                        style: theme.textTheme.bodyLarge,
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        // End time
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: _selectEndTime,
-                            child: Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                    color: theme.colorScheme.outline),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'End Time',
-                                    style:
-                                        theme.textTheme.labelMedium?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.access_time, size: 20),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        _endTime != null
-                                            ? _formatTime(_endTime!)
-                                            : 'Select',
-                                        style: theme.textTheme.bodyLarge,
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-
-                  // Who — the same four stepper rows the desktop bar shows,
-                  // from the same widget. This used to be a lone 1..16 counter,
-                  // which is why the sheet could not express any of what the
-                  // guest actually picks: adults and children were one number
-                  // and infants and pets did not exist here at all.
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: theme.colorScheme.outline),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.people, size: 20),
-                            const SizedBox(width: 12),
-                            Text(
-                              'Who',
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ),
-                        GuestPartyFields(
-                          party: _party,
-                          // Zero horizontal padding: the container already
-                          // supplies it, and the panel's own default would
-                          // inset the rows twice inside this card.
-                          padding: const EdgeInsets.only(top: 4, bottom: 8),
-                          onChanged: (party) => setState(() => _party = party),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // The Search button is no longer here — it lives in the pinned
-                  // footer below, so it cannot scroll out of reach. This trailing gap
-                  // keeps the last filter clear of the footer's hairline.
+                  // Type and purpose stay OUT of the fold, deliberately. They
+                  // are one compact line each, they are not one of the three
+                  // questions the sheet is built around, and burying a control
+                  // behind a tap is how the type chips stopped being noticed
+                  // the last time. Airbnb keeps its own equivalents behind a
+                  // separate Filters screen, which is the other honest answer
+                  // if this ever grows.
+                  _extraFilters(theme),
                   const SizedBox(height: 8),
                 ],
               ),
@@ -2125,6 +1686,454 @@ class _SearchSheetState extends State<_SearchSheet> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Which step is open. Exactly one always is — see [SearchSection].
+  ///
+  /// Leaving Where also drops the keyboard and the suggestion list: the
+  /// calendar is taller than the space a raised keyboard leaves, and a
+  /// dropdown belonging to a collapsed field would hang over the card below.
+  void _openSection(_SheetStep step) {
+    if (step == _step) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _step = step;
+      if (step != _SheetStep.where) {
+        _placeDebounce?.cancel();
+        _showSuggestions = false;
+      }
+    });
+  }
+
+  /// The sheet's draft as a [SearchFilters], for the collapsed summaries only.
+  ///
+  /// Deliberately NOT `_applySearch`'s projection: that one layers over the
+  /// live filters with clear flags because it is about to be committed. This is
+  /// a throwaway view of local state, and nothing reads it but the three rows.
+  SearchFilters _summaryFilters() {
+    final text = widget.searchController.text.trim();
+    final ranged = _dateMode == SearchDateMode.dateRange;
+    return SearchFilters(
+      location: text.isEmpty ? null : text,
+      landmark: _pickedLandmark,
+      dateMode: _dateMode,
+      checkIn: ranged ? _dateRange?.start : null,
+      checkOut: ranged ? _dateRange?.end : null,
+      singleDate: ranged ? null : _singleDate,
+      startTime: ranged ? null : _startTime,
+      endTime: ranged ? null : _endTime,
+      guestCount: _party.guestCount,
+      adults: _party.adults,
+      children: _party.children,
+      infants: _party.infants,
+      pets: _party.pets,
+    );
+  }
+
+  Widget _whereContent(ThemeData theme) {
+    return // Location with suggestions
+        Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: widget.searchController,
+          decoration: InputDecoration(
+            labelText: 'Where',
+            hintText: 'Area, address or place — e.g. Dakshinkhan',
+            prefixIcon: const Icon(Icons.search),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: _locatingMe ? null : _useCurrentLocation,
+            icon: _locatingMe
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.my_location, size: 18),
+            label: const Text('Use my current location'),
+          ),
+        ),
+        // Suggestions dropdown: listing cities first (instant), then
+        // Google type-ahead predictions (any area / address / POI).
+        if (_showSuggestions &&
+            (_suggestions.isNotEmpty ||
+                _placeSuggestions.isNotEmpty ||
+                _searchingPlaces))
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              border: Border.all(color: theme.colorScheme.outline),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ..._suggestions.map((suggestion) {
+                  return InkWell(
+                    onTap: () => _selectSuggestion(suggestion),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.location_on_outlined,
+                            color: theme.colorScheme.primary,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              '${suggestion.city} (${suggestion.count} listing${suggestion.count > 1 ? 's' : ''})',
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+                if (_suggestions.isNotEmpty &&
+                    (_placeSuggestions.isNotEmpty || _searchingPlaces))
+                  const Divider(height: 1),
+                if (_searchingPlaces && _placeSuggestions.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                ..._placeSuggestions.map((s) {
+                  final resolving = _resolvingSuggestionId == s.placeId;
+                  return InkWell(
+                    onTap: _resolvingSuggestionId != null
+                        ? null
+                        : () => _selectPlaceSuggestion(s),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.travel_explore_rounded,
+                            color: theme.colorScheme.onSurfaceVariant,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  s.name,
+                                  style: theme.textTheme.bodyMedium,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (s.label.isNotEmpty)
+                                  Text(
+                                    s.label,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                              ],
+                            ),
+                          ),
+                          if (resolving)
+                            const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// The date step, inline.
+  ///
+  /// This used to be two cards that opened `showDateRangePicker` /
+  /// `showDatePicker` — a **full-screen modal on a phone**, with its own
+  /// header, its own Cancel/Save and its own typography, launched from inside a
+  /// bottom sheet. Two layers of chrome for one decision, and nothing about the
+  /// sheet visible behind it. [DateCalendar] is simply here instead, which is
+  /// the same grid the desktop panel uses.
+  ///
+  /// The two clock times keep their native picker: a two-thumb time control is
+  /// its own build, and the dialog is a reasonable answer for a value with no
+  /// spatial meaning. `when_panel.dart` drew the same line.
+  Widget _whenContent(ThemeData theme) {
+    final today = DateTime.now();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Center(
+          child: SegmentedButton<SearchDateMode>(
+            segments: const [
+              ButtonSegment(
+                value: SearchDateMode.dateRange,
+                label: Text('Dates'),
+                icon: Icon(Icons.calendar_month_outlined, size: 17),
+              ),
+              ButtonSegment(
+                value: SearchDateMode.singleDateWithTime,
+                label: Text('By the hour'),
+                icon: Icon(Icons.schedule, size: 17),
+              ),
+            ],
+            selected: {_dateMode},
+            showSelectedIcon: false,
+            onSelectionChanged: (selection) =>
+                setState(() => _dateMode = selection.first),
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (_dateMode == SearchDateMode.dateRange) ...[
+          Center(
+            child: DateCalendar(
+              today: today,
+              range: _dateRange,
+              onRangeChanged: _onRangePicked,
+            ),
+          ),
+          if (_dateRange != null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => setState(() => _dateRange = null),
+                child: const Text('Clear dates'),
+              ),
+            ),
+        ] else ...[
+          Center(
+            child: DateCalendar(
+              today: today,
+              // One tap is the whole answer here, carried as a degenerate
+              // range so the caller reads one field either way.
+              mode: DateCalendarMode.singleDay,
+              range: _singleDate == null
+                  ? null
+                  : DateTimeRange(start: _singleDate!, end: _singleDate!),
+              onRangeChanged: (range) =>
+                  setState(() => _singleDate = range?.start),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              // Start time
+              Expanded(
+                child: GestureDetector(
+                  onTap: _selectStartTime,
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: theme.colorScheme.outline),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Start Time',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.access_time, size: 20),
+                            const SizedBox(width: 8),
+                            Text(
+                              _startTime != null
+                                  ? _formatTime(_startTime!)
+                                  : 'Select',
+                              style: theme.textTheme.bodyLarge,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // End time
+              Expanded(
+                child: GestureDetector(
+                  onTap: _selectEndTime,
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: theme.colorScheme.outline),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'End Time',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.access_time, size: 20),
+                            const SizedBox(width: 8),
+                            Text(
+                              _endTime != null
+                                  ? _formatTime(_endTime!)
+                                  : 'Select',
+                              style: theme.textTheme.bodyLarge,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          // Both halves are required before this is a searchable window —
+          // searchDateWindowFor drops anything less, so say so rather than
+          // letting Search quietly ignore the date.
+          if (_singleDate != null && (_startTime == null || _endTime == null))
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Pick both a start and an end time.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+
+  /// A finished range moves the sheet on to Who, the way the reference does.
+  ///
+  /// "Finished" means the two ends differ: [DateCalendar] reports the first tap
+  /// as `start == end`, and advancing on that would fold the calendar away
+  /// half-way through picking.
+  void _onRangePicked(DateTimeRange? range) {
+    setState(() => _dateRange = range);
+    if (range != null && dayOf(range.start) != dayOf(range.end)) {
+      _openSection(_SheetStep.who);
+    }
+  }
+
+  Widget _extraFilters(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Property type — a single compact line directly under the search
+        // field (small text; scrolls horizontally if it can't all fit).
+        SizedBox(
+          height: 36,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildTypeChip(
+                  'All',
+                  _selectedTypes.isEmpty,
+                  () => setState(() => _selectedTypes.clear()),
+                ),
+                for (final type in ListingType.values) ...[
+                  const SizedBox(width: 8),
+                  _buildTypeChip(
+                    type.title,
+                    _selectedTypes.contains(type),
+                    () => _togglePropertyType(type),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Purpose of stay (near a hospital / exam center / …) — moved in
+        // from the Explore page so every filter lives in this sheet.
+        Text(
+          'Purpose of stay',
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        PurposeScroll(
+          selected: _selectedPurpose,
+          onSelected: _onPurposeSelected,
+          padding: const EdgeInsets.symmetric(vertical: 4),
+        ),
+        if (_pickedLandmark != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.place_outlined,
+                  size: 16,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Near ${_pickedLandmark!.name}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
@@ -2160,25 +2169,11 @@ class _SearchSheetState extends State<_SearchSheet> {
       _showSuggestions = false;
       _searchingPlaces = false;
       _resolvingSuggestionId = null;
+      // Back to the first question: every summary has just reset to its
+      // placeholder, so leaving the guest parked in Who strands them at the end
+      // of a form that no longer holds anything.
+      _step = _SheetStep.where;
     });
-  }
-
-  String _formatDate(DateTime date) {
-    final months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec'
-    ];
-    return '${months[date.month - 1]} ${date.day}';
   }
 
   String _formatTime(TimeOfDay time) {

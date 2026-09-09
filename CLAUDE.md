@@ -686,9 +686,47 @@ type or an amenity is an active search the pill has no segment for.
 `lib/widgets/search/` is the desktop search: Where / When / Who each open their
 own popover anchored under that segment, plus a Filters button for type and
 purpose. **`_SearchSheet` in `explore_screen.dart` is still the whole of
-mobile** — so the Where field and the date cards exist twice and will drift.
-That was a deliberate call; the cure, when it is worth paying for, is
-rebuilding the sheet as a stack of these panels.
+mobile**, but it is no longer a parallel implementation of everything: the
+guest rows and the calendar are now the same widgets the desktop panels use,
+and only the Where field is still written twice. The cure the earlier note
+described — rebuilding the sheet as a stack of these panels — has been paid for
+piece by piece as each duplicate actually cost something.
+
+### The mobile sheet folds; the desktop bar does not
+
+`_SearchSheet` is an accordion of three [`SearchSection`
+](lib/widgets/search/search_section.dart) cards — Where / When / Who, exactly
+one open, the closed ones showing what that step currently holds. Before that
+it was every control at once: a text field, a suggestion list, a mode toggle,
+two date cards, two time cards and four guest steppers down one scroll.
+
+Three things worth keeping:
+
+- **The sheet owns which section is open, not the cards.** Two open sections
+  would put the month grid and the guest steppers on screen together and undo
+  the point; a card that tracked its own expansion could not prevent that. Same
+  reasoning as `MainShell` owning the selected tab.
+- **The collapsed summaries come from `searchPillSummaryFor`** — the desktop
+  pill's function, so the two surfaces cannot describe one search differently.
+  Only the `SearchFilters` handed to it is built locally (`_summaryFilters`),
+  and that is deliberately **not** `_applySearch`'s projection: that one layers
+  over the live filters with clear flags because it is about to be committed.
+- **The date dialogs are gone.** `showDateRangePicker` / `showDatePicker` are
+  full-screen modals on a phone, launched from inside a bottom sheet — two
+  layers of chrome for one decision, with the sheet invisible behind. The
+  inline `DateCalendar` is simply there instead. The two clock times keep their
+  native picker: a two-thumb time control is its own build, and a dialog is a
+  fair answer for a value with no spatial meaning.
+
+`DateCalendar` grew two things for this. **`DateCalendarMode.singleDay`**,
+because hourly search is one date and driving it as a range meant the second
+tap silently did nothing visible (it produced `range(5, 8)` and the caller kept
+`.start`). And a **width-adaptive cell**: the grid was a hard 7 × 40px, which
+overflows a 320px phone once the sheet's padding and the card's are taken out.
+The measurement lives in `DateCalendar.build`, **not** in `_MonthGrid` — the
+grid sits in a `Row`, and a `Row` lays out a non-flexible child with unbounded
+width, so a `LayoutBuilder` down there is handed infinity and learns nothing.
+The first attempt did exactly that and still overflowed by 40px.
 
 The guest counter is the first control that drift actually cost, and it is now
 the worked example of the cure. Mobile's version was a lone 1..16 number, so
