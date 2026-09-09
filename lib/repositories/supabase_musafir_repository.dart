@@ -32,6 +32,7 @@ import '../models/user.dart';
 import '../models/user_role.dart';
 import '../services/app_settings_service.dart';
 import '../services/search/search_date_window.dart';
+import '../services/search/search_party_params.dart';
 import 'musafir_repository.dart';
 
 /// Supabase-backed implementation of [MusafirRepository].
@@ -539,6 +540,16 @@ class SupabaseMusafirRepository extends ChangeNotifier
         // the old 17-argument function and simply do not filter by date.
         if (dates != null) 'p_check_in': dates.startsAtIso,
         if (dates != null) 'p_check_out': dates.endsAtIso,
+        // Per-category party capacity (118). Omitted-when-default for the same
+        // reason the dates above are: PostgREST resolves the overload by the
+        // KEYS present, so sending these against a pre-118 database would
+        // demand a function that does not exist and the catch below would turn
+        // every search on the site into "no results".
+        //
+        // Extracted and tested rather than written inline: "which keys does
+        // an unnarrowed search send" is exactly the decision that breaks, and
+        // it is unreachable from a widget test.
+        ...searchPartyParams(filters),
       });
 
       final list = (rows as List).cast<Map<String, dynamic>>();
@@ -639,6 +650,15 @@ class SupabaseMusafirRepository extends ChangeNotifier
       bedrooms: json['bedrooms'] as int? ?? 1,
       beds: json['beds'] as int? ?? 1,
       bathrooms: json['bathrooms'] as int? ?? 1,
+      // No `?? 0` anywhere here: null is the meaningful value (the host set
+      // no separate limit), and defaulting it to zero would hide every listing
+      // from every search the moment 118 landed.
+      partyLimits: PartyLimits(
+        adults: json['max_adults'] as int?,
+        children: json['max_children'] as int?,
+        infants: json['max_infants'] as int?,
+        pets: json['max_pets'] as int?,
+      ),
       rating: (json['rating'] as num?)?.toDouble(),
       reviewCount: json['review_count'] as int? ?? 0,
       isSuperhost: json['is_superhost'] as bool? ?? false,
@@ -700,6 +720,13 @@ class SupabaseMusafirRepository extends ChangeNotifier
       'bedrooms': listing.bedrooms,
       'beds': listing.beds,
       'bathrooms': listing.bathrooms,
+      // Per-category sub-caps (118). Nullable end to end — sending null is
+      // how a host takes a cap back off, so these must not be omitted when
+      // unset the way an absent RPC key is.
+      'max_adults': listing.partyLimits.adults,
+      'max_children': listing.partyLimits.children,
+      'max_infants': listing.partyLimits.infants,
+      'max_pets': listing.partyLimits.pets,
       // Per-plan booking limits.
       'min_hours': listing.bookingLimits.minHours,
       'max_hours': listing.bookingLimits.maxHours,

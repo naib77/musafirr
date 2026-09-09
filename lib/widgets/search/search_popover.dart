@@ -261,6 +261,11 @@ class SearchStepperRow extends StatelessWidget {
               ],
             ),
           ),
+          // The label column is Expanded, so a description long enough to wrap
+          // runs right up to the button. At a 390px phone width two of the
+          // four rows do exactly that; this is the gap that keeps the second
+          // line off the stepper.
+          const SizedBox(width: 12),
           _StepButton(
             icon: Icons.remove,
             // Disabled rather than hidden at the bound: a button that vanishes

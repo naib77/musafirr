@@ -144,8 +144,34 @@ void main() {
         );
       });
 
-      // The guest chose them, and a segment that forgets a choice reads as
-      // broken — even though infants alone narrow nothing.
+      test('pets are named apart from the guest total too', () {
+        expect(
+          searchPillSummaryFor(
+                  const SearchFilters(guestCount: 2, adults: 2, pets: 1))
+              .who,
+          '2 guests, 1 pet',
+        );
+      });
+
+      test('infants and pets both appear, in panel order', () {
+        expect(
+          searchPillSummaryFor(const SearchFilters(
+                  guestCount: 3, adults: 2, children: 1, infants: 1, pets: 2))
+              .who,
+          '3 guests, 1 infant, 2 pets',
+        );
+      });
+
+      // A pet excludes every listing that never set pets_allowed, so a segment
+      // reading "Add guests" while that filter was running would be lying.
+      test('pets show on their own', () {
+        expect(searchPillSummaryFor(const SearchFilters(pets: 1)).who, '1 pet');
+      });
+
+      // Both used to be listed here purely because the guest chose them, and a
+      // segment that forgets a choice reads as broken. Since 118 there is a
+      // second reason: they narrow, so omitting them would misdescribe the
+      // search that is actually running.
       test('infants show on their own', () {
         expect(searchPillSummaryFor(const SearchFilters(infants: 1)).who,
             '1 infant');

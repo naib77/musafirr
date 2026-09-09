@@ -9,6 +9,7 @@ import '../../models/listing_type.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../services/image_upload_service.dart';
 import '../../widgets/app_text_field.dart';
+import '../../widgets/host/party_limits_fields.dart';
 import '../../widgets/image_picker_grid.dart';
 import '../../widgets/location_picker.dart';
 import '../../widgets/modern_banner.dart';
@@ -54,6 +55,9 @@ class _EditListingScreenState extends State<EditListingScreen> {
   late double _latitude;
   late double _longitude;
   late int _maxGuests;
+  // Optional per-category caps beneath _maxGuests (118). Seeded from the
+  // listing, so a host who set none keeps none.
+  late PartyLimits _partyLimits;
   late int _bedrooms;
   late int _beds;
   late int _bathrooms;
@@ -141,6 +145,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
     _latitude = l.latitude;
     _longitude = l.longitude;
     _maxGuests = l.maxGuests;
+    _partyLimits = l.partyLimits;
     _bedrooms = l.bedrooms;
     _beds = l.beds;
     _bathrooms = l.bathrooms;
@@ -430,6 +435,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
         monthlyRate: monthlyRate,
         imageUrls: finalUrls,
         maxGuests: _maxGuests,
+        partyLimits: _partyLimits,
         bedrooms: _bedrooms,
         beds: _beds,
         bathrooms: _bathrooms,
@@ -703,7 +709,18 @@ class _EditListingScreenState extends State<EditListingScreen> {
                 value: _maxGuests,
                 min: 1,
                 max: 16,
-                onChanged: (v) => setState(() => _maxGuests = v),
+                onChanged: (v) => setState(() {
+                  _maxGuests = v;
+                  // See PartyLimits.clampedTo — a sub-cap above the total is a
+                  // limit that can never bind.
+                  _partyLimits = _partyLimits.clampedTo(v);
+                }),
+              ),
+              // Directly under the total they narrow, as in CreateListing.
+              PartyLimitsFields(
+                limits: _partyLimits,
+                maxGuests: _maxGuests,
+                onChanged: (v) => setState(() => _partyLimits = v),
               ),
               const Divider(),
               _CounterRow(
@@ -873,6 +890,12 @@ class _EditListingScreenState extends State<EditListingScreen> {
                 title: const Text('Pets allowed'),
                 value: _petsAllowed,
                 onChanged: (v) => setState(() => _petsAllowed = v),
+              ),
+              MaxPetsField(
+                petsAllowed: _petsAllowed,
+                maxPets: _partyLimits.pets,
+                onChanged: (v) => setState(() => _partyLimits =
+                    _partyLimits.copyWith(pets: v, clearPets: v == null)),
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,

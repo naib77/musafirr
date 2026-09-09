@@ -44,6 +44,7 @@ class SearchFilters {
     this.adults = 1,
     this.children = 0,
     this.infants = 0,
+    this.pets = 0,
     this.minPrice,
     this.maxPrice,
     this.propertyTypes = const [],
@@ -94,8 +95,15 @@ class SearchFilters {
 
   /// Infants never count towards [guestCount] — the same convention every
   /// travel site uses, and the reason [guestCountFor] exists rather than a
-  /// plain sum at each call site.
+  /// plain sum at each call site. They are not decoration, though: migration
+  /// 118 gave listings a `max_infants`, so asking for two does narrow.
   final int infants;
+
+  /// Animals travelling with the party. Like [infants] they never tell against
+  /// [guestCount] — a dog is not a guest — but they narrow harder than any
+  /// other category, because `pets_allowed` defaults to **false** and a listing
+  /// that never opted in is excluded outright rather than merely capped.
+  final int pets;
 
   final double? minPrice;
   final double? maxPrice;
@@ -124,6 +132,13 @@ class SearchFilters {
       checkOut != null ||
       singleDate != null ||
       guestCount > 1 ||
+      // Both of these narrow as of 118 — infants against `max_infants`, pets
+      // against `pets_allowed` first and `max_pets` second. Before that
+      // migration neither reached the database and this deliberately read
+      // `guestCount > 1` alone, so that a party of one with a cat did not
+      // offer a ✕ that cleared nothing visible. It clears something now.
+      infants > 0 ||
+      pets > 0 ||
       minPrice != null ||
       maxPrice != null ||
       propertyTypes.isNotEmpty ||
@@ -193,6 +208,7 @@ class SearchFilters {
     int? adults,
     int? children,
     int? infants,
+    int? pets,
     double? minPrice,
     double? maxPrice,
     List<ListingType>? propertyTypes,
@@ -238,6 +254,7 @@ class SearchFilters {
       adults: adults ?? this.adults,
       children: children ?? this.children,
       infants: infants ?? this.infants,
+      pets: pets ?? this.pets,
       minPrice: clearPriceRange ? null : (minPrice ?? this.minPrice),
       maxPrice: clearPriceRange ? null : (maxPrice ?? this.maxPrice),
       propertyTypes: propertyTypes ?? this.propertyTypes,

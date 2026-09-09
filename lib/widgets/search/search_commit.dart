@@ -79,12 +79,14 @@ SearchFilters filtersFromDraft(SearchDraft draft, SearchFilters base) {
 
   return next.copyWith(
     // Both the breakdown and the number derived from it. guestCount is what
-    // reaches search_listings; the three parts exist so reopening the panel
-    // shows what was chosen rather than a re-split sum.
+    // gates on max_guests; the four parts each narrow on their own since 118,
+    // and they are also what makes reopening the panel show the split the
+    // guest chose rather than a re-split sum.
     guestCount: draft.guestCount,
     adults: draft.adults,
     children: draft.children,
     infants: draft.infants,
+    pets: draft.pets,
     propertyTypes: List<ListingType>.unmodifiable(draft.propertyTypes),
     purposeTags: draft.purpose == null
         ? const <ListingPurpose>[]

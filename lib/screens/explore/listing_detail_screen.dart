@@ -16,6 +16,7 @@ import '../../models/booking_conflict_exception.dart';
 import '../../models/booking_rejected_exception.dart';
 import '../../models/host_verifications.dart';
 import '../../models/listing.dart';
+import '../../services/listing/party_limits_summary.dart';
 import '../../models/listing_exact_address.dart';
 import '../../models/listing_purpose.dart';
 import '../../models/listing_type.dart';
@@ -1431,7 +1432,15 @@ class _PropertyDetails extends StatelessWidget {
       (Icons.bathtub_rounded, '${listing.bathrooms}', 'Baths', AppColors.amber),
     ];
 
-    return Row(
+    // Per-category caps (118) as one line rather than four more cards: they
+    // are the exception, not the shape of every listing, and a row of "Any"
+    // tiles would drown the four numbers that always apply.
+    final limits = partyLimitsSentence(
+      listing.partyLimits,
+      petsAllowed: listing.houseRules.petsAllowed,
+    );
+
+    final stats = Row(
       children: [
         for (var i = 0; i < items.length; i++) ...[
           if (i > 0) const SizedBox(width: 12),
@@ -1444,6 +1453,27 @@ class _PropertyDetails extends StatelessWidget {
             ),
           ),
         ],
+      ],
+    );
+
+    if (limits == null) return stats;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        stats,
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Icon(Icons.groups_2_outlined, size: 16, color: AppColors.inkMuted),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                limits,
+                style: TextStyle(fontSize: 13, color: AppColors.inkMuted),
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }

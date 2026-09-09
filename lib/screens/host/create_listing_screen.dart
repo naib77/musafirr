@@ -14,6 +14,7 @@ import '../../widgets/image_picker_grid.dart';
 import '../../widgets/location_picker.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/purpose_selector.dart';
+import '../../widgets/host/party_limits_fields.dart';
 import 'listing_pricing_fields.dart';
 
 class CreateListingScreen extends StatefulWidget {
@@ -83,6 +84,9 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   final _checkOutTimeController = TextEditingController(text: '11:00 AM');
   bool _smokingAllowed = false;
   bool _petsAllowed = false;
+  // Optional per-category caps beneath _maxGuests (118). Null everywhere is
+  // the default and means the host stated no separate limit.
+  PartyLimits _partyLimits = const PartyLimits();
   bool _partiesAllowed = false;
   final _quietHoursController = TextEditingController();
   final _additionalRulesController = TextEditingController();
@@ -299,6 +303,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         monthlyRate: monthlyRate,
         imageUrls: imageUrls,
         maxGuests: _maxGuests,
+        partyLimits: _partyLimits,
         bedrooms: _bedrooms,
         beds: _beds,
         bathrooms: _bathrooms,
@@ -441,11 +446,21 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                   ),
                   _DetailsStep(
                     maxGuests: _maxGuests,
+                    partyLimits: _partyLimits,
+                    onPartyLimitsChanged: (v) =>
+                        setState(() => _partyLimits = v),
                     bedrooms: _bedrooms,
                     beds: _beds,
                     bathrooms: _bathrooms,
                     selectedAmenities: _selectedAmenities,
-                    onGuestsChanged: (v) => setState(() => _maxGuests = v),
+                    onGuestsChanged: (v) => setState(() {
+                      _maxGuests = v;
+                      // A sub-cap above the new total is unreachable — the
+                      // total refuses the party first — so it would read as
+                      // a limit that does nothing. Clamped rather than
+                      // cleared: the host's intent to cap survives.
+                      _partyLimits = _partyLimits.clampedTo(v);
+                    }),
                     onBedroomsChanged: (v) => setState(() => _bedrooms = v),
                     onBedsChanged: (v) => setState(() => _beds = v),
                     onBathroomsChanged: (v) => setState(() => _bathrooms = v),
@@ -490,6 +505,9 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                     onSmokingToggled: (v) =>
                         setState(() => _smokingAllowed = v),
                     onPetsToggled: (v) => setState(() => _petsAllowed = v),
+                    maxPets: _partyLimits.pets,
+                    onMaxPetsChanged: (v) => setState(() => _partyLimits =
+                        _partyLimits.copyWith(pets: v, clearPets: v == null)),
                     onPartiesToggled: (v) =>
                         setState(() => _partiesAllowed = v),
                   ),
@@ -944,6 +962,8 @@ class _LocationStep extends StatelessWidget {
 class _DetailsStep extends StatelessWidget {
   const _DetailsStep({
     required this.maxGuests,
+    required this.partyLimits,
+    required this.onPartyLimitsChanged,
     required this.bedrooms,
     required this.beds,
     required this.bathrooms,
@@ -956,6 +976,8 @@ class _DetailsStep extends StatelessWidget {
   });
 
   final int maxGuests;
+  final PartyLimits partyLimits;
+  final ValueChanged<PartyLimits> onPartyLimitsChanged;
   final int bedrooms;
   final int beds;
   final int bathrooms;
@@ -995,6 +1017,14 @@ class _DetailsStep extends StatelessWidget {
             onChanged: onGuestsChanged,
             min: 1,
             max: 16,
+          ),
+          const Divider(),
+          // Sub-caps sit directly under the total they narrow, so the
+          // relationship between them is visible rather than described.
+          PartyLimitsFields(
+            limits: partyLimits,
+            maxGuests: maxGuests,
+            onChanged: onPartyLimitsChanged,
           ),
           const Divider(),
           _CounterRow(
@@ -1427,6 +1457,8 @@ class _HouseRulesStep extends StatelessWidget {
     required this.additionalRulesController,
     required this.smokingAllowed,
     required this.petsAllowed,
+    required this.maxPets,
+    required this.onMaxPetsChanged,
     required this.partiesAllowed,
     required this.onSmokingToggled,
     required this.onPetsToggled,
@@ -1439,6 +1471,8 @@ class _HouseRulesStep extends StatelessWidget {
   final TextEditingController additionalRulesController;
   final bool smokingAllowed;
   final bool petsAllowed;
+  final int? maxPets;
+  final ValueChanged<int?> onMaxPetsChanged;
   final bool partiesAllowed;
   final ValueChanged<bool> onSmokingToggled;
   final ValueChanged<bool> onPetsToggled;
@@ -1496,6 +1530,13 @@ class _HouseRulesStep extends StatelessWidget {
             title: const Text('Pets allowed'),
             value: petsAllowed,
             onChanged: onPetsToggled,
+          ),
+          // Renders nothing until the toggle above is on: the number is
+          // meaningless without it, and search never reads it without it.
+          MaxPetsField(
+            petsAllowed: petsAllowed,
+            maxPets: maxPets,
+            onChanged: onMaxPetsChanged,
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,

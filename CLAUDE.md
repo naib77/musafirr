@@ -218,6 +218,50 @@ So when a Supabase lint names a table you did not create, check who owns it
 before writing the fix — and check `relacl` *after* applying it, because
 "succeeded" is not evidence.
 
+### Party capacity is sub-caps under a total, and pets default to deny
+
+118 gave `listings` four nullable columns — `max_adults`, `max_children`,
+`max_infants`, `max_pets` — and `search_listings` four matching arguments. Three
+things about the model are easy to get wrong later:
+
+- **They sit beneath `max_guests`, they do not replace it.** The total is still
+  the backstop, still what `create_marketplace_booking` enforces, and still the
+  only number a booking carries. They are deliberately **not** constrained to be
+  `<= max_guests` and do not have to sum to it: "up to 4 people, at most 2
+  adults, at most 3 children" is a coherent thing for a host to mean, and every
+  obvious constraint forbids it. `PartyLimits.clampedTo` trims a *counted* cap
+  when the host lowers the total, because a sub-cap above the total can never
+  bind — it does not touch infants or pets, which the total never gated.
+- **`null` means "no separate limit", not zero.** That is what makes the
+  migration invisible to the listings that already existed: a null column drops
+  out of the predicate entirely. Zero is a different, stated rule ("no
+  children"), and the two must never be collapsed — `supabase/tests/118…`
+  rows 02b/06/06b are the pair that pins it. It is also why the host control is
+  a stepper whose floor is **"Any"** rather than an `int` stepper beside a
+  switch: a host has to be able to take a cap back *off*, and `PartyLimits`
+  therefore needs explicit `clear*` flags where `SearchFilters.copyWith` reads
+  null as "unchanged".
+- **Pets are the exception and default to deny.** Unlike the other three they
+  already had a switch — `pets_allowed` (053), `not null default false` — so
+  silence means no, and `max_pets` is only consulted for a host who said yes.
+  Searching with an animal must not surface a place that never agreed to one.
+  Nothing ties the toggle and the number together, so a host switching pets off
+  needs no cleanup: the predicate reads the toggle first and never reaches the
+  number. `partyLimitsSentence` does the same, or a listing page would advertise
+  a pet limit for a place that no longer takes pets.
+
+**The four RPC keys are omitted unless the guest actually narrowed**
+(`searchPartyParams`), for exactly the reason 112 omits `p_check_in`: PostgREST
+picks the overload by the keys *present*, so sending them against a database
+without 118 demands a function that does not exist, and
+`searchListingsFromDb`'s catch turns every search on the site into "no results".
+`build/web` always lags a migration, so that window is real.
+
+The split still stops at search. A stay found as "2 adults, 1 child, 1 infant,
+1 pet" is booked as **3 guests** — bookings carry one number, and carrying the
+breakdown through means a bookings migration plus the booking sheet, the price
+breakdown and the host's reservation list.
+
 ### A SECURITY DEFINER function is public unless you say otherwise
 
 Same root cause as the note above, one level down: `ALTER DEFAULT PRIVILEGES`
@@ -641,10 +685,28 @@ type or an amenity is an active search the pill has no segment for.
 
 `lib/widgets/search/` is the desktop search: Where / When / Who each open their
 own popover anchored under that segment, plus a Filters button for type and
-purpose. **`_SearchSheet` in `explore_screen.dart` is untouched and still the
-whole of mobile** — so the Where field, the date cards and the guest counter
-now exist twice and will drift. That was a deliberate call; the cure, when it
-is worth paying for, is rebuilding the sheet as a stack of these panels.
+purpose. **`_SearchSheet` in `explore_screen.dart` is still the whole of
+mobile** — so the Where field and the date cards exist twice and will drift.
+That was a deliberate call; the cure, when it is worth paying for, is
+rebuilding the sheet as a stack of these panels.
+
+The guest counter is the first control that drift actually cost, and it is now
+the worked example of the cure. Mobile's version was a lone 1..16 number, so
+when Who grew to adults / children / infants / pets there was nowhere on the
+phone to say three of the four. The rows moved into
+[`GuestPartyFields`](lib/widgets/search/guest_party_fields.dart), stateless over
+a `GuestParty` value and a callback — the one shape a `SearchDraft` and a plain
+`setState` can both hold — and both surfaces render it. Neither knows how many
+rows there are or what the caps are. **Do not add a fifth category to one of
+them.**
+
+Two things in that widget are load-bearing and have negative-controlled tests:
+adults and children share **one** budget (their sum is `guestCount`, so both
+`+` buttons must stop together, or the party can be walked past the cap one row
+at a time), while infants and pets have their own ceilings because the database
+counts them separately. Each row's `max` is its own value plus the remaining
+headroom rather than a bare limit, so a party restored from a wider cap can
+still be brought down instead of being stranded above a `max` below its value.
 
 - **Every `SearchStateNotifier` mutator runs a search immediately.** So the
   panels write to a `SearchDraft` and exactly **one** `updateFilters` fires,

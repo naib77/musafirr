@@ -39,6 +39,7 @@ class Listing {
     this.bedrooms = 1,
     this.beds = 1,
     this.bathrooms = 1,
+    this.partyLimits = const PartyLimits(),
     this.rating,
     this.reviewCount = 0,
     this.isSuperhost = false,
@@ -105,6 +106,10 @@ class Listing {
   final int bedrooms;
   final int beds;
   final int bathrooms;
+
+  /// Optional per-category caps beneath [maxGuests] (118). Almost every listing
+  /// leaves these unset; see [PartyLimits].
+  final PartyLimits partyLimits;
   final double? rating;
   final int reviewCount;
   final bool isSuperhost;
@@ -282,6 +287,7 @@ class Listing {
     int? bedrooms,
     int? beds,
     int? bathrooms,
+    PartyLimits? partyLimits,
     double? rating,
     int? reviewCount,
     bool? isSuperhost,
@@ -323,6 +329,7 @@ class Listing {
       bedrooms: bedrooms ?? this.bedrooms,
       beds: beds ?? this.beds,
       bathrooms: bathrooms ?? this.bathrooms,
+      partyLimits: partyLimits ?? this.partyLimits,
       rating: rating ?? this.rating,
       reviewCount: reviewCount ?? this.reviewCount,
       isSuperhost: isSuperhost ?? this.isSuperhost,
@@ -376,6 +383,7 @@ class Listing {
       bedrooms: bedrooms,
       beds: beds,
       bathrooms: bathrooms,
+      partyLimits: partyLimits,
       rating: rating,
       reviewCount: reviewCount,
       isSuperhost: isSuperhost,
@@ -437,6 +445,88 @@ class BookingLimits {
       maxNights: maxNights ?? this.maxNights,
       minMonths: minMonths ?? this.minMonths,
       maxMonths: maxMonths ?? this.maxMonths,
+    );
+  }
+}
+
+/// Optional per-category caps on the party a listing accepts (migration 118).
+///
+/// These sit **beneath** [Listing.maxGuests] rather than replacing it: the
+/// total is still the backstop, still what a booking is checked against, and
+/// still the only number a booking carries. Each field here only narrows.
+///
+/// `null` everywhere is the norm — it means the host stated no separate limit,
+/// which is every listing that existed before 118 and every host who does not
+/// go looking for the control. A null field drops out of the search predicate
+/// entirely rather than defaulting to zero.
+///
+/// **The fit decision is not implemented here on purpose.** Which listings a
+/// party matches is decided in one place — the `search_listings` predicate —
+/// and a Dart copy of that rule is exactly the "two implementations of one
+/// rule" mistake this repository keeps paying for (see the availability notes
+/// in CLAUDE.md). What lives here is display: what the host typed, so a
+/// listing page can say it out loud.
+class PartyLimits {
+  const PartyLimits({this.adults, this.children, this.infants, this.pets});
+
+  /// Most adults (13+) allowed.
+  final int? adults;
+
+  /// Most children (2–12) allowed.
+  final int? children;
+
+  /// Most infants (under 2) allowed. Infants never count towards
+  /// [Listing.maxGuests], so this is the only cap that applies to them.
+  final int? infants;
+
+  /// Most pets allowed. Only meaningful when [HouseRules.petsAllowed] is true —
+  /// the toggle decides *whether*, this decides *how many*. Null against a
+  /// permissive toggle means "allowed, no stated number", NOT "none".
+  final int? pets;
+
+  bool get hasAny =>
+      adults != null || children != null || infants != null || pets != null;
+
+  /// The same limits with [adults] and [children] brought down to fit
+  /// [maxGuests].
+  ///
+  /// A sub-cap above the total is unreachable — the total rejects the party
+  /// before any of these are consulted — so it reads to the host as a limit
+  /// they set that does nothing. Hosts hit this by lowering the total after
+  /// setting the caps, which is an ordinary edit, not a mistake.
+  ///
+  /// Clamped rather than cleared: "at most 4 adults" narrowed to a 2-guest
+  /// place means at most 2 adults, and dropping it to "Any" would throw away a
+  /// stated intent to cap. [infants] and [pets] are untouched — neither counts
+  /// towards [Listing.maxGuests], so neither can exceed it.
+  PartyLimits clampedTo(int maxGuests) {
+    final a = adults;
+    final c = children;
+    return PartyLimits(
+      adults: a == null ? null : (a > maxGuests ? maxGuests : a),
+      children: c == null ? null : (c > maxGuests ? maxGuests : c),
+      infants: infants,
+      pets: pets,
+    );
+  }
+
+  PartyLimits copyWith({
+    int? adults,
+    int? children,
+    int? infants,
+    int? pets,
+    bool clearAdults = false,
+    bool clearChildren = false,
+    bool clearInfants = false,
+    bool clearPets = false,
+  }) {
+    // Explicit clear flags because null is a MEANING here ("no limit"), not
+    // "unchanged" — without them a host could never take a cap back off.
+    return PartyLimits(
+      adults: clearAdults ? null : (adults ?? this.adults),
+      children: clearChildren ? null : (children ?? this.children),
+      infants: clearInfants ? null : (infants ?? this.infants),
+      pets: clearPets ? null : (pets ?? this.pets),
     );
   }
 }

@@ -41,6 +41,7 @@ import '../../widgets/listing_price_map.dart';
 import '../../widgets/notification_bell.dart';
 import '../../widgets/results_map_sheet.dart';
 import '../../widgets/top_hosts_button.dart';
+import '../../widgets/search/guest_party_fields.dart';
 import '../../widgets/search/search_sheet_footer.dart';
 import '../notifications/notification_center_screen.dart';
 
@@ -1122,7 +1123,11 @@ class _SearchSheet extends StatefulWidget {
 }
 
 class _SearchSheetState extends State<_SearchSheet> {
-  late int _guestCount;
+  // The whole party, not a headcount. Held as one value because the four
+  // categories are not independent — adults and children share one cap and
+  // their sum is what becomes guestCount. GuestPartyFields owns that
+  // arithmetic, and the desktop Who panel renders the identical widget.
+  GuestParty _party = const GuestParty();
   DateTimeRange? _dateRange;
   List<ListingType> _selectedTypes = [];
   SearchDateMode _dateMode = SearchDateMode.dateRange;
@@ -1163,7 +1168,7 @@ class _SearchSheetState extends State<_SearchSheet> {
   void initState() {
     super.initState();
     final filters = widget.searchState.filters;
-    _guestCount = filters.guestCount;
+    _party = GuestParty.from(filters);
     _selectedTypes = List.from(filters.propertyTypes);
     // General is a host default, not a guest search intent — reads as "Any".
     final activePurpose =
@@ -1536,7 +1541,15 @@ class _SearchSheetState extends State<_SearchSheet> {
             _dateMode == SearchDateMode.dateRange ? _dateRange?.start : null,
         checkOut:
             _dateMode == SearchDateMode.dateRange ? _dateRange?.end : null,
-        guestCount: _guestCount,
+        guestCount: _party.guestCount,
+        // The breakdown as well as the total. Each category narrows on its
+        // own against the listing's optional per-category caps (118), and
+        // sending only the sum would drop that — the same omission this
+        // sheet made with dates until 112.
+        adults: _party.adults,
+        children: _party.children,
+        infants: _party.infants,
+        pets: _party.pets,
         // A copy, not the live list. `_selectedTypes` keeps being mutated by
         // the chips above, so handing the notifier this instance would let a
         // later tap rewrite the filters that were already committed — changing
@@ -2060,53 +2073,39 @@ class _SearchSheetState extends State<_SearchSheet> {
                   ],
                   const SizedBox(height: 16),
 
-                  // Guests
+                  // Who — the same four stepper rows the desktop bar shows,
+                  // from the same widget. This used to be a lone 1..16 counter,
+                  // which is why the sheet could not express any of what the
+                  // guest actually picks: adults and children were one number
+                  // and infants and pets did not exist here at all.
                   Container(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                     decoration: BoxDecoration(
                       border: Border.all(color: theme.colorScheme.outline),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.people),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Who',
-                                style: theme.textTheme.labelMedium?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                              Text(
-                                '$_guestCount guest${_guestCount > 1 ? 's' : ''}',
-                                style: theme.textTheme.bodyLarge,
-                              ),
-                            ],
-                          ),
-                        ),
                         Row(
                           children: [
-                            IconButton(
-                              icon: const Icon(Icons.remove_circle_outline),
-                              onPressed: _guestCount > 1
-                                  ? () => setState(() => _guestCount--)
-                                  : null,
-                            ),
+                            const Icon(Icons.people, size: 20),
+                            const SizedBox(width: 12),
                             Text(
-                              '$_guestCount',
-                              style: theme.textTheme.titleMedium,
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.add_circle_outline),
-                              onPressed: _guestCount < 16
-                                  ? () => setState(() => _guestCount++)
-                                  : null,
+                              'Who',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
                             ),
                           ],
+                        ),
+                        GuestPartyFields(
+                          party: _party,
+                          // Zero horizontal padding: the container already
+                          // supplies it, and the panel's own default would
+                          // inset the rows twice inside this card.
+                          padding: const EdgeInsets.only(top: 4, bottom: 8),
+                          onChanged: (party) => setState(() => _party = party),
                         ),
                       ],
                     ),
@@ -2144,7 +2143,7 @@ class _SearchSheetState extends State<_SearchSheet> {
     widget.searchController.clear();
     _settingTextProgrammatically = false;
     setState(() {
-      _guestCount = 1;
+      _party = const GuestParty();
       _selectedTypes = [];
       _dateMode = SearchDateMode.dateRange;
       _dateRange = null;
