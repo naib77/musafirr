@@ -1536,7 +1536,12 @@ class _SearchSheetState extends State<_SearchSheet> {
         checkOut:
             _dateMode == SearchDateMode.dateRange ? _dateRange?.end : null,
         guestCount: _guestCount,
-        propertyTypes: _selectedTypes,
+        // A copy, not the live list. `_selectedTypes` keeps being mutated by
+        // the chips above, so handing the notifier this instance would let a
+        // later tap rewrite the filters that were already committed — changing
+        // `hasActiveFilters` (and so the ✕ and the pill summary) with no search
+        // behind it. `filtersFromDraft` guards the desktop path the same way.
+        propertyTypes: List<ListingType>.unmodifiable(_selectedTypes),
         purposeTags: _selectedPurpose == null
             ? const <ListingPurpose>[]
             : [_selectedPurpose!],

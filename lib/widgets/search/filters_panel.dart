@@ -177,19 +177,23 @@ class _TypeChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Fill, border and label colour all come from the global chip theme, which
+    // is where "what does selected look like" is decided for the whole app
+    // (see `AppTheme.chipThemeFor`). This used to carry its own tint and brand
+    // border — the only reason its selection was visible while the mobile
+    // sheet's identical control was not. Duplicating the answer here is what
+    // let the two drift, so the size and the extra weight cue are all that is
+    // left. Note the absence of `color:` — `merge` only overrides non-null
+    // fields, so setting one would defeat the theme's WidgetStateColor and
+    // paint an ink label on the dark selected fill.
     return FilterChip(
       label: Text(label),
       selected: selected,
       onSelected: (_) => onTap(),
       showCheckmark: false,
-      side: BorderSide(
-        color: selected ? AppColors.brand : AppColors.outline,
-      ),
-      selectedColor: AppColors.brand.withValues(alpha: 0.10),
       labelStyle: TextStyle(
         fontSize: 13,
         fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-        color: AppColors.ink,
       ),
     );
   }
