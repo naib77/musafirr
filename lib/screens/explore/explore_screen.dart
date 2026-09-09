@@ -41,6 +41,7 @@ import '../../widgets/listing_price_map.dart';
 import '../../widgets/notification_bell.dart';
 import '../../widgets/results_map_sheet.dart';
 import '../../widgets/top_hosts_button.dart';
+import '../../widgets/search/search_sheet_footer.dart';
 import '../notifications/notification_center_screen.dart';
 
 class ExploreScreen extends StatefulWidget {
@@ -1573,548 +1574,594 @@ class _SearchSheetState extends State<_SearchSheet> {
         color: theme.colorScheme.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
+      // Keyboard inset on the OUTER container, so the pinned footer rides above
+      // the keyboard instead of behind it. The bottom system inset is already
+      // handled: the sheet is presented with `useSafeArea: true`.
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Drag handle + explicit close button, so the sheet is always easy
-            // to dismiss on mobile (drag-to-dismiss can be swallowed by the
-            // scrollable content). No title — the search field is the header.
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.outlineVariant,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close),
-                    tooltip: 'Close',
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            // Location with suggestions
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TextField(
-                  controller: widget.searchController,
-                  decoration: InputDecoration(
-                    labelText: 'Where',
-                    hintText: 'Area, address or place — e.g. Dakshinkhan',
-                    prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: _locatingMe ? null : _useCurrentLocation,
-                    icon: _locatingMe
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.my_location, size: 18),
-                    label: const Text('Use my current location'),
-                  ),
-                ),
-                // Suggestions dropdown: listing cities first (instant), then
-                // Google type-ahead predictions (any area / address / POI).
-                if (_showSuggestions &&
-                    (_suggestions.isNotEmpty ||
-                        _placeSuggestions.isNotEmpty ||
-                        _searchingPlaces))
-                  Container(
-                    margin: const EdgeInsets.only(top: 4),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      border: Border.all(color: theme.colorScheme.outline),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.1),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Expanded, not Flexible: the sheet is a SizedBox.expand inside an
+          // isScrollControlled modal, so it has a bounded height to divide
+          // between the scrolling filters and the footer.
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Drag handle + explicit close button, so the sheet is always easy
+                  // to dismiss on mobile (drag-to-dismiss can be swallowed by the
+                  // scrollable content). No title — the search field is the header.
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.outlineVariant,
+                          borderRadius: BorderRadius.circular(2),
                         ),
-                      ],
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ..._suggestions.map((suggestion) {
-                          return InkWell(
-                            onTap: () => _selectSuggestion(suggestion),
-                            borderRadius: BorderRadius.circular(8),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: IconButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close),
+                          tooltip: 'Close',
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Location with suggestions
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextField(
+                        controller: widget.searchController,
+                        decoration: InputDecoration(
+                          labelText: 'Where',
+                          hintText: 'Area, address or place — e.g. Dakshinkhan',
+                          prefixIcon: const Icon(Icons.search),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: _locatingMe ? null : _useCurrentLocation,
+                          icon: _locatingMe
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.my_location, size: 18),
+                          label: const Text('Use my current location'),
+                        ),
+                      ),
+                      // Suggestions dropdown: listing cities first (instant), then
+                      // Google type-ahead predictions (any area / address / POI).
+                      if (_showSuggestions &&
+                          (_suggestions.isNotEmpty ||
+                              _placeSuggestions.isNotEmpty ||
+                              _searchingPlaces))
+                        Container(
+                          margin: const EdgeInsets.only(top: 4),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surface,
+                            border:
+                                Border.all(color: theme.colorScheme.outline),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.1),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
                               ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.location_on_outlined,
-                                    color: theme.colorScheme.primary,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      '${suggestion.city} (${suggestion.count} listing${suggestion.count > 1 ? 's' : ''})',
-                                      style: theme.textTheme.bodyMedium,
+                            ],
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ..._suggestions.map((suggestion) {
+                                return InkWell(
+                                  onTap: () => _selectSuggestion(suggestion),
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 12,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.location_on_outlined,
+                                          color: theme.colorScheme.primary,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            '${suggestion.city} (${suggestion.count} listing${suggestion.count > 1 ? 's' : ''})',
+                                            style: theme.textTheme.bodyMedium,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }),
-                        if (_suggestions.isNotEmpty &&
-                            (_placeSuggestions.isNotEmpty || _searchingPlaces))
-                          const Divider(height: 1),
-                        if (_searchingPlaces && _placeSuggestions.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 12),
-                            child: SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          ),
-                        ..._placeSuggestions.map((s) {
-                          final resolving = _resolvingSuggestionId == s.placeId;
-                          return InkWell(
-                            onTap: _resolvingSuggestionId != null
-                                ? null
-                                : () => _selectPlaceSuggestion(s),
-                            borderRadius: BorderRadius.circular(8),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.travel_explore_rounded,
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                    size: 20,
+                                );
+                              }),
+                              if (_suggestions.isNotEmpty &&
+                                  (_placeSuggestions.isNotEmpty ||
+                                      _searchingPlaces))
+                                const Divider(height: 1),
+                              if (_searchingPlaces && _placeSuggestions.isEmpty)
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 12),
+                                  child: SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
                                   ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                ),
+                              ..._placeSuggestions.map((s) {
+                                final resolving =
+                                    _resolvingSuggestionId == s.placeId;
+                                return InkWell(
+                                  onTap: _resolvingSuggestionId != null
+                                      ? null
+                                      : () => _selectPlaceSuggestion(s),
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 12,
+                                    ),
+                                    child: Row(
                                       children: [
-                                        Text(
-                                          s.name,
-                                          style: theme.textTheme.bodyMedium,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
+                                        Icon(
+                                          Icons.travel_explore_rounded,
+                                          color: theme
+                                              .colorScheme.onSurfaceVariant,
+                                          size: 20,
                                         ),
-                                        if (s.label.isNotEmpty)
-                                          Text(
-                                            s.label,
-                                            style: theme.textTheme.bodySmall
-                                                ?.copyWith(
-                                              color: theme
-                                                  .colorScheme.onSurfaceVariant,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                s.name,
+                                                style:
+                                                    theme.textTheme.bodyMedium,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              if (s.label.isNotEmpty)
+                                                Text(
+                                                  s.label,
+                                                  style: theme
+                                                      .textTheme.bodySmall
+                                                      ?.copyWith(
+                                                    color: theme.colorScheme
+                                                        .onSurfaceVariant,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (resolving)
+                                          const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2),
                                           ),
                                       ],
                                     ),
                                   ),
-                                  if (resolving)
-                                    const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2),
+                                );
+                              }),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Property type — a single compact line directly under the search
+                  // field (small text; scrolls horizontally if it can't all fit).
+                  SizedBox(
+                    height: 36,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          _buildTypeChip(
+                            'All',
+                            _selectedTypes.isEmpty,
+                            () => setState(() => _selectedTypes.clear()),
+                          ),
+                          for (final type in ListingType.values) ...[
+                            const SizedBox(width: 8),
+                            _buildTypeChip(
+                              type.title,
+                              _selectedTypes.contains(type),
+                              () => _togglePropertyType(type),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Purpose of stay (near a hospital / exam center / …) — moved in
+                  // from the Explore page so every filter lives in this sheet.
+                  Text(
+                    'Purpose of stay',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  PurposeScroll(
+                    selected: _selectedPurpose,
+                    onSelected: _onPurposeSelected,
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                  ),
+                  if (_pickedLandmark != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.place_outlined,
+                            size: 16,
+                            color: theme.colorScheme.primary,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Near ${_pickedLandmark!.name}',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 20),
+
+                  // Date Mode Toggle
+                  Text(
+                    'When',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SegmentedButton<SearchDateMode>(
+                    segments: const [
+                      ButtonSegment(
+                        value: SearchDateMode.dateRange,
+                        label: Text('Date Range'),
+                        icon: Icon(Icons.date_range),
+                      ),
+                      ButtonSegment(
+                        value: SearchDateMode.singleDateWithTime,
+                        label: Text('Single Day'),
+                        icon: Icon(Icons.schedule),
+                      ),
+                    ],
+                    selected: {_dateMode},
+                    onSelectionChanged: (selected) {
+                      setState(() => _dateMode = selected.first);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Date Range Selection (shown when dateRange mode)
+                  if (_dateMode == SearchDateMode.dateRange) ...[
+                    GestureDetector(
+                      onTap: _selectDateRange,
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: theme.colorScheme.outline),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.calendar_today),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Check-in - Check-out',
+                                    style:
+                                        theme.textTheme.labelMedium?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
                                     ),
+                                  ),
+                                  Text(
+                                    _dateRange != null
+                                        ? '${_formatDate(_dateRange!.start)} - ${_formatDate(_dateRange!.end)}'
+                                        : 'Select dates',
+                                    style: theme.textTheme.bodyLarge,
+                                  ),
                                 ],
                               ),
                             ),
-                          );
-                        }),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Property type — a single compact line directly under the search
-            // field (small text; scrolls horizontally if it can't all fit).
-            SizedBox(
-              height: 36,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _buildTypeChip(
-                      'All',
-                      _selectedTypes.isEmpty,
-                      () => setState(() => _selectedTypes.clear()),
-                    ),
-                    for (final type in ListingType.values) ...[
-                      const SizedBox(width: 8),
-                      _buildTypeChip(
-                        type.title,
-                        _selectedTypes.contains(type),
-                        () => _togglePropertyType(type),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Purpose of stay (near a hospital / exam center / …) — moved in
-            // from the Explore page so every filter lives in this sheet.
-            Text(
-              'Purpose of stay',
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            PurposeScroll(
-              selected: _selectedPurpose,
-              onSelected: _onPurposeSelected,
-              padding: const EdgeInsets.symmetric(vertical: 4),
-            ),
-            if (_pickedLandmark != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.place_outlined,
-                      size: 16,
-                      color: theme.colorScheme.primary,
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'Near ${_pickedLandmark!.name}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            const SizedBox(height: 20),
-
-            // Date Mode Toggle
-            Text(
-              'When',
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 12),
-            SegmentedButton<SearchDateMode>(
-              segments: const [
-                ButtonSegment(
-                  value: SearchDateMode.dateRange,
-                  label: Text('Date Range'),
-                  icon: Icon(Icons.date_range),
-                ),
-                ButtonSegment(
-                  value: SearchDateMode.singleDateWithTime,
-                  label: Text('Single Day'),
-                  icon: Icon(Icons.schedule),
-                ),
-              ],
-              selected: {_dateMode},
-              onSelectionChanged: (selected) {
-                setState(() => _dateMode = selected.first);
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // Date Range Selection (shown when dateRange mode)
-            if (_dateMode == SearchDateMode.dateRange) ...[
-              GestureDetector(
-                onTap: _selectDateRange,
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: theme.colorScheme.outline),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.calendar_today),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Check-in - Check-out',
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
+                            if (_dateRange != null)
+                              IconButton(
+                                icon: const Icon(Icons.close),
+                                onPressed: () =>
+                                    setState(() => _dateRange = null),
                               ),
-                            ),
-                            Text(
-                              _dateRange != null
-                                  ? '${_formatDate(_dateRange!.start)} - ${_formatDate(_dateRange!.end)}'
-                                  : 'Select dates',
-                              style: theme.textTheme.bodyLarge,
-                            ),
                           ],
                         ),
                       ),
-                      if (_dateRange != null)
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () => setState(() => _dateRange = null),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+                    ),
+                  ],
 
-            // Single Date with Time Selection
-            if (_dateMode == SearchDateMode.singleDateWithTime) ...[
-              // Date picker
-              GestureDetector(
-                onTap: _selectSingleDate,
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: theme.colorScheme.outline),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.calendar_today),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Date',
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            Text(
-                              _singleDate != null
-                                  ? _formatDate(_singleDate!)
-                                  : 'Select date',
-                              style: theme.textTheme.bodyLarge,
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (_singleDate != null)
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () => setState(() => _singleDate = null),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // Time range row
-              Row(
-                children: [
-                  // Start time
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: _selectStartTime,
+                  // Single Date with Time Selection
+                  if (_dateMode == SearchDateMode.singleDateWithTime) ...[
+                    // Date picker
+                    GestureDetector(
+                      onTap: _selectSingleDate,
                       child: Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           border: Border.all(color: theme.colorScheme.outline),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Row(
                           children: [
-                            Text(
-                              'Start Time',
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
+                            const Icon(Icons.calendar_today),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Date',
+                                    style:
+                                        theme.textTheme.labelMedium?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  Text(
+                                    _singleDate != null
+                                        ? _formatDate(_singleDate!)
+                                        : 'Select date',
+                                    style: theme.textTheme.bodyLarge,
+                                  ),
+                                ],
                               ),
                             ),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                const Icon(Icons.access_time, size: 20),
-                                const SizedBox(width: 8),
-                                Text(
-                                  _startTime != null
-                                      ? _formatTime(_startTime!)
-                                      : 'Select',
-                                  style: theme.textTheme.bodyLarge,
-                                ),
-                              ],
-                            ),
+                            if (_singleDate != null)
+                              IconButton(
+                                icon: const Icon(Icons.close),
+                                onPressed: () =>
+                                    setState(() => _singleDate = null),
+                              ),
                           ],
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  // End time
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: _selectEndTime,
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: theme.colorScheme.outline),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'End Time',
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                const Icon(Icons.access_time, size: 20),
-                                const SizedBox(width: 8),
-                                Text(
-                                  _endTime != null
-                                      ? _formatTime(_endTime!)
-                                      : 'Select',
-                                  style: theme.textTheme.bodyLarge,
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-            const SizedBox(height: 16),
+                    const SizedBox(height: 12),
 
-            // Guests
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                border: Border.all(color: theme.colorScheme.outline),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.people),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    // Time range row
+                    Row(
                       children: [
-                        Text(
-                          'Who',
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
+                        // Start time
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: _selectStartTime,
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                    color: theme.colorScheme.outline),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Start Time',
+                                    style:
+                                        theme.textTheme.labelMedium?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.access_time, size: 20),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        _startTime != null
+                                            ? _formatTime(_startTime!)
+                                            : 'Select',
+                                        style: theme.textTheme.bodyLarge,
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
-                        Text(
-                          '$_guestCount guest${_guestCount > 1 ? 's' : ''}',
-                          style: theme.textTheme.bodyLarge,
+                        const SizedBox(width: 12),
+                        // End time
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: _selectEndTime,
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                    color: theme.colorScheme.outline),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'End Time',
+                                    style:
+                                        theme.textTheme.labelMedium?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.access_time, size: 20),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        _endTime != null
+                                            ? _formatTime(_endTime!)
+                                            : 'Select',
+                                        style: theme.textTheme.bodyLarge,
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+
+                  // Guests
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: theme.colorScheme.outline),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.people),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Who',
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              Text(
+                                '$_guestCount guest${_guestCount > 1 ? 's' : ''}',
+                                style: theme.textTheme.bodyLarge,
+                              ),
+                            ],
+                          ),
+                        ),
+                        Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.remove_circle_outline),
+                              onPressed: _guestCount > 1
+                                  ? () => setState(() => _guestCount--)
+                                  : null,
+                            ),
+                            Text(
+                              '$_guestCount',
+                              style: theme.textTheme.titleMedium,
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.add_circle_outline),
+                              onPressed: _guestCount < 16
+                                  ? () => setState(() => _guestCount++)
+                                  : null,
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove_circle_outline),
-                        onPressed: _guestCount > 1
-                            ? () => setState(() => _guestCount--)
-                            : null,
-                      ),
-                      Text(
-                        '$_guestCount',
-                        style: theme.textTheme.titleMedium,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.add_circle_outline),
-                        onPressed: _guestCount < 16
-                            ? () => setState(() => _guestCount++)
-                            : null,
-                      ),
-                    ],
-                  ),
+                  // The Search button is no longer here — it lives in the pinned
+                  // footer below, so it cannot scroll out of reach. This trailing gap
+                  // keeps the last filter clear of the footer's hairline.
+                  const SizedBox(height: 8),
                 ],
               ),
             ),
-            const SizedBox(height: 24),
-
-            // Search button
-            FilledButton(
-              onPressed: _resolvingPlace ? null : _applySearch,
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: _resolvingPlace
-                    ? const [
-                        SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                        SizedBox(width: 8),
-                        Text('Finding place…'),
-                      ]
-                    : const [
-                        Icon(Icons.search),
-                        SizedBox(width: 8),
-                        Text('Search'),
-                      ],
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-        ),
+          ),
+          SearchSheetFooter(
+            onClearAll: _clearAll,
+            onSearch: _resolvingPlace ? null : _applySearch,
+            busy: _resolvingPlace,
+          ),
+        ],
       ),
     );
+  }
+
+  /// Resets every filter this sheet edits back to "no filter".
+  ///
+  /// The draft only — `widget.searchState` is untouched until Search, matching
+  /// the desktop panels. So clearing and then dismissing the sheet leaves the
+  /// results the guest already had, rather than silently widening them.
+  ///
+  /// `_settingTextProgrammatically` guards the controller write: the listener
+  /// would otherwise treat it as a manual edit and kick off a Places lookup for
+  /// the empty string.
+  void _clearAll() {
+    _placeDebounce?.cancel();
+    _settingTextProgrammatically = true;
+    widget.searchController.clear();
+    _settingTextProgrammatically = false;
+    setState(() {
+      _guestCount = 1;
+      _selectedTypes = [];
+      _dateMode = SearchDateMode.dateRange;
+      _dateRange = null;
+      _singleDate = null;
+      _startTime = null;
+      _endTime = null;
+      _selectedPurpose = null;
+      _pickedLandmark = null;
+      _pickedLat = null;
+      _pickedLng = null;
+      _pickedBounds = null;
+      _suggestions = [];
+      _placeSuggestions = [];
+      _showSuggestions = false;
+      _searchingPlaces = false;
+      _resolvingSuggestionId = null;
+    });
   }
 
   String _formatDate(DateTime date) {
