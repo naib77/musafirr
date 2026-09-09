@@ -32,7 +32,7 @@ import '../../services/voice/voice_search_runner.dart';
 import '../../widgets/voice_listening_sheet.dart';
 import '../../widgets/voice_search_button.dart';
 import '../../widgets/landmark_picker_sheet.dart';
-import '../../widgets/purpose_scroll.dart';
+import '../../widgets/purpose_picker.dart';
 import '../../widgets/hover_lift.dart';
 import '../../widgets/listing_card_modern.dart';
 import '../../widgets/listing_card_wide.dart';
@@ -1469,6 +1469,9 @@ class _SearchSheetState extends State<_SearchSheet> {
       _placeSuggestions = [];
       _showSuggestions = false;
     });
+    // A landmark IS the Where answer — it set the text, the point and the
+    // ring — so the sheet moves on exactly as it does for a picked place.
+    _openSection(_SheetStep.when);
   }
 
   void _togglePropertyType(ListingType type) {
@@ -1634,7 +1637,12 @@ class _SearchSheetState extends State<_SearchSheet> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
+                  // Above the folded steps, so the widest cut is answered
+                  // first and stays visible while the three questions are
+                  // worked through.
+                  Center(child: _typeChips(theme)),
+                  const SizedBox(height: 16),
                   SearchSection(
                     label: 'Where',
                     summary: summary.where,
@@ -1665,15 +1673,6 @@ class _SearchSheetState extends State<_SearchSheet> {
                       onChanged: (party) => setState(() => _party = party),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  // Type and purpose stay OUT of the fold, deliberately. They
-                  // are one compact line each, they are not one of the three
-                  // questions the sheet is built around, and burying a control
-                  // behind a tap is how the type chips stopped being noticed
-                  // the last time. Airbnb keeps its own equivalents behind a
-                  // separate Filters screen, which is the other honest answer
-                  // if this ever grows.
-                  _extraFilters(theme),
                   const SizedBox(height: 8),
                 ],
               ),
@@ -1880,6 +1879,61 @@ class _SearchSheetState extends State<_SearchSheet> {
               ],
             ),
           ),
+        // Purpose lives HERE, not in a filters block of its own, because
+        // choosing one is a way of answering *where*: picking "Medical" opens
+        // the landmark picker, and the hospital that comes back becomes the
+        // Where text, the search's centre point and the summary this card
+        // shows. It was only ever separate because it arrived from the Explore
+        // page as a loose row.
+        const SizedBox(height: 18),
+        Divider(height: 1, color: theme.colorScheme.outlineVariant),
+        const SizedBox(height: 14),
+        _purposePicker(theme),
+      ],
+    );
+  }
+
+  /// "What is the stay for", and the landmark it anchors on.
+  Widget _purposePicker(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Or search by purpose',
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        PurposePicker(
+          selected: _selectedPurpose,
+          onSelected: _onPurposeSelected,
+        ),
+        if (_pickedLandmark != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.place_outlined,
+                  size: 16,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Near ${_pickedLandmark!.name}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }
@@ -2063,77 +2117,37 @@ class _SearchSheetState extends State<_SearchSheet> {
     }
   }
 
-  Widget _extraFilters(ThemeData theme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Property type — a single compact line directly under the search
-        // field (small text; scrolls horizontally if it can't all fit).
-        SizedBox(
-          height: 36,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _buildTypeChip(
-                  'All',
-                  _selectedTypes.isEmpty,
-                  () => setState(() => _selectedTypes.clear()),
-                ),
-                for (final type in ListingType.values) ...[
-                  const SizedBox(width: 8),
-                  _buildTypeChip(
-                    type.title,
-                    _selectedTypes.contains(type),
-                    () => _togglePropertyType(type),
-                  ),
-                ],
-              ],
+  /// The kind of place, above everything else.
+  ///
+  /// This is the widest cut the sheet makes — a seat, a room and a whole house
+  /// are three different things to be shopping for, and the answer changes
+  /// what the rest of the questions even mean. The reference puts its own
+  /// equivalent in the same position, above the folded steps, for the same
+  /// reason. It is deliberately NOT folded away: it is one line, and burying a
+  /// control behind a tap is how these chips stopped being noticed before.
+  Widget _typeChips(ThemeData theme) {
+    return SizedBox(
+      height: 36,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _buildTypeChip(
+              'All',
+              _selectedTypes.isEmpty,
+              () => setState(() => _selectedTypes.clear()),
             ),
-          ),
+            for (final type in ListingType.values) ...[
+              const SizedBox(width: 8),
+              _buildTypeChip(
+                type.title,
+                _selectedTypes.contains(type),
+                () => _togglePropertyType(type),
+              ),
+            ],
+          ],
         ),
-        const SizedBox(height: 16),
-
-        // Purpose of stay (near a hospital / exam center / …) — moved in
-        // from the Explore page so every filter lives in this sheet.
-        Text(
-          'Purpose of stay',
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 8),
-        PurposeScroll(
-          selected: _selectedPurpose,
-          onSelected: _onPurposeSelected,
-          padding: const EdgeInsets.symmetric(vertical: 4),
-        ),
-        if (_pickedLandmark != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.place_outlined,
-                  size: 16,
-                  color: theme.colorScheme.primary,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'Near ${_pickedLandmark!.name}',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
+      ),
     );
   }
 

@@ -4,7 +4,7 @@ import '../../core/theme/app_colors.dart';
 import '../../models/landmark.dart';
 import '../../models/listing_purpose.dart';
 import '../../models/listing_type.dart';
-import '../purpose_scroll.dart';
+import '../purpose_picker.dart';
 import 'search_draft.dart';
 
 /// Asks for a landmark of [type], titled for [purpose]. Returns null when the
@@ -81,9 +81,8 @@ class FiltersPanel extends StatelessWidget {
                 style: TextStyle(fontSize: 12.5, color: AppColors.inkMuted),
               ),
               const SizedBox(height: 10),
-              PurposeScroll(
+              PurposePicker(
                 selected: draft.purpose,
-                padding: EdgeInsets.zero,
                 onSelected: (purpose) => _onPurpose(context, purpose),
               ),
               if (draft.landmark != null) ...[

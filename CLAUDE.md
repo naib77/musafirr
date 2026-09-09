@@ -718,6 +718,33 @@ Three things worth keeping:
   native picker: a two-thumb time control is its own build, and a dialog is a
   fair answer for a value with no spatial meaning.
 
+Type and purpose are **not** two more folds, and they are not together:
+
+- **Property type sits above the three cards.** Seat / room / whole house is
+  the widest cut the sheet makes — it changes what the other questions even
+  mean — so it is answered first and stays visible while they are worked
+  through. The reference puts its own equivalent in the same place.
+- **Purpose lives inside Where.** Choosing one is a way of answering *where*:
+  picking "Medical" opens the landmark picker, and the hospital that comes back
+  becomes the Where text, the search's centre point and the summary that card
+  shows. It was only ever a separate row because it arrived from the Explore
+  page as one.
+
+Neither is folded away. They are one control each, and burying a control behind
+a tap is how the type chips stopped being noticed the last time.
+
+[`PurposePicker`](lib/widgets/purpose_picker.dart) (was `PurposeScroll`) is a
+`Wrap` now, not a horizontal `ListView`. Both of its call sites sit inside a
+padded card, and a horizontal scroller clips at the **padding**, not the card
+edge — the last pill came out sliced mid-word with a clear gap after it, which
+reads as broken rather than as "scroll me". Two traps if you touch it: a `Wrap`
+hands each child the **full line width**, so the pill's `Row` needs
+`mainAxisSize: MainAxisSize.min` or every pill becomes its own full-width bar
+(that shipped, and the screenshot caught it, not the test — the test now
+measures the pill's `Material`, because under that bug the label's own rect is
+unchanged); and the pill must not carry a trailing margin of its own, or it
+doubles the `Wrap`'s spacing.
+
 `DateCalendar` grew two things for this. **`DateCalendarMode.singleDay`**,
 because hourly search is one date and driving it as a range meant the second
 tap silently did nothing visible (it produced `range(5, 8)` and the caller kept
