@@ -56,6 +56,19 @@ dependencies:
   # API. Both are free and keyless; no cloud STT is involved.
   speech_to_text: ^7.4.0
   camera: ^0.12.0+2
+  # Play In-App Updates. Android only (the plugin declares no other platform),
+  # which is why every call site is guarded — see AppUpdateService.
+  in_app_update: ^5.0.0
+  # Reads this build's own versionCode. Needed because AppUpdateInfo tells you
+  # what Play HAS, never what is installed, and the force-update floor is a
+  # comparison against the installed build.
+  #
+  # Held at 9.x deliberately: 10.1.0+ moved to win32 ^6, which share_plus 10.1.4
+  # (the newest 10.x) does not accept. Going to package_info_plus 10 therefore
+  # means going to share_plus 11, whose API is a rewrite — `SharePlus.instance
+  # .share(ShareParams(...))` in place of `Share.share(...)` at every call site.
+  # `PackageInfo.fromPlatform().buildNumber` is identical in both majors.
+  package_info_plus: ^9.0.1
 
 dev_dependencies:
   flutter_test:
