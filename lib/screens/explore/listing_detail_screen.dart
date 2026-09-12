@@ -20,6 +20,7 @@ import '../../services/listing/party_limits_summary.dart';
 import '../../models/listing_exact_address.dart';
 import '../../models/listing_purpose.dart';
 import '../../models/listing_type.dart';
+import '../../models/turf_details.dart';
 import '../../models/rental_plan.dart';
 import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
@@ -804,11 +805,13 @@ class _CategoryBadge extends StatelessWidget {
       ListingType.seat => AppColors.seat,
       ListingType.room => AppColors.room,
       ListingType.fullHouse => AppColors.fullHouse,
+      ListingType.turf => AppColors.turf,
     };
     final icon = switch (type) {
       ListingType.seat => Icons.event_seat_rounded,
       ListingType.room => Icons.meeting_room_rounded,
       ListingType.fullHouse => Icons.house_rounded,
+      ListingType.turf => Icons.sports_soccer_rounded,
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
@@ -1415,30 +1418,76 @@ class _PropertyDetails extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = <(IconData, String, String, Color)>[
-      (
-        Icons.people_alt_rounded,
-        '${listing.maxGuests}',
-        'Guests',
-        AppColors.blue
-      ),
-      (
-        Icons.meeting_room_rounded,
-        '${listing.bedrooms}',
-        'Bedrooms',
-        AppColors.violet
-      ),
-      (Icons.king_bed_rounded, '${listing.beds}', 'Beds', AppColors.brand),
-      (Icons.bathtub_rounded, '${listing.bathrooms}', 'Baths', AppColors.amber),
-    ];
+    final isStay = listing.type.isStay;
+    final turf = listing.turfDetails;
+
+    // A turf writes 0 into bedrooms/beds/bathrooms (121 + the host form), so
+    // the stay tiles would read "0 Bedrooms · 0 Beds · 0 Baths". It answers a
+    // different set of questions, and only the ones it actually stated: a
+    // host who skipped `surface` gets three tiles, not one saying "Unknown".
+    final items = isStay
+        ? <(IconData, String, String, Color)>[
+            (
+              Icons.people_alt_rounded,
+              '${listing.maxGuests}',
+              'Guests',
+              AppColors.blue
+            ),
+            (
+              Icons.meeting_room_rounded,
+              '${listing.bedrooms}',
+              'Bedrooms',
+              AppColors.violet
+            ),
+            (
+              Icons.king_bed_rounded,
+              '${listing.beds}',
+              'Beds',
+              AppColors.brand
+            ),
+            (
+              Icons.bathtub_rounded,
+              '${listing.bathrooms}',
+              'Baths',
+              AppColors.amber
+            ),
+          ]
+        : <(IconData, String, String, Color)>[
+            (
+              Icons.groups_2_rounded,
+              '${listing.maxGuests}',
+              'Players',
+              AppColors.blue
+            ),
+            if (turf.sport != null)
+              (turf.sport!.icon, turf.sport!.label, 'Sport', AppColors.turf),
+            if (turf.format != null)
+              (
+                Icons.straighten_rounded,
+                turf.format!.label,
+                'Format',
+                AppColors.violet
+              ),
+            if (turf.surface != null)
+              (
+                Icons.grass_rounded,
+                turf.surface!.label,
+                'Surface',
+                AppColors.amber
+              ),
+          ];
 
     // Per-category caps (118) as one line rather than four more cards: they
     // are the exception, not the shape of every listing, and a row of "Any"
-    // tiles would drown the four numbers that always apply.
-    final limits = partyLimitsSentence(
-      listing.partyLimits,
-      petsAllowed: listing.houseRules.petsAllowed,
-    );
+    // tiles would drown the four numbers that always apply. Never shown for a
+    // turf: the sub-caps are cleared on save, so the sentence would be absent
+    // anyway, but saying so here keeps the two facts next to each other.
+    final limits = isStay
+        ? partyLimitsSentence(
+            listing.partyLimits,
+            petsAllowed: listing.houseRules.petsAllowed,
+          )
+        : null;
 
     final stats = Row(
       children: [

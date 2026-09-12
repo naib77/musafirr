@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../core/utils/distance_format.dart';
 import '../models/listing.dart';
 import '../models/listing_type.dart';
+import '../models/turf_details.dart';
 import '../models/rental_plan.dart';
 import 'app_network_image.dart';
 
@@ -254,11 +255,23 @@ class _ListingCardWideState extends State<ListingCardWide> {
   }
 
   /// "1 bedroom · 2 beds · 4 guests". A seat has no bedroom to speak of, so it
-  /// counts seats instead of claiming the model's default of one bed.
+  /// counts seats instead of claiming the model's default of one bed; a turf
+  /// has neither and counts players, plus whatever it says about itself.
   String _capacity() {
     final listing = widget.listing;
     if (listing.type == ListingType.seat) {
       return _plural(listing.maxGuests, 'seat');
+    }
+    if (!listing.type.isStay) {
+      // Bedrooms/beds/bathrooms are written as 0 for a turf, so the stay line
+      // below would read "0 bedrooms · 0 beds". Format and sport are what a
+      // player actually compares grounds on.
+      final turf = listing.turfDetails;
+      return [
+        if (turf.format != null) turf.format!.label,
+        if (turf.sport != null) turf.sport!.label,
+        _plural(listing.maxGuests, 'player'),
+      ].join(' · ');
     }
     return [
       _plural(listing.bedrooms, 'bedroom'),

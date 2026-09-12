@@ -4,6 +4,7 @@ import 'facility.dart';
 import 'listing_purpose.dart';
 import 'listing_type.dart';
 import 'rental_plan.dart';
+import 'turf_details.dart';
 
 class Listing {
   Listing({
@@ -40,6 +41,7 @@ class Listing {
     this.beds = 1,
     this.bathrooms = 1,
     this.partyLimits = const PartyLimits(),
+    this.turfDetails = const TurfDetails(),
     this.rating,
     this.reviewCount = 0,
     this.isSuperhost = false,
@@ -110,6 +112,10 @@ class Listing {
   /// Optional per-category caps beneath [maxGuests] (118). Almost every listing
   /// leaves these unset; see [PartyLimits].
   final PartyLimits partyLimits;
+
+  /// Turf-only description (121). Empty for every other listing type, which
+  /// the database enforces rather than merely expecting.
+  final TurfDetails turfDetails;
   final double? rating;
   final int reviewCount;
   final bool isSuperhost;
@@ -288,6 +294,7 @@ class Listing {
     int? beds,
     int? bathrooms,
     PartyLimits? partyLimits,
+    TurfDetails? turfDetails,
     double? rating,
     int? reviewCount,
     bool? isSuperhost,
@@ -330,6 +337,7 @@ class Listing {
       beds: beds ?? this.beds,
       bathrooms: bathrooms ?? this.bathrooms,
       partyLimits: partyLimits ?? this.partyLimits,
+      turfDetails: turfDetails ?? this.turfDetails,
       rating: rating ?? this.rating,
       reviewCount: reviewCount ?? this.reviewCount,
       isSuperhost: isSuperhost ?? this.isSuperhost,
@@ -384,6 +392,7 @@ class Listing {
       beds: beds,
       bathrooms: bathrooms,
       partyLimits: partyLimits,
+      turfDetails: turfDetails,
       rating: rating,
       reviewCount: reviewCount,
       isSuperhost: isSuperhost,

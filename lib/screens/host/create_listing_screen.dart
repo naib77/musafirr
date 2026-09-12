@@ -6,6 +6,7 @@ import '../../data/facility_catalog.dart';
 import '../../models/listing.dart';
 import '../../models/listing_purpose.dart';
 import '../../models/listing_type.dart';
+import '../../models/turf_details.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../services/image_upload_service.dart';
 import '../../state/auth_state.dart';
@@ -15,6 +16,8 @@ import '../../widgets/location_picker.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/purpose_selector.dart';
 import '../../widgets/host/party_limits_fields.dart';
+import '../../widgets/host/turf_details_fields.dart';
+import '../../services/listing/listing_type_scope.dart';
 import 'listing_pricing_fields.dart';
 
 class CreateListingScreen extends StatefulWidget {
@@ -31,13 +34,73 @@ class CreateListingScreen extends StatefulWidget {
   State<CreateListingScreen> createState() => _CreateListingScreenState();
 }
 
+/// One page of the create-listing wizard.
+///
+/// The wizard is a LIST of these rather than a fixed count, because a turf
+/// (120/121) answers a genuinely different set of questions: it has no
+/// bedrooms, no beds, no bathrooms, no check-in time and no wifi password, and
+/// walking a host through four pages of those to leave them all blank is how a
+/// form teaches people to stop reading it.
+///
+/// Deriving the list from the type -- rather than hiding fields inside shared
+/// pages -- keeps "Step 3 of 7" honest. The alternative (eight pages, some
+/// mostly empty) was rejected for that: the progress bar would lie.
+enum _WizardStep {
+  type,
+  basics,
+  location,
+
+  /// Stay only: guests, party sub-caps, bedrooms, beds, bathrooms, amenities.
+  details,
+
+  /// Turf only: players, sport, format, surface, amenities.
+  turf,
+  pricing,
+  rules,
+
+  /// Stay only: directions, wifi, access code. A turf gate has no wifi
+  /// password to hand over.
+  access,
+  photos,
+}
+
 class _CreateListingScreenState extends State<CreateListingScreen> {
   final PageController _pageController = PageController();
   int _currentStep = 0;
-  final int _totalSteps = 8;
+
+  /// The pages this listing type actually asks for, in order.
+  ///
+  /// Read on every build rather than cached: the type is chosen on page 0, so
+  /// the list can change under the host, and a stale copy would index the
+  /// wrong page. Safe to recompute because page 0 is common to both shapes --
+  /// switching type can only ever shorten or lengthen what comes *after* the
+  /// page the host is standing on.
+  List<_WizardStep> get _steps => _propertyType.isStay
+      ? const [
+          _WizardStep.type,
+          _WizardStep.basics,
+          _WizardStep.location,
+          _WizardStep.details,
+          _WizardStep.pricing,
+          _WizardStep.rules,
+          _WizardStep.access,
+          _WizardStep.photos,
+        ]
+      : const [
+          _WizardStep.type,
+          _WizardStep.basics,
+          _WizardStep.location,
+          _WizardStep.turf,
+          _WizardStep.pricing,
+          _WizardStep.rules,
+          _WizardStep.photos,
+        ];
+
+  int get _totalSteps => _steps.length;
 
   // Form data
   ListingType _propertyType = ListingType.room;
+  TurfDetails _turfDetails = const TurfDetails();
   final Set<ListingPurpose> _selectedPurposes = {ListingPurpose.general};
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -154,30 +217,177 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
     }
   }
 
+  /// Builds one page. Every arm returns a page this listing type actually
+  /// asks for -- `_steps` never yields `details` for a turf or `turf` for a
+  /// stay, so the two type-specific arms are unreachable from the other shape.
+  Widget _buildStep(_WizardStep step) {
+    return switch (step) {
+      _WizardStep.type => _PropertyTypeStep(
+          selectedType: _propertyType,
+          onTypeSelected: (type) {
+            setState(() => _propertyType = type);
+          },
+          selectedPurposes: _selectedPurposes,
+          onPurposesChanged: (next) {
+            setState(() {
+              _selectedPurposes
+                ..clear()
+                ..addAll(next);
+            });
+          },
+        ),
+      _WizardStep.basics => _BasicsStep(
+          titleController: _titleController,
+          descriptionController: _descriptionController,
+          onChanged: () => setState(() {}),
+        ),
+      _WizardStep.location => _LocationStep(
+          flatFloorController: _flatFloorController,
+          houseNoController: _houseNoController,
+          streetController: _streetController,
+          areaController: _areaController,
+          cityController: _cityController,
+          postalCodeController: _postalCodeController,
+          landmarkController: _landmarkController,
+          latitude: _latitude,
+          longitude: _longitude,
+          pinConfirmed: _pinConfirmed,
+          onLocationChanged: (lat, lng, address) {
+            setState(() {
+              _latitude = lat;
+              _longitude = lng;
+              _pinConfirmed = true;
+              // Seed Road/Street from the reverse-geocoded address only
+              // if the host hasn't typed one — a helpful starting point.
+              if (address != null && _streetController.text.trim().isEmpty) {
+                _streetController.text = address;
+              }
+            });
+          },
+          onChanged: () => setState(() {}),
+        ),
+      _WizardStep.details => _DetailsStep(
+          maxGuests: _maxGuests,
+          partyLimits: _partyLimits,
+          onPartyLimitsChanged: (v) => setState(() => _partyLimits = v),
+          bedrooms: _bedrooms,
+          beds: _beds,
+          bathrooms: _bathrooms,
+          selectedAmenities: _selectedAmenities,
+          onGuestsChanged: (v) => setState(() {
+            _maxGuests = v;
+            // A sub-cap above the new total is unreachable — the
+            // total refuses the party first — so it would read as
+            // a limit that does nothing. Clamped rather than
+            // cleared: the host's intent to cap survives.
+            _partyLimits = _partyLimits.clampedTo(v);
+          }),
+          onBedroomsChanged: (v) => setState(() => _bedrooms = v),
+          onBedsChanged: (v) => setState(() => _beds = v),
+          onBathroomsChanged: (v) => setState(() => _bathrooms = v),
+          onAmenityToggled: (amenity) {
+            setState(() {
+              if (_selectedAmenities.contains(amenity)) {
+                _selectedAmenities.remove(amenity);
+              } else {
+                _selectedAmenities.add(amenity);
+              }
+            });
+          },
+        ),
+      _WizardStep.turf => _TurfStep(
+          maxPlayers: _maxGuests,
+          details: _turfDetails,
+          selectedAmenities: _selectedAmenities,
+          onPlayersChanged: (v) => setState(() => _maxGuests = v),
+          onDetailsChanged: (v) => setState(() => _turfDetails = v),
+          onAmenityToggled: _toggleAmenity,
+        ),
+      _WizardStep.pricing => _PricingStep(
+          hourlyPriceController: _hourlyPriceController,
+          dailyPriceController: _dailyPriceController,
+          monthlyPriceController: _monthlyPriceController,
+          hourlyEnabled: _hourlyEnabled,
+          dailyEnabled: _dailyEnabled,
+          monthlyEnabled: _monthlyEnabled,
+          onHourlyToggled: (v) => setState(() => _hourlyEnabled = v),
+          onDailyToggled: (v) => setState(() => _dailyEnabled = v),
+          onMonthlyToggled: (v) => setState(() => _monthlyEnabled = v),
+          onChanged: () => setState(() {}),
+          errorText: _pricingError(),
+          minHoursController: _minHoursController,
+          maxHoursController: _maxHoursController,
+          minNightsController: _minNightsController,
+          maxNightsController: _maxNightsController,
+          minMonthsController: _minMonthsController,
+          maxMonthsController: _maxMonthsController,
+        ),
+      _WizardStep.rules => _HouseRulesStep(
+          isStay: _propertyType.isStay,
+          checkInTimeController: _checkInTimeController,
+          checkOutTimeController: _checkOutTimeController,
+          quietHoursController: _quietHoursController,
+          additionalRulesController: _additionalRulesController,
+          smokingAllowed: _smokingAllowed,
+          petsAllowed: _petsAllowed,
+          partiesAllowed: _partiesAllowed,
+          onSmokingToggled: (v) => setState(() => _smokingAllowed = v),
+          onPetsToggled: (v) => setState(() => _petsAllowed = v),
+          maxPets: _partyLimits.pets,
+          onMaxPetsChanged: (v) => setState(() => _partyLimits =
+              _partyLimits.copyWith(pets: v, clearPets: v == null)),
+          onPartiesToggled: (v) => setState(() => _partiesAllowed = v),
+        ),
+      _WizardStep.access => _CheckInAccessStep(
+          directionsController: _directionsController,
+          wifiNameController: _wifiNameController,
+          wifiPasswordController: _wifiPasswordController,
+          accessCodeController: _accessCodeController,
+        ),
+      _WizardStep.photos => _PhotosStep(
+          images: _selectedImages,
+          onImagesChanged: (images) {
+            setState(() => _selectedImages = images);
+          },
+          isUploading: _isUploadingImages,
+          error: _uploadError,
+        ),
+    };
+  }
+
+  void _toggleAmenity(String amenity) {
+    setState(() {
+      if (_selectedAmenities.contains(amenity)) {
+        _selectedAmenities.remove(amenity);
+      } else {
+        _selectedAmenities.add(amenity);
+      }
+    });
+  }
+
+  /// Keyed off the step's IDENTITY, never its index. The two shapes put
+  /// pricing at 4 and photos at 6 or 7, so an index-based switch silently
+  /// applied the wrong rule to the wrong page the moment the list could vary
+  /// -- it would have let a turf through with no photos.
   bool _canProceed() {
-    switch (_currentStep) {
-      case 0: // Property type
-        return true;
-      case 1: // Basics
-        return _titleController.text.trim().isNotEmpty;
-      case 2: // Location
-        return _streetController.text.trim().isNotEmpty &&
-            _areaController.text.trim().isNotEmpty &&
-            _cityController.text.trim().isNotEmpty &&
-            _pinConfirmed;
-      case 3: // Details
-        return _maxGuests > 0 && _bedrooms > 0 && _beds > 0 && _bathrooms > 0;
-      case 4: // Pricing
-        return _pricingError() == null;
-      case 5: // House rules — all optional
-        return true;
-      case 6: // Check-in & access — all optional
-        return true;
-      case 7: // Photos
-        return _selectedImages.isNotEmpty && !_isUploadingImages;
-      default:
-        return false;
-    }
+    return switch (_steps[_currentStep]) {
+      _WizardStep.type => true,
+      _WizardStep.basics => _titleController.text.trim().isNotEmpty,
+      _WizardStep.location => _streetController.text.trim().isNotEmpty &&
+          _areaController.text.trim().isNotEmpty &&
+          _cityController.text.trim().isNotEmpty &&
+          _pinConfirmed,
+      _WizardStep.details =>
+        _maxGuests > 0 && _bedrooms > 0 && _beds > 0 && _bathrooms > 0,
+      // A turf states how many players fit and nothing else is required:
+      // sport, format and surface are all nullable in 121 because a host who
+      // skips them has still described a bookable ground.
+      _WizardStep.turf => _maxGuests > 0,
+      _WizardStep.pricing => _pricingError() == null,
+      // Optional in both shapes.
+      _WizardStep.rules || _WizardStep.access => true,
+      _WizardStep.photos => _selectedImages.isNotEmpty && !_isUploadingImages,
+    };
   }
 
   /// Validates the pricing step. Returns a user-facing message, or null if valid.
@@ -269,6 +479,24 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         }
       }
 
+      // A host can pick "turf", fill in the sport, then go BACK to page 1 and
+      // switch to "room" -- the earlier answers are still in state. Sending
+      // them is not merely untidy: 121's listings_turf_fields_only_on_turf
+      // check refuses the whole insert with 23514, so the listing simply
+      // fails to save with an error no host could act on. Both directions are
+      // scoped here, at the single point where state becomes a row.
+      final isStay = _propertyType.isStay;
+      final scoped = scopeFieldsToType(
+        type: _propertyType,
+        turfDetails: _turfDetails,
+        partyLimits: _partyLimits,
+        bedrooms: _bedrooms,
+        beds: _beds,
+        bathrooms: _bathrooms,
+        petsAllowed: _petsAllowed,
+        partiesAllowed: _partiesAllowed,
+      );
+
       final listing = Listing(
         id: listingId,
         hostId: user?.id,
@@ -303,10 +531,11 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         monthlyRate: monthlyRate,
         imageUrls: imageUrls,
         maxGuests: _maxGuests,
-        partyLimits: _partyLimits,
-        bedrooms: _bedrooms,
-        beds: _beds,
-        bathrooms: _bathrooms,
+        partyLimits: scoped.partyLimits,
+        turfDetails: scoped.turfDetails,
+        bedrooms: scoped.bedrooms,
+        beds: scoped.beds,
+        bathrooms: scoped.bathrooms,
         facilities: FacilityCatalog.ownerSelectable
             .where((f) => _selectedAmenities.contains(f.name))
             .toList(),
@@ -329,20 +558,26 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
               _monthlyEnabled ? int.tryParse(_maxMonthsController.text) : null,
         ),
         houseRules: HouseRules(
-          checkInTime: _emptyToNull(_checkInTimeController.text),
-          checkOutTime: _emptyToNull(_checkOutTimeController.text),
+          checkInTime:
+              isStay ? _emptyToNull(_checkInTimeController.text) : null,
+          checkOutTime:
+              isStay ? _emptyToNull(_checkOutTimeController.text) : null,
           smokingAllowed: _smokingAllowed,
-          petsAllowed: _petsAllowed,
-          partiesAllowed: _partiesAllowed,
+          petsAllowed: scoped.petsAllowed,
+          partiesAllowed: scoped.partiesAllowed,
           quietHours: _emptyToNull(_quietHoursController.text),
           additionalRules: _emptyToNull(_additionalRulesController.text),
         ),
-        checkInDetails: CheckInDetails(
-          directions: _emptyToNull(_directionsController.text),
-          wifiName: _emptyToNull(_wifiNameController.text),
-          wifiPassword: _emptyToNull(_wifiPasswordController.text),
-          accessCode: _emptyToNull(_accessCodeController.text),
-        ),
+        // The whole page is stay-only, so a turf carries none of it -- a
+        // ground has no wifi password to hand over at check-in.
+        checkInDetails: isStay
+            ? CheckInDetails(
+                directions: _emptyToNull(_directionsController.text),
+                wifiName: _emptyToNull(_wifiNameController.text),
+                wifiPassword: _emptyToNull(_wifiPasswordController.text),
+                accessCode: _emptyToNull(_accessCodeController.text),
+              )
+            : const CheckInDetails(),
       );
 
       // Add to repository — await so a failed insert surfaces below instead
@@ -399,132 +634,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                   setState(() => _currentStep = index);
                 },
                 children: [
-                  _PropertyTypeStep(
-                    selectedType: _propertyType,
-                    onTypeSelected: (type) {
-                      setState(() => _propertyType = type);
-                    },
-                    selectedPurposes: _selectedPurposes,
-                    onPurposesChanged: (next) {
-                      setState(() {
-                        _selectedPurposes
-                          ..clear()
-                          ..addAll(next);
-                      });
-                    },
-                  ),
-                  _BasicsStep(
-                    titleController: _titleController,
-                    descriptionController: _descriptionController,
-                    onChanged: () => setState(() {}),
-                  ),
-                  _LocationStep(
-                    flatFloorController: _flatFloorController,
-                    houseNoController: _houseNoController,
-                    streetController: _streetController,
-                    areaController: _areaController,
-                    cityController: _cityController,
-                    postalCodeController: _postalCodeController,
-                    landmarkController: _landmarkController,
-                    latitude: _latitude,
-                    longitude: _longitude,
-                    pinConfirmed: _pinConfirmed,
-                    onLocationChanged: (lat, lng, address) {
-                      setState(() {
-                        _latitude = lat;
-                        _longitude = lng;
-                        _pinConfirmed = true;
-                        // Seed Road/Street from the reverse-geocoded address only
-                        // if the host hasn't typed one — a helpful starting point.
-                        if (address != null &&
-                            _streetController.text.trim().isEmpty) {
-                          _streetController.text = address;
-                        }
-                      });
-                    },
-                    onChanged: () => setState(() {}),
-                  ),
-                  _DetailsStep(
-                    maxGuests: _maxGuests,
-                    partyLimits: _partyLimits,
-                    onPartyLimitsChanged: (v) =>
-                        setState(() => _partyLimits = v),
-                    bedrooms: _bedrooms,
-                    beds: _beds,
-                    bathrooms: _bathrooms,
-                    selectedAmenities: _selectedAmenities,
-                    onGuestsChanged: (v) => setState(() {
-                      _maxGuests = v;
-                      // A sub-cap above the new total is unreachable — the
-                      // total refuses the party first — so it would read as
-                      // a limit that does nothing. Clamped rather than
-                      // cleared: the host's intent to cap survives.
-                      _partyLimits = _partyLimits.clampedTo(v);
-                    }),
-                    onBedroomsChanged: (v) => setState(() => _bedrooms = v),
-                    onBedsChanged: (v) => setState(() => _beds = v),
-                    onBathroomsChanged: (v) => setState(() => _bathrooms = v),
-                    onAmenityToggled: (amenity) {
-                      setState(() {
-                        if (_selectedAmenities.contains(amenity)) {
-                          _selectedAmenities.remove(amenity);
-                        } else {
-                          _selectedAmenities.add(amenity);
-                        }
-                      });
-                    },
-                  ),
-                  _PricingStep(
-                    hourlyPriceController: _hourlyPriceController,
-                    dailyPriceController: _dailyPriceController,
-                    monthlyPriceController: _monthlyPriceController,
-                    hourlyEnabled: _hourlyEnabled,
-                    dailyEnabled: _dailyEnabled,
-                    monthlyEnabled: _monthlyEnabled,
-                    onHourlyToggled: (v) => setState(() => _hourlyEnabled = v),
-                    onDailyToggled: (v) => setState(() => _dailyEnabled = v),
-                    onMonthlyToggled: (v) =>
-                        setState(() => _monthlyEnabled = v),
-                    onChanged: () => setState(() {}),
-                    errorText: _pricingError(),
-                    minHoursController: _minHoursController,
-                    maxHoursController: _maxHoursController,
-                    minNightsController: _minNightsController,
-                    maxNightsController: _maxNightsController,
-                    minMonthsController: _minMonthsController,
-                    maxMonthsController: _maxMonthsController,
-                  ),
-                  _HouseRulesStep(
-                    checkInTimeController: _checkInTimeController,
-                    checkOutTimeController: _checkOutTimeController,
-                    quietHoursController: _quietHoursController,
-                    additionalRulesController: _additionalRulesController,
-                    smokingAllowed: _smokingAllowed,
-                    petsAllowed: _petsAllowed,
-                    partiesAllowed: _partiesAllowed,
-                    onSmokingToggled: (v) =>
-                        setState(() => _smokingAllowed = v),
-                    onPetsToggled: (v) => setState(() => _petsAllowed = v),
-                    maxPets: _partyLimits.pets,
-                    onMaxPetsChanged: (v) => setState(() => _partyLimits =
-                        _partyLimits.copyWith(pets: v, clearPets: v == null)),
-                    onPartiesToggled: (v) =>
-                        setState(() => _partiesAllowed = v),
-                  ),
-                  _CheckInAccessStep(
-                    directionsController: _directionsController,
-                    wifiNameController: _wifiNameController,
-                    wifiPasswordController: _wifiPasswordController,
-                    accessCodeController: _accessCodeController,
-                  ),
-                  _PhotosStep(
-                    images: _selectedImages,
-                    onImagesChanged: (images) {
-                      setState(() => _selectedImages = images);
-                    },
-                    isUploading: _isUploadingImages,
-                    error: _uploadError,
-                  ),
+                  for (final step in _steps) _buildStep(step),
                 ],
               ),
             ),
@@ -680,6 +790,7 @@ class _PropertyTypeCard extends StatelessWidget {
         ListingType.seat => Icons.chair,
         ListingType.room => Icons.bed,
         ListingType.fullHouse => Icons.home,
+        ListingType.turf => Icons.sports_soccer,
       };
 
   String get _description => switch (type) {
@@ -689,6 +800,9 @@ class _PropertyTypeCard extends StatelessWidget {
           'A private room within a larger property. Guests may share common areas.',
         ListingType.fullHouse =>
           'An entire property that guests will have to themselves.',
+        ListingType.turf =>
+          'A sports ground rented by the hour — football, cricket, badminton '
+              'and the like.',
       };
 
   @override
@@ -1096,6 +1210,109 @@ class _DetailsStep extends StatelessWidget {
   }
 }
 
+/// The turf equivalent of [_DetailsStep].
+///
+/// Deliberately not a flag on that widget. The two pages share exactly one
+/// control -- a capacity counter -- and differ in every other row: a turf has
+/// no bedrooms, beds, bathrooms or party sub-caps, and gains sport, format and
+/// surface. A single widget carrying both sets behind `if (isStay)` would be
+/// two forms in a trenchcoat, and the amenity list underneath differs too.
+class _TurfStep extends StatelessWidget {
+  const _TurfStep({
+    required this.maxPlayers,
+    required this.details,
+    required this.selectedAmenities,
+    required this.onPlayersChanged,
+    required this.onDetailsChanged,
+    required this.onAmenityToggled,
+  });
+
+  final int maxPlayers;
+  final TurfDetails details;
+  final Set<String> selectedAmenities;
+  final ValueChanged<int> onPlayersChanged;
+  final ValueChanged<TurfDetails> onDetailsChanged;
+  final ValueChanged<String> onAmenityToggled;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'About the ground',
+            style: theme.textTheme.headlineSmall
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'What players can expect when they book a slot.',
+            style: theme.textTheme.bodyLarge
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 32),
+          // Writes max_guests, the same column every other listing type uses.
+          // A turf needed no capacity column of its own -- "how many people
+          // fit" is one question wearing two words, and reusing the column
+          // means search's existing party filter works here unchanged.
+          _CounterRow(
+            label: 'Players',
+            value: maxPlayers,
+            onChanged: onPlayersChanged,
+            min: 1,
+            max: 40,
+          ),
+          const SizedBox(height: 24),
+          TurfDetailsFields(
+            details: details,
+            onChanged: onDetailsChanged,
+          ),
+          const SizedBox(height: 28),
+          Text(
+            'Amenities',
+            style: theme.textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'What does your ground offer?',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 8),
+          for (final group in FacilityCatalog.turfGroups) ...[
+            const SizedBox(height: 12),
+            Text(
+              group.title,
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: group.facilities.map((facility) {
+                return FilterChip(
+                  selected: selectedAmenities.contains(facility.name),
+                  label: Text(facility.name),
+                  avatar: Icon(facility.icon, size: 18),
+                  onSelected: (_) => onAmenityToggled(facility.name),
+                );
+              }).toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _CounterRow extends StatelessWidget {
   const _CounterRow({
     required this.label,
@@ -1451,6 +1668,7 @@ String? _emptyToNull(String value) {
 // Step 6: House rules
 class _HouseRulesStep extends StatelessWidget {
   const _HouseRulesStep({
+    required this.isStay,
     required this.checkInTimeController,
     required this.checkOutTimeController,
     required this.quietHoursController,
@@ -1464,6 +1682,11 @@ class _HouseRulesStep extends StatelessWidget {
     required this.onPetsToggled,
     required this.onPartiesToggled,
   });
+
+  /// False for a turf. Unlike the Details/Turf split -- two genuinely
+  /// different forms -- this page is the SAME page with three rows dropped, so
+  /// a flag is the honest shape here rather than a second widget.
+  final bool isStay;
 
   final TextEditingController checkInTimeController;
   final TextEditingController checkOutTimeController;
@@ -1488,62 +1711,76 @@ class _HouseRulesStep extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'House rules',
+            isStay ? 'House rules' : 'Ground rules',
             style: theme.textTheme.headlineSmall
                 ?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           Text(
-            'Set expectations for guests. All optional — leave blank to skip.',
+            isStay
+                ? 'Set expectations for guests. All optional — leave blank to skip.'
+                : 'Set expectations for players. All optional — leave blank to skip.',
             style: theme.textTheme.bodyLarge
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: AppTextField(
-                  controller: checkInTimeController,
-                  label: 'Check-in time',
-                  hint: 'e.g. 2:00 PM',
+          // A turf booking already carries its own start and end -- the slot
+          // IS the check-in time -- so a second, free-text pair here would be
+          // a field that contradicts the booking.
+          if (isStay) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: AppTextField(
+                    controller: checkInTimeController,
+                    label: 'Check-in time',
+                    hint: 'e.g. 2:00 PM',
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: AppTextField(
-                  controller: checkOutTimeController,
-                  label: 'Check-out time',
-                  hint: 'e.g. 11:00 AM',
+                const SizedBox(width: 12),
+                Expanded(
+                  child: AppTextField(
+                    controller: checkOutTimeController,
+                    label: 'Check-out time',
+                    hint: 'e.g. 11:00 AM',
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
+              ],
+            ),
+            const SizedBox(height: 20),
+          ],
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('Smoking allowed'),
             value: smokingAllowed,
             onChanged: onSmokingToggled,
           ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Pets allowed'),
-            value: petsAllowed,
-            onChanged: onPetsToggled,
-          ),
-          // Renders nothing until the toggle above is on: the number is
-          // meaningless without it, and search never reads it without it.
-          MaxPetsField(
-            petsAllowed: petsAllowed,
-            maxPets: maxPets,
-            onChanged: onMaxPetsChanged,
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Parties / events allowed'),
-            value: partiesAllowed,
-            onChanged: onPartiesToggled,
-          ),
+          // Pets and parties are questions about a home. Both are stay-only
+          // columns that search reads (pets_allowed gates the pet filter), and
+          // a turf leaves them at their defaults -- see _submitListing, which
+          // forces them off rather than shipping whatever the host toggled
+          // before switching the type.
+          if (isStay) ...[
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Pets allowed'),
+              value: petsAllowed,
+              onChanged: onPetsToggled,
+            ),
+            // Renders nothing until the toggle above is on: the number is
+            // meaningless without it, and search never reads it without it.
+            MaxPetsField(
+              petsAllowed: petsAllowed,
+              maxPets: maxPets,
+              onChanged: onMaxPetsChanged,
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Parties / events allowed'),
+              value: partiesAllowed,
+              onChanged: onPartiesToggled,
+            ),
+          ],
           const SizedBox(height: 12),
           AppTextField(
             controller: quietHoursController,

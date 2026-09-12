@@ -375,18 +375,46 @@ void main() {
         }
       });
 
-      test('${p.id}: the three listing types read apart', () {
-        // seat/room/fullHouse appear side by side as chips, so they only carry
-        // meaning if they are mutually distinguishable.
-        final pairs = [
-          ['seat', p.seat, 'room', p.room],
-          ['room', p.room, 'fullHouse', p.fullHouse],
-          ['seat', p.seat, 'fullHouse', p.fullHouse],
-        ];
-        for (final pair in pairs) {
-          expect(pair[1], isNot(pair[3]),
-              reason: '${p.id}: ${pair[0]} and ${pair[2]} are the same colour');
+      test('${p.id}: the four listing types read apart', () {
+        // seat/room/fullHouse/turf appear side by side as chips, so they only
+        // carry meaning if they are mutually distinguishable. Every pair, not
+        // just adjacent ones -- adding `turf` in 120 tripled the number of
+        // ways two of them could collide.
+        final named = <String, Color>{
+          'seat': p.seat,
+          'room': p.room,
+          'fullHouse': p.fullHouse,
+          'turf': p.turf,
+        };
+        final keys = named.keys.toList();
+        for (var i = 0; i < keys.length; i++) {
+          for (var j = i + 1; j < keys.length; j++) {
+            expect(named[keys[i]], isNot(named[keys[j]]),
+                reason: '${p.id}: ${keys[i]} and ${keys[j]} are the same '
+                    'colour');
+          }
         }
+      });
+
+      // _CategoryBadge paints the type's NAME in white on this colour, so
+      // every one of the four is a text-bearing token and clears 4.5:1 -- not
+      // the 3:1 a colour that only ever tints an icon would get.
+      //
+      // This is the tier that rules out the obvious `turf` choice: the palette
+      // already has a `green` accent, and reusing it would have been 2.54:1 in
+      // three of the four palettes. Hence a separate, darker token.
+      test('${p.id}: every listing-type badge carries white text', () {
+        final named = <String, Color>{
+          'seat': p.seat,
+          'room': p.room,
+          'fullHouse': p.fullHouse,
+          'turf': p.turf,
+        };
+        named.forEach((name, colour) {
+          expect(contrast(Colors.white, colour),
+              greaterThanOrEqualTo(kMinTextContrast),
+              reason: '${p.id}: white on $name badge ($colour)');
+        });
       });
 
       // A chip whose selected state is invisible is a control that does not

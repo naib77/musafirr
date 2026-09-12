@@ -262,6 +262,90 @@ The split still stops at search. A stay found as "2 adults, 1 child, 1 infant,
 breakdown through means a bookings migration plus the booking sheet, the price
 breakdown and the host's reservation list.
 
+### Turf is a listing type, and adding an enum value is a two-file migration
+
+120 added `turf` to `listing_type`; 121 gave it three nullable columns
+(`turf_sport`, `turf_format`, `turf_surface`) and seven amenity rows. A turf is
+a sports ground rented by the hour.
+
+**They are two files because Postgres refuses to let a new enum label be used
+in the transaction that added it** — `55P04: unsafe use of new value "turf"`.
+That has two consequences that bite immediately:
+
+- 121's check constraint names `'turf'`, so running the pair together fails.
+  Apply 120, **commit**, then 121.
+- **The rolled-back-transaction check this repo verifies every migration with
+  does not work here.** A turf fixture needs the label committed, so
+  `supabase/tests/120_121_turf_test.sql` runs *after* both are applied, not
+  around them. Do not assume that safety net is under you for an enum change.
+- And it is **not reversible**: Postgres has no `ALTER TYPE … DROP VALUE`.
+  Removing `turf` means recreating the type and every dependent column.
+
+**Almost nothing else had to change, and that is the point.** Hourly booking
+already existed in full — `pricing_unit` carries `hour`, `listings` carries
+`hourly_rate`/`min_hours`/`max_hours`, `create_marketplace_booking` takes an
+arbitrary range, and `bookings_no_overlap` (078) is a *range* exclusion, so
+16:00–17:00 and 18:00–19:00 on one listing already coexisted. Rows 07–09 of the
+test pin exactly that, including a real overlap still being refused so the
+first two cannot pass for the wrong reason. `search_listings` needed no change
+either: it selects `to_jsonb(listings_row)`, so new columns flow through.
+
+Four things worth keeping:
+
+- **`max_guests` is the capacity column for a turf too.** It is the same
+  question — how many people fit — and a turf just calls the answer "players".
+  That is why 121 added no capacity column, and why the party predicate in
+  `search_listings` needed no second branch. `scopeFieldsToType` deliberately
+  does not touch it.
+- **The deploy-order trap from 112/118 does NOT apply in the read direction.**
+  `search_listings` filters with `l.listing_type::text = any(p_property_types)`
+  — it casts the *column* to text, never the input array to the enum — so a
+  build sending `'turf'` to a database without 120 matches nothing rather than
+  raising `22P02`. Only the write path (a host publishing) needs the migration
+  first, which is the safe direction. Do not "fix" this by omitting the key.
+- **`scopeFieldsToType` is the only place that drops the other type's
+  answers, and it is load-bearing.** A host can choose turf, state the sport,
+  go back and switch to room — the answers are still in form state, and
+  `listings_turf_fields_only_on_turf` refuses the whole write with `23514`. It
+  also zeroes bedrooms/beds/bathrooms for a turf (the model defaults them to 1,
+  and the card would print "1 bedroom" under a football pitch) and forces
+  `petsAllowed` off, because that column gates the entire pet branch of the
+  search predicate. Create and Edit are separate save paths and had two copies
+  of this rule on the first pass; one function now, with tests.
+- **`FacilityCatalog.ownerSelectable` is deduplicated by name, and must stay
+  that way.** The turf amenity set reuses Parking, Drinking Water, First Aid
+  Kit, CCTV Security and Security Guard, and both save paths filter that flat
+  list by the selected *names* — so a plain concatenation yields Parking twice,
+  reaches `listing_facilities` as two identical rows, and is refused by its
+  `(listing_id, facility_id)` unique index with `23505`. The entire save fails
+  because the host ticked a shared amenity. A test pins it, and a second test
+  pins that the two shapes genuinely overlap, or the first proves nothing.
+
+The host wizard is a **list** of steps derived from the type
+(`_WizardStep`), not a fixed count of eight, and `_canProceed` switches on the
+step's *identity* rather than its index — the two shapes put photos at 7 and 6,
+so an index-based rule would have let a turf publish with no photos. Sport,
+format and surface render through the shared
+[`TurfDetailsFields`](lib/widgets/host/turf_details_fields.dart), for the same
+reason `GuestPartyFields` is shared: the wire values are pinned by check
+constraints, and two copies drift into one screen offering a sport the other
+refuses.
+
+Every palette gained a `turf` colour and it is a **new dark green token, not
+the existing `green` accent** — `_CategoryBadge` paints the type's name in
+white on it, so it is held to 4.5:1 like every other text-bearing token, and
+`green` (#10B981) is 2.54:1. The palette test now checks all six pairs for
+distinctness and all four for white-text contrast.
+
+**What is still missing, and it is the thing that makes turf good rather than
+merely possible:** the hourly picker is guess-and-check. A guest picks a date,
+a start time and a duration, and `is_booking_available` answers yes/no for
+exactly that window — nothing shows which slots are already taken. That is
+tolerable for a stay booked hourly now and then and poor for a ground where
+every booking is a slot. There is also no opening-hours concept, so nothing
+stops a 3am booking; that would be a column plus a check inside
+`create_marketplace_booking`, since the form is not enforcement.
+
 ### A SECURITY DEFINER function is public unless you say otherwise
 
 Same root cause as the note above, one level down: `ALTER DEFAULT PRIVILEGES`
@@ -381,8 +465,9 @@ them at startup and **fails open** to compiled-in defaults.
 
 Current keys include the proof-of-address requirement, cash payments, the
 search area (`search_radius_tiers_m`, `search_landmark_radius_m`,
-`search_nearest_fallback_limit`), the colour theme (`active_theme`) and the
-host-response window (`booking_accept_window_hours`). Values are validated on
+`search_nearest_fallback_limit`), the colour theme (`active_theme`), the
+host-response window (`booking_accept_window_hours`) and the forced-update
+floor (`android_min_version_code`). Values are validated on
 write — `fn_validate_app_setting` is a CASE dispatching to one
 `fn_validate_setting_*` per key — so a bad value is refused at the source
 rather than silently sanitised. **Adding a key means adding an arm to that
@@ -539,6 +624,66 @@ redundant. It is not.
 
 `CAMERA` is the opposite case: `camera_android_camerax` declares it and the
 merger folds it in, so it needs no entry of its own.
+
+### Play updates silently; the app only covers the gap
+
+Play replaces an installed app on its own, over Wi-Fi, with no prompt — so
+nothing in `AppUpdateService` *delivers* an update. It covers the hours-to-days
+gap before Play gets round to it, and that gap matters here in a way it never
+does on web.
+
+**Web cannot have this problem; Android can.** `build/web` and the database are
+deployed by the same hands, so a visitor's bundle always matches. An APK is on
+a phone. And the client picks its PostgREST overload by the **keys it sends**
+(see 112 and 118 above), so a build predating a migration can ask for a
+signature that no longer exists — which `searchListingsFromDb`'s catch renders
+as *"no results"*, not as an error. The user sees an empty, working-looking app.
+
+`android_min_version_code` (122) is the lever: set it to the first versionCode
+that speaks the current schema and older builds are pushed through Play's
+blocking updater at launch, with no release needed to make it happen.
+
+- **Play's answer is checked before the admin's number, and that ordering is
+  the whole safety argument.** `appUpdateActionFor` returns `none` whenever
+  Play reports no available update, whatever the floor says. An immediate
+  update asks Play to install something newer; with nothing newer to install
+  the flow cannot complete and the app is bricked for everyone at once, from a
+  text box, and the fix would be a release the locked-out users could not
+  reach. A floor typed above any published release is therefore one forced
+  update to the newest build, then silence. There is a negative-control test
+  for exactly this; do not reorder those two checks.
+- **Zero forces nobody**, and it is the seed, the fail-open value, and what
+  anything malformed parses to. This is the one setting that can take the app
+  away from a user, so fail-open has to mean *don't*.
+- **Nothing server-side enforces it, deliberately.** Refusing an old client's
+  RPCs would be a second enforcer of a rule with no way to explain itself — the
+  old build would render the refusal as an empty screen, which is the failure
+  this exists to prevent.
+- **A routine update is an offer, never a block.** The `immediateAllowed`
+  fallback exists only on the forced path; seizing the screen for a release
+  nobody declared required is hostile, and Play's own updater will get there.
+- **A flexible download that is never completed sits on disk forever.** Play
+  does not re-announce it, so the service re-offers "Restart to finish" on
+  every resume, and re-checks `InstallStatus.downloaded` before looking for
+  anything newer.
+- `checkForUpdate()` **throws for any install Play does not own** — debug
+  builds, sideloaded APKs, emulators without Play services, no network. All are
+  silent and retried on the next resume. So this cannot be tested by running
+  the app; it needs a Play-installed build, which is why the policy is a pure
+  function (`lib/services/update/app_update_decision.dart`) with its own tests
+  and the service holds no decisions at all.
+- **`package_info_plus` is pinned to 9.x on purpose.** `AppUpdateInfo` reports
+  what Play *has*, never what is installed, so the floor needs
+  `PackageInfo.buildNumber`. 10.1.0+ moved to `win32 ^6`, which `share_plus`
+  10.1.4 refuses — taking it means taking `share_plus` 11, whose API is a
+  rewrite at every call site. `buildNumber` is identical in both majors.
+- An unreadable `buildNumber` is **0 = unknown, and never forces**. Not
+  theoretical: it is an empty string on web.
+
+`WebUpdateService` is the other half of this and the two are shaped alike on
+purpose — same singleton, same `start(onUpdateAvailable:)`, same banner. They
+solve different problems: that one only has to notice a long-lived tab, because
+a reload always gets the newest build.
 
 ## QA
 

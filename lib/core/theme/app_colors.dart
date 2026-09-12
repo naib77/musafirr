@@ -82,6 +82,7 @@ class AppColors {
   static Color get seat => _palette.seat;
   static Color get room => _palette.room;
   static Color get fullHouse => _palette.fullHouse;
+  static Color get turf => _palette.turf;
 
   /// A vivid, stable accent for an arbitrary index (list items, chips, badges).
   static List<Color> get accentCycle => _palette.accentCycle;

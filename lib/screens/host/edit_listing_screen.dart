@@ -6,10 +6,13 @@ import '../../data/facility_catalog.dart';
 import '../../models/listing.dart';
 import '../../models/listing_purpose.dart';
 import '../../models/listing_type.dart';
+import '../../models/turf_details.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../services/image_upload_service.dart';
 import '../../widgets/app_text_field.dart';
 import '../../widgets/host/party_limits_fields.dart';
+import '../../services/listing/listing_type_scope.dart';
+import '../../widgets/host/turf_details_fields.dart';
 import '../../widgets/image_picker_grid.dart';
 import '../../widgets/location_picker.dart';
 import '../../widgets/modern_banner.dart';
@@ -58,6 +61,14 @@ class _EditListingScreenState extends State<EditListingScreen> {
   // Optional per-category caps beneath _maxGuests (118). Seeded from the
   // listing, so a host who set none keeps none.
   late PartyLimits _partyLimits;
+  late TurfDetails _turfDetails;
+
+  /// Whether the type currently selected on this form describes a place
+  /// someone stays in. Read from `_propertyType`, NOT from the listing passed
+  /// in: a host switching the type mid-edit must see the form change under
+  /// them, and the save below must scope by what they chose, not by what the
+  /// row used to be.
+  bool get _isStay => _propertyType.isStay;
   late int _bedrooms;
   late int _beds;
   late int _bathrooms;
@@ -146,6 +157,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
     _longitude = l.longitude;
     _maxGuests = l.maxGuests;
     _partyLimits = l.partyLimits;
+    _turfDetails = l.turfDetails;
     _bedrooms = l.bedrooms;
     _beds = l.beds;
     _bathrooms = l.bathrooms;
@@ -401,6 +413,21 @@ class _EditListingScreenState extends State<EditListingScreen> {
       final desc = _descriptionController.text.trim();
       final l = widget.listing;
 
+      // Drops whichever half of the form the chosen type does not own. Shared
+      // with CreateListingScreen so the two saves cannot disagree -- and the
+      // turf half is load-bearing, since 121 refuses a non-turf row carrying
+      // a turf column with 23514.
+      final scoped = scopeFieldsToType(
+        type: _propertyType,
+        turfDetails: _turfDetails,
+        partyLimits: _partyLimits,
+        bedrooms: _bedrooms,
+        beds: _beds,
+        bathrooms: _bathrooms,
+        petsAllowed: _petsAllowed,
+        partiesAllowed: _partiesAllowed,
+      );
+
       // Build the updated listing explicitly (not copyWith) so that clearing
       // the description and disabling plans both persist as null.
       final updated = Listing(
@@ -435,10 +462,15 @@ class _EditListingScreenState extends State<EditListingScreen> {
         monthlyRate: monthlyRate,
         imageUrls: finalUrls,
         maxGuests: _maxGuests,
-        partyLimits: _partyLimits,
-        bedrooms: _bedrooms,
-        beds: _beds,
-        bathrooms: _bathrooms,
+        // Scoped exactly as in CreateListingScreen, and for the same hard
+        // reason: 121's listings_turf_fields_only_on_turf refuses the UPDATE
+        // with 23514 if a room carries a turf_sport, so a host converting a
+        // turf into a room could not save at all without this.
+        partyLimits: scoped.partyLimits,
+        turfDetails: scoped.turfDetails,
+        bedrooms: scoped.bedrooms,
+        beds: scoped.beds,
+        bathrooms: scoped.bathrooms,
         facilities: FacilityCatalog.ownerSelectable
             .where((f) => _selectedAmenities.contains(f.name))
             .toList(),
@@ -468,11 +500,13 @@ class _EditListingScreenState extends State<EditListingScreen> {
               : null,
         ),
         houseRules: HouseRules(
-          checkInTime: _nullIfEmpty(_checkInTimeController.text),
-          checkOutTime: _nullIfEmpty(_checkOutTimeController.text),
+          checkInTime:
+              _isStay ? _nullIfEmpty(_checkInTimeController.text) : null,
+          checkOutTime:
+              _isStay ? _nullIfEmpty(_checkOutTimeController.text) : null,
           smokingAllowed: _smokingAllowed,
-          petsAllowed: _petsAllowed,
-          partiesAllowed: _partiesAllowed,
+          petsAllowed: scoped.petsAllowed,
+          partiesAllowed: scoped.partiesAllowed,
           quietHours: _nullIfEmpty(_quietHoursController.text),
           additionalRules: _nullIfEmpty(_additionalRulesController.text),
         ),
@@ -703,12 +737,15 @@ class _EditListingScreenState extends State<EditListingScreen> {
               _sectionDivider(),
 
               // ---------- Details ----------
-              _sectionTitle(theme, 'Details'),
+              // Same split as the create wizard's details/turf pages, but
+              // inline here because this screen is one long form rather than
+              // a sequence: there is no step list to vary, only rows to show.
+              _sectionTitle(theme, _isStay ? 'Details' : 'About the ground'),
               _CounterRow(
-                label: 'Guests',
+                label: _isStay ? 'Guests' : 'Players',
                 value: _maxGuests,
                 min: 1,
-                max: 16,
+                max: _isStay ? 16 : 40,
                 onChanged: (v) => setState(() {
                   _maxGuests = v;
                   // See PartyLimits.clampedTo — a sub-cap above the total is a
@@ -716,43 +753,51 @@ class _EditListingScreenState extends State<EditListingScreen> {
                   _partyLimits = _partyLimits.clampedTo(v);
                 }),
               ),
-              // Directly under the total they narrow, as in CreateListing.
-              PartyLimitsFields(
-                limits: _partyLimits,
-                maxGuests: _maxGuests,
-                onChanged: (v) => setState(() => _partyLimits = v),
-              ),
-              const Divider(),
-              _CounterRow(
-                label: 'Bedrooms',
-                value: _bedrooms,
-                min: 1,
-                max: 10,
-                onChanged: (v) => setState(() => _bedrooms = v),
-              ),
-              const Divider(),
-              _CounterRow(
-                label: 'Beds',
-                value: _beds,
-                min: 1,
-                max: 20,
-                onChanged: (v) => setState(() => _beds = v),
-              ),
-              const Divider(),
-              _CounterRow(
-                label: 'Bathrooms',
-                value: _bathrooms,
-                min: 1,
-                max: 10,
-                onChanged: (v) => setState(() => _bathrooms = v),
-              ),
+              if (_isStay) ...[
+                // Directly under the total they narrow, as in CreateListing.
+                PartyLimitsFields(
+                  limits: _partyLimits,
+                  maxGuests: _maxGuests,
+                  onChanged: (v) => setState(() => _partyLimits = v),
+                ),
+                const Divider(),
+                _CounterRow(
+                  label: 'Bedrooms',
+                  value: _bedrooms,
+                  min: 1,
+                  max: 10,
+                  onChanged: (v) => setState(() => _bedrooms = v),
+                ),
+                const Divider(),
+                _CounterRow(
+                  label: 'Beds',
+                  value: _beds,
+                  min: 1,
+                  max: 20,
+                  onChanged: (v) => setState(() => _beds = v),
+                ),
+                const Divider(),
+                _CounterRow(
+                  label: 'Bathrooms',
+                  value: _bathrooms,
+                  min: 1,
+                  max: 10,
+                  onChanged: (v) => setState(() => _bathrooms = v),
+                ),
+              ] else ...[
+                const SizedBox(height: 20),
+                TurfDetailsFields(
+                  details: _turfDetails,
+                  onChanged: (v) => setState(() => _turfDetails = v),
+                ),
+              ],
               const SizedBox(height: 20),
               Text(
                 'Amenities',
                 style: theme.textTheme.titleMedium
                     ?.copyWith(fontWeight: FontWeight.bold),
               ),
-              for (final group in FacilityCatalog.groups) ...[
+              for (final group in FacilityCatalog.groupsFor(_isStay)) ...[
                 const SizedBox(height: 12),
                 Text(
                   group.title,
@@ -858,51 +903,60 @@ class _EditListingScreenState extends State<EditListingScreen> {
               _sectionDivider(),
 
               // ---------- House rules ----------
-              _sectionTitle(theme, 'House rules'),
-              Row(
-                children: [
-                  Expanded(
-                    child: AppTextField(
-                      controller: _checkInTimeController,
-                      label: 'Check-in time',
-                      hint: 'e.g. 2:00 PM',
+              _sectionTitle(theme, _isStay ? 'House rules' : 'Ground rules'),
+              // A turf slot carries its own start and end, so a free-text
+              // check-in pair here would contradict the booking.
+              if (_isStay) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppTextField(
+                        controller: _checkInTimeController,
+                        label: 'Check-in time',
+                        hint: 'e.g. 2:00 PM',
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: AppTextField(
-                      controller: _checkOutTimeController,
-                      label: 'Check-out time',
-                      hint: 'e.g. 11:00 AM',
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: AppTextField(
+                        controller: _checkOutTimeController,
+                        label: 'Check-out time',
+                        hint: 'e.g. 11:00 AM',
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Smoking allowed'),
                 value: _smokingAllowed,
                 onChanged: (v) => setState(() => _smokingAllowed = v),
               ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Pets allowed'),
-                value: _petsAllowed,
-                onChanged: (v) => setState(() => _petsAllowed = v),
-              ),
-              MaxPetsField(
-                petsAllowed: _petsAllowed,
-                maxPets: _partyLimits.pets,
-                onChanged: (v) => setState(() => _partyLimits =
-                    _partyLimits.copyWith(pets: v, clearPets: v == null)),
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Parties / events allowed'),
-                value: _partiesAllowed,
-                onChanged: (v) => setState(() => _partiesAllowed = v),
-              ),
+              // Questions about a home. The save forces both off for a turf
+              // regardless, so hiding them here keeps the form honest rather
+              // than offering a toggle whose value is discarded.
+              if (_isStay) ...[
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Pets allowed'),
+                  value: _petsAllowed,
+                  onChanged: (v) => setState(() => _petsAllowed = v),
+                ),
+                MaxPetsField(
+                  petsAllowed: _petsAllowed,
+                  maxPets: _partyLimits.pets,
+                  onChanged: (v) => setState(() => _partyLimits =
+                      _partyLimits.copyWith(pets: v, clearPets: v == null)),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Parties / events allowed'),
+                  value: _partiesAllowed,
+                  onChanged: (v) => setState(() => _partiesAllowed = v),
+                ),
+              ],
               const SizedBox(height: 12),
               AppTextField(
                 controller: _quietHoursController,
