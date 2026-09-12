@@ -97,9 +97,25 @@ class SearchPill extends StatefulWidget {
   State<SearchPill> createState() => _SearchPillState();
 }
 
-class _SearchPillState extends State<SearchPill> with WidgetsBindingObserver {
+class _SearchPillState extends State<SearchPill>
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   late SearchDraft _draft;
   SearchSegment? _open;
+
+  /// The segment the overlay is currently *drawing*, which outlives [_open] by
+  /// the length of the closing fade.
+  ///
+  /// Without it the panel still vanished in one frame on close: [_open] goes
+  /// null the instant the scrim is tapped, and the overlay child reads that
+  /// and renders nothing. Opening animated; closing was a cut.
+  SearchSegment? _closing;
+
+  SearchSegment? get _rendered => _open ?? _closing;
+
+  /// -1 when the last change moved leftwards along the bar, 1 rightwards, 0 for
+  /// an open or a close. Read by the popover to decide which side the contents
+  /// arrive from.
+  int _travel = 0;
 
   /// True while the typed text is being geocoded. Disables Search, the way the
   /// sheet's `_resolvingPlace` does, so a second press cannot race the first.
@@ -113,6 +129,23 @@ class _SearchPillState extends State<SearchPill> with WidgetsBindingObserver {
   /// first version drove this from `initState`/`didUpdateWidget`, both of which
   /// run during build.
   final _portal = OverlayPortalController();
+
+  /// Drives the panel in and out.
+  ///
+  /// Slower in than out: an entrance wants to be noticed, a dismissal wants to
+  /// be out of the way. The portal itself comes down only when this reaches
+  /// zero, which is what makes the close a fade rather than a cut.
+  late final AnimationController _reveal = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+    reverseDuration: const Duration(milliseconds: 140),
+  );
+
+  late final CurvedAnimation _revealCurve = CurvedAnimation(
+    parent: _reveal,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeIn,
+  );
 
   final _barKey = GlobalKey();
   final _segmentKeys = {
@@ -135,6 +168,15 @@ class _SearchPillState extends State<SearchPill> with WidgetsBindingObserver {
     super.initState();
     _draft = SearchDraft.from(widget.filters);
     WidgetsBinding.instance.addObserver(this);
+    // The overlay is taken down at the end of the closing fade, not at the tap
+    // — a status listener, so nothing here runs during a build. `show`/`hide`
+    // assert if called from one, and an assertion thrown inside the overlay
+    // child paints a full-screen dark red ErrorWidget.
+    _reveal.addStatusListener((status) {
+      if (status != AnimationStatus.dismissed || !mounted) return;
+      _portal.hide();
+      if (_closing != null) setState(() => _closing = null);
+    });
     // Measured before anything can be opened, so a panel never has to render a
     // frame without knowing where to go.
     _scheduleMeasure();
@@ -160,6 +202,8 @@ class _SearchPillState extends State<SearchPill> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _revealCurve.dispose();
+    _reveal.dispose();
     _draft.dispose();
     super.dispose();
   }
@@ -206,11 +250,22 @@ class _SearchPillState extends State<SearchPill> with WidgetsBindingObserver {
   /// which is what keeps the portal calls out of the build phase.
   void _setOpen(SearchSegment? next) {
     if (_open == next) return;
-    setState(() => _open = next);
+    final previous = _open;
+    setState(() {
+      // Keep drawing the outgoing panel until the fade finishes; a segment
+      // being *replaced* is a cross-fade the popover already owns, so only a
+      // close needs remembering.
+      _closing = next == null ? _open : null;
+      _travel = previous == null || next == null
+          ? 0
+          : (next.index - previous.index).sign;
+      _open = next;
+    });
     if (next == null) {
-      _portal.hide();
+      _reveal.reverse();
     } else {
       _portal.show();
+      _reveal.forward();
     }
     // The bar's own layout shifts a little when a segment lifts, so the anchor
     // is re-read once the new frame exists.
@@ -315,14 +370,24 @@ class _SearchPillState extends State<SearchPill> with WidgetsBindingObserver {
   }
 
   Widget _overlay(DateTime today) {
-    final segment = _open;
+    final segment = _rendered;
     // Between hide() and the overlay's next build the segment can already be
     // null; and on the very first frame the anchor may not be measured yet.
     // Either way there is nothing to place, and guessing a position would show
     // the panel at the window's origin and then jump it.
     if (segment == null) return const SizedBox.shrink();
-    final anchor = _segmentRects[segment];
+    var anchor = _segmentRects[segment];
     if (anchor == null) return const SizedBox.shrink();
+
+    // Who lines its panel up with the *bar*, not with its own segment. The mic
+    // and the Search button sit between the two, so anchoring to the segment
+    // left the card stopping short of the bar's edge — and put it within 24px
+    // of where the When panel sits, which is no travel at all. Airbnb's
+    // rightmost panel ends on the bar's edge for the same reason.
+    final bar = _barRect;
+    if (segment == SearchSegment.who && bar != null) {
+      anchor = Rect.fromLTRB(anchor.left, anchor.top, bar.right, anchor.bottom);
+    }
 
     return SearchPopover(
       anchor: anchor,
@@ -330,6 +395,10 @@ class _SearchPillState extends State<SearchPill> with WidgetsBindingObserver {
       align: segment.align,
       width: kSearchPanelWidth,
       contentKey: segment,
+      travel: _travel,
+      reveal: _revealCurve,
+      // A panel on its way out must not eat the click that is dismissing it.
+      inert: _open == null,
       onDismiss: _close,
       child: _panelFor(segment, today),
     );

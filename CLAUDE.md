@@ -846,6 +846,45 @@ still be brought down instead of being stranded above a `max` below its value.
 - The landmark picker is a route-level modal sheet, so `SearchPill` closes the
   popover, awaits the pick and reopens it. A bottom sheet over a dropdown reads
   as two competing surfaces.
+- **Never animate to or from `Colors.transparent`.** It is transparent
+  *black*, and `Color.lerp` walks r/g/b and alpha independently — so fading a
+  segment from it to any light colour spends the middle of the animation
+  painting a half-opaque near-black. That was the hover flicker: filmed in
+  Chrome at 1440px with the cursor parked, a segment went 244 → **179** → 225
+  in luminance, a dark pill that flashed and then lightened into the real grey.
+  The same lerp ran on every tap, since the lifted card fades in to white, so
+  one bug produced both "it flickers on hover" and "it flicks when I switch
+  tab". The resting colour is the **bar's own colour at zero alpha** now, and
+  the dimmed hover is flattened with `Color.alphaBlend` rather than left
+  translucent. `desktop_top_nav.dart` had it twice as well. Two tests in
+  `search_pill_motion_test.dart` sample the painted colour every 20ms and fail
+  on anything darker than the colour the fade ends on — a settled assertion
+  cannot see this by construction, and neither can a screenshot.
+- **The contents slide, because the card barely moves.** Where to When is 89px
+  at 1440px and When to Who was **24px** — so the `AnimatedPositioned` travel
+  the earlier note describes is real but invisible, and a plain cross-fade was
+  the whole of what a switch looked like. The outgoing panel now leaves by one
+  side and the incoming arrives from the other, 16% of the panel's width, keyed
+  on which way along the bar the tap moved (`_travel`). Two things about it:
+  `AnimatedSwitcher` hands the **same** builder to both children, so which one
+  is incoming has to be read off the key or they move as a block; and the two
+  curves are deliberately different (`easeOutCubic` in, `easeInCubic` out)
+  because the outgoing child's animation runs *backwards* — with the same curve
+  on both, the incoming panel had travelled 72% before the outgoing had moved a
+  tenth, which is a dissolve with a slide underneath. Who also anchors its
+  panel to the **bar's** right edge rather than its own segment's, since the
+  mic and the Search button sit between them; that is both what Airbnb does and
+  what gives the card somewhere to travel to.
+- **The panel fades in and out; only the travel between segments used to
+  animate.** Opening mounted the card whole and dismissing dropped it, so the
+  same interaction was smooth in the middle and a cut at both ends. A
+  `CurvedAnimation` drives opacity and a 3% drop, and the portal is taken down
+  from a **status listener** when the fade reaches zero — not from the tap,
+  because `OverlayPortalController.hide()` during a build asserts. The segment
+  being closed is held in `_closing` for exactly that long, or the overlay
+  child reads a null `_open` and renders nothing in the frame the fade starts.
+  The fading card is wrapped in `IgnorePointer` so it cannot eat the click that
+  is dismissing it.
 
 `SearchFilters` gained `adults`/`children`/`infants`. `guestCount` is still the
 only one that reaches the RPC, derived through `guestCountFor` (infants never
