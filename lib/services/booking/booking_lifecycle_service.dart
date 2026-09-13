@@ -209,7 +209,11 @@ class BookingLifecycleService {
   }
 
   /// Expire stale pending bookings that haven't been responded to.
-  /// Transitions: pending → rejected (for bookings older than 24 hours)
+  /// Transitions: pending → rejected, past `rules.acceptWindow`.
+  ///
+  /// This is the local-store path. The real one is the scheduled
+  /// `expire_stale_bookings()` job, which reads the admin-configured window
+  /// from `app_settings` — see `booking_accept_window.dart`.
   ///
   /// Returns list of bookings that were expired.
   List<Booking> expireStaleBookings(List<Booking> bookings, {DateTime? now}) {
@@ -220,7 +224,7 @@ class BookingLifecycleService {
       if (rules.isExpired(booking, now: currentTime)) {
         final updated = booking.copyWith(
           status: BookingStatus.rejected,
-          rejectionReason: 'Expired - host did not respond within 24 hours',
+          rejectionReason: 'Expired — the host did not respond in time',
         );
         store.updateBooking(updated);
         expired.add(updated);

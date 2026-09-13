@@ -1,13 +1,23 @@
 import '../../models/booking.dart';
 import '../../models/booking_status.dart';
+import 'booking_accept_window.dart';
 
 /// Deep module encapsulating all booking lifecycle validation rules.
 ///
 /// This class provides a single, testable interface for determining
 /// what actions are allowed on a booking at any given time.
 class BookingRules {
-  /// Duration after which a pending booking auto-expires if host doesn't respond.
-  static const Duration expirationDuration = Duration(hours: 24);
+  /// [acceptWindow] is admin-configurable
+  /// (`app_settings.booking_accept_window_hours`, migration 119), so it is a
+  /// field with a default rather than a constant. Callers that have loaded
+  /// settings pass the configured value; the default keeps every other call
+  /// site — and the whole class in tests — working unchanged.
+  const BookingRules({this.acceptWindow = kDefaultBookingAcceptWindow});
+
+  /// How long the host has to answer a request before
+  /// `expire_stale_bookings()` rejects it. The database is the enforcer; this
+  /// copy exists so the app can say the same thing.
+  final Duration acceptWindow;
 
   /// Grace period after checkout before a confirmed/active booking is presumed
   /// complete. The stay is assumed to have happened (industry default — Airbnb /
@@ -103,7 +113,10 @@ class BookingRules {
   }
 
   /// Returns true if the booking has expired due to host non-response.
-  /// A pending booking expires 24 hours after creation.
+  ///
+  /// A pending booking expires [acceptWindow] after creation. This is a read,
+  /// never an enforcement: only the scheduled `expire_stale_bookings()` job
+  /// actually rejects anything.
   bool isExpired(Booking booking, {DateTime? now}) {
     if (booking.status != BookingStatus.pending) {
       return false;
@@ -115,7 +128,7 @@ class BookingRules {
     }
 
     final currentTime = now ?? DateTime.now();
-    final expirationTime = createdAt.add(expirationDuration);
+    final expirationTime = createdAt.add(acceptWindow);
 
     return currentTime.isAfter(expirationTime);
   }

@@ -45,6 +45,7 @@ class SearchDraft extends ChangeNotifier {
         adults = filters.adults,
         children = filters.children,
         infants = filters.infants,
+        pets = filters.pets,
         propertyTypes = List<ListingType>.from(filters.propertyTypes),
         purpose =
             filters.purposeTags.isEmpty ? null : filters.purposeTags.first,
@@ -73,6 +74,10 @@ class SearchDraft extends ChangeNotifier {
   int children;
   int infants;
 
+  /// Animals travelling with the party. Never part of [guestCount] — see
+  /// `GuestPartyFields` for why the four are edited as one value.
+  int pets;
+
   // ── Filters ──────────────────────────────────────────────────────────────
   List<ListingType> propertyTypes;
 
@@ -87,12 +92,17 @@ class SearchDraft extends ChangeNotifier {
 
   /// True once the guest has narrowed anything. Drives whether the bar offers a
   /// way to clear, and mirrors `SearchFilters.hasActiveFilters` — note that a
-  /// party of one is not a filter, and neither are infants on their own.
+  /// party of one adult is not a filter, but a single infant or pet now is.
   bool get hasAnyInput =>
       locationText.trim().isNotEmpty ||
       dateRange != null ||
       singleDate != null ||
       guestCount > 1 ||
+      // Both narrow as of 118, so both count as input. Mirrors
+      // `SearchFilters.hasActiveFilters`, which grew the same two clauses —
+      // the two must agree or the bar offers a ✕ the filters disagree with.
+      infants > 0 ||
+      pets > 0 ||
       propertyTypes.isNotEmpty ||
       purpose != null ||
       landmark != null;

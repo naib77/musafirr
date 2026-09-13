@@ -10,6 +10,21 @@ DateTime dayOf(DateTime value) => DateTime(value.year, value.month, value.day);
 /// The named ranges offered beside the calendar.
 enum DateShortcut { today, tomorrow, thisWeekend }
 
+/// What a tap on the grid means.
+enum DateCalendarMode {
+  /// Two taps make a stay. The default, and what a nightly search wants.
+  range,
+
+  /// One tap picks one day, reported as a start == end range.
+  ///
+  /// Hourly search is a single date plus two clock times, so there is no second
+  /// endpoint to collect. Before this existed the hourly grid was driven as a
+  /// degenerate range and simply took `range.start`, which meant tapping the
+  /// 5th and then the 8th silently kept the 5th — the second tap did nothing
+  /// visible and the guest had no way to tell.
+  singleDay,
+}
+
 /// What a shortcut actually selects.
 ///
 /// Every one produces a **range**, not a day, because a stay needs a check-out:
@@ -72,6 +87,7 @@ class DateCalendar extends StatefulWidget {
     required this.onRangeChanged,
     required this.today,
     this.monthsShown = 1,
+    this.mode = DateCalendarMode.range,
   });
 
   /// The current selection, or null for none. A range whose start and end are
@@ -87,6 +103,10 @@ class DateCalendar extends StatefulWidget {
   /// How many months to lay out side by side. One fits the panel; two is the
   /// wider desktop treatment if the panel ever grows.
   final int monthsShown;
+
+  /// Whether a tap collects an endpoint or a whole answer. See
+  /// [DateCalendarMode].
+  final DateCalendarMode mode;
 
   @override
   State<DateCalendar> createState() => _DateCalendarState();
@@ -135,6 +155,14 @@ class _DateCalendarState extends State<DateCalendar> {
   }
 
   void _tap(DateTime day) {
+    if (widget.mode == DateCalendarMode.singleDay) {
+      // No anchor to keep: every tap is a complete answer, and the previous
+      // one is simply replaced. Reported as start == end so the caller reads
+      // one field either way.
+      setState(() => _anchor = null);
+      widget.onRangeChanged(DateTimeRange(start: day, end: day));
+      return;
+    }
     final anchor = _anchor;
     if (anchor == null) {
       // First tap: remember it and show it as a single selected day.
@@ -154,30 +182,49 @@ class _DateCalendarState extends State<DateCalendar> {
     widget.onRangeChanged(DateTimeRange(start: anchor, end: day));
   }
 
+  /// Gap between side-by-side months, when there is more than one.
+  static const _monthGap = 24.0;
+
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _header(),
-        const SizedBox(height: 6),
-        Row(
+    // Measured HERE and not inside the grid. The grid sits in a Row, and a Row
+    // lays out a non-flexible child with UNBOUNDED width — a LayoutBuilder down
+    // there is handed infinity and learns nothing, which is exactly how the
+    // first attempt at this still overflowed a 240px column by 40px. The Column
+    // below passes the parent's width straight through.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final available = constraints.maxWidth;
+        final perMonth = available.isFinite
+            ? (available - _monthGap * (widget.monthsShown - 1)) /
+                widget.monthsShown
+            : double.infinity;
+        return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            for (var i = 0; i < widget.monthsShown; i++) ...[
-              if (i > 0) const SizedBox(width: 24),
-              _MonthGrid(
-                month: DateTime(_visibleMonth.year, _visibleMonth.month + i),
-                range: widget.range,
-                halfMade: _anchor != null,
-                firstAllowedDay: _firstAllowedDay,
-                today: dayOf(widget.today),
-                onTap: _tap,
-              ),
-            ],
+            _header(),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < widget.monthsShown; i++) ...[
+                  if (i > 0) const SizedBox(width: _monthGap),
+                  _MonthGrid(
+                    month:
+                        DateTime(_visibleMonth.year, _visibleMonth.month + i),
+                    cell: _MonthGrid.cellFor(perMonth),
+                    range: widget.range,
+                    halfMade: _anchor != null,
+                    firstAllowedDay: _firstAllowedDay,
+                    today: dayOf(widget.today),
+                    onTap: _tap,
+                  ),
+                ],
+              ],
+            ),
           ],
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -244,6 +291,7 @@ class _PageButton extends StatelessWidget {
 class _MonthGrid extends StatelessWidget {
   const _MonthGrid({
     required this.month,
+    required this.cell,
     required this.range,
     required this.halfMade,
     required this.firstAllowedDay,
@@ -252,6 +300,11 @@ class _MonthGrid extends StatelessWidget {
   });
 
   final DateTime month;
+
+  /// Edge length of one day, decided by [DateCalendar] from the width it was
+  /// actually given.
+  final double cell;
+
   final DateTimeRange? range;
 
   /// True while only the first tap has landed — the span tint is suppressed so
@@ -262,7 +315,20 @@ class _MonthGrid extends StatelessWidget {
   final DateTime today;
   final ValueChanged<DateTime> onTap;
 
+  /// The comfortable cell size. Cells shrink below this when the grid is
+  /// given less than seven of them, and never grow above it — a 56px day on a
+  /// tablet would read as a button, not a date.
   static const _cell = 40.0;
+
+  /// The cell size for a month handed [available] pixels.
+  ///
+  /// The grid used to be a hard 280px, fine in the desktop popover and 40px too
+  /// wide for a 320px phone once the sheet's padding and the card's are taken
+  /// out. An overflow here is not cosmetic: the same fixed width is what
+  /// overflowed the desktop panel by 45px during a cross-fade (see CLAUDE.md),
+  /// so the cell adapts rather than each caller guessing a width that fits.
+  static double cellFor(double available) =>
+      available.isFinite && available < _cell * 7 ? available / 7 : _cell;
 
   @override
   Widget build(BuildContext context) {
@@ -275,7 +341,7 @@ class _MonthGrid extends StatelessWidget {
     final rows = (cells / 7).ceil();
 
     return SizedBox(
-      width: _cell * 7,
+      width: cell * 7,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -283,7 +349,7 @@ class _MonthGrid extends StatelessWidget {
             children: [
               for (final label in const ['S', 'M', 'T', 'W', 'T', 'F', 'S'])
                 SizedBox(
-                  width: _cell,
+                  width: cell,
                   height: 28,
                   child: Center(
                     child: Text(
@@ -302,7 +368,7 @@ class _MonthGrid extends StatelessWidget {
             Row(
               children: [
                 for (var col = 0; col < 7; col++)
-                  _cellAt(row * 7 + col - leadingBlanks, daysInMonth),
+                  _cellAt(row * 7 + col - leadingBlanks, daysInMonth, cell),
               ],
             ),
         ],
@@ -310,9 +376,9 @@ class _MonthGrid extends StatelessWidget {
     );
   }
 
-  Widget _cellAt(int dayIndex, int daysInMonth) {
+  Widget _cellAt(int dayIndex, int daysInMonth, double cell) {
     if (dayIndex < 0 || dayIndex >= daysInMonth) {
-      return const SizedBox(width: _cell, height: _cell);
+      return SizedBox(width: cell, height: cell);
     }
     final day = DateTime(month.year, month.month, dayIndex + 1);
     final selection = range;
@@ -327,7 +393,7 @@ class _MonthGrid extends StatelessWidget {
 
     return _DayCell(
       day: day,
-      size: _cell,
+      size: cell,
       enabled: !isPast,
       isEndpoint: isStart || isEnd,
       inSpan: inSpan,

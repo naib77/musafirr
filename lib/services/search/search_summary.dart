@@ -85,16 +85,22 @@ String _clock(TimeOfDay time) {
 /// `hasActiveFilters` agrees that 1 is not a filter, so showing "1 guest" would
 /// make every untouched pill look like it had been narrowed.
 ///
-/// Infants are listed separately because they are counted separately — they do
-/// not tell against a listing's `max_guests`, so folding them into the total
-/// would report a party the search is not actually running. They do show on
-/// their own ("1 infant") even though they narrow nothing: the guest chose
-/// them, and a segment that forgets a choice reads as broken.
+/// Infants and pets are listed separately because they are counted separately
+/// — neither tells against a listing's `max_guests`, so folding them into the
+/// total would report a party the search is not actually running.
+///
+/// They show on their own ("1 pet") with no guest total beside them, and that
+/// is not merely politeness towards a choice the guest made: since migration
+/// 118 both genuinely narrow, infants against `max_infants` and pets against
+/// `pets_allowed` first of all. A segment reading "Add guests" while the search
+/// was excluding every place that does not take dogs would be lying.
 String? _who(SearchFilters filters) {
   final parts = <String>[];
   final guests = filters.guestCount;
   if (guests > 1) parts.add('$guests guests');
   final infants = filters.infants;
   if (infants > 0) parts.add(infants == 1 ? '1 infant' : '$infants infants');
+  final pets = filters.pets;
+  if (pets > 0) parts.add(pets == 1 ? '1 pet' : '$pets pets');
   return parts.isEmpty ? null : parts.join(', ');
 }

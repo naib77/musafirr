@@ -353,15 +353,51 @@ void main() {
       );
     });
 
-    // Infants alone do not narrow anything, so they must not make a search
-    // look active — the bar would offer a ✕ that clears nothing visible.
-    test('infants alone are not an active search', () {
+    // Infants and pets used to narrow nothing — only their sum-with-adults
+    // reached the database — so both were deliberately excluded here, to stop
+    // the bar offering a ✕ that cleared nothing visible. Migration 118 gave
+    // listings max_infants, and pets exclude every place that never set
+    // pets_allowed, so both are real searches now and both must say so.
+    test('infants alone are an active search', () {
       final draft = draftOf((d) => d.infants = 2);
+      expect(draft.hasAnyInput, isTrue);
+      expect(
+        filtersFromDraft(draft, const SearchFilters()).hasActiveFilters,
+        isTrue,
+      );
+    });
+
+    test('pets alone are an active search', () {
+      final draft = draftOf((d) => d.pets = 1);
+      expect(draft.hasAnyInput, isTrue);
+      expect(
+        filtersFromDraft(draft, const SearchFilters()).hasActiveFilters,
+        isTrue,
+      );
+    });
+
+    // The floor stays where it was: one adult, nothing else, is the default
+    // party and must not read as a narrowed search.
+    test('a lone adult is still not an active search', () {
+      final draft = draftOf((d) => d.adults = 1);
       expect(draft.hasAnyInput, isFalse);
       expect(
         filtersFromDraft(draft, const SearchFilters()).hasActiveFilters,
         isFalse,
       );
+    });
+
+    // Pets ride alongside the count rather than into it: a dog is not a guest,
+    // and folding it in would compare the party against max_guests one too
+    // high and hide places that fit.
+    test('pets are carried but never counted', () {
+      final draft = draftOf((d) {
+        d.adults = 2;
+        d.pets = 2;
+      });
+      final filters = filtersFromDraft(draft, const SearchFilters());
+      expect(filters.pets, 2);
+      expect(filters.guestCount, 2);
     });
   });
 }

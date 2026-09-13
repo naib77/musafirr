@@ -25,13 +25,16 @@ import '../models/listing.dart';
 import '../models/listing_exact_address.dart';
 import '../models/listing_purpose.dart';
 import '../models/listing_type.dart';
+import '../models/turf_details.dart';
 import '../models/owner_registration_draft.dart';
 import '../models/review.dart';
 import '../models/search_filters.dart';
 import '../models/user.dart';
 import '../models/user_role.dart';
 import '../services/app_settings_service.dart';
+import '../services/booking/booking_accept_window.dart';
 import '../services/search/search_date_window.dart';
+import '../services/search/search_party_params.dart';
 import 'musafir_repository.dart';
 
 /// Supabase-backed implementation of [MusafirRepository].
@@ -539,6 +542,16 @@ class SupabaseMusafirRepository extends ChangeNotifier
         // the old 17-argument function and simply do not filter by date.
         if (dates != null) 'p_check_in': dates.startsAtIso,
         if (dates != null) 'p_check_out': dates.endsAtIso,
+        // Per-category party capacity (118). Omitted-when-default for the same
+        // reason the dates above are: PostgREST resolves the overload by the
+        // KEYS present, so sending these against a pre-118 database would
+        // demand a function that does not exist and the catch below would turn
+        // every search on the site into "no results".
+        //
+        // Extracted and tested rather than written inline: "which keys does
+        // an unnarrowed search send" is exactly the decision that breaks, and
+        // it is unreachable from a widget test.
+        ...searchPartyParams(filters),
       });
 
       final list = (rows as List).cast<Map<String, dynamic>>();
@@ -639,6 +652,22 @@ class SupabaseMusafirRepository extends ChangeNotifier
       bedrooms: json['bedrooms'] as int? ?? 1,
       beds: json['beds'] as int? ?? 1,
       bathrooms: json['bathrooms'] as int? ?? 1,
+      // No `?? 0` anywhere here: null is the meaningful value (the host set
+      // no separate limit), and defaulting it to zero would hide every listing
+      // from every search the moment 118 landed.
+      partyLimits: PartyLimits(
+        adults: json['max_adults'] as int?,
+        children: json['max_children'] as int?,
+        infants: json['max_infants'] as int?,
+        pets: json['max_pets'] as int?,
+      ),
+      // Unknown wire values parse to null rather than throwing, so a database
+      // that grows a sixth sport does not break a build that predates it.
+      turfDetails: TurfDetails(
+        sport: turfSportFromWire(json['turf_sport'] as String?),
+        format: turfFormatFromWire(json['turf_format'] as String?),
+        surface: turfSurfaceFromWire(json['turf_surface'] as String?),
+      ),
       rating: (json['rating'] as num?)?.toDouble(),
       reviewCount: json['review_count'] as int? ?? 0,
       isSuperhost: json['is_superhost'] as bool? ?? false,
@@ -700,6 +729,19 @@ class SupabaseMusafirRepository extends ChangeNotifier
       'bedrooms': listing.bedrooms,
       'beds': listing.beds,
       'bathrooms': listing.bathrooms,
+      // Per-category sub-caps (118). Nullable end to end — sending null is
+      // how a host takes a cap back off, so these must not be omitted when
+      // unset the way an absent RPC key is.
+      'max_adults': listing.partyLimits.adults,
+      'max_children': listing.partyLimits.children,
+      'max_infants': listing.partyLimits.infants,
+      'max_pets': listing.partyLimits.pets,
+      // Always sent, including as nulls: 121 constrains these to be null on
+      // any non-turf listing, so a host switching a listing's type away from
+      // turf must clear them in the same write or the row is refused (23514).
+      'turf_sport': listing.turfDetails.sport?.name,
+      'turf_format': listing.turfDetails.format?.wireName,
+      'turf_surface': listing.turfDetails.surface?.name,
       // Per-plan booking limits.
       'min_hours': listing.bookingLimits.minHours,
       'max_hours': listing.bookingLimits.maxHours,
@@ -843,6 +885,12 @@ class SupabaseMusafirRepository extends ChangeNotifier
       'seat' => ListingType.seat,
       'room' => ListingType.room,
       'fullhouse' || 'full_house' => ListingType.fullHouse,
+      'turf' => ListingType.turf,
+      // Falling back to `room` rather than throwing is deliberate: a build
+      // older than a listing_type migration must keep rendering the rest of
+      // the feed. It does mean a type this app has never heard of shows up
+      // wearing the wrong badge, which is the milder of the two failures --
+      // see 120 on why the write direction is the one that needs ordering.
       _ => ListingType.room,
     };
   }
@@ -2260,7 +2308,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
 
   @override
   List<Booking> getStaleBookings({Duration? maxAge}) {
-    final threshold = maxAge ?? const Duration(hours: 24);
+    final threshold = maxAge ?? kDefaultBookingAcceptWindow;
     final cutoff = DateTime.now().subtract(threshold);
 
     return _bookings

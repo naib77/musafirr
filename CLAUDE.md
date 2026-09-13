@@ -183,6 +183,263 @@ a `to authenticated` *policy*, not a missing grant. When you need to know what a
 visitor can read, impersonate one (`begin; set local role anon; …; rollback;`)
 rather than reading the SQL.
 
+### PostGIS lives in `public`, and its tables are not ours to fix
+
+001 runs `create extension if not exists postgis` with no schema, so PostGIS's
+reference tables land in the schema PostgREST exposes, carrying the extension's
+own grants: `anon=arwdDxtm` on `spatial_ref_sys` — INSERT, UPDATE, DELETE **and
+TRUNCATE**, not just read. Verified, not inferred: `DELETE
+/rest/v1/spatial_ref_sys` with the compiled-in anon key answered **204**. An
+emptied table is a full search outage, because geography operations resolve
+their spheroid through it and every one of them then raises `Cannot find SRID
+(4326)` — `search_listings`, the radius tiers, the landmark ring, the geog
+trigger, the default explore feed.
+
+115 closes it, and the shape of that migration is the lesson. Three obvious
+fixes are all refused here — the table is owned by `supabase_admin`, and our
+`postgres` is neither a superuser nor a member of it:
+
+| Attempt | Result |
+| --- | --- |
+| `enable row level security` | `42501: must be owner` — the linter's own advice |
+| `owner to postgres` | `42501: must be owner` |
+| `alter extension postgis set schema` | refused; postgis is `extrelocatable = false` |
+
+**The `revoke` is the dangerous one: it is permitted, reports success, and does
+nothing.** A non-owner may only revoke grants it made itself, and these were
+made by `supabase_admin`, so `relacl` comes back byte-identical. A migration
+built on it applies green and records itself as done with the hole untouched.
+`postgres` holds `t` (TRIGGER) and nothing else useful, so the guard is a
+trigger — **two** of them, because TRUNCATE does not fire row-level triggers
+and a row-only guard loses the table to a one-word statement. Reads stay open
+deliberately: search runs as `anon` and needs them.
+
+So when a Supabase lint names a table you did not create, check who owns it
+before writing the fix — and check `relacl` *after* applying it, because
+"succeeded" is not evidence.
+
+### Party capacity is sub-caps under a total, and pets default to deny
+
+118 gave `listings` four nullable columns — `max_adults`, `max_children`,
+`max_infants`, `max_pets` — and `search_listings` four matching arguments. Three
+things about the model are easy to get wrong later:
+
+- **They sit beneath `max_guests`, they do not replace it.** The total is still
+  the backstop, still what `create_marketplace_booking` enforces, and still the
+  only number a booking carries. They are deliberately **not** constrained to be
+  `<= max_guests` and do not have to sum to it: "up to 4 people, at most 2
+  adults, at most 3 children" is a coherent thing for a host to mean, and every
+  obvious constraint forbids it. `PartyLimits.clampedTo` trims a *counted* cap
+  when the host lowers the total, because a sub-cap above the total can never
+  bind — it does not touch infants or pets, which the total never gated.
+- **`null` means "no separate limit", not zero.** That is what makes the
+  migration invisible to the listings that already existed: a null column drops
+  out of the predicate entirely. Zero is a different, stated rule ("no
+  children"), and the two must never be collapsed — `supabase/tests/118…`
+  rows 02b/06/06b are the pair that pins it. It is also why the host control is
+  a stepper whose floor is **"Any"** rather than an `int` stepper beside a
+  switch: a host has to be able to take a cap back *off*, and `PartyLimits`
+  therefore needs explicit `clear*` flags where `SearchFilters.copyWith` reads
+  null as "unchanged".
+- **Pets are the exception and default to deny.** Unlike the other three they
+  already had a switch — `pets_allowed` (053), `not null default false` — so
+  silence means no, and `max_pets` is only consulted for a host who said yes.
+  Searching with an animal must not surface a place that never agreed to one.
+  Nothing ties the toggle and the number together, so a host switching pets off
+  needs no cleanup: the predicate reads the toggle first and never reaches the
+  number. `partyLimitsSentence` does the same, or a listing page would advertise
+  a pet limit for a place that no longer takes pets.
+
+**The four RPC keys are omitted unless the guest actually narrowed**
+(`searchPartyParams`), for exactly the reason 112 omits `p_check_in`: PostgREST
+picks the overload by the keys *present*, so sending them against a database
+without 118 demands a function that does not exist, and
+`searchListingsFromDb`'s catch turns every search on the site into "no results".
+`build/web` always lags a migration, so that window is real.
+
+The split still stops at search. A stay found as "2 adults, 1 child, 1 infant,
+1 pet" is booked as **3 guests** — bookings carry one number, and carrying the
+breakdown through means a bookings migration plus the booking sheet, the price
+breakdown and the host's reservation list.
+
+### Turf is a listing type, and adding an enum value is a two-file migration
+
+120 added `turf` to `listing_type`; 121 gave it three nullable columns
+(`turf_sport`, `turf_format`, `turf_surface`) and seven amenity rows. A turf is
+a sports ground rented by the hour.
+
+**They are two files because Postgres refuses to let a new enum label be used
+in the transaction that added it** — `55P04: unsafe use of new value "turf"`.
+That has two consequences that bite immediately:
+
+- 121's check constraint names `'turf'`, so running the pair together fails.
+  Apply 120, **commit**, then 121.
+- **The rolled-back-transaction check this repo verifies every migration with
+  does not work here.** A turf fixture needs the label committed, so
+  `supabase/tests/120_121_turf_test.sql` runs *after* both are applied, not
+  around them. Do not assume that safety net is under you for an enum change.
+- And it is **not reversible**: Postgres has no `ALTER TYPE … DROP VALUE`.
+  Removing `turf` means recreating the type and every dependent column.
+
+**Almost nothing else had to change, and that is the point.** Hourly booking
+already existed in full — `pricing_unit` carries `hour`, `listings` carries
+`hourly_rate`/`min_hours`/`max_hours`, `create_marketplace_booking` takes an
+arbitrary range, and `bookings_no_overlap` (078) is a *range* exclusion, so
+16:00–17:00 and 18:00–19:00 on one listing already coexisted. Rows 07–09 of the
+test pin exactly that, including a real overlap still being refused so the
+first two cannot pass for the wrong reason. `search_listings` needed no change
+either: it selects `to_jsonb(listings_row)`, so new columns flow through.
+
+Four things worth keeping:
+
+- **`max_guests` is the capacity column for a turf too.** It is the same
+  question — how many people fit — and a turf just calls the answer "players".
+  That is why 121 added no capacity column, and why the party predicate in
+  `search_listings` needed no second branch. `scopeFieldsToType` deliberately
+  does not touch it.
+- **The deploy-order trap from 112/118 does NOT apply in the read direction.**
+  `search_listings` filters with `l.listing_type::text = any(p_property_types)`
+  — it casts the *column* to text, never the input array to the enum — so a
+  build sending `'turf'` to a database without 120 matches nothing rather than
+  raising `22P02`. Only the write path (a host publishing) needs the migration
+  first, which is the safe direction. Do not "fix" this by omitting the key.
+- **`scopeFieldsToType` is the only place that drops the other type's
+  answers, and it is load-bearing.** A host can choose turf, state the sport,
+  go back and switch to room — the answers are still in form state, and
+  `listings_turf_fields_only_on_turf` refuses the whole write with `23514`. It
+  also zeroes bedrooms/beds/bathrooms for a turf (the model defaults them to 1,
+  and the card would print "1 bedroom" under a football pitch) and forces
+  `petsAllowed` off, because that column gates the entire pet branch of the
+  search predicate. Create and Edit are separate save paths and had two copies
+  of this rule on the first pass; one function now, with tests.
+- **`FacilityCatalog.ownerSelectable` is deduplicated by name, and must stay
+  that way.** The turf amenity set reuses Parking, Drinking Water, First Aid
+  Kit, CCTV Security and Security Guard, and both save paths filter that flat
+  list by the selected *names* — so a plain concatenation yields Parking twice,
+  reaches `listing_facilities` as two identical rows, and is refused by its
+  `(listing_id, facility_id)` unique index with `23505`. The entire save fails
+  because the host ticked a shared amenity. A test pins it, and a second test
+  pins that the two shapes genuinely overlap, or the first proves nothing.
+
+The host wizard is a **list** of steps derived from the type
+(`_WizardStep`), not a fixed count of eight, and `_canProceed` switches on the
+step's *identity* rather than its index — the two shapes put photos at 7 and 6,
+so an index-based rule would have let a turf publish with no photos. Sport,
+format and surface render through the shared
+[`TurfDetailsFields`](lib/widgets/host/turf_details_fields.dart), for the same
+reason `GuestPartyFields` is shared: the wire values are pinned by check
+constraints, and two copies drift into one screen offering a sport the other
+refuses.
+
+Every palette gained a `turf` colour and it is a **new dark green token, not
+the existing `green` accent** — `_CategoryBadge` paints the type's name in
+white on it, so it is held to 4.5:1 like every other text-bearing token, and
+`green` (#10B981) is 2.54:1. The palette test now checks all six pairs for
+distinctness and all four for white-text contrast.
+
+**What is still missing, and it is the thing that makes turf good rather than
+merely possible:** the hourly picker is guess-and-check. A guest picks a date,
+a start time and a duration, and `is_booking_available` answers yes/no for
+exactly that window — nothing shows which slots are already taken. That is
+tolerable for a stay booked hourly now and then and poor for a ground where
+every booking is a slot. There is also no opening-hours concept, so nothing
+stops a 3am booking; that would be a column plus a check inside
+`create_marketplace_booking`, since the form is not enforcement.
+
+### A SECURITY DEFINER function is public unless you say otherwise
+
+Same root cause as the note above, one level down: `ALTER DEFAULT PRIVILEGES`
+grants `anon` and `authenticated` EXECUTE on **every function created in
+`public`**, and PostgREST publishes anything in `public` at
+`/rest/v1/rpc/<name>`. So a `SECURITY DEFINER` function is a public,
+unauthenticated endpoint running as `postgres` from the moment it is created,
+and the only thing standing between it and the internet is a check you wrote
+inside its body.
+
+116 found fourteen with no such check. The worst was **`otp_log_send`**, and it
+was full account takeover:
+
+- it inserts into `otp_attempts` with a **caller-supplied** `otp_hash`,
+- `hashOtp` (`supabase/functions/_shared/otp.ts`) is unsalted, unpeppered
+  SHA-256 of the code, so the hash for `1234` is a public constant,
+- `verify-otp` picks its row with `order by created_at desc limit 1`, so a row
+  inserted just now **outranks the code that was actually texted**.
+
+Three requests with the anon key that ships in the bundle — `otp_log_send`,
+`verify-otp`, redeem the token — and you hold anyone's session, admin included.
+Verified live to step one (HTTP 200 + row id, for a nonexistent phone, row
+deleted immediately); the chain was not completed. This is not the master-OTP
+risk in the QA section — that needs the number allowlisted; this needed nothing.
+
+Two rules follow, and 116 is the worked example:
+
+- **Revoke from `public` AND `anon` AND `authenticated`.** Nearly every one of
+  these carried both a PUBLIC `=X/postgres` and an explicit `anon=X/postgres`.
+  Dropping either alone leaves EXECUTE intact through the other — 115's lesson
+  exactly inverted.
+- **The grant is not the control if the body already guards.** `admin_*`
+  raise `Only service_role can execute this function` and were left alone;
+  functions checking `auth.uid()` likewise. Don't revoke blind: three
+  (`is_admin`, `can_see_listing_address`, `get_listing_owner`) are called from
+  inside RLS policy expressions, where a role lacking EXECUTE gets an **error
+  instead of an empty result**, and `is_conversation_member` is the same for
+  `authenticated`. Check `pg_policy` before touching a grant.
+
+Safe to revoke the OTP four because the live login path never calls them: both
+OTP edge functions build their client with `SUPABASE_SERVICE_ROLE_KEY` and hit
+`otp_attempts` through PostgREST directly. The Dart callers in
+`lib/services/otp_service.dart` sit behind
+`OtpState._useSupabase => SupabaseConfig.isConfigured`, true in every shipped
+build, so that branch is the mock path. Login was **not** driven to test this —
+see the QA section on why automating a login can send a real SMS.
+
+Still open after 116, in rough priority order: **20 `SECURITY DEFINER`
+functions with a mutable `search_path`** (a schema-shadowing escalation vector,
+mechanical to fix with `alter function … set search_path`), and
+`get_unread_count` / `is_conversation_member` never checking that `p_user_id`
+is the caller, so one signed-in user can still read another's counts.
+
+### A SECURITY DEFINER *view* can be written through, as postgres
+
+The three `security_definer_view` advisor ERRORs looked cosmetic and one was a
+full **anon → admin escalation** (117). A view with neither `security_invoker=on`
+nor an owner clause runs as its OWNER — `postgres` — for reads *and writes*, and
+a single-table view is auto-updatable, so PostgREST accepts a PATCH on it and
+the write lands on the base table **as postgres, outside RLS and before any
+guard trigger**. `public_profiles` is `select <safe columns> from profiles`, so:
+
+```
+PATCH /rest/v1/public_profiles?id=eq.<host>  {"role":"admin"}   →  204
+```
+
+with the bundled anon key promoted any account to admin. The direct path is
+safe — `update profiles` as anon hits RLS (no matching row) and an
+authenticated self-`role` change is stopped by `fn_guard_verification_verdicts`
+— but the definer view launders the actor into `postgres` and slips both. Fix
+was to **revoke INSERT/UPDATE/DELETE on the view**; reads run as postgres either
+way, so nothing broke.
+
+Two rules from it:
+
+- **A definer view over an RLS table is a write hole unless you revoke writes
+  on the view.** Auto-updatability is silent — nothing in the view definition
+  says "writable".
+- **`security_invoker=on` is the lint's fix but not always yours.**
+  `listing_ratings`/`guest_ratings` are aggregates (not updatable), and flipping
+  them to invoker cleared the lint *and* fixed a real leak — as definer they
+  averaged in **unrevealed** reviews (`reviews_select_revealed` is `to public`,
+  so reading as the caller drops them; live count went 37→36). But flipping
+  **`public_profiles`** to invoker would read as the caller: an anon caller sees
+  zero rows and every host name in the app vanishes. Making it work again needs
+  a `to public using(true)` SELECT policy on `profiles`, and anon holds column
+  SELECT on all 31 columns (mobile, nid, email included — only RLS hides them),
+  so that policy would leak PII instantly. **`public_profiles` stays a definer
+  view on purpose; its lint (0010) does not clear**, same category as
+  `spatial_ref_sys`'s 0013 (see 115). 117 also revoked anon's now-purposeless
+  direct grants on `profiles` (it reads through the definer view, never the
+  table) so those PII column grants stop being one careless policy away from a
+  leak.
+
 The rule itself is *not* reimplemented — search calls `is_booking_available`,
 same as the booking form. `searchDateWindowFor`
 (`lib/services/search/search_date_window.dart`) is the only place that decides
@@ -208,9 +465,42 @@ them at startup and **fails open** to compiled-in defaults.
 
 Current keys include the proof-of-address requirement, cash payments, the
 search area (`search_radius_tiers_m`, `search_landmark_radius_m`,
-`search_nearest_fallback_limit`), and the colour theme (`active_theme`).
-Migration 097 validates the search keys on write, so a bad value is refused at
-the source rather than silently sanitised.
+`search_nearest_fallback_limit`), the colour theme (`active_theme`), the
+host-response window (`booking_accept_window_hours`) and the forced-update
+floor (`android_min_version_code`). Values are validated on
+write — `fn_validate_app_setting` is a CASE dispatching to one
+`fn_validate_setting_*` per key — so a bad value is refused at the source
+rather than silently sanitised. **Adding a key means adding an arm to that
+dispatcher**, and recreating it in full: it is a CASE, so a patch that drops an
+arm silently stops validating that key.
+
+### The host-response window is a setting, and the database is its only enforcer
+
+A booking request the host never answers is auto-rejected. That window was 24
+hours written into `expire_stale_bookings()` (018) — as an interval *and* as
+the number spelled out in three notification strings — plus a fourth copy in
+`BookingRules.expirationDuration`. It is `booking_accept_window_hours` now
+(119), 1–168, seeded at 24 so nothing changed on apply.
+
+- **Only the cron job cancels anything.** Nothing in Dart expires a real
+  booking. The Dart copy of the window (`booking_accept_window.dart`) feeds the
+  guest's countdown, and fails open to 24h when settings cannot be read — a
+  stale client shows a slightly wrong clock, which is cosmetic, where a client
+  that could expire bookings would be a second enforcer of a rule the database
+  owns. `BookingRules.isExpired` is a *read*, not an enforcement.
+- **The sweep runs every 15 minutes, not hourly.** Hourly was invisible at 24
+  hours and is not at 2 — a 2-hour window swept hourly expires somewhere
+  between 2 and 3. The window is still a floor rather than a promise: expiry
+  happens at the first tick *after* it elapses, so the guest's countdown
+  reaches zero while the row is briefly still `pending`. That is the honest way
+  round; do not "fix" it by having the client reject.
+- **`booking_accept_window_hours()` re-guards the value** with the same regex
+  the validator uses, and falls back to 24. Not redundant: rows predate guards,
+  and a function that can raise inside a cron job is a job that silently stops
+  running for *every* booking. The test writes a junk value past the trigger to
+  prove it.
+- The prose keeps today's exact wording at 24 (`fn_humanise_hours` only says
+  "days" at 48+), so the default configuration changed no visible text.
 
 `active_theme` names one of the palettes in `lib/core/theme/app_palettes.dart`.
 The app can only wear a palette it was compiled with, so **adding one means
@@ -221,6 +511,29 @@ a theme no admin can select. That test also holds every palette to WCAG: 4.5:1
 for tokens that carry text, 3:1 for ones that only ever tint an icon. There are
 no exemptions and the tiers are not advisory — a new palette that fails is a
 failing build, so pick colours against a background, not in isolation.
+
+It holds one more axis, added after selection turned out to be invisible: **a
+selected chip has to clear 3:1 against an unselected one**, and its label 4.5:1
+against its own fill. `chipTheme` used to tint the brand at 14% alpha over
+`surfaceMuted`, which works for a colourful brand and not at all for
+`coral_ink`, whose brand is #222222 — the tint flattened to #E0E0E0 beside a
+#EBEBEB chip, 1.11:1, with `side: BorderSide.none` leaving no second cue. Seven
+of the nine selectable chips in the app take their colours from that theme
+alone, so all seven read as permanently unselected. Selection is a solid
+`brand` fill now, label and checkmark in `surface`; that pairing needs no new
+guarantee because brand-on-surface at 4.5:1 *is* surface-on-brand at 4.5:1.
+
+Two traps if you touch it. **Flatten alpha before measuring** — Flutter's
+`computeLuminance()` reads only r/g/b, so contrast against a translucent fill
+reports the ratio of the tint's source colour, a healthy 13:1 for something
+invisible; the test composites with `Color.alphaBlend` first, and without that
+line it passes on the bug it exists for. And **`RawChip` resolves only the
+label's `color` against widget states**, not the rest of the TextStyle
+(`chip.dart` calls `resolveAs<Color?>` on `effectiveLabelStyle.color` alone), so
+a `WidgetStateColor` is the single hook a theme has for a selected label and a
+`WidgetStateTextStyle` would be read as a plain style. A call site may add its
+own size or weight — `merge` only overrides non-null fields — but a `color:` of
+its own defeats that hook and paints an ink label on the dark fill.
 
 ### The boot chain is brand rose, not the palette
 
@@ -311,6 +624,66 @@ redundant. It is not.
 
 `CAMERA` is the opposite case: `camera_android_camerax` declares it and the
 merger folds it in, so it needs no entry of its own.
+
+### Play updates silently; the app only covers the gap
+
+Play replaces an installed app on its own, over Wi-Fi, with no prompt — so
+nothing in `AppUpdateService` *delivers* an update. It covers the hours-to-days
+gap before Play gets round to it, and that gap matters here in a way it never
+does on web.
+
+**Web cannot have this problem; Android can.** `build/web` and the database are
+deployed by the same hands, so a visitor's bundle always matches. An APK is on
+a phone. And the client picks its PostgREST overload by the **keys it sends**
+(see 112 and 118 above), so a build predating a migration can ask for a
+signature that no longer exists — which `searchListingsFromDb`'s catch renders
+as *"no results"*, not as an error. The user sees an empty, working-looking app.
+
+`android_min_version_code` (122) is the lever: set it to the first versionCode
+that speaks the current schema and older builds are pushed through Play's
+blocking updater at launch, with no release needed to make it happen.
+
+- **Play's answer is checked before the admin's number, and that ordering is
+  the whole safety argument.** `appUpdateActionFor` returns `none` whenever
+  Play reports no available update, whatever the floor says. An immediate
+  update asks Play to install something newer; with nothing newer to install
+  the flow cannot complete and the app is bricked for everyone at once, from a
+  text box, and the fix would be a release the locked-out users could not
+  reach. A floor typed above any published release is therefore one forced
+  update to the newest build, then silence. There is a negative-control test
+  for exactly this; do not reorder those two checks.
+- **Zero forces nobody**, and it is the seed, the fail-open value, and what
+  anything malformed parses to. This is the one setting that can take the app
+  away from a user, so fail-open has to mean *don't*.
+- **Nothing server-side enforces it, deliberately.** Refusing an old client's
+  RPCs would be a second enforcer of a rule with no way to explain itself — the
+  old build would render the refusal as an empty screen, which is the failure
+  this exists to prevent.
+- **A routine update is an offer, never a block.** The `immediateAllowed`
+  fallback exists only on the forced path; seizing the screen for a release
+  nobody declared required is hostile, and Play's own updater will get there.
+- **A flexible download that is never completed sits on disk forever.** Play
+  does not re-announce it, so the service re-offers "Restart to finish" on
+  every resume, and re-checks `InstallStatus.downloaded` before looking for
+  anything newer.
+- `checkForUpdate()` **throws for any install Play does not own** — debug
+  builds, sideloaded APKs, emulators without Play services, no network. All are
+  silent and retried on the next resume. So this cannot be tested by running
+  the app; it needs a Play-installed build, which is why the policy is a pure
+  function (`lib/services/update/app_update_decision.dart`) with its own tests
+  and the service holds no decisions at all.
+- **`package_info_plus` is pinned to 9.x on purpose.** `AppUpdateInfo` reports
+  what Play *has*, never what is installed, so the floor needs
+  `PackageInfo.buildNumber`. 10.1.0+ moved to `win32 ^6`, which `share_plus`
+  10.1.4 refuses — taking it means taking `share_plus` 11, whose API is a
+  rewrite at every call site. `buildNumber` is identical in both majors.
+- An unreadable `buildNumber` is **0 = unknown, and never forces**. Not
+  theoretical: it is an empty string on web.
+
+`WebUpdateService` is the other half of this and the two are shaped alike on
+purpose — same singleton, same `start(onUpdateAvailable:)`, same banner. They
+solve different problems: that one only has to notice a long-lived tab, because
+a reload always gets the newest build.
 
 ## QA
 
@@ -489,10 +862,93 @@ type or an amenity is an active search the pill has no segment for.
 
 `lib/widgets/search/` is the desktop search: Where / When / Who each open their
 own popover anchored under that segment, plus a Filters button for type and
-purpose. **`_SearchSheet` in `explore_screen.dart` is untouched and still the
-whole of mobile** — so the Where field, the date cards and the guest counter
-now exist twice and will drift. That was a deliberate call; the cure, when it
-is worth paying for, is rebuilding the sheet as a stack of these panels.
+purpose. **`_SearchSheet` in `explore_screen.dart` is still the whole of
+mobile**, but it is no longer a parallel implementation of everything: the
+guest rows and the calendar are now the same widgets the desktop panels use,
+and only the Where field is still written twice. The cure the earlier note
+described — rebuilding the sheet as a stack of these panels — has been paid for
+piece by piece as each duplicate actually cost something.
+
+### The mobile sheet folds; the desktop bar does not
+
+`_SearchSheet` is an accordion of three [`SearchSection`
+](lib/widgets/search/search_section.dart) cards — Where / When / Who, exactly
+one open, the closed ones showing what that step currently holds. Before that
+it was every control at once: a text field, a suggestion list, a mode toggle,
+two date cards, two time cards and four guest steppers down one scroll.
+
+Three things worth keeping:
+
+- **The sheet owns which section is open, not the cards.** Two open sections
+  would put the month grid and the guest steppers on screen together and undo
+  the point; a card that tracked its own expansion could not prevent that. Same
+  reasoning as `MainShell` owning the selected tab.
+- **The collapsed summaries come from `searchPillSummaryFor`** — the desktop
+  pill's function, so the two surfaces cannot describe one search differently.
+  Only the `SearchFilters` handed to it is built locally (`_summaryFilters`),
+  and that is deliberately **not** `_applySearch`'s projection: that one layers
+  over the live filters with clear flags because it is about to be committed.
+- **The date dialogs are gone.** `showDateRangePicker` / `showDatePicker` are
+  full-screen modals on a phone, launched from inside a bottom sheet — two
+  layers of chrome for one decision, with the sheet invisible behind. The
+  inline `DateCalendar` is simply there instead. The two clock times keep their
+  native picker: a two-thumb time control is its own build, and a dialog is a
+  fair answer for a value with no spatial meaning.
+
+Type and purpose are **not** two more folds, and they are not together:
+
+- **Property type sits above the three cards.** Seat / room / whole house is
+  the widest cut the sheet makes — it changes what the other questions even
+  mean — so it is answered first and stays visible while they are worked
+  through. The reference puts its own equivalent in the same place.
+- **Purpose lives inside Where.** Choosing one is a way of answering *where*:
+  picking "Medical" opens the landmark picker, and the hospital that comes back
+  becomes the Where text, the search's centre point and the summary that card
+  shows. It was only ever a separate row because it arrived from the Explore
+  page as one.
+
+Neither is folded away. They are one control each, and burying a control behind
+a tap is how the type chips stopped being noticed the last time.
+
+[`PurposePicker`](lib/widgets/purpose_picker.dart) (was `PurposeScroll`) is a
+`Wrap` now, not a horizontal `ListView`. Both of its call sites sit inside a
+padded card, and a horizontal scroller clips at the **padding**, not the card
+edge — the last pill came out sliced mid-word with a clear gap after it, which
+reads as broken rather than as "scroll me". Two traps if you touch it: a `Wrap`
+hands each child the **full line width**, so the pill's `Row` needs
+`mainAxisSize: MainAxisSize.min` or every pill becomes its own full-width bar
+(that shipped, and the screenshot caught it, not the test — the test now
+measures the pill's `Material`, because under that bug the label's own rect is
+unchanged); and the pill must not carry a trailing margin of its own, or it
+doubles the `Wrap`'s spacing.
+
+`DateCalendar` grew two things for this. **`DateCalendarMode.singleDay`**,
+because hourly search is one date and driving it as a range meant the second
+tap silently did nothing visible (it produced `range(5, 8)` and the caller kept
+`.start`). And a **width-adaptive cell**: the grid was a hard 7 × 40px, which
+overflows a 320px phone once the sheet's padding and the card's are taken out.
+The measurement lives in `DateCalendar.build`, **not** in `_MonthGrid` — the
+grid sits in a `Row`, and a `Row` lays out a non-flexible child with unbounded
+width, so a `LayoutBuilder` down there is handed infinity and learns nothing.
+The first attempt did exactly that and still overflowed by 40px.
+
+The guest counter is the first control that drift actually cost, and it is now
+the worked example of the cure. Mobile's version was a lone 1..16 number, so
+when Who grew to adults / children / infants / pets there was nowhere on the
+phone to say three of the four. The rows moved into
+[`GuestPartyFields`](lib/widgets/search/guest_party_fields.dart), stateless over
+a `GuestParty` value and a callback — the one shape a `SearchDraft` and a plain
+`setState` can both hold — and both surfaces render it. Neither knows how many
+rows there are or what the caps are. **Do not add a fifth category to one of
+them.**
+
+Two things in that widget are load-bearing and have negative-controlled tests:
+adults and children share **one** budget (their sum is `guestCount`, so both
+`+` buttons must stop together, or the party can be walked past the cap one row
+at a time), while infants and pets have their own ceilings because the database
+counts them separately. Each row's `max` is its own value plus the remaining
+headroom rather than a bare limit, so a party restored from a wider cap can
+still be brought down instead of being stranded above a `max` below its value.
 
 - **Every `SearchStateNotifier` mutator runs a search immediately.** So the
   panels write to a `SearchDraft` and exactly **one** `updateFilters` fires,
@@ -535,6 +991,45 @@ is worth paying for, is rebuilding the sheet as a stack of these panels.
 - The landmark picker is a route-level modal sheet, so `SearchPill` closes the
   popover, awaits the pick and reopens it. A bottom sheet over a dropdown reads
   as two competing surfaces.
+- **Never animate to or from `Colors.transparent`.** It is transparent
+  *black*, and `Color.lerp` walks r/g/b and alpha independently — so fading a
+  segment from it to any light colour spends the middle of the animation
+  painting a half-opaque near-black. That was the hover flicker: filmed in
+  Chrome at 1440px with the cursor parked, a segment went 244 → **179** → 225
+  in luminance, a dark pill that flashed and then lightened into the real grey.
+  The same lerp ran on every tap, since the lifted card fades in to white, so
+  one bug produced both "it flickers on hover" and "it flicks when I switch
+  tab". The resting colour is the **bar's own colour at zero alpha** now, and
+  the dimmed hover is flattened with `Color.alphaBlend` rather than left
+  translucent. `desktop_top_nav.dart` had it twice as well. Two tests in
+  `search_pill_motion_test.dart` sample the painted colour every 20ms and fail
+  on anything darker than the colour the fade ends on — a settled assertion
+  cannot see this by construction, and neither can a screenshot.
+- **The contents slide, because the card barely moves.** Where to When is 89px
+  at 1440px and When to Who was **24px** — so the `AnimatedPositioned` travel
+  the earlier note describes is real but invisible, and a plain cross-fade was
+  the whole of what a switch looked like. The outgoing panel now leaves by one
+  side and the incoming arrives from the other, 16% of the panel's width, keyed
+  on which way along the bar the tap moved (`_travel`). Two things about it:
+  `AnimatedSwitcher` hands the **same** builder to both children, so which one
+  is incoming has to be read off the key or they move as a block; and the two
+  curves are deliberately different (`easeOutCubic` in, `easeInCubic` out)
+  because the outgoing child's animation runs *backwards* — with the same curve
+  on both, the incoming panel had travelled 72% before the outgoing had moved a
+  tenth, which is a dissolve with a slide underneath. Who also anchors its
+  panel to the **bar's** right edge rather than its own segment's, since the
+  mic and the Search button sit between them; that is both what Airbnb does and
+  what gives the card somewhere to travel to.
+- **The panel fades in and out; only the travel between segments used to
+  animate.** Opening mounted the card whole and dismissing dropped it, so the
+  same interaction was smooth in the middle and a cut at both ends. A
+  `CurvedAnimation` drives opacity and a 3% drop, and the portal is taken down
+  from a **status listener** when the fade reaches zero — not from the tap,
+  because `OverlayPortalController.hide()` during a build asserts. The segment
+  being closed is held in `_closing` for exactly that long, or the overlay
+  child reads a null `_open` and renders nothing in the frame the fade starts.
+  The fading card is wrapped in `IgnorePointer` so it cannot eat the click that
+  is dismissing it.
 
 `SearchFilters` gained `adults`/`children`/`infants`. `guestCount` is still the
 only one that reaches the RPC, derived through `guestCountFor` (infants never

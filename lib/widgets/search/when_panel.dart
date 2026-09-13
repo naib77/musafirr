@@ -116,9 +116,10 @@ class WhenPanel extends StatelessWidget {
         Center(
           child: DateCalendar(
             today: today,
-            // Hourly is one day, so the grid is driven as a degenerate range
-            // whose start is the chosen day. Reusing the same widget keeps one
-            // calendar in the app rather than two that drift.
+            // Hourly is one day, so the grid runs in singleDay mode and the
+            // answer is carried as a degenerate range. Reusing the same widget
+            // keeps one calendar in the app rather than two that drift.
+            mode: DateCalendarMode.singleDay,
             range: draft.singleDate == null
                 ? null
                 : DateTimeRange(

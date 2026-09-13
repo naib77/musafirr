@@ -192,4 +192,128 @@ void main() {
       expect(range.end, DateTime(2026, 10, 2));
     });
   });
+
+  // Hourly search is one date plus two clock times, so there is no second
+  // endpoint to collect. Driven as a range, the second tap silently did
+  // nothing visible: it produced range(5, 8) and the caller kept `.start`.
+  group('single-day mode', () {
+    late DateTimeRange? reported;
+
+    Future<void> pumpSingle(WidgetTester tester, {DateTime? today}) async {
+      reported = null;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) => DateCalendar(
+              today: today ?? DateTime(2026, 3, 10),
+              mode: DateCalendarMode.singleDay,
+              range: reported,
+              onRangeChanged: (range) => setState(() => reported = range),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('one tap is the whole answer', (tester) async {
+      await pumpSingle(tester);
+      await tester.tap(find.text('12'));
+      await tester.pumpAndSettle();
+      expect(reported!.start, DateTime(2026, 3, 12));
+      expect(reported!.end, DateTime(2026, 3, 12),
+          reason: 'carried as a degenerate range');
+    });
+
+    testWidgets('a second tap replaces the day rather than extending it',
+        (tester) async {
+      await pumpSingle(tester);
+      await tester.tap(find.text('12'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('18'));
+      await tester.pumpAndSettle();
+      expect(reported!.start, DateTime(2026, 3, 18));
+      expect(reported!.end, DateTime(2026, 3, 18));
+    });
+
+    testWidgets('an earlier second tap also just moves the day',
+        (tester) async {
+      await pumpSingle(tester);
+      await tester.tap(find.text('18'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('12'));
+      await tester.pumpAndSettle();
+      expect(reported!.start, DateTime(2026, 3, 12));
+    });
+
+    testWidgets('past days are still refused', (tester) async {
+      await pumpSingle(tester);
+      await tester.tap(find.text('3'));
+      await tester.pumpAndSettle();
+      expect(reported, isNull);
+    });
+  });
+
+  // A hard 280px grid overflowed a 320px phone once the sheet's padding and
+  // the card's were taken out -- the same fixed width that overflowed the
+  // desktop panel by 45px during a cross-fade.
+  group('narrow widths', () {
+    /// The rendered width of one day cell, read as the distance between two
+    /// days in the same row rather than off any single widget — the Text is
+    /// the glyph, not the cell around it.
+    double pitch(WidgetTester tester) =>
+        tester.getCenter(find.text('12')).dx -
+        tester.getCenter(find.text('11')).dx;
+
+    Future<void> pumpAt(WidgetTester tester, double width) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: width,
+            child: DateCalendar(
+              today: DateTime(2026, 3, 10),
+              range: null,
+              onRangeChanged: (_) {},
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('fits inside 240px without overflowing', (tester) async {
+      await pumpAt(tester, 240);
+      expect(tester.takeException(), isNull);
+      expect(find.text('12'), findsOneWidget);
+      // Column pitch, measured between two days in the same row. March 2026
+      // starts on a Sunday, so 11 and 12 sit side by side.
+      expect(pitch(tester), lessThan(40));
+    });
+
+    testWidgets('still selects correctly when the cells have shrunk',
+        (tester) async {
+      DateTimeRange? picked;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 240,
+            child: DateCalendar(
+              today: DateTime(2026, 3, 10),
+              range: null,
+              onRangeChanged: (r) => picked = r,
+            ),
+          ),
+        ),
+      ));
+      await tester.tap(find.text('12'));
+      await tester.pumpAndSettle();
+      expect(picked!.start, DateTime(2026, 3, 12));
+    });
+
+    // A 128px day would read as a button, not a date.
+    testWidgets('does not grow past the comfortable cell', (tester) async {
+      await pumpAt(tester, 900);
+      expect(pitch(tester), closeTo(40, 0.01));
+    });
+  });
 }
