@@ -55,6 +55,9 @@ class SearchPopover extends StatelessWidget {
     required this.width,
     required this.align,
     required this.contentKey,
+    required this.travel,
+    required this.reveal,
+    required this.inert,
     required this.onDismiss,
     required this.child,
   });
@@ -75,6 +78,28 @@ class SearchPopover extends StatelessWidget {
   /// Identifies the contents, so the cross-fade knows one panel from another.
   final Object contentKey;
 
+  /// Which way along the bar the panel is moving: -1 leftwards, 1 rightwards,
+  /// 0 for an open or a close.
+  ///
+  /// The contents slide in from that side and the outgoing ones leave by the
+  /// other, so a switch reads as travelling between two segments rather than as
+  /// one set of controls dissolving into another. Position alone could not
+  /// carry that: the card only moves 24px between When and Who, which is
+  /// invisible, so a plain cross-fade was the entire perceived transition.
+  final int travel;
+
+  /// 0 while closed, 1 while open, driven by `SearchPill`.
+  ///
+  /// Opening used to be a cut: the overlay was mounted and the card was simply
+  /// there, at full opacity, in one frame — and closing was the same cut in
+  /// reverse. Sliding *between* segments animated, so the two halves of the
+  /// same interaction behaved differently.
+  final Animation<double> reveal;
+
+  /// True while the panel is fading out. It must not take the click that is
+  /// dismissing it, or the scrim swallows the tap on another segment.
+  final bool inert;
+
   final VoidCallback onDismiss;
   final Widget child;
 
@@ -85,38 +110,59 @@ class SearchPopover extends StatelessWidget {
     // the height is capped and the content scrolls inside.
     final maxHeight = screen.height * 0.72;
 
-    return Stack(
-      children: [
-        Positioned(
-          top: scrimTop,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onDismiss,
-            child: const ColoredBox(
-              key: ValueKey('search-scrim'),
-              color: Color(0x14000000),
+    return IgnorePointer(
+      ignoring: inert,
+      child: Stack(
+        children: [
+          Positioned(
+            top: scrimTop,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: FadeTransition(
+              opacity: reveal,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onDismiss,
+                child: const ColoredBox(
+                  key: ValueKey('search-scrim'),
+                  color: Color(0x14000000),
+                ),
+              ),
             ),
           ),
-        ),
-        AnimatedPositioned(
-          duration: kSearchPanelMotion,
-          curve: Curves.easeOutCubic,
-          left: _left(screen.width),
-          // Clear of the bar's own shadow, so the two do not merge into one
-          // grey smudge.
-          top: anchor.bottom + 12,
-          width: width,
-          child: _Panel(
-            maxHeight: maxHeight,
-            onDismiss: onDismiss,
-            contentKey: contentKey,
-            child: child,
+          AnimatedPositioned(
+            duration: kSearchPanelMotion,
+            curve: Curves.easeOutCubic,
+            left: _left(screen.width),
+            // Clear of the bar's own shadow, so the two do not merge into one
+            // grey smudge.
+            top: anchor.bottom + 12,
+            width: width,
+            child: FadeTransition(
+              opacity: reveal,
+              // A short drop out of the bar, not a scale: the card is anchored
+              // to a segment, and growing it from a point detaches it from the
+              // thing it belongs to. Small enough (3% of the panel's height)
+              // that the tall calendar and the short Who panel both read as a
+              // nudge rather than a slide.
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, -0.03),
+                  end: Offset.zero,
+                ).animate(reveal),
+                child: _Panel(
+                  maxHeight: maxHeight,
+                  onDismiss: onDismiss,
+                  contentKey: contentKey,
+                  travel: travel,
+                  child: child,
+                ),
+              ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -137,13 +183,44 @@ class _Panel extends StatelessWidget {
     required this.maxHeight,
     required this.onDismiss,
     required this.contentKey,
+    required this.travel,
     required this.child,
   });
 
   final double maxHeight;
   final VoidCallback onDismiss;
   final Object contentKey;
+  final int travel;
   final Widget child;
+
+  /// How far the contents move, as a fraction of the panel's width.
+  ///
+  /// Far enough to read as travel, short enough that the two panels are mostly
+  /// overlapping while they cross — a full width would be a page turn, and the
+  /// card is not going anywhere.
+  static const _shift = 0.16;
+
+  /// Slides the incoming contents in from the side the panel is travelling
+  /// from, and the outgoing ones out by the other.
+  ///
+  /// [AnimatedSwitcher] hands the *same* builder to both children — the
+  /// outgoing one with its animation running backwards — so a single tween
+  /// would send both the same way and the two would move as a block. Which one
+  /// this is comes from the key: only the current contents carry [contentKey].
+  Widget _slide(Widget child, Animation<double> animation) {
+    final incoming = child.key == ValueKey(contentKey);
+    final from = _shift * travel * (incoming ? 1 : -1);
+    return FadeTransition(
+      opacity: animation,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: Offset(from, 0),
+          end: Offset.zero,
+        ).animate(animation),
+        child: child,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -187,9 +264,23 @@ class _Panel extends StatelessWidget {
               curve: Curves.easeOutCubic,
               alignment: Alignment.topCenter,
               child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 200),
-                switchInCurve: Curves.easeOut,
-                switchOutCurve: Curves.easeIn,
+                // The same duration as the card's own travel, so the contents
+                // and the card read as one movement instead of two that happen
+                // to overlap.
+                //
+                // The two curves are not the same, and that is the point:
+                // AnimatedSwitcher runs the outgoing child's animation
+                // *backwards*, so giving it `easeOutCubic` too left it sitting
+                // still for the first half and then bolting — measured at
+                // 1440px, the incoming panel had travelled 72% of the way
+                // before the outgoing one had moved a tenth of it. That is a
+                // dissolve with a slide underneath, not two things scrolling
+                // past each other. `easeInCubic` run backwards is
+                // `easeOutCubic` run forwards, so the pair now move in step:
+                // 19/36/52/65/75% against 0/24/45/60/72%.
+                duration: kSearchPanelMotion,
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
                 // topCenter, not the default centre: the two panels are
                 // different heights, and centring them would make the outgoing
                 // one drift upwards as it fades.
@@ -200,6 +291,8 @@ class _Panel extends StatelessWidget {
                     if (current != null) current,
                   ],
                 ),
+                transitionBuilder: (child, animation) =>
+                    _slide(child, animation),
                 child: KeyedSubtree(key: ValueKey(contentKey), child: child),
               ),
             ),
@@ -261,6 +354,11 @@ class SearchStepperRow extends StatelessWidget {
               ],
             ),
           ),
+          // The label column is Expanded, so a description long enough to wrap
+          // runs right up to the button. At a 390px phone width two of the
+          // four rows do exactly that; this is the gap that keeps the second
+          // line off the stepper.
+          const SizedBox(width: 12),
           _StepButton(
             icon: Icons.remove,
             // Disabled rather than hidden at the bound: a button that vanishes

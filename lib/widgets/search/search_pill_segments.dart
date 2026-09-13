@@ -224,17 +224,39 @@ class _SegmentState extends State<_Segment> {
     final value = widget.value;
     final hasValue = value != null && value.isNotEmpty;
 
+    // What the bar is painting behind this segment. It is the resting colour
+    // too, and that is the whole of the hover-flicker fix.
+    //
+    // `Colors.transparent` is transparent *black*, and `Color.lerp` walks
+    // r/g/b and alpha independently — so fading from it to any light colour
+    // spends the middle of the animation painting a half-opaque near-black.
+    // Filmed at 1440px with the cursor parked: the segment went 244 → 179 →
+    // 225 in luminance, a dark pill that flashed and then lightened into the
+    // real hover grey. It read as a flicker on every hover, and again on every
+    // tap, because the lifted white card fades in the same way.
+    //
+    // Every colour below is therefore opaque or the bar's own colour at zero
+    // alpha, so no interpolation between any two of them can pass through
+    // something darker than both ends.
+    final barColour = widget.active || widget.dimmed
+        ? AppColors.surfaceMuted
+        : AppColors.surface;
+
     final Color background;
     if (widget.active) {
       background = AppColors.surface;
     } else if (_hovered) {
       // On a grey bar the hover has to go darker to be visible at all; on a
-      // white one it goes lighter-grey, as it always did.
+      // white one it goes lighter-grey, as it always did. Flattened against
+      // the bar rather than left translucent, for the reason above.
       background = widget.dimmed
-          ? Colors.black.withValues(alpha: 0.05)
+          ? Color.alphaBlend(
+              Colors.black.withValues(alpha: 0.05),
+              AppColors.surfaceMuted,
+            )
           : AppColors.surfaceMuted;
     } else {
-      background = Colors.transparent;
+      background = barColour.withValues(alpha: 0);
     }
 
     return Semantics(

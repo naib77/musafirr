@@ -21,6 +21,7 @@ import 'services/messaging/booking_conversation_service.dart';
 import 'services/messaging/supabase_messaging_service.dart';
 import 'services/notifications/fcm_token_service.dart';
 import 'services/pwa/pwa_install_service.dart';
+import 'services/app_update_service.dart';
 import 'services/web_update_service.dart';
 import 'services/notifications/notification_service_factory.dart';
 import 'state/auth_state.dart';
@@ -70,6 +71,15 @@ class _MusafirAppState extends State<MusafirApp> {
     // Web only: offer a refresh when a newer build is deployed while this
     // tab stays open (reloads always get the newest build; idle tabs don't).
     WebUpdateService.instance.start(onUpdateAvailable: _showUpdateBanner);
+
+    // Android only: the same offer, but for an installed build Play has to
+    // replace. Started here rather than in main() so it shares the messenger
+    // key above — and because a forced update has to be able to interrupt a
+    // running app, not just a cold start.
+    AppUpdateService.instance.start(
+      onUpdateAvailable: _showAndroidUpdateBanner,
+      onReadyToInstall: _showRestartToUpdateBanner,
+    );
 
     // Web only: track whether the browser can add Musaafir to the home screen,
     // so the smart sidebar can offer it. Must start early — Chrome fires
@@ -257,7 +267,7 @@ class _MusafirAppState extends State<MusafirApp> {
     messenger.showMaterialBanner(
       MaterialBanner(
         leading: const Icon(Icons.system_update_alt_rounded),
-        content: const Text('A new version of Musafir is available.'),
+        content: const Text('A new version of Musaafir is available.'),
         actions: [
           TextButton(
             onPressed: () => WebUpdateService.instance.reloadForUpdate(),
@@ -272,9 +282,68 @@ class _MusafirAppState extends State<MusafirApp> {
     );
   }
 
+  /// Android: Play has a newer build. An offer, not an interruption — the
+  /// blocking case never reaches here, because Play owns the whole screen for
+  /// an immediate update and there is no banner to show.
+  void _showAndroidUpdateBanner() {
+    final messenger = _scaffoldMessengerKey.currentState;
+    if (messenger == null) return;
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        leading: const Icon(Icons.system_update_alt_rounded),
+        content: const Text('A new version of Musaafir is available.'),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              // Dismiss first: the download runs in the background and can take
+              // a while, and a banner still offering "Update" reads as a button
+              // that did nothing.
+              messenger.hideCurrentMaterialBanner();
+              await AppUpdateService.instance.downloadUpdate();
+            },
+            child: const Text('Update'),
+          ),
+          TextButton(
+            onPressed: messenger.hideCurrentMaterialBanner,
+            child: const Text('Later'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Android: the new build is downloaded and Play is waiting for a restart.
+  ///
+  /// This is not optional politeness — an update downloaded by the flexible
+  /// flow and never completed stays on disk unused, so Play expects the app to
+  /// keep asking. `AppUpdateService` re-fires this on every resume until the
+  /// user takes it.
+  void _showRestartToUpdateBanner() {
+    final messenger = _scaffoldMessengerKey.currentState;
+    if (messenger == null) return;
+    messenger.hideCurrentMaterialBanner();
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        leading: const Icon(Icons.download_done_rounded),
+        content: const Text('Update downloaded. Restart to finish.'),
+        actions: [
+          TextButton(
+            onPressed: AppUpdateService.instance.installUpdate,
+            child: const Text('Restart'),
+          ),
+          TextButton(
+            onPressed: messenger.hideCurrentMaterialBanner,
+            child: const Text('Later'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
     WebUpdateService.instance.stop();
+    AppUpdateService.instance.stop();
     authState.removeListener(_onAuthStateChanged);
     repository.removeListener(_onRepositoryChange);
     authState.dispose();

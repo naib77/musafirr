@@ -363,9 +363,16 @@ class _NavItemState extends State<_NavItem> {
               decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(
+                    // Not `Colors.transparent`: that is transparent *black*,
+                    // and `Color.lerp` walks r/g/b and alpha separately, so
+                    // the rule fades in through a darker grey than it ends on
+                    // — a flicker under the label on every hover. The same
+                    // defect is written up in `search_pill_segments.dart`.
                     color: selected
                         ? AppColors.brand
-                        : (_hovered ? AppColors.outline : Colors.transparent),
+                        : (_hovered
+                            ? AppColors.outline
+                            : AppColors.outline.withValues(alpha: 0)),
                     width: 2.5,
                   ),
                 ),
@@ -434,7 +441,12 @@ class _HoverPillState extends State<_HoverPill> {
           constraints: const BoxConstraints(minHeight: 44),
           padding: widget.padding,
           decoration: BoxDecoration(
-            color: _hovered ? AppColors.surfaceMuted : Colors.transparent,
+            // The header's own colour at zero alpha rather than
+            // `Colors.transparent`, which is transparent black and darkens
+            // through the middle of the fade — see `search_pill_segments.dart`.
+            color: _hovered
+                ? AppColors.surfaceMuted
+                : AppColors.surface.withValues(alpha: 0),
             borderRadius: BorderRadius.circular(24),
           ),
           child: Center(child: widget.child),

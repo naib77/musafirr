@@ -327,6 +327,25 @@ const Map<String, ListingType> _typeWords = {
   'seat': ListingType.seat,
   'sit': ListingType.seat,
   'bed': ListingType.seat,
+  // Turf (120). "মাঠ"/"math" is what a Bangladeshi speaker actually says for a
+  // ground, and it is the ambiguous one -- it also means "maths" in English
+  // transliteration -- but this map is only consulted for listing type and a
+  // search for a maths tutor is not a thing this app answers.
+  'টার্ফ': ListingType.turf,
+  'মাঠ': ListingType.turf,
+  'খেলার': ListingType.turf,
+  'ফুটবল': ListingType.turf,
+  'ক্রিকেট': ListingType.turf,
+  'turf': ListingType.turf,
+  'tarf': ListingType.turf,
+  'math': ListingType.turf,
+  'maath': ListingType.turf,
+  'ground': ListingType.turf,
+  'pitch': ListingType.turf,
+  'field': ListingType.turf,
+  'football': ListingType.turf,
+  'futbol': ListingType.turf,
+  'cricket': ListingType.turf,
 };
 
 const Map<String, ListingPurpose> _purposeWords = {

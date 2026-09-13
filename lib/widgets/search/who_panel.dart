@@ -1,22 +1,27 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme/app_colors.dart';
-import '../../models/search_filters.dart';
+import 'guest_party_fields.dart';
 import 'search_draft.dart';
-import 'search_popover.dart';
 
-/// The "Who" panel: adults, children and infants.
+/// The desktop bar's "Who" segment: adults, children, infants and pets.
 ///
-/// The app has always searched with a single guest number, and it still does —
-/// `guestCount` is what reaches `search_listings` and gets compared against a
-/// listing's `max_guests`. These three are the breakdown behind it, collected
-/// the way every travel site collects it, with infants excluded from the total.
+/// Thin on purpose. The rows, the caps and the arithmetic between them live in
+/// [GuestPartyFields], which mobile's search sheet renders from the same source
+/// — this class is only the adapter between that widget's value/callback shape
+/// and the draft the desktop panels edit.
 ///
-/// The split is **search state only**: a booking still carries one number, so a
-/// stay found as "2 adults, 1 child, 1 infant" is booked as 3 guests. That is a
-/// deliberate scope line, not an oversight — carrying it through would mean a
-/// migration plus the booking sheet, the price breakdown and the host's
-/// reservation list.
+/// ## What reaches the database
+///
+/// `guestCount` (adults + children, floored at 1) is compared against a
+/// listing's `max_guests`, as it always has been. The breakdown is not
+/// decoration behind it: migration 118 gave listings optional `max_adults`,
+/// `max_children`, `max_infants` and `max_pets`, so each row can narrow on its
+/// own. Pets narrow hardest — a listing that never set `pets_allowed` is
+/// excluded outright.
+///
+/// The split remains **search state only**. A booking still carries one number,
+/// so a stay found as "2 adults, 1 child, 1 infant" is booked as 3 guests —
+/// a deliberate scope line, restated in migration 118's own header.
 class WhoPanel extends StatelessWidget {
   const WhoPanel({super.key, required this.draft});
 
@@ -26,62 +31,22 @@ class WhoPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: draft,
-      // Read INSIDE the builder. Computing the party outside it would capture
-      // the value from the build that mounted the panel, so the caps would stop
-      // moving the moment the panel stopped being rebuilt from above.
-      builder: (context, _) => _body(draft.adults + draft.children),
-    );
-  }
-
-  Widget _body(int party) {
-    // The cap applies to the party, not to each row: adults + children is what
-    // becomes guestCount, so the +'s have to stop together.
-    final headroom = maxSearchGuests - party;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SearchStepperRow(
-            label: 'Adults',
-            description: 'Ages 13 or above',
-            value: draft.adults,
-            // At least one adult: a stay booked by nobody is not a search,
-            // and guestCountFor floors at 1 anyway — better to show the floor
-            // than to let the number drop and be silently corrected later.
-            min: 1,
-            max: draft.adults + (headroom > 0 ? headroom : 0),
-            onChanged: (v) => draft.edit(() => draft.adults = v),
-          ),
-          Divider(height: 1, color: AppColors.outline),
-          SearchStepperRow(
-            label: 'Children',
-            description: 'Ages 2 – 12',
-            value: draft.children,
-            min: 0,
-            max: draft.children + (headroom > 0 ? headroom : 0),
-            onChanged: (v) => draft.edit(() => draft.children = v),
-          ),
-          Divider(height: 1, color: AppColors.outline),
-          SearchStepperRow(
-            label: 'Infants',
-            description: 'Under 2 · not counted towards the guest limit',
-            value: draft.infants,
-            min: 0,
-            max: 5,
-            onChanged: (v) => draft.edit(() => draft.infants = v),
-          ),
-          if (party >= maxSearchGuests) ...[
-            const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Up to $maxSearchGuests guests per stay.',
-                style: TextStyle(fontSize: 12, color: AppColors.inkMuted),
-              ),
-            ),
-          ],
-        ],
+      // Read INSIDE the builder. Building the party outside it would capture
+      // the values from the build that mounted the panel, so the caps would
+      // stop moving the moment the panel stopped being rebuilt from above.
+      builder: (context, _) => GuestPartyFields(
+        party: GuestParty(
+          adults: draft.adults,
+          children: draft.children,
+          infants: draft.infants,
+          pets: draft.pets,
+        ),
+        onChanged: (party) => draft.edit(() {
+          draft.adults = party.adults;
+          draft.children = party.children;
+          draft.infants = party.infants;
+          draft.pets = party.pets;
+        }),
       ),
     );
   }
