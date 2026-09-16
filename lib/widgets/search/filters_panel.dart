@@ -4,6 +4,7 @@ import '../../core/theme/app_colors.dart';
 import '../../models/landmark.dart';
 import '../../models/listing_purpose.dart';
 import '../../models/listing_type.dart';
+import '../../services/search/search_scope.dart';
 import '../purpose_picker.dart';
 import 'search_draft.dart';
 
@@ -74,25 +75,38 @@ class FiltersPanel extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 22),
-              const _Heading('What the stay is for'),
-              const SizedBox(height: 4),
-              Text(
-                'Ranks stays by how close they are to the place you name.',
-                style: TextStyle(fontSize: 12.5, color: AppColors.inkMuted),
-              ),
-              const SizedBox(height: 10),
-              PurposePicker(
-                selected: draft.purpose,
-                onSelected: (purpose) => _onPurpose(context, purpose),
-              ),
-              if (draft.landmark != null) ...[
-                const SizedBox(height: 12),
-                _LandmarkRow(
-                  landmark: draft.landmark!,
-                  // Dropping the landmark leaves the purpose in place: it still
-                  // applies as a plain tag filter without an anchor.
-                  onClear: () => draft.edit(() => draft.landmark = null),
+              // Hidden while the search is scoped to turf, rather than shown
+              // and ignored. `purpose_tags` is a column on stays and a turf
+              // carries none, so the two AND to zero rows — and an empty
+              // result is indistinguishable from "there are no turfs here".
+              // Saying so is better than letting the guest build a search that
+              // cannot match.
+              if (scopeOf(draft.propertyTypes) == SearchScope.turf)
+                Text(
+                  'Purpose applies to stays. Searching turf grounds instead.',
+                  style: TextStyle(fontSize: 12.5, color: AppColors.inkMuted),
+                )
+              else ...[
+                const _Heading('What the stay is for'),
+                const SizedBox(height: 4),
+                Text(
+                  'Ranks stays by how close they are to the place you name.',
+                  style: TextStyle(fontSize: 12.5, color: AppColors.inkMuted),
                 ),
+                const SizedBox(height: 10),
+                PurposePicker(
+                  selected: draft.purpose,
+                  onSelected: (purpose) => _onPurpose(context, purpose),
+                ),
+                if (draft.landmark != null) ...[
+                  const SizedBox(height: 12),
+                  _LandmarkRow(
+                    landmark: draft.landmark!,
+                    // Dropping the landmark leaves the purpose in place: it
+                    // still applies as a plain tag filter without an anchor.
+                    onClear: () => draft.edit(() => draft.landmark = null),
+                  ),
+                ],
               ],
             ],
           ),
@@ -109,6 +123,11 @@ class FiltersPanel extends StatelessWidget {
       });
       return;
     }
+    // A purpose describes what a *stay* is for, so choosing one has to drop a
+    // turf scope rather than produce the search that can never match.
+    draft.edit(() {
+      draft.propertyTypes = typesForPurpose(purpose, draft.propertyTypes);
+    });
     final type = purpose.landmarkType;
     if (type == null) {
       draft.edit(() {

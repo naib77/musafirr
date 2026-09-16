@@ -60,7 +60,12 @@ class WishlistsScreen extends StatelessWidget {
             crossAxisCount: 2,
             mainAxisSpacing: 24,
             crossAxisSpacing: 16,
-            childAspectRatio: 0.65,
+            // Deliberately not kListingCardAspectRatio: this is a fixed
+            // two-column grid, so the cell is much narrower than the Explore
+            // grid's and needs a taller ratio to reach the same photo. 0.74
+            // holds the photo at the ~188px it was before the card's text
+            // block stopped being 2/7 of the cell height.
+            childAspectRatio: 0.74,
           ),
           itemCount: favoriteListings.length,
           itemBuilder: (context, index) {

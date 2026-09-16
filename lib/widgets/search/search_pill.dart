@@ -10,6 +10,7 @@ import '../map_place_search_bar.dart' show PlaceLocateFn, PlaceSuggestFn;
 import '../voice_search_button.dart';
 import 'filters_panel.dart';
 import 'search_commit.dart';
+import '../../models/listing.dart';
 import 'search_draft.dart';
 import 'search_popover.dart';
 import 'search_pill_segments.dart';
@@ -64,6 +65,8 @@ class SearchPill extends StatefulWidget {
     this.geocode,
     this.suggest,
     this.locate,
+    this.matchingListings,
+    this.onOpenListing,
     this.currentLocation,
     this.today,
   });
@@ -76,6 +79,14 @@ class SearchPill extends StatefulWidget {
 
   /// Known cities matching a query, from the listing cache.
   final CitySuggestFn cities;
+
+  /// Listings matching what is typed in Where, so a scoped search can offer
+  /// the grounds themselves rather than only the places they might be in.
+  final ListingSuggestFn? matchingListings;
+
+  /// Opens one. The panel cannot: it lives in an overlay the listing screen
+  /// would be pushed over.
+  final ValueChanged<Listing>? onOpenListing;
 
   /// Presents the landmark picker. It is a route-level sheet, so the bar closes
   /// the popover around it — see [_pickLandmark].
@@ -420,6 +431,14 @@ class _SearchPillState extends State<SearchPill>
           suggest: widget.suggest,
           locate: widget.locate,
           currentLocation: widget.currentLocation,
+          matchingListings: widget.matchingListings,
+          // Close the bar first: the panel is an overlay, and leaving it up
+          // over a pushed listing screen is the same mistake the landmark
+          // picker avoids by closing and reopening.
+          onOpenListing: (listing) {
+            _setOpen(null);
+            widget.onOpenListing?.call(listing);
+          },
         );
       case SearchSegment.when:
         return WhenPanel(draft: _draft, today: today);

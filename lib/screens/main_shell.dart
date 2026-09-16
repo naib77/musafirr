@@ -573,7 +573,11 @@ class _MainShellState extends State<MainShell> {
     return SearchPill(
       filters: widget.searchState.filters,
       onCommit: _runSearchFromBar,
-      cities: (query) => citySuggestionsFrom(listings, query),
+      cities: (query, types) => citySuggestionsFrom(listings, query, types),
+      matchingListings: (query, types) =>
+          listingSuggestionsFrom(listings, query, types),
+      onOpenListing: (listing) =>
+          _exploreScreenKey.currentState?.openListingFromShell(listing),
       geocode: (query) =>
           geocodeForSearch(query, knownCity: (q) => isKnownCity(listings, q)),
       currentLocation: currentLocationPlace,

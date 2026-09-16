@@ -1,5 +1,6 @@
 import '../../models/geo_bounds.dart';
 import '../../models/listing.dart';
+import '../../models/listing_type.dart';
 import '../../services/geocoding_service.dart';
 import '../../services/location_service.dart';
 import '../../services/places_service.dart';
@@ -23,26 +24,71 @@ import 'where_panel.dart';
 /// An **empty** query is not "no results", it is the panel's opening state, and
 /// it answers with the busiest places instead — Airbnb's "Suggested
 /// destinations". A panel that greets you with an empty list reads as broken.
+/// [types] is the search's own type filter, empty for "anything". Counting
+/// past it is how a turf-scoped search came to offer "Dhaka — 9 stays": those
+/// nine are rooms and seats, so tapping the row and pressing Search returned
+/// nothing, and the list had promised otherwise. The count has to describe the
+/// search that is about to run, not the catalogue.
 List<CitySuggestion> citySuggestionsFrom(
   List<Listing> listings,
-  String query,
-) {
+  String query, [
+  List<ListingType> types = const [],
+]) {
   final q = query.trim().toLowerCase();
+  final scoped =
+      types.isEmpty ? listings : listings.where((l) => types.contains(l.type));
 
   final counts = <String, int>{};
-  for (final listing in listings) {
+  for (final listing in scoped) {
     final city = listing.city;
     if (city == null || city.isEmpty) continue;
     counts[city] = (counts[city] ?? 0) + 1;
   }
 
+  // Named for what is being counted, and only when the scope is a single type
+  // — "3 rooms and turfs" is not a noun.
+  final noun = types.length == 1 ? types.first.title.toLowerCase() : 'stay';
+
   final matches = counts.entries
       .where((e) => q.isEmpty || e.key.toLowerCase().contains(q))
-      .map((e) => CitySuggestion(city: e.key, count: e.value))
+      .map((e) => CitySuggestion(city: e.key, count: e.value, noun: noun))
       .toList()
     ..sort((a, b) => b.count.compareTo(a.count));
 
   return matches.take(5).toList();
+}
+
+/// Listings whose name or place contains [query], narrowed to [types].
+///
+/// The Where dropdown answered a typed query with *places* only — "Uttara",
+/// "Uttara North Metro Rail Station", "Uttara University" — which is right
+/// when the question is "which Uttara do you mean" and wrong when the guest
+/// has already said Turf and is looking for grounds. A place row commits them
+/// to another round trip before they see a single result.
+///
+/// Matched against title, address and city together, because a guest typing
+/// "uttara" means the area and a guest typing "greenfield" means the ground,
+/// and the field has no way to tell which they intended.
+///
+/// Capped at four: this sits above both the city rows and the Google
+/// predictions, and all three have to fit the panel without pushing the
+/// predictions out of reach.
+List<Listing> listingSuggestionsFrom(
+  List<Listing> listings,
+  String query, [
+  List<ListingType> types = const [],
+]) {
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return const [];
+
+  return listings
+      .where((l) => types.isEmpty || types.contains(l.type))
+      .where((l) =>
+          l.title.toLowerCase().contains(q) ||
+          l.address.toLowerCase().contains(q) ||
+          (l.city ?? '').toLowerCase().contains(q))
+      .take(4)
+      .toList();
 }
 
 /// Whether [query] names a city the app already has listings in.

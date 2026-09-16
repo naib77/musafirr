@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+
+import '../devices/device_registry.dart';
+import '../devices/device_session_watcher.dart';
 import 'package:sms_autofill/sms_autofill.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase show User;
@@ -61,6 +64,7 @@ class SupabaseAuthService implements AuthService {
         // always landed on the login screen despite a valid stored session.
         if (state.session?.user != null) {
           _loadUserProfile(state.session!.user);
+          _recordDevice(state.session!.user.id);
         } else {
           // Definitively no persisted session — let the app leave the
           // splash screen for the login flow without waiting on timeouts.
@@ -72,15 +76,38 @@ class SupabaseAuthService implements AuthService {
       case AuthChangeEvent.userUpdated:
         if (state.session?.user != null) {
           _loadUserProfile(state.session!.user);
+          // Only `signedIn` records the device. `tokenRefreshed` fires on a
+          // timer for the whole life of a session, and registering there would
+          // be a write per refresh for no new information — DeviceRegistry
+          // also guards on the user id, but not arriving is cheaper than being
+          // turned away.
+          if (state.event == AuthChangeEvent.signedIn) {
+            _recordDevice(state.session!.user.id);
+          }
         }
         break;
       case AuthChangeEvent.signedOut:
         _setCurrentUser(null);
         _userCache.clear();
+        // The device id itself survives: it names the hardware, not the
+        // account, and a shared phone is still one device.
+        DeviceRegistry.instance.forgetUser();
+        // And the revocation watcher re-arms, or whoever signs in next on this
+        // phone is never checked.
+        DeviceSessionWatcher.instance.reset();
         break;
       default:
         break;
     }
+  }
+
+  /// Records this device against the account, without blocking sign-in.
+  ///
+  /// Phase 0 of `docs/DEVICE_SESSIONS.md` — recording only, nothing is capped.
+  /// Deliberately unawaited: a device that cannot be written down must still
+  /// be able to use the app.
+  void _recordDevice(String userId) {
+    unawaited(DeviceRegistry.instance.registerForUser(userId));
   }
 
   Future<void> _loadUserProfile(supabase.User authUser) async {
@@ -212,9 +239,21 @@ class SupabaseAuthService implements AuthService {
     // On success it returns a single-use magic-link token_hash, which we
     // exchange for a real session — no phone-derived password is ever used.
     try {
+      // The device travels WITH the OTP so the cap is applied where the
+      // session is minted. Registering afterwards from here would leave the
+      // rule enforceable only by a client that chose to run it — the same
+      // class as "the booking form checks it". See docs/DEVICE_SESSIONS.md.
+      //
+      // Best-effort: if the id cannot be read, the keys are omitted and the
+      // login proceeds uncounted. Blocking a sign-in on device bookkeeping
+      // would be the lockout the whole design avoids.
       final response = await _client.functions.invoke(
         'verify-otp',
-        body: {'phone': normalized, 'otp': otp},
+        body: {
+          'phone': normalized,
+          'otp': otp,
+          ...await DeviceRegistry.instance.loginFields(),
+        },
       );
       final data = response.data;
       if (data is! Map || data['success'] != true) {

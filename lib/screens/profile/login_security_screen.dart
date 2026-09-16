@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../state/auth_state.dart';
+import 'devices_screen.dart';
 
 /// Login & security: shows the account's login identity (phone) and its
 /// verification status, and lets the user sign out.
@@ -70,6 +71,26 @@ class LoginSecurityScreen extends StatelessWidget {
             'Your phone number is how you sign in. To change it, contact support.',
             style: theme.textTheme.bodySmall
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 28),
+          Text('Devices',
+              style: theme.textTheme.titleSmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 8),
+          Card(
+            margin: EdgeInsets.zero,
+            child: ListTile(
+              leading: const Icon(Icons.devices_outlined),
+              title: const Text('Where you\u2019re signed in'),
+              subtitle: const Text('See your devices and sign any of them out'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const DevicesScreen(),
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: 28),
           OutlinedButton.icon(
