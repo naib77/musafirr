@@ -15,6 +15,7 @@ import 'services/auth/auth_flow.dart';
 import 'services/booking/booking_lifecycle_service.dart';
 import 'services/booking/booking_messaging_coordinator.dart';
 import 'services/booking/booking_rules.dart';
+import 'services/devices/device_session_watcher.dart';
 import 'repositories/supabase_conversation_repository.dart';
 import 'repositories/supabase_message_template_repository.dart';
 import 'services/messaging/booking_conversation_service.dart';
@@ -80,6 +81,13 @@ class _MusafirAppState extends State<MusafirApp> {
       onUpdateAvailable: _showAndroidUpdateBanner,
       onReadyToInstall: _showRestartToUpdateBanner,
     );
+
+    // Notices on resume that this device was signed out from elsewhere — the
+    // user's own "Your devices" screen, or a max_devices_per_user eviction.
+    // The real sign-out already happened server-side (the auth.sessions row is
+    // gone); this only stops the app running on a stale access token for the
+    // rest of its hour. See docs/DEVICE_SESSIONS.md.
+    DeviceSessionWatcher.instance.start(onRevoked: _onSignedOutElsewhere);
 
     // Web only: track whether the browser can add Musaafir to the home screen,
     // so the smart sidebar can offer it. Must start early — Chrome fires
@@ -261,6 +269,19 @@ class _MusafirAppState extends State<MusafirApp> {
   }
 
   /// A newer build was deployed while this tab was open — offer a refresh.
+  /// This device was signed out from somewhere else. Ends the local session
+  /// and says why — landing on the login screen with no explanation reads as a
+  /// bug, and the one thing the user needs to know is that it was deliberate.
+  void _onSignedOutElsewhere() {
+    authState.logout();
+    _scaffoldMessengerKey.currentState?.showSnackBar(
+      const SnackBar(
+        content: Text('You were signed out of this device'),
+        duration: Duration(seconds: 6),
+      ),
+    );
+  }
+
   void _showUpdateBanner() {
     final messenger = _scaffoldMessengerKey.currentState;
     if (messenger == null) return;

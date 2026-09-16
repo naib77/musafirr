@@ -457,6 +457,207 @@ cache. `search_listings_by_location` is likewise dead in both the app and the
 admin portal. Neither is a live discovery path; do not add one without giving it
 the same date filter.
 
+### Devices are recorded, nothing is capped (123)
+
+`user_devices` records which devices an account signs in from. Phase 0 of
+`docs/DEVICE_SESSIONS.md` — read that before extending this, particularly why
+the device list has to ship before any limit does, and why web cannot share a
+tight cap with phones.
+
+- **It is not `fcm_tokens` (012) and not `auth.sessions`.** The first is keyed
+  on the FCM token, and those rotate, so one phone becomes several rows. The
+  second is GoTrue's, in the `auth` schema — PostgREST does not expose it, none
+  of this repo's RLS applies, and it has no stable device identity.
+- **The device id is a client-generated UUID, never a hardware id.** Android
+  10+ refuses IMEI and serial, iOS's IDFV resets on uninstall, the web has
+  nothing. The bound (8..128 chars) is enforced in both halves — the client
+  should not send what the server will refuse with `22023`, and the server
+  cannot trust the client to have checked.
+- **Neither function takes a user id.** `register_device` and `touch_device`
+  read `auth.uid()`, and `session_id` comes from `auth.jwt() ->> 'session_id'`
+  rather than a parameter. A caller-supplied identity on a `SECURITY DEFINER`
+  function is the hole 116 exists to close; 012's `upsert_fcm_token` takes
+  `p_user_id` and is only safe because a later migration added the guard the
+  repo file still does not show.
+- **The table has no INSERT policy and no DELETE policy**, the shape
+  `listing_availability_blocks` (110) uses. A client that could write rows
+  could invent slots for itself under a cap. `update` is revoked and re-granted
+  **column-wise on `label` alone** — the USING clause by itself would have let
+  the client write `revoked_at`, `last_seen_at` and `session_id`, which are
+  exactly what a cap depends on.
+- **Registration is a client call only because Phase 0 enforces nothing.** The
+  moment a cap exists it moves into `verify-otp`, the only place a session is
+  minted and the only one running as service role. A client that can choose
+  whether to register can choose not to.
+- **`touch_device` answers false for an unknown device.** A device that has
+  never registered is not a revoked one, and answering true would sign out a
+  perfectly good session.
+- `session_id` is nullable because a GoTrue without that claim must not stop a
+  device being recorded — but **Phase 1 cannot ship until it is confirmed
+  present**, or a remote sign-out has no row to delete and is theatre.
+- Model and OS are **not** collected: that needs `device_info_plus`, a
+  dependency and an Android manifest surface Phase 0 does not need. The columns
+  exist so the build that adds it needs no migration, and `register_device`
+  coalesces so a null never erases what an earlier launch knew.
+
+### A device sign-out is a deleted auth.sessions row (124, 125)
+
+`revoke_device` sets `revoked_at` **and deletes the `auth.sessions` row**. Only
+the second half is enforcement: it removes the refresh token, so the device
+dies at its next refresh whatever the client does. `revoked_at` alone is
+bookkeeping a signed-out client could ignore, and a signed-out client is
+precisely the one that will.
+
+That works because `postgres` holds DELETE on `auth.sessions` even though
+`supabase_auth_admin` owns it — **checked by doing it**, not by reading
+`has_table_privilege`, because 115's whole lesson is that a permitted-looking
+write can report success and change nothing. A delete inside a rolled-back
+transaction took the count from 39 to 38.
+
+- **`fn_revoke_device_row` and `fn_enforce_device_limit` take ids and do no
+  ownership check**, because their callers already did. They are revoked from
+  `public`, `anon` AND `authenticated` — PostgREST publishes everything in
+  `public` at `/rest/v1/rpc/<name>`, so a grant left on either of them is a
+  stranger ending your session. A test row asserts they are unreachable.
+- **`revoke_other_devices` identifies the device to keep from the JWT**, never
+  from a parameter. A caller who could name the device to keep could keep one
+  that is not theirs.
+- **The arriving device is protected by id, not by timestamp.** `now()` is
+  transaction time, so two registrations in one transaction share a
+  `last_seen_at` exactly and the tiebreaker decides who survives — the test
+  caught the eviction signing out the device that had just logged in. A user
+  must never be signed out by their own login, so that cannot rest on a
+  comparison.
+- **`max_devices_per_user` evicts, it never refuses.** The only way back into
+  this app is a real SMS, and the master OTP is an unthrottled allowlist entry
+  kept live for the Play reviewer — a device cap must never be what locks that
+  account out mid-review. Seeded 0 = unlimited, the same fail-open as
+  `android_min_version_code` (122), and its arm was added to
+  `fn_validate_app_setting` by recreating that CASE in full.
+- **Web is exempt from the count and from eviction.** A browser loses its id
+  whenever site data is cleared, so it would consume the whole allowance by
+  itself, and evicting one is pointless because the next visit is a new device.
+- **The cap is enforced inside `verify-otp` (127), not in the client.** It was
+  a client call through 125, so a client that never called `register_device`
+  was never counted — the "booking form checks it" class. `admin_register_device`
+  is the service-role twin (`register_device` reads `auth.uid()`, and inside
+  the edge function there is no caller yet) and carries the same
+  `Only service_role can execute this function` guard as every other `admin_*`.
+  It is **non-fatal**: a bookkeeping failure must never turn "you reached your
+  device limit" into "you cannot sign in".
+- **`verify-otp` cannot record `session_id`** — the session is created when the
+  client redeems the token hash, after the function returns. The client's own
+  `register_device` fills it in, along with model and OS, and everything
+  coalesces. So: **verify-otp owns the rule, the client owns the detail.** A
+  device with no `session_id` can still be listed and evicted; it just cannot
+  be remotely signed out until its next launch.
+- **`upsert_fcm_token` gained a fifth parameter and the 4-arg version was
+  DROPPED.** Two overloads where one has a default is ambiguous to PostgREST
+  ("Could not choose the best candidate function"); one function with a default
+  resolves a four-key call cleanly, so a deployed bundle keeps working. A test
+  row pins exactly that.
+- **Revoking a device deactivates its push tokens.** Without it a lost phone
+  keeps showing messages after being signed out, which is most of what the user
+  wanted stopped.
+
+**126 reaps.** A revoked row is deleted after 180 days and an active one
+unseen for 365 — two windows because they are two different problems, and 365
+rather than 90 because a phone left in a drawer over a long trip is still the
+user's phone. Reaping it would silently un-name it and hand back a slot nobody
+asked for. Daily under `pg_cron`; contrast `expire_stale_bookings`, which runs
+every 15 minutes because its window can be set to one hour.
+
+`supabase/tests/123_user_devices_test.sql` is 13 rows,
+`supabase/tests/124_125_device_limit_test.sql` is 20 and
+`supabase/tests/126_reap_stale_devices_test.sql` is 6 and
+`supabase/tests/127_device_limit_at_login_test.sql` is 7, all run rolled back
+against live. Their negative controls are the point: direct insert, `revoked_at` write,
+cross-user read, cross-user touch, cross-user revoke, short id, anon, the
+internal functions being ungranted, and a malformed setting falling back to
+"no limit" rather than to a lockout.
+
+### Bulk SMS is a queue, and the phone column is a gate (128)
+
+The console can send one message to many people. `docs/BULK_SMS.md` is the
+whole design; the parts that will bite you:
+
+- **`profiles.mobile` is not a send key.** 44 profiles, 40 distinct numbers,
+  one row holding the literal string `pending_<uuid>` and one holding an
+  unassigned prefix — **38 are actually reachable**. So
+  `fn_canonical_bd_phone` is a *gate* that returns null for junk, deliberately
+  unlike `normalizePhone` (otp.ts) and `canonicalBdPhone`
+  (phone_number.dart), which are *routers* and must pass junk through so a
+  mistyped login fails cleanly. Do not "keep them in step" by making this one
+  permissive.
+- **The audience prefers the auth identity to `profiles.mobile`.** The identity
+  is the number that actually received an OTP; `mobile` is typed and displayed.
+- **Claim-before-send, on purpose.** `admin_claim_sms_batch` marks rows
+  `sending` and commits *before* GenNet is called, so a crash loses a message
+  rather than repeating one, and such a row is never picked up again. Retry
+  covers `failed` only. Test row 19 is the negative control and goes red the
+  moment retry is made "helpful" enough to include `sending`.
+- **Dedupe is the unique index on (campaign_id, phone)**, not the form. The
+  form's count exists to be honest to the admin; the index exists to be safe.
+- **`sms_bulk_max_recipients` fails CLOSED and 0 means DISABLED** — the
+  opposite of `max_devices_per_user` (125) and `android_min_version_code`
+  (122). Those fail open because they can lock a user out; this one fails
+  closed because it can spend money irreversibly. Over the cap is **refused,
+  never truncated**. Check which way the damage runs before copying the
+  0-means-unlimited idiom again.
+- **Opt-out is `sms_suppressions(phone)`, not a column on `profiles`** — a CSV
+  number has no profile row, and that is the case most likely to need it.
+  `transactional` bypasses the list and is not a marketing loophole.
+- **Bangla is UCS-2: 70 characters per segment against 160.** The segment
+  estimate is conservative (anything non-ASCII counts as Unicode) because
+  over-estimating cost is the safe direction.
+- **The pg_cron sweep must send an `Authorization` bearer AND
+  `x-sms-worker-secret`.** The edge-function gateway 401s a request with no
+  auth header *before* the function's own code runs, so the secret alone is a
+  silent failure every minute — and the anon bearer alone is no authentication
+  at all, since that key ships inside `build/web`. Same pair, same reason, as
+  `send_push_on_notification_insert`. Needs `sms_worker_url`,
+  `sms_worker_secret` and `sms_worker_auth` in `app_secrets`; missing any one
+  makes the sweep a deliberate no-op.
+- The Flutter app needs nothing from this — no client change, no `build/web`
+  rebuild. `supabase/tests/128_sms_campaigns_test.sql` is 30 rows;
+  `../musafir-admin` has `npm run check:sms` for the CSV parser, which is the
+  only piece with no SQL test behind it.
+
+### Bulk notifications are NOT the bulk-SMS design (129)
+
+`docs/BULK_NOTIFICATIONS.md`. Same console, deliberately different machinery,
+because delivery already existed: `on_notification_send_push` fires on every
+insert into `notifications`, so a campaign is one `insert … select` in one
+transaction. **No queue, no worker, no cron sweep, no retry** — there is no
+partway state to recover from, and adding 128's machinery here would be cargo
+cult. `user_id` is the key, so a primary key does the deduplication a canonical
+phone needed a unique index for. Reach is 44 of 44, against SMS's 38.
+
+- **`notification_preferences` is LEFT joined and that is the whole ballgame.**
+  Exactly ONE of 44 accounts has a row; an inner join reduces every campaign to
+  **1 recipient** (measured). Absent row = the app's defaults.
+- **Quiet hours cross midnight.** The default is 22:00–07:00, so
+  `between start and end` is false for the entire window and pushes at 3am. An
+  earlier version of the test used `now ± 1 hour`, which never wraps, and
+  **passed against the broken implementation** — if you touch this, check the
+  test can still fail.
+- **`fn_notification_category` must cover every enum label**, or an unmapped
+  type silently ignores the user's setting. The enums have already drifted:
+  `booking_rejected`, `checked_in` and `review_prompt` exist in the database and
+  not in the Dart enum. Test row 1 walks `enum_range` so the next addition
+  fails loudly.
+- **`data->>'suppress_push'` is a per-recipient flag, not a preferences check
+  inside the trigger.** The key is absent from all 787 existing rows, so every
+  notification the app already raises is untouched. A trigger that consulted
+  preferences for everything would change booking and message delivery as a side
+  effect of a marketing feature.
+- **Known gap, not closed here: nothing outside bulk campaigns honours
+  `notification_preferences` at all.** `shouldDeliver` in Dart is a client-side
+  read and the push goes out regardless — the "the booking form checks it"
+  pattern again.
+- `notification_bulk_max_recipients` seeded 2000, fail-closed, 0 = disabled.
+  `supabase/tests/129_notification_campaigns_test.sql` is 25 rows.
+
 ## Nothing user-tunable belongs in Dart
 
 App-wide knobs live in the `app_settings` table and are edited from the admin
@@ -1036,6 +1237,189 @@ only one that reaches the RPC, derived through `guestCountFor` (infants never
 count, floor 1, cap `maxSearchGuests`). **The split is search-only** — bookings,
 the price breakdown and the host's reservation list all still carry one number,
 so a stay found as "2 adults, 1 child, 1 infant" is booked as 3 guests.
+
+### One card size, and the text block sizes itself
+
+`ListingCardModern` is rendered by four surfaces — the search grid, the "See
+all" grid, the curated rows and Wishlists — and the first three carried their
+own copy of `300` / `0.72`. The rows had drifted to 336px tall against the
+grid's 378, so the same listing changed shape depending on which one you were
+looking at. `kListingCardMaxExtent` / `kListingCardAspectRatio` are the one
+size now; the rows derive their height from the ratio rather than typing it.
+
+**The card's height used to be tied to its width by the flex split, and that
+is what made it hard to shrink.** The photo was `flex: 5` against the text's
+`flex: 2`, so the text slot was 2/7 of the cell whatever the text needed — at
+1440px that is **108 pixels for about 43** (title 15.6 + gap 3 + rate row 16 +
+8 of padding). Worse, the fat was load-bearing: narrowing the card narrowed the
+text's headroom with it, so any real size reduction walked into an overflow at
+a raised text scale.
+
+The text block is its own intrinsic height now and the photo takes the
+remainder. Three consequences worth keeping:
+
+- **The inner `Column` must be `MainAxisSize.min`.** The parent `Column` hands
+  a non-flex child unbounded height, so the default `max` asks for infinity.
+- **The ratio and the flex are no longer the same fact.** Height ≈ width + ~43,
+  and 0.82 is that relationship at the widths these grids actually produce —
+  which is what keeps the photo roughly square, the shape the card is drawn
+  for. Change the text block's contents and the ratio needs re-deriving.
+- **Wishlists is deliberately not on the shared constants.** It is a fixed
+  two-column grid, so its cell is much narrower and needs a taller ratio to
+  reach the same photo; its `0.74` exists to hold the photo where `0.65` put it
+  under the old flex.
+
+Two tests in `listing_card_modern_test.dart` pin it by measuring the text
+block's height in cells of two different heights. Under the old flex they read
+78.3 and 120 — 2/7 of each — and both go red.
+
+### Turf is one tap in Where, and it cannot be combined with a purpose
+
+Turf reached the app as a `ListingType`, which correctly put it in the Filters
+panel beside Seat and Room — and made finding a ground four steps on **desktop**
+(open Filters, tick Turf, close, type the area) against Medical's one visible
+tap. A ground is not an overflow refinement of a stay search; it is a different
+search. [`SearchScopePicker`](lib/widgets/search/search_scope_picker.dart) is
+an Anything / Turf pair under the Where field, and it writes a `ListingType`
+like the Filters chips do.
+
+**It is desktop-only, and that asymmetry is the point.** The mobile sheet
+already carries a type chip row above its three cards (see above — it is
+deliberately not folded away), so Turf was always one tap there. Adding the
+pills to the sheet as well put two selected "Turf" controls one above the
+other describing one piece of state, which is what shipped for one build. The
+sheet's `_togglePropertyType` carries the exclusion rule instead.
+
+Nothing in the search stack needed changing for it. Verified against live by
+inserting a turf in Uttara inside a rolled-back transaction and calling
+`search_listings` the way the client does: turf + centre + radius tiers, turf +
+`p_location`, turf + dates, turf + 20 players all returned it, and `room` at
+the same centre returned the three real rooms. The map needed nothing either —
+`mappableListings` filters on coordinates alone, and `isStay` is used only in
+the host wizard.
+
+**The rule that makes this more than a shortcut: turf and purpose are mutually
+exclusive.** `search_listings` ANDs its predicates and `purpose_tags` is a
+column on stays — a turf carries none — so "turf near a hospital" matches
+nothing. It does not raise: it returns zero rows, which
+`searchListingsFromDb` renders as a plain "no listings found", and the guest
+cannot tell that apart from "there are no turfs in this area". So
+[`search_scope.dart`](lib/services/search/search_scope.dart) owns both
+directions — picking Turf drops the purpose and its landmark, picking a purpose
+drops Turf — and the purpose section is *hidden* while the scope is turf rather
+than shown and ignored.
+
+Three things worth keeping:
+
+- **It is a pure function over values, not a method on the draft.** The desktop
+  panel holds a `SearchDraft` and the mobile sheet holds plain `setState`; a
+  rule written into either one is a rule the other can contradict. Same reason
+  `GuestPartyFields` is stateless over a value.
+- **`scopeOf` lights up Turf only when turf is the *only* type.** "Rooms and
+  turfs" is a real search the Filters panel can express and is neither scope —
+  showing Turf as selected for it would make the next tap silently drop the
+  room.
+- **Anything removes turf and nothing else.** A guest who narrowed to Room and
+  then tapped Anything is saying "not just turf", not "forget what I picked".
+
+Turf did **not** become a `ListingPurpose`, and should not. Purpose is what a
+*stay* is for; the type/purpose split is the thing that lets "a room near a
+hospital" and "a turf in Uttara" both be expressible.
+
+**The dropdown offers the listings themselves, above the places.** It used to
+answer a typed query with places only — "Uttara", "Uttara North Metro Rail
+Station", "Uttara University" — which is the right question while the guest has
+not said what they want, and the wrong one the moment they pick Turf: a place
+row commits them to a round trip before they see a single ground.
+`listingSuggestionsFrom` matches title, address and city together (a guest
+typing "uttara" means the area, one typing the ground's name means the ground,
+and the field cannot tell which), narrowed to the search's types, capped at
+four so the place predictions stay reachable. The heading names what it is
+offering — "Matching turfs", not "Matching stays" — and the predictions below
+are headed "Places" rather than "Search results", which claimed the answer
+while sitting under the real one.
+
+Tapping a row **opens that listing and commits no search**. Two consequences:
+the bar closes first, because the panel is an overlay and a pushed screen
+underneath it is the mistake the landmark picker already avoids; and the shell
+routes it through `ExploreScreen.openListingFromShell` rather than pushing
+itself, so it uses the one path that passes the `Listing` through `arguments`
+and stops the detail screen refetching. **`_exploreScreenKey` is a
+`GlobalKey<dynamic>`**, so nothing checks that method exists until it is
+called — renaming it fails at runtime, silently, in one dropdown.
+
+**The destination rows count within the scope, not across the catalogue.**
+`citySuggestionsFrom` used to count every listing, so a turf-scoped search
+offered "Dhaka — 9 stays" where the nine are rooms and seats: tapping the row
+and pressing Search returned nothing, and the list had promised otherwise.
+It takes the search's types now and names what it counted ("1 turf"), and the
+noun falls back to the generic one for two types, because "3 rooms and turfs"
+is not a noun. `CitySuggestFn` gained the types parameter for this — the panel
+reads them off the draft, so the shell does not have to know.
+
+That makes the list go **empty** for a type the app has none of, and
+`citySuggestionsFrom`'s own doc says an empty list reads as broken. So the
+panel says "No turfs listed yet — try Anything" rather than showing nothing.
+
+**There are no turf listings on live** (11 seats, 7 rooms, 2 full houses, as of
+2026-09-16), so every one of these searches correctly returns nothing until a
+host publishes one. Do not read that as the feature being broken — it was the
+first thing this investigation had to rule out.
+
+### The rate line is a hierarchy, not a string
+
+`_buildRates` draws up to two rates under the photo, and it used to draw them
+as one flat `fontSize: 12, w700` string joined with `·`. With the rating beside
+it that is six numerals and two slashes at one weight, with nothing leading —
+the guest has to read all of it to find the number they wanted.
+
+It is a single `Text.rich` now (one `Text`, for the same reason the type badge
+is one: with separate children only the last can shrink, so a narrow card
+ellipsizes the wrong half). **The concatenated string is unchanged** — the
+spans only carry weight, size and colour:
+
+| Part | |
+| --- | --- |
+| Lead rate | 12.5, w700, `ink` |
+| Its unit | 10, w600, `inkMuted` — it repeats on every card, so it carries almost no information per card |
+| `·` | 10, w400, `inkMuted` |
+| Second rate | 11, w600, `inkMuted` |
+| Its unit | 9.5, w500, `inkMuted` |
+
+The rating that follows is 10.5 with 8px of air before the star, up from 6 —
+the phrase now ends on a muted unit, and without the extra gap the star reads
+as part of it.
+
+**A screenshot cannot catch this being flattened back**, because the string is
+identical either way, so a test reads the spans off the `RichText` and asserts
+the lead outweighs the second on all three axes at once. Restoring the flat
+style turns it red.
+
+Which rate leads is `offeredPlans` order, not a design choice — for a room
+that means the *hourly* rate headlines over the daily. If that ever reads
+wrong, it is `headlinePlans` to change, not this function.
+
+### The curated rows are a rhythm, and the gap is a separator
+
+Explore's browse state is a stack of `_CategorySection`s. The gap **between**
+groups used to be each section's own top padding, which made it do two jobs: it
+also sat above the very first row, under the header, where there is nothing to
+separate. That kept it small — 22px against a 251px card — and five groups read
+as one dense block.
+
+It is the `ListView.separated` separator now (48px wide, 30 on a phone), so the
+between-groups gap and the leading inset are separate numbers. The section's
+own padding is only the gap down to its cards (16 / 12), which is what gives
+the heading something to belong to: the rule is that the gap above a title must
+clearly exceed the gap below it, or the title reads as attached to the row
+above.
+
+The heading is set explicitly rather than taken from `titleLarge` /
+`titleMedium`, because at 26px the theme's default zero tracking reads as
+stretched — it carries `letterSpacing: -0.6` and `height: 1.15`. Its colour is
+**`AppColors.ink`, not `colorScheme.onSurface`**: every palette defines `ink`
+as its own near-black at 18:1, so the heading follows `active_theme` instead of
+being a hardcoded black that fights whichever palette an admin selects.
 
 ### What the database had to change, and what it did not
 

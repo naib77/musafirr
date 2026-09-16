@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/routing/listing_path.dart';
+import '../../core/theme/app_colors.dart';
 import '../../core/utils/responsive.dart';
 import '../../models/geo_bounds.dart';
 import '../../models/listing.dart';
@@ -32,6 +33,8 @@ import '../../services/voice/voice_search_runner.dart';
 import '../../widgets/voice_listening_sheet.dart';
 import '../../widgets/voice_search_button.dart';
 import '../../widgets/landmark_picker_sheet.dart';
+import '../../services/search/search_scope.dart';
+import '../../widgets/search/search_services.dart';
 import '../../widgets/purpose_picker.dart';
 import '../../widgets/hover_lift.dart';
 import '../../widgets/listing_card_modern.dart';
@@ -193,6 +196,17 @@ class _ExploreScreenState extends State<ExploreScreen> {
   /// Starts voice search, including its microphone permission prompt.
   void startVoiceSearchFromShell() => _startVoiceSearch();
 
+  /// Opens a listing the guest picked straight out of the header's Where
+  /// dropdown. Routed through here rather than pushed from the shell so it
+  /// uses the one navigation path the cards use — `_openListingDetail` is what
+  /// passes the `Listing` through `arguments` so the detail screen does not
+  /// refetch it.
+  ///
+  /// `_exploreScreenKey` is a `GlobalKey<dynamic>`, so nothing checks this
+  /// method exists until it is called. Renaming it fails at runtime, silently,
+  /// in one dropdown.
+  void openListingFromShell(Listing listing) => _openListingDetail(listing);
+
   /// Drops the active search and returns to the browse feed. Unlike
   /// [resetFromTabTap] this leaves a "See all" grid alone: the header's ✕ is
   /// about the search, and a guest inside a category grid has not searched.
@@ -249,6 +263,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
             setState(() {});
           },
           repository: widget.repository,
+          onOpenListing: (listing) {
+            Navigator.pop(context);
+            _openListingDetail(listing);
+          },
         ),
       ),
     );
@@ -785,16 +803,15 @@ class _ExploreScreenState extends State<ExploreScreen> {
         SliverPadding(
           padding: const EdgeInsets.all(16),
           sliver: SliverGrid(
-            // Max-extent so the column count grows with width: 3–4 across the
-            // desktop content panel, with cards kept a consistent, readable
-            // size.
+            // Max-extent so the column count grows with width, at the one
+            // size every ListingCardModern surface uses — see
+            // kListingCardMaxExtent for why those numbers are not written
+            // here.
             gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 300,
+              maxCrossAxisExtent: kListingCardMaxExtent,
               mainAxisSpacing: 16,
               crossAxisSpacing: 12,
-              // ~square photo like Airbnb (the photo takes 5/7 of the cell
-              // height in ListingCardModern).
-              childAspectRatio: 0.72,
+              childAspectRatio: kListingCardAspectRatio,
             ),
             delegate: SliverChildBuilderDelegate(
               (context, index) {
@@ -945,11 +962,19 @@ class _ExploreScreenState extends State<ExploreScreen> {
     // Fallback so the screen is never blank when nothing matched a curation.
     if (sections.isEmpty) add('All stays', listings);
 
-    return ListView(
+    // The gap BETWEEN groups is a separator, not each section's top padding.
+    // As padding it also sat above the first row — under the header, where
+    // there is nothing to separate — so the value had to stay small enough to
+    // look right there, and 22px against a 251px card read as one dense block
+    // rather than as five groups.
+    final wide = Responsive.isWide(context);
+    return ListView.separated(
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(top: 8, bottom: 24),
-      children: sections,
+      padding: EdgeInsets.only(top: wide ? 10 : 6, bottom: 32),
+      itemCount: sections.length,
+      separatorBuilder: (_, __) => SizedBox(height: wide ? 48 : 30),
+      itemBuilder: (context, index) => sections[index],
     );
   }
 }
@@ -1041,27 +1066,42 @@ class _CategorySection extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final wide = Responsive.isWide(context);
-    // Larger cards on desktop so the carousels feel substantial; the width /
-    // height ratio is kept at ~0.72 to match ListingCardModern's layout.
-    final cardWidth = wide ? 242.0 : 186.0;
-    final rowHeight = wide ? 336.0 : 258.0;
+    // Larger cards on desktop so the carousels feel substantial. The height
+    // is derived rather than typed: the row and the search grid used to carry
+    // their own ratio and had drifted apart (336 tall against the grid's 378),
+    // so a listing changed shape depending on which one you were looking at.
+    final cardWidth = wide ? 206.0 : 162.0;
+    final rowHeight = cardWidth / kListingCardAspectRatio;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
+          // Only the gap down to the cards is padding now; the gap up to the
+          // previous group is the list's separator.
           padding: wide
-              ? const EdgeInsets.fromLTRB(24, 22, 16, 12)
-              : const EdgeInsets.fromLTRB(16, 14, 8, 10),
+              ? const EdgeInsets.fromLTRB(24, 0, 16, 16)
+              : const EdgeInsets.fromLTRB(16, 0, 8, 12),
           child: Row(
             children: [
               Expanded(
                 child: Text(
                   title,
-                  style: (wide
-                          ? theme.textTheme.titleLarge
-                          : theme.textTheme.titleMedium)
-                      ?.copyWith(fontWeight: FontWeight.w800),
+                  // Explicit rather than titleLarge/titleMedium: a heading
+                  // this size needs its tracking pulled in or it reads as
+                  // stretched, and the theme's styles carry the default 0.
+                  //
+                  // AppColors.ink, not the theme's onSurface — every palette
+                  // defines ink as its near-black at 18:1, so this follows
+                  // active_theme instead of being a hardcoded black that
+                  // fights it.
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontSize: wide ? 26 : 20,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: wide ? -0.6 : -0.4,
+                    height: 1.15,
+                    color: AppColors.ink,
+                  ),
                 ),
               ),
               if (onSeeAll != null)
@@ -1071,7 +1111,8 @@ class _CategorySection extends StatelessWidget {
                   padding: const EdgeInsets.all(6),
                   constraints: const BoxConstraints(),
                   tooltip: 'See all',
-                  icon: const Icon(Icons.arrow_forward, size: 20),
+                  color: AppColors.ink,
+                  icon: Icon(Icons.arrow_forward, size: wide ? 22 : 20),
                 ),
             ],
           ),
@@ -1121,12 +1162,18 @@ class _SearchSheet extends StatefulWidget {
     required this.searchState,
     required this.onSearch,
     required this.repository,
+    required this.onOpenListing,
   });
 
   final TextEditingController searchController;
   final SearchStateNotifier searchState;
   final VoidCallback onSearch;
   final MusafirRepository repository;
+
+  /// Opens a listing picked straight out of the Where dropdown. The sheet is a
+  /// modal route, so it has to be dismissed before the detail screen is
+  /// pushed — the screen owns that, not the sheet.
+  final ValueChanged<Listing> onOpenListing;
 
   @override
   State<_SearchSheet> createState() => _SearchSheetState();
@@ -1156,6 +1203,10 @@ class _SearchSheetState extends State<_SearchSheet> {
   // Location suggestions: instant city matches from loaded listings, plus
   // debounced Google Places type-ahead (any area / address / POI in BD).
   List<_CitySuggestion> _suggestions = [];
+
+  /// Listings matching what has been typed, within the sheet's type chips —
+  /// the grounds themselves, offered above the places they might be in.
+  List<Listing> _listingMatches = const [];
   List<PlaceSuggestion> _placeSuggestions = [];
   bool _showSuggestions = false;
   bool _searchingPlaces = false;
@@ -1233,6 +1284,7 @@ class _SearchSheetState extends State<_SearchSheet> {
     if (query.isEmpty) {
       setState(() {
         _suggestions = [];
+        _listingMatches = const [];
         _placeSuggestions = [];
         _searchingPlaces = false;
         _showSuggestions = false;
@@ -1240,19 +1292,38 @@ class _SearchSheetState extends State<_SearchSheet> {
       return;
     }
 
-    // Extract unique cities with counts from listings
+    // Counted within the search's own type filter, not across the catalogue:
+    // with Turf selected, "Dhaka — 9 stays" names nine rooms and seats that
+    // the search about to run will not return. The row has to describe that
+    // search.
     final cityMap = <String, int>{};
     for (final listing in widget.repository.listings) {
+      if (_selectedTypes.isNotEmpty && !_selectedTypes.contains(listing.type)) {
+        continue;
+      }
       final city = listing.city;
       if (city != null && city.isNotEmpty) {
         cityMap[city] = (cityMap[city] ?? 0) + 1;
       }
     }
 
+    final noun = _selectedTypes.length == 1
+        ? _selectedTypes.first.title.toLowerCase()
+        : 'stay';
+
+    // A guest who has already ticked Turf and typed an area is looking for
+    // grounds, not for which "Uttara" they meant. Same helper the desktop
+    // panel uses, so the two surfaces cannot offer different answers.
+    final matches = listingSuggestionsFrom(
+      widget.repository.listings,
+      query,
+      _selectedTypes,
+    );
+
     // Filter cities matching the query
     final filtered = cityMap.entries
         .where((e) => e.key.toLowerCase().contains(query))
-        .map((e) => _CitySuggestion(city: e.key, count: e.value))
+        .map((e) => _CitySuggestion(city: e.key, count: e.value, noun: noun))
         .toList();
 
     // Sort by count (most listings first) and limit to 5
@@ -1269,10 +1340,13 @@ class _SearchSheetState extends State<_SearchSheet> {
 
     setState(() {
       _suggestions = limited;
+      _listingMatches = matches;
       _searchingPlaces = wantPlaces;
       if (!wantPlaces) _placeSuggestions = [];
-      _showSuggestions =
-          limited.isNotEmpty || _placeSuggestions.isNotEmpty || wantPlaces;
+      _showSuggestions = limited.isNotEmpty ||
+          matches.isNotEmpty ||
+          _placeSuggestions.isNotEmpty ||
+          wantPlaces;
     });
   }
 
@@ -1428,6 +1502,11 @@ class _SearchSheetState extends State<_SearchSheet> {
       });
       return;
     }
+    // A purpose is about a stay, so it drops a turf scope rather than ANDing
+    // with it into a search that can never match.
+    setState(() {
+      _selectedTypes = typesForPurpose(purpose, _selectedTypes);
+    });
     final type = purpose.landmarkType;
     if (type == null) {
       setState(() {
@@ -1474,12 +1553,32 @@ class _SearchSheetState extends State<_SearchSheet> {
     _openSection(_SheetStep.when);
   }
 
+  /// The sheet has no separate Anything / Turf control: this chip row sits
+  /// above the three cards and already offers Turf in one tap, which is what
+  /// the desktop bar lacked. A second pair of pills inside Where put two
+  /// selected "Turf" controls one above the other, describing one piece of
+  /// state twice.
+  ///
+  /// It carries the exclusion rule instead — turf and a purpose AND to zero
+  /// rows in `search_listings`, and that empty result is indistinguishable
+  /// from "there are no turfs here". See `search_scope.dart`.
   void _togglePropertyType(ListingType type) {
     setState(() {
       if (_selectedTypes.contains(type)) {
         _selectedTypes.remove(type);
       } else {
         _selectedTypes.add(type);
+      }
+      if (scopeOf(_selectedTypes) == SearchScope.turf) {
+        final next = applyScope(
+          SearchScope.turf,
+          types: _selectedTypes,
+          purpose: _selectedPurpose,
+          landmark: _pickedLandmark,
+        );
+        _selectedTypes = next.types;
+        _selectedPurpose = next.purpose;
+        _pickedLandmark = next.landmark;
       }
     });
   }
@@ -1783,6 +1882,57 @@ class _SearchSheetState extends State<_SearchSheet> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // The grounds themselves, above the places. Tapping one opens
+                // it — the guest has found what they came for and does not
+                // need to run a search to reach it.
+                ..._listingMatches.map((listing) {
+                  return InkWell(
+                    onTap: () => widget.onOpenListing(listing),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.place_rounded,
+                            color: theme.colorScheme.primary,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  listing.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Text(
+                                  listing.address,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+                if (_listingMatches.isNotEmpty && _suggestions.isNotEmpty)
+                  const Divider(height: 1),
                 ..._suggestions.map((suggestion) {
                   return InkWell(
                     onTap: () => _selectSuggestion(suggestion),
@@ -1802,7 +1952,7 @@ class _SearchSheetState extends State<_SearchSheet> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              '${suggestion.city} (${suggestion.count} listing${suggestion.count > 1 ? 's' : ''})',
+                              '${suggestion.city} (${suggestion.countLabel})',
                               style: theme.textTheme.bodyMedium,
                             ),
                           ),
@@ -1888,7 +2038,17 @@ class _SearchSheetState extends State<_SearchSheet> {
         const SizedBox(height: 18),
         Divider(height: 1, color: theme.colorScheme.outlineVariant),
         const SizedBox(height: 14),
-        _purposePicker(theme),
+        // A turf carries no purpose_tags, so offering both would let the guest
+        // build a search that ANDs to zero rows and reads as "none here".
+        if (scopeOf(_selectedTypes) == SearchScope.turf)
+          Text(
+            'Purpose applies to stays. Searching turf grounds instead.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          )
+        else
+          _purposePicker(theme),
       ],
     );
   }
@@ -2203,5 +2363,15 @@ class _CitySuggestion {
   final String city;
   final int count;
 
-  const _CitySuggestion({required this.city, required this.count});
+  /// What the count counts — the search's type when it is scoped to exactly
+  /// one, so a turf search cannot advertise stays. Mirrors `CitySuggestion`.
+  final String noun;
+
+  const _CitySuggestion({
+    required this.city,
+    required this.count,
+    this.noun = 'stay',
+  });
+
+  String get countLabel => count == 1 ? '1 $noun' : '$count ${noun}s';
 }
