@@ -3,17 +3,32 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../models/listing.dart';
+import '../../models/listing_type.dart';
 import '../../services/places_service.dart';
+import '../../services/search/search_scope.dart';
 import '../map_place_search_bar.dart' show PlaceLocateFn, PlaceSuggestFn;
 import 'search_draft.dart';
+import 'search_scope_picker.dart';
 
 /// A place the app already has listings in — offered instantly, with no
 /// network round trip, because these are the searches most likely to succeed.
 class CitySuggestion {
-  const CitySuggestion({required this.city, required this.count});
+  const CitySuggestion({
+    required this.city,
+    required this.count,
+    this.noun = 'stay',
+  });
 
   final String city;
   final int count;
+
+  /// What the count is counting. A turf-scoped search must not offer "Dhaka —
+  /// 9 stays": those nine are rooms and seats, and the search about to run
+  /// will return none of them. See [citySuggestionsFrom].
+  final String noun;
+
+  String get countLabel => count == 1 ? '1 $noun' : '$count ${noun}s';
 }
 
 /// Where the panel's rows come from.
@@ -21,8 +36,19 @@ class CitySuggestion {
 /// Both lookups are injected rather than reached for as singletons, following
 /// [MapPlaceSearchBar] — that is what makes this panel testable without a
 /// network, and the reason the typedefs already exist.
-typedef CitySuggestFn = List<CitySuggestion> Function(String query);
+/// Known places matching a query, narrowed to the types the search is scoped
+/// to — an empty list means "every type".
+typedef CitySuggestFn = List<CitySuggestion> Function(
+  String query,
+  List<ListingType> types,
+);
 typedef CurrentLocationFn = Future<PlaceLocation?> Function();
+
+/// Listings matching a query within the search's own type filter.
+typedef ListingSuggestFn = List<Listing> Function(
+  String query,
+  List<ListingType> types,
+);
 
 /// The "Where" panel: a field, "Nearby", known cities, then Google predictions.
 ///
@@ -48,6 +74,8 @@ class WherePanel extends StatefulWidget {
     this.suggest,
     this.locate,
     this.currentLocation,
+    this.matchingListings,
+    this.onOpenListing,
     this.debounce = const Duration(milliseconds: 300),
   });
 
@@ -58,6 +86,14 @@ class WherePanel extends StatefulWidget {
 
   /// Enter in the field runs the search, the way it does in any search box.
   final VoidCallback onSubmit;
+
+  /// Listings in the cache matching what has been typed, already narrowed to
+  /// the search's types. Null in surfaces that have no listing to open.
+  final ListingSuggestFn? matchingListings;
+
+  /// Opening one is the caller's job: the panel lives in an overlay the
+  /// listing screen would be pushed over.
+  final ValueChanged<Listing>? onOpenListing;
 
   final PlaceSuggestFn? suggest;
   final PlaceLocateFn? locate;
@@ -73,6 +109,21 @@ class _WherePanelState extends State<WherePanel> {
   final FocusNode _focusNode = FocusNode();
 
   List<CitySuggestion> _cities = const [];
+
+  /// Listings matching what has been typed, within the search's types.
+  List<Listing> _matches = const [];
+
+  /// Named for what is being offered, so a turf search does not head its own
+  /// results "Stays".
+  String get _matchLabel {
+    final types = widget.draft.propertyTypes;
+    if (types.length != 1) return 'Matching stays';
+    return 'Matching ${types.first.title.toLowerCase()}s';
+  }
+
+  List<Listing> _matchesFor(String query) =>
+      widget.matchingListings?.call(query, widget.draft.propertyTypes) ??
+      const [];
   List<PlaceSuggestion> _places = const [];
   bool _searchingPlaces = false;
   String? _resolvingPlaceId;
@@ -93,7 +144,8 @@ class _WherePanelState extends State<WherePanel> {
     // The panel opened because the guest wants to type a place; landing them in
     // the field saves the second click.
     _focusNode.requestFocus();
-    _cities = widget.cities(widget.draft.locationText);
+    _cities =
+        widget.cities(widget.draft.locationText, widget.draft.propertyTypes);
   }
 
   @override
@@ -126,7 +178,8 @@ class _WherePanelState extends State<WherePanel> {
         // "Nearby" reads as broken, and this branch fires more often than it
         // looks: focusing the field round-trips the editing value through the
         // platform, which notifies the controller with the same empty text.
-        _cities = widget.cities('');
+        _cities = widget.cities('', widget.draft.propertyTypes);
+        _matches = const [];
         _places = const [];
         _searchingPlaces = false;
       });
@@ -138,7 +191,8 @@ class _WherePanelState extends State<WherePanel> {
       _debounce = Timer(widget.debounce, () => _fetchPlaces(trimmed));
     }
     setState(() {
-      _cities = widget.cities(trimmed);
+      _cities = widget.cities(trimmed, widget.draft.propertyTypes);
+      _matches = _matchesFor(trimmed);
       _searchingPlaces = wantPlaces;
       if (!wantPlaces) _places = const [];
     });
@@ -176,6 +230,7 @@ class _WherePanelState extends State<WherePanel> {
     widget.draft.setResolvedPlace(text: city.city);
     setState(() {
       _cities = const [];
+      _matches = const [];
       _places = const [];
       _searchingPlaces = false;
     });
@@ -197,6 +252,7 @@ class _WherePanelState extends State<WherePanel> {
       _resolvingPlaceId = null;
       _places = const [];
       _cities = const [];
+      _matches = const [];
       _searchingPlaces = false;
     });
     // A failed resolve is not an error: the commit geocodes the text instead.
@@ -233,7 +289,28 @@ class _WherePanelState extends State<WherePanel> {
     );
     setState(() {
       _cities = const [];
+      _matches = const [];
       _places = const [];
+    });
+  }
+
+  /// Writes the scope through [applyScope], which is also what drops a
+  /// purpose that cannot coexist with turf. Rebuilds locally because the
+  /// panel reads `draft.propertyTypes` directly — the draft notifies, but this
+  /// widget is not inside its `ListenableBuilder`.
+  void _onScope(SearchScope scope) {
+    final next = applyScope(
+      scope,
+      types: widget.draft.propertyTypes,
+      purpose: widget.draft.purpose,
+      landmark: widget.draft.landmark,
+    );
+    setState(() {
+      widget.draft.edit(() {
+        widget.draft.propertyTypes = next.types;
+        widget.draft.purpose = next.purpose;
+        widget.draft.landmark = next.landmark;
+      });
     });
   }
 
@@ -271,7 +348,15 @@ class _WherePanelState extends State<WherePanel> {
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
+          // Above the suggestions, not below them: it changes what the rows
+          // underneath are *for*, and a control that reframes a list has to be
+          // read before the list.
+          SearchScopePicker(
+            scope: scopeOf(widget.draft.propertyTypes),
+            onSelected: _onScope,
+          ),
+          const SizedBox(height: 4),
           Flexible(
             child: SingleChildScrollView(
               child: Column(
@@ -287,6 +372,33 @@ class _WherePanelState extends State<WherePanel> {
                       busy: _locatingMe,
                       onTap: _locatingMe ? null : _useCurrentLocation,
                     ),
+                  // The listings themselves, first. A guest who has already
+                  // said Turf and typed an area is looking for grounds, not
+                  // for which "Uttara" they meant — offering only places makes
+                  // them commit to another round trip before they see one.
+                  if (_matches.isNotEmpty) ...[
+                    _SectionLabel(label: _matchLabel),
+                    for (final listing in _matches)
+                      _SuggestionRow(
+                        icon: Icons.place_rounded,
+                        iconColor: AppColors.brand,
+                        title: listing.title,
+                        subtitle: listing.address,
+                        onTap: () => widget.onOpenListing?.call(listing),
+                      ),
+                  ],
+                  // Scoping to a type the app has none of empties this list,
+                  // and a panel that answers a typed query with nothing reads
+                  // as broken rather than as an answer. Say which it is.
+                  if (_matches.isEmpty &&
+                      _cities.isEmpty &&
+                      widget.draft.propertyTypes.length == 1) ...[
+                    _SectionLabel(
+                      label: 'No '
+                          '${widget.draft.propertyTypes.first.title.toLowerCase()}'
+                          's listed yet — try Anything',
+                    ),
+                  ],
                   if (_cities.isNotEmpty) ...[
                     _SectionLabel(
                       label: _controller.text.trim().isEmpty
@@ -298,8 +410,7 @@ class _WherePanelState extends State<WherePanel> {
                         icon: Icons.location_city_outlined,
                         iconColor: AppColors.brand,
                         title: city.city,
-                        subtitle:
-                            city.count == 1 ? '1 stay' : '${city.count} stays',
+                        subtitle: city.countLabel,
                         onTap: () => _pickCity(city),
                       ),
                   ],
@@ -315,7 +426,10 @@ class _WherePanelState extends State<WherePanel> {
                       ),
                     ),
                   if (_places.isNotEmpty) ...[
-                    const _SectionLabel(label: 'Search results'),
+                    // Not "Search results": actual listings sit above these
+                    // now, and two headings where the lower one claims the
+                    // results reads as though the places are the answer.
+                    const _SectionLabel(label: 'Places'),
                     for (final place in _places)
                       _SuggestionRow(
                         icon: Icons.place_outlined,

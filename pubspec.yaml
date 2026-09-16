@@ -1,7 +1,7 @@
 name: musafir
 description: Musafir rental marketplace for tenants, house owners, and admins.
 publish_to: "none"
-version: 0.1.0+2
+version: 0.1.0+3
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -69,6 +69,7 @@ dependencies:
   # .share(ShareParams(...))` in place of `Share.share(...)` at every call site.
   # `PackageInfo.fromPlatform().buildNumber` is identical in both majors.
   package_info_plus: ^9.0.1
+  device_info_plus: ^12.4.0
 
 dev_dependencies:
   flutter_test:

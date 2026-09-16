@@ -27,6 +27,7 @@ Writes (nothing else in the repo is generated from the artwork):
     web/favicon.ico                                  /favicon.ico probe path
     web/social-card.png                              link-preview card
     store/play/icon-512.png                          Play listing icon
+    store/play/feature-graphic.png          1024x500 Play listing banner
 
 The iOS *app icon* and the web icons are NOT written here —
 `dart run flutter_launcher_icons` derives those from `assets/brand/icon.png`,
@@ -92,6 +93,19 @@ FRAC_NOTIFICATION = 0.92
 # iOS launch screen. The storyboard centres this on the brand rose, so the
 # figure is a size in points rather than a fraction of any canvas.
 LAUNCH_IMAGE_WIDTH_PT = 128
+
+# The two wide brand surfaces — the web social card and the Play feature
+# graphic — are the same design at two sizes: white lockup, centred, on flat
+# rose. This is the lockup's width as a fraction of the canvas. Wide enough to
+# read as the brand at a thumbnail, with enough ground left either side that
+# neither image looks like a banner someone cropped.
+LOCKUP_FRAC = 0.62
+# ...and a ceiling on how tall that may make it. Today's lockup is 5.36:1, so
+# width binds on both canvases and this never fires. It exists because the
+# lockup's aspect is a property of artwork a designer may recut, and the Play
+# feature graphic is only 500px tall — a squarer lockup at LOCKUP_FRAC would
+# run off the top and bottom of it, silently, on a surface nothing tests.
+LOCKUP_MAX_HEIGHT_FRAC = 0.42
 
 SS = 4  # supersample factor for the drawn masks and gradients
 
@@ -262,6 +276,33 @@ def legacy(mark_white, size, mask):
     return img.resize((size, size), Image.LANCZOS)
 
 
+def lockup_banner(lockup_white, width, height):
+    """White lockup centred on flat brand rose, at `width` x `height`.
+
+    Two call sites — the web social card and the Play feature graphic — and
+    one function, for the reason GuestPartyFields is one widget: these are the
+    app's two most public images, and two copies of "the brand, wide" drift
+    into two different brands.
+
+    Opaque RGB. Both destinations refuse alpha: Play rejects a transparent
+    feature graphic outright, and a social card with alpha is composited by
+    each chat client against a background of its own choosing.
+    """
+    banner = Image.new("RGB", (width, height), BRAND)
+    lw = lockup_white.crop(lockup_white.split()[3].getbbox())
+
+    w = round(width * LOCKUP_FRAC)
+    h = max(1, round(w * lw.size[1] / lw.size[0]))
+    if h > height * LOCKUP_MAX_HEIGHT_FRAC:
+        # Height binds instead — see LOCKUP_MAX_HEIGHT_FRAC.
+        h = round(height * LOCKUP_MAX_HEIGHT_FRAC)
+        w = max(1, round(h * lw.size[0] / lw.size[1]))
+
+    lw = lw.resize((w, h), Image.LANCZOS)
+    banner.paste(lw, ((width - w) // 2, (height - h) // 2), lw)
+    return banner
+
+
 def write(path, img):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     img.save(path, "PNG")
@@ -367,19 +408,8 @@ print("web social card:")
 # crops or letterboxes a square into a wide card, and several will fall back to
 # a tiny thumbnail. This is also the only place the real wordmark ships, so it
 # is the one output built from logo_lockup rather than the mark alone.
-CARD_W, CARD_H = 1200, 630
-card = Image.new("RGB", (CARD_W, CARD_H), BRAND)
 lockup_white = recolour(lockup_rose, WHITE)
-lw = lockup_white.crop(lockup_white.split()[3].getbbox())
-# 0.62 of the width: wide enough to read as the brand at thumbnail size, with
-# enough ground left that the card does not look like a cropped banner.
-target_w = round(CARD_W * 0.62)
-target_h = max(1, round(target_w * lw.size[1] / lw.size[0]))
-lw = lw.resize((target_w, target_h), Image.LANCZOS)
-card.paste(
-    lw, ((CARD_W - target_w) // 2, (CARD_H - target_h) // 2), lw
-)
-write(os.path.join("web", "social-card.png"), card)
+write(os.path.join("web", "social-card.png"), lockup_banner(lockup_white, 1200, 630))
 
 print("web favicon.ico:")
 # Browsers, crawlers and feed readers probe /favicon.ico by convention. There
@@ -402,6 +432,29 @@ ico.convert("RGB").save(
     os.path.join("web", "favicon.ico"), format="ICO", sizes=ICO_SIZES
 )
 print(f"  web/favicon.ico  {'/'.join(str(w) for w, _ in ICO_SIZES)}")
+
+print("play feature graphic:")
+# The banner across the top of the Play listing, and the only image shown in
+# some placements (search results, "similar apps", the Play Store's own
+# editorial rows). An app without one cannot be published to production at all.
+#
+# Three hard rules, all of them Play's rather than ours:
+#
+#   * **Exactly 1024x500.** Not "about", not a larger image of the same ratio
+#     — the upload is refused.
+#   * **No alpha.** lockup_banner returns RGB for this reason.
+#   * **The edges are not safe.** Play crops this per surface and per device,
+#     and overlays a play button dead centre when the listing has a promo
+#     video. LOCKUP_FRAC leaves ~19% of the width clear either side, so the
+#     wordmark survives the crop, and there is no promo video to collide with.
+#
+# Deliberately carries **no text beyond the wordmark**. Text baked into an
+# image cannot be localised, is what Play's cropping mangles first, and would
+# only repeat the app name that the listing already prints right beside it.
+write(
+    os.path.join("store", "play", "feature-graphic.png"),
+    lockup_banner(lockup_white, 1024, 500),
+)
 
 print("play listing icon:")
 # 512x512, RGB with no alpha and no rounding of our own: Play applies its own

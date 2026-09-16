@@ -1,10 +1,24 @@
 import 'package:flutter/material.dart';
 
+import '../core/theme/app_colors.dart';
 import '../core/utils/distance_format.dart';
 import 'app_network_image.dart';
 import '../models/listing.dart';
 import '../models/listing_type.dart';
 import '../models/rental_plan.dart';
+
+/// One size for every grid and carousel that renders a [ListingCardModern].
+///
+/// They were three copies of `300` / `0.72` (the search grid, the "See all"
+/// grid and the curated rows), which is how the rows ended up 336px tall while
+/// the grid was 378 — nothing forced them to agree.
+///
+/// The ratio is width / height and the text block below the photo is now its
+/// own intrinsic height rather than 2/7 of the card, so height ≈ width + ~43.
+/// 0.82 is that relationship at the widths these grids actually produce, which
+/// keeps the photo roughly square — the shape the card was drawn for.
+const double kListingCardMaxExtent = 240;
+const double kListingCardAspectRatio = 0.82;
 
 /// Explore-grid listing card, Airbnb-style: the photo is the hero — large,
 /// rounded on all corners, floating on the scaffold with a soft shadow —
@@ -67,8 +81,12 @@ class _ListingCardModernState extends State<ListingCardModern>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // ── The hero photo: dominant, rounded everywhere, floating ──
+          //
+          // Takes whatever the text below does not. It used to be `flex: 5`
+          // against the text's `flex: 2`, which made the text slot 2/7 of the
+          // card — 108px at 1440px for 43px of text — and tied the text's
+          // headroom to the card's width, so shrinking the card ate into it.
           Expanded(
-            flex: 5,
             child: Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(18),
@@ -208,77 +226,81 @@ class _ListingCardModernState extends State<ListingCardModern>
           // headline rate with the rating. Secondary rates, bed/guest counts
           // and the city used to sit here too, which made the grid busy
           // without helping anyone choose. ──
-          Expanded(
-            flex: 2,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    listing.title,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      height: 1.2,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+            child: Column(
+              // The parent Column hands a non-flex child unbounded height,
+              // so this has to be min or it tries to take infinity.
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  listing.title,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    height: 1.2,
                   ),
-                  const SizedBox(height: 3),
-                  // Rate and rating read as one phrase, so they sit next to
-                  // each other. Nothing is Expanded here — that stretched the
-                  // gap to the full card width and left the rating stranded
-                  // on the far edge.
-                  Row(
-                    children: [
-                      Flexible(
-                        child: _buildRates(
-                          theme,
-                          compact: listing.distanceMeters != null,
-                        ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 3),
+                // Rate and rating read as one phrase, so they sit next to
+                // each other. Nothing is Expanded here — that stretched the
+                // gap to the full card width and left the rating stranded
+                // on the far edge.
+                Row(
+                  children: [
+                    Flexible(
+                      child: _buildRates(
+                        theme,
+                        compact: listing.distanceMeters != null,
                       ),
-                      // Distance only exists after a proximity search, and
-                      // it's the reason those results are ordered the way they
-                      // are — worth the space when present.
-                      if (listing.distanceMeters != null) ...[
-                        const SizedBox(width: 5),
-                        Icon(Icons.near_me_rounded,
-                            size: 11, color: theme.colorScheme.primary),
-                        const SizedBox(width: 2),
-                        Flexible(
-                          child: Text(
-                            formatDistanceMeters(listing.distanceMeters!),
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: theme.colorScheme.primary,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                      if (hasReviews) ...[
-                        const SizedBox(width: 6),
-                        Icon(
-                          Icons.star_rounded,
-                          size: 13,
-                          color: Colors.amber.shade700,
-                        ),
-                        const SizedBox(width: 1),
-                        Text(
-                          listing.rating!.toStringAsFixed(1),
-                          style: theme.textTheme.labelSmall?.copyWith(
+                    ),
+                    // Distance only exists after a proximity search, and
+                    // it's the reason those results are ordered the way they
+                    // are — worth the space when present.
+                    if (listing.distanceMeters != null) ...[
+                      const SizedBox(width: 5),
+                      Icon(Icons.near_me_rounded,
+                          size: 11, color: theme.colorScheme.primary),
+                      const SizedBox(width: 2),
+                      Flexible(
+                        child: Text(
+                          formatDistanceMeters(listing.distanceMeters!),
+                          style: theme.textTheme.bodySmall?.copyWith(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.primary,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ],
+                      ),
                     ],
-                  ),
-                ],
-              ),
+                    if (hasReviews) ...[
+                      // More air than the 6px it had: the rate phrase now ends
+                      // on a muted unit, and without it the star reads as part
+                      // of that phrase rather than as a separate fact.
+                      const SizedBox(width: 8),
+                      Icon(
+                        Icons.star_rounded,
+                        size: 12,
+                        color: Colors.amber.shade700,
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        listing.rating!.toStringAsFixed(1),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.ink,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
             ),
           ),
         ],
@@ -335,17 +357,51 @@ class _ListingCardModernState extends State<ListingCardModern>
     if (compact && plans.length > 1) plans = plans.take(1).toList();
     if (plans.isEmpty) return const SizedBox.shrink();
 
-    final text = plans
-        .map((p) =>
-            '${listing.moneyFor(p)!.format(useCompact: true)}/${p.shortUnit}')
-        .join(' · ');
+    // One `Text.rich`, not a Row of parts, for the reason the type badge is:
+    // with separate children only the last one can shrink, so a narrow card
+    // ellipsizes the wrong half of the phrase. The concatenated string is
+    // unchanged — the spans only carry weight, size and colour.
+    final spans = <InlineSpan>[];
+    for (var i = 0; i < plans.length; i++) {
+      if (i > 0) {
+        spans.add(TextSpan(
+          text: ' · ',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w400,
+            color: AppColors.inkMuted,
+          ),
+        ));
+      }
+      // The first plan is the one the guest reads; the second is there to be
+      // weighed against it. Flat w700 on both at one size — which is what this
+      // was — gives a run of six numerals and two slashes with nothing
+      // leading, and the rating immediately after has to compete with all of
+      // it. So the lead rate is the only thing at full weight and full ink,
+      // its unit is demoted, and the second rate is muted whole.
+      final lead = i == 0;
+      spans.add(TextSpan(
+        text: listing.moneyFor(plans[i])!.format(useCompact: true),
+        style: TextStyle(
+          fontSize: lead ? 12.5 : 11,
+          fontWeight: lead ? FontWeight.w700 : FontWeight.w600,
+          color: lead ? AppColors.ink : AppColors.inkMuted,
+        ),
+      ));
+      spans.add(TextSpan(
+        // The unit is the quietest part of the phrase: it repeats across every
+        // card in the grid, so it carries almost no information per card.
+        text: '/${plans[i].shortUnit}',
+        style: TextStyle(
+          fontSize: lead ? 10 : 9.5,
+          fontWeight: lead ? FontWeight.w600 : FontWeight.w500,
+          color: AppColors.inkMuted,
+        ),
+      ));
+    }
 
-    return Text(
-      text,
-      style: theme.textTheme.bodySmall?.copyWith(
-        fontSize: 12,
-        fontWeight: FontWeight.w700,
-      ),
+    return Text.rich(
+      TextSpan(children: spans),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
     );

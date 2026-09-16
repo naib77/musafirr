@@ -2,11 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:musafir/models/landmark.dart';
+import 'package:musafir/models/listing.dart';
+import 'package:musafir/models/listing_purpose.dart';
+import 'package:musafir/models/listing_type.dart';
 import 'package:musafir/models/search_filters.dart';
 import 'package:musafir/services/places_service.dart';
+import 'package:musafir/services/search/search_scope.dart';
 import 'package:musafir/widgets/map_place_search_bar.dart'
     show PlaceLocateFn, PlaceSuggestFn;
 import 'package:musafir/widgets/search/search_pill.dart';
+import 'package:musafir/widgets/search/search_scope_picker.dart';
 import 'package:musafir/widgets/search/where_panel.dart';
 
 final _today = DateTime(2026, 9, 5);
@@ -16,18 +21,23 @@ void main() {
   /// assertion that matters most in this file.
   late List<SearchFilters> committed;
 
+  /// Listings opened straight from the Where dropdown.
+  late List<Listing> opened;
+
   Future<void> pumpPill(
     WidgetTester tester, {
     SearchFilters filters = const SearchFilters(),
     List<CitySuggestion> cities = const [],
     PlaceSuggestFn? suggest,
     PlaceLocateFn? locate,
+    List<Listing> matching = const [],
     CurrentLocationFn? currentLocation,
     GeocodeFn? geocode,
     VoidCallback? onClear,
     Future<Landmark?> Function()? landmark,
   }) async {
     committed = [];
+    opened = [];
     tester.view.physicalSize = const Size(1440, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -41,7 +51,13 @@ void main() {
             child: SearchPill(
               filters: live,
               today: _today,
-              cities: (query) => cities,
+              cities: (query, types) => cities,
+              matchingListings: (query, types) => query.trim().isEmpty
+                  ? const []
+                  : matching
+                      .where((l) => types.isEmpty || types.contains(l.type))
+                      .toList(),
+              onOpenListing: (listing) => opened.add(listing),
               suggest: suggest,
               locate: locate,
               currentLocation: currentLocation,
@@ -103,6 +119,150 @@ void main() {
       await pumpPill(tester, onClear: () => cleared = true);
       await tester.tap(find.byTooltip('Clear search'));
       expect(cleared, isTrue);
+    });
+  });
+
+  /// Turf is a `ListingType`, so it lived behind the Filters button beside
+  /// Seat and Room — four steps to find a ground, against Medical's one.
+  /// These pin that the one-tap pill writes a real search, and that it cannot
+  /// be combined with a purpose into a search that matches nothing.
+  group('the Anything / Turf scope', () {
+    testWidgets('one tap in Where commits a turf search', (tester) async {
+      await pumpPill(tester);
+
+      await openSegment(tester, 'Where');
+      await tester.tap(find.text('Turf'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Search'));
+      await tester.pumpAndSettle();
+
+      // Still exactly one round trip — the whole reason the panels write to a
+      // draft rather than to the notifier.
+      expect(committed, hasLength(1));
+      expect(committed.single.propertyTypes, [ListingType.turf]);
+    });
+
+    testWidgets('a running turf search shows Turf as the selected pill',
+        (tester) async {
+      await pumpPill(
+        tester,
+        filters: const SearchFilters(propertyTypes: [ListingType.turf]),
+      );
+
+      await openSegment(tester, 'Where');
+      final pill = tester.widget<SearchScopePicker>(
+        find.byType(SearchScopePicker),
+      );
+      expect(pill.scope, SearchScope.turf);
+    });
+
+    testWidgets('picking Turf drops a purpose that cannot apply to it',
+        (tester) async {
+      await pumpPill(
+        tester,
+        filters: const SearchFilters(
+          purposeTags: [ListingPurpose.medical],
+        ),
+      );
+
+      await openSegment(tester, 'Where');
+      await tester.tap(find.text('Turf'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Search'));
+      await tester.pumpAndSettle();
+
+      // Both together AND to zero rows in `search_listings`, and an empty
+      // result is indistinguishable from "no turfs here".
+      expect(committed.single.propertyTypes, [ListingType.turf]);
+      expect(committed.single.purposeTags, isEmpty);
+    });
+
+    testWidgets('Anything gives the turf search back its breadth',
+        (tester) async {
+      await pumpPill(
+        tester,
+        filters: const SearchFilters(propertyTypes: [ListingType.turf]),
+      );
+
+      await openSegment(tester, 'Where');
+      await tester.tap(find.text('Anything'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Search'));
+      await tester.pumpAndSettle();
+
+      expect(committed.single.propertyTypes, isEmpty);
+    });
+  });
+
+  /// The dropdown answered a typed query with places only — "Uttara", "Uttara
+  /// North Metro Rail Station", "Uttara University" — which is the right
+  /// question when the guest has not said what they are looking for, and the
+  /// wrong one once they have picked Turf.
+  group('the dropdown offers the listings themselves', () {
+    Listing turfOf(String id, String title) => Listing(
+          id: id,
+          ownerName: 'Host',
+          title: title,
+          address: 'Sector 7, Uttara',
+          type: ListingType.turf,
+          latitude: 23.87,
+          longitude: 90.38,
+          hourlyRate: 1200,
+          facilities: const [],
+          available: true,
+          city: 'Dhaka',
+        );
+
+    testWidgets('a matching ground is offered under its own heading',
+        (tester) async {
+      await pumpPill(
+        tester,
+        filters: const SearchFilters(propertyTypes: [ListingType.turf]),
+        matching: [turfOf('t1', 'Greenfield Turf')],
+      );
+
+      await openSegment(tester, 'Where');
+      await tester.enterText(find.byType(TextField), 'uttara');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Greenfield Turf'), findsOneWidget);
+      // Headed for what it is offering, so a turf search does not say "Stays".
+      expect(find.text('Matching turfs'), findsOneWidget);
+    });
+
+    testWidgets('tapping one opens it and closes the bar', (tester) async {
+      await pumpPill(
+        tester,
+        filters: const SearchFilters(propertyTypes: [ListingType.turf]),
+        matching: [turfOf('t1', 'Greenfield Turf')],
+      );
+
+      await openSegment(tester, 'Where');
+      await tester.enterText(find.byType(TextField), 'uttara');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Greenfield Turf'));
+      await tester.pumpAndSettle();
+
+      expect(opened.map((l) => l.id), ['t1']);
+      // Opening a listing is not a search.
+      expect(committed, isEmpty);
+      // The panel is an overlay; leaving it up over a pushed screen is the
+      // mistake the landmark picker already avoids.
+      expect(find.text('Matching turfs'), findsNothing);
+    });
+
+    testWidgets('a stay search is not offered turfs', (tester) async {
+      await pumpPill(
+        tester,
+        filters: const SearchFilters(propertyTypes: [ListingType.room]),
+        matching: [turfOf('t1', 'Greenfield Turf')],
+      );
+
+      await openSegment(tester, 'Where');
+      await tester.enterText(find.byType(TextField), 'uttara');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Greenfield Turf'), findsNothing);
     });
   });
 

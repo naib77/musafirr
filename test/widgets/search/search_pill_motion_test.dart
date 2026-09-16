@@ -24,7 +24,8 @@ void main() {
           child: SearchPill(
             filters: const SearchFilters(),
             today: DateTime(2026, 9, 5),
-            cities: (q) => const [CitySuggestion(city: 'Dhaka', count: 4)],
+            cities: (q, types) =>
+                const [CitySuggestion(city: 'Dhaka', count: 4)],
             onPickLandmark: (c, {required type, required title}) async => null,
             onCommit: (_) {},
           ),
