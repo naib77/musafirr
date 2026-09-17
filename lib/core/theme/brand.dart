@@ -28,4 +28,14 @@ class Brand {
 
   /// `#C35063`, measured from the solid interior of the supplied artwork.
   static const Color rose = Color(0xFFC35063);
+
+  /// The far end of the gradient the search button wears: [rose] taken about
+  /// 15% darker, so the button has depth without leaving the brand. Both ends
+  /// carry white text and are held to 4.5:1 in `brand_test.dart`.
+  ///
+  /// The button is brand rose rather than the palette's `brand` on purpose.
+  /// It is the one call to action on the page and has to read the same under
+  /// every palette — under `coral_ink` the palette brand is #222222 and the
+  /// button vanished into a black disc that looked like every other icon.
+  static const Color roseDeep = Color(0xFFA63C4F);
 }

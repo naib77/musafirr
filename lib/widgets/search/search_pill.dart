@@ -255,6 +255,25 @@ class _SearchPillState extends State<SearchPill>
 
   void _close() => _setOpen(null);
 
+  /// A tap that landed in none of the bar, the Filters button or the open
+  /// panel. The scrim already catches those *below* the bar; this is for the
+  /// header band beside and above it — the logo, the destinations, the
+  /// account menu, the empty space either side — which the scrim leaves
+  /// bright on purpose and therefore cannot catch. Before this, a panel stayed
+  /// open through a click on any of them, which reads as stuck.
+  ///
+  /// `TapRegion` does not swallow the tap: the account menu still opens, the
+  /// destination still switches. It only tells us it happened.
+  void _tapOutside(PointerDownEvent _) {
+    if (_open == null) return;
+    // A native picker (the hourly time dialogs) is a route above this one,
+    // and every tap inside it is "outside" the bar. Closing the panel under
+    // an open dialog would hand the guest back to a bar that forgot what
+    // they were doing.
+    if (ModalRoute.of(context)?.isCurrent == false) return;
+    _close();
+  }
+
   /// The single writer of [_open].
   ///
   /// Callers are all event handlers — a tap, an Escape, the end of an await —
@@ -342,28 +361,35 @@ class _SearchPillState extends State<SearchPill>
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Flexible(
-              child: SearchPillBar(
-                key: _barKey,
-                segmentKeys: _segmentKeys,
-                open: _open,
-                where: summary.where,
-                when: summary.when,
-                who: summary.who,
-                busy: _resolving,
-                onSegmentTap: _toggle,
-                onSubmit: _resolving ? null : _submit,
-                onClear: widget.onClear,
-                voice: widget.onVoice == null
-                    ? null
-                    : VoiceSearchMicButton(onTap: widget.onVoice!),
+              child: TapRegion(
+                groupId: this,
+                onTapOutside: _tapOutside,
+                child: SearchPillBar(
+                  key: _barKey,
+                  segmentKeys: _segmentKeys,
+                  open: _open,
+                  where: summary.where,
+                  when: summary.when,
+                  who: summary.who,
+                  busy: _resolving,
+                  onSegmentTap: _toggle,
+                  onSubmit: _resolving ? null : _submit,
+                  onClear: widget.onClear,
+                  voice: widget.onVoice == null
+                      ? null
+                      : VoiceSearchMicButton(onTap: widget.onVoice!),
+                ),
               ),
             ),
             const SizedBox(width: 10),
-            FiltersButton(
-              key: _segmentKeys[SearchSegment.filters],
-              count: _activeFilterCount,
-              open: _open == SearchSegment.filters,
-              onTap: () => _toggle(SearchSegment.filters),
+            TapRegion(
+              groupId: this,
+              child: FiltersButton(
+                key: _segmentKeys[SearchSegment.filters],
+                count: _activeFilterCount,
+                open: _open == SearchSegment.filters,
+                onTap: () => _toggle(SearchSegment.filters),
+              ),
             ),
             // Zero-sized here: the panel itself lives in the Overlay, and this
             // is only where it is anchored in the tree. Always mounted — the
@@ -411,6 +437,7 @@ class _SearchPillState extends State<SearchPill>
       // A panel on its way out must not eat the click that is dismissing it.
       inert: _open == null,
       onDismiss: _close,
+      tapGroup: this,
       child: _panelFor(segment, today),
     );
   }

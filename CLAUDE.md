@@ -1173,6 +1173,32 @@ still be brought down instead of being stranded above a `max` below its value.
   segment in a post-frame callback and holds the rectangles in state (guarded
   on `attached` as well as `hasSize`, since it runs a frame late). The panel is
   an `AnimatedPositioned` over those numbers.
+- **The lifted white segment is ONE card that travels, not a colour on each
+  segment.** It was the latter: every `_Segment` cross-faded its own
+  background, so Where→When was Where going grey while When went white — two
+  dissolves that line up, which the eye reads as "selected", not "moved". The
+  card is an `AnimatedPositioned` layered under the segments in
+  `SearchPillBar`, moved between their measured slots (a frame late, against
+  the Stack, not the bar — the 1px border is `Container` padding), and an
+  active segment paints `alpha: 0` of its own. Opening from closed snaps
+  (`Duration.zero`) rather than sliding in from wherever the bar was last
+  open. The motion test's first version compared the card to the *label*,
+  which sits 22px inside the slot, and passed against a snapping card; it
+  reads the slot now, and the negative control is `duration: Duration.zero`.
+- **The Search button is `Brand.rose`, not the palette's `brand`, and it
+  grows a label while any panel is open.** It is the one call to action on
+  the page and has to read the same under every palette — under `coral_ink`
+  the palette brand is #222222 and it was a black disc like every other icon.
+  `Brand.roseDeep` is the gradient's far end; `brand_test.dart` holds white
+  on both ends to 4.5:1. The label is the editing-state cue (Airbnb's), and
+  **the room it takes comes out of Who's slot only**: the mic, ✕ and button
+  live *inside* Who's `Expanded` (flex 4:3:5), because beside the three
+  segments their growth squeezed all three — Where and When slid 25px and
+  19px as the button opened and the lifted card, measured a frame late,
+  chased them. The card for Who covers that whole outer slot (`_whoSlot`), so
+  an open Who is a white card with the Search button inside it, which is
+  also what Airbnb draws. A motion test pins Where, When and Who's label
+  still on every frame of the expansion.
 - **Every panel is the same width, and that is load-bearing.** They differed
   per segment and the card animated between them — but the cross-fade lays
   *both* panels out during the transition, so the calendar got laid out at the
@@ -1189,6 +1215,17 @@ still be brought down instead of being stranded above a `max` below its value.
   Where panel's listener therefore treats an empty query as "show the default
   destinations", not "show nothing" — the earlier version emptied the list the
   instant the panel opened.
+- **Outside-click dismissal is a `TapRegion` group, not the scrim.** The scrim
+  starts 16px below the bar on purpose (the header stays bright), so it cannot
+  see a click beside or above the bar — the logo, the destinations, the account
+  menu, the empty header space — and the panel sat open through all of them.
+  The bar, the Filters button and the panel card share `groupId: this` on
+  `SearchPill`; a tap landing in none of them closes. `TapRegion` does not
+  swallow the tap, so the account menu still opens. **The handler checks
+  `ModalRoute.isCurrent` first**: the hourly time pickers are dialogs *above*
+  this route, and every tap inside one is "outside" the bar — without the
+  guard, picking a time closed the panel under the dialog. The negative
+  control is removing `onTapOutside`; one test goes red.
 - The landmark picker is a route-level modal sheet, so `SearchPill` closes the
   popover, awaits the pick and reopens it. A bottom sheet over a dropdown reads
   as two competing surfaces.

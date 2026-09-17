@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/brand.dart';
 import 'search_popover.dart';
 
 /// The parts of the bar that can be open. `filters` is not a segment of the
@@ -60,7 +62,15 @@ const double kSearchPanelWidth = 560;
 /// "this one is what you are editing" far better than a highlight would. The
 /// divider beside an active segment hides, or the lifted card appears to have a
 /// line stuck to its edge.
-class SearchPillBar extends StatelessWidget {
+///
+/// The lifted card is ONE widget that travels, not a colour on each segment.
+/// It used to be the latter — every segment cross-faded its own background,
+/// so Where faded to grey while When faded to white, two dissolves that happen
+/// to line up. Filmed, that is a highlight that switches; Airbnb's glides. The
+/// card is an `AnimatedPositioned` layered under the segments, moved between
+/// their measured rectangles, and the segments paint nothing of their own
+/// while active. Same mechanism the panel below uses for the same reason.
+class SearchPillBar extends StatefulWidget {
   const SearchPillBar({
     super.key,
     required this.segmentKeys,
@@ -98,22 +108,104 @@ class SearchPillBar extends StatelessWidget {
     SearchSegment.who,
   ];
 
-  bool get _anyOpen => open != null && open != SearchSegment.filters;
+  /// How long the lifted card takes to reach the next segment, and how long
+  /// the bar takes to go grey. One number, or the card arrives on a bar that
+  /// is still changing colour under it.
+  static const liftDuration = Duration(milliseconds: 180);
+
+  /// The segment's own [AnimatedContainer] sits 3px inside its slot; the card
+  /// has to match or it pokes out above and below the text.
+  static const _liftInset = 3.0;
+
+  @override
+  State<SearchPillBar> createState() => _SearchPillBarState();
+}
+
+class _SearchPillBarState extends State<SearchPillBar> {
+  /// The layer the card is positioned in — measured against, not the bar's
+  /// outer box, because the border is 1px of `Container` padding and a rect
+  /// taken against the outside would sit one pixel off the segment it covers.
+  final _layer = GlobalKey();
+
+  /// Each segment's slot, in the layer's coordinates. Measured a frame late,
+  /// like `SearchPill` measures the bar: nothing reads layout during build.
+  final Map<SearchSegment, Rect> _slots = {};
+
+  /// Who's slot is wider than its segment: it holds the mic, the ✕ and the
+  /// Search button too, and the lifted card covers the lot — Airbnb's open
+  /// Who is a white card with the Search button sitting inside it. This is
+  /// the key that outer slot is measured by; `segmentKeys[who]` stays on the
+  /// tappable segment, which is what the panel below anchors to.
+  final _whoSlot = GlobalKey();
+
+  /// Where the card last was. Kept so it can fade out *in place* on close
+  /// rather than vanishing the instant `open` goes null.
+  Rect? _lastLift;
+
+  /// Whether the previous build had a lifted segment. Opening from closed
+  /// must put the card straight on the tapped segment — if it animated from
+  /// [_lastLift] it would slide in from wherever the bar was last open, which
+  /// is the sideways drift the panel already refuses to make.
+  bool _wasLifted = false;
+
+  bool get _anyOpen =>
+      widget.open != null && widget.open != SearchSegment.filters;
 
   String? _valueFor(SearchSegment segment) => switch (segment) {
-        SearchSegment.where => where,
-        SearchSegment.when => when,
-        SearchSegment.who => who,
+        SearchSegment.where => widget.where,
+        SearchSegment.when => widget.when,
+        SearchSegment.who => widget.who,
         SearchSegment.filters => null,
       };
 
+  void _measure() {
+    if (!mounted) return;
+    final layer = _layer.currentContext?.findRenderObject();
+    if (layer is! RenderBox || !layer.hasSize) return;
+    final next = <SearchSegment, Rect>{};
+    for (final segment in SearchPillBar._segments) {
+      final key =
+          segment == SearchSegment.who ? _whoSlot : widget.segmentKeys[segment];
+      final box = key?.currentContext?.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize) continue;
+      next[segment] =
+          box.localToGlobal(Offset.zero, ancestor: layer) & box.size;
+    }
+    if (mapEquals(next, _slots)) return;
+    setState(() {
+      _slots
+        ..clear()
+        ..addAll(next);
+    });
+  }
+
+  Widget _segment(SearchSegment segment) => _Segment(
+        key: widget.segmentKeys[segment],
+        segment: segment,
+        value: _valueFor(segment),
+        active: widget.open == segment,
+        dimmed: _anyOpen && widget.open != segment,
+        onTap: () => widget.onSegmentTap(segment),
+      );
+
   @override
   Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
+
+    final lifted = _anyOpen ? _slots[widget.open] : null;
+    // Reading the previous build's answer before overwriting it: this is the
+    // one frame where "did the card exist a moment ago" decides whether it
+    // travels or appears.
+    final snap = lifted != null && !_wasLifted;
+    _wasLifted = lifted != null;
+    if (lifted != null) _lastLift = lifted;
+    final card = _lastLift;
+
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 780),
       child: AnimatedContainer(
         key: const ValueKey('search-bar'),
-        duration: const Duration(milliseconds: 180),
+        duration: SearchPillBar.liftDuration,
         curve: Curves.easeOut,
         height: 68,
         decoration: BoxDecoration(
@@ -128,48 +220,113 @@ class SearchPillBar extends StatelessWidget {
             ),
           ],
         ),
-        child: Row(
+        child: Stack(
+          key: _layer,
+          fit: StackFit.passthrough,
           children: [
-            for (var i = 0; i < _segments.length; i++) ...[
-              if (i > 0)
-                _Divider(
-                  // Hidden either side of the lifted segment, and while the
-                  // whole bar is grey the dividers would otherwise read as
-                  // seams in it.
-                  visible: !_anyOpen &&
-                      open != _segments[i] &&
-                      open != _segments[i - 1],
+            if (card != null)
+              AnimatedPositioned.fromRect(
+                key: const ValueKey('search-lifted'),
+                rect: Rect.fromLTRB(
+                  card.left,
+                  card.top + SearchPillBar._liftInset,
+                  card.right,
+                  card.bottom - SearchPillBar._liftInset,
                 ),
-              Expanded(
-                flex: _segments[i] == SearchSegment.where ? 4 : 3,
-                child: _Segment(
-                  key: segmentKeys[_segments[i]],
-                  segment: _segments[i],
-                  value: _valueFor(_segments[i]),
-                  active: open == _segments[i],
-                  dimmed: _anyOpen && open != _segments[i],
-                  onTap: () => onSegmentTap(_segments[i]),
-                ),
-              ),
-            ],
-            Padding(
-              padding: const EdgeInsets.only(left: 4, right: 9),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (onClear != null)
-                    IconButton(
-                      onPressed: onClear,
-                      icon: const Icon(Icons.close, size: 19),
-                      color: AppColors.inkMuted,
-                      tooltip: 'Clear search',
-                      visualDensity: VisualDensity.compact,
+                duration: snap ? Duration.zero : SearchPillBar.liftDuration,
+                curve: Curves.easeOut,
+                // The segments above take the taps; the card is paint only.
+                child: IgnorePointer(
+                  child: AnimatedOpacity(
+                    duration: SearchPillBar.liftDuration,
+                    opacity: lifted != null ? 1 : 0,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        // Opaque white over a grey bar: a fade between those
+                        // two never passes through anything darker than the
+                        // grey, which is the hover-flicker rule below.
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(40),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.16),
+                            blurRadius: 14,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
                     ),
-                  if (voice != null) voice!,
-                  const SizedBox(width: 4),
-                  _SearchButton(onTap: onSubmit, busy: busy),
-                ],
+                  ),
+                ),
               ),
+            Row(
+              children: [
+                for (var i = 0; i < SearchPillBar._segments.length; i++) ...[
+                  if (i > 0)
+                    _Divider(
+                      // Hidden either side of the lifted segment, and while
+                      // the whole bar is grey the dividers would otherwise
+                      // read as seams in it.
+                      visible: !_anyOpen &&
+                          widget.open != SearchPillBar._segments[i] &&
+                          widget.open != SearchPillBar._segments[i - 1],
+                    ),
+                  if (SearchPillBar._segments[i] == SearchSegment.who)
+                    // The controls live INSIDE Who's slot, not after it. When
+                    // the Search button grows its label it has to take that
+                    // room from somewhere, and if the controls sat beside the
+                    // three Expanded segments it took it from all three —
+                    // Where and When slid left by 25px and 19px as the button
+                    // opened, dragging the lifted card and the panel under it
+                    // along a frame late. Airbnb's Where and When do not move;
+                    // only Who's own text area gives way, and its label is
+                    // left-aligned so even that is invisible.
+                    Expanded(
+                      flex: 5,
+                      child: KeyedSubtree(
+                        key: _whoSlot,
+                        child: Row(
+                          children: [
+                            Expanded(child: _segment(SearchSegment.who)),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 4, right: 9),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (widget.onClear != null)
+                                    IconButton(
+                                      onPressed: widget.onClear,
+                                      icon: const Icon(Icons.close, size: 19),
+                                      color: AppColors.inkMuted,
+                                      tooltip: 'Clear search',
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                  if (widget.voice != null) widget.voice!,
+                                  const SizedBox(width: 4),
+                                  _SearchButton(
+                                    onTap: widget.onSubmit,
+                                    busy: widget.busy,
+                                    // Any panel, the Filters one included: the
+                                    // moment the guest is editing, the button
+                                    // says what it commits.
+                                    expanded: widget.open != null,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      flex: SearchPillBar._segments[i] == SearchSegment.where
+                          ? 4
+                          : 3,
+                      child: _segment(SearchPillBar._segments[i]),
+                    ),
+                ],
+              ],
             ),
           ],
         ),
@@ -244,7 +401,10 @@ class _SegmentState extends State<_Segment> {
 
     final Color background;
     if (widget.active) {
-      background = AppColors.surface;
+      // The white is the travelling card in `SearchPillBar`, painted under
+      // this segment. Painting it here as well is what the old design did,
+      // and it is exactly what made the switch a dissolve instead of a slide.
+      background = barColour.withValues(alpha: 0);
     } else if (_hovered) {
       // On a grey bar the hover has to go darker to be visible at all; on a
       // white one it goes lighter-grey, as it always did. Flattened against
@@ -281,15 +441,6 @@ class _SegmentState extends State<_Segment> {
             decoration: BoxDecoration(
               color: background,
               borderRadius: BorderRadius.circular(40),
-              boxShadow: widget.active
-                  ? [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.16),
-                        blurRadius: 14,
-                        offset: const Offset(0, 3),
-                      ),
-                    ]
-                  : const [],
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -328,48 +479,86 @@ class _SegmentState extends State<_Segment> {
   }
 }
 
+/// The commit button. A round icon while the bar is at rest, and the moment a
+/// panel opens it grows a "Search" label — Airbnb's cue that the bar is now in
+/// an editing state with something to commit. Width animates through
+/// `AnimatedSize` so the label slides out rather than popping.
 class _SearchButton extends StatelessWidget {
-  const _SearchButton({required this.onTap, required this.busy});
+  const _SearchButton({
+    required this.onTap,
+    required this.busy,
+    required this.expanded,
+  });
 
   final VoidCallback? onTap;
   final bool busy;
+  final bool expanded;
 
   @override
   Widget build(BuildContext context) {
+    final enabled = onTap != null;
     return Tooltip(
       message: busy ? 'Finding that place…' : 'Search',
       child: Material(
-        shape: const CircleBorder(),
+        shape: const StadiumBorder(),
         clipBehavior: Clip.antiAlias,
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
           child: MouseRegion(
-            cursor: onTap == null
-                ? SystemMouseCursors.basic
-                : SystemMouseCursors.click,
-            child: Container(
-              width: 48,
+            cursor:
+                enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+            child: AnimatedContainer(
+              key: const ValueKey('search-submit'),
+              duration: SearchPillBar.liftDuration,
+              curve: Curves.easeOut,
               height: 48,
+              constraints: const BoxConstraints(minWidth: 48),
+              padding: EdgeInsets.symmetric(horizontal: expanded ? 18 : 13),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: onTap == null
-                      ? [AppColors.outline, AppColors.outline]
-                      : [AppColors.brand, AppColors.brandDark],
+                  colors: enabled
+                      ? const [Brand.rose, Brand.roseDeep]
+                      : [AppColors.outline, AppColors.outline],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
-                shape: BoxShape.circle,
+                borderRadius: BorderRadius.circular(24),
               ),
-              child: busy
-                  ? const Padding(
-                      padding: EdgeInsets.all(14),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (busy)
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
                         color: Colors.white,
                       ),
                     )
-                  : const Icon(Icons.search, size: 22, color: Colors.white),
+                  else
+                    const Icon(Icons.search, size: 22, color: Colors.white),
+                  AnimatedSize(
+                    duration: SearchPillBar.liftDuration,
+                    curve: Curves.easeOut,
+                    alignment: Alignment.centerLeft,
+                    child: expanded
+                        ? const Padding(
+                            padding: EdgeInsets.only(left: 8),
+                            child: Text(
+                              'Search',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
