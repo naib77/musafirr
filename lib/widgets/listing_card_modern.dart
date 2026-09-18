@@ -167,31 +167,45 @@ class _ListingCardModernState extends State<ListingCardModern>
                     Positioned(
                       top: 6,
                       right: 6,
-                      child: GestureDetector(
-                        onTap: _onFavoriteTap,
-                        child: AnimatedBuilder(
-                          animation: _heartScale,
-                          builder: (context, child) {
-                            return Transform.scale(
-                              scale: _heartScale.value,
-                              child: Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.9),
-                                  shape: BoxShape.circle,
+                      child: Semantics(
+                        button: true,
+                        toggled: widget.isFavorite,
+                        // The card itself is the only labelled thing on this
+                        // tile; the heart on top of it was an unnamed button,
+                        // and one per card (QA report 2026-09-18, N7). The
+                        // label says what the tap will DO, not what the icon
+                        // currently is — "Favourite" on a filled heart reads
+                        // as a statement, not an action.
+                        label: widget.isFavorite
+                            ? 'Remove from wishlist'
+                            : 'Save to wishlist',
+                        excludeSemantics: true,
+                        child: GestureDetector(
+                          onTap: _onFavoriteTap,
+                          child: AnimatedBuilder(
+                            animation: _heartScale,
+                            builder: (context, child) {
+                              return Transform.scale(
+                                scale: _heartScale.value,
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.9),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    widget.isFavorite
+                                        ? Icons.favorite
+                                        : Icons.favorite_border,
+                                    color: widget.isFavorite
+                                        ? Colors.redAccent
+                                        : Colors.grey[700],
+                                    size: 16,
+                                  ),
                                 ),
-                                child: Icon(
-                                  widget.isFavorite
-                                      ? Icons.favorite
-                                      : Icons.favorite_border,
-                                  color: widget.isFavorite
-                                      ? Colors.redAccent
-                                      : Colors.grey[700],
-                                  size: 16,
-                                ),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ),
                         ),
                       ),
                     ),

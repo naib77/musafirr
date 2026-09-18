@@ -497,67 +497,75 @@ class _SearchButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = onTap != null;
-    return Tooltip(
-      message: busy ? 'Finding that place…' : 'Search',
-      child: Material(
-        shape: const StadiumBorder(),
-        clipBehavior: Clip.antiAlias,
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          child: MouseRegion(
-            cursor:
-                enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-            child: AnimatedContainer(
-              key: const ValueKey('search-submit'),
-              duration: SearchPillBar.liftDuration,
-              curve: Curves.easeOut,
-              height: 48,
-              constraints: const BoxConstraints(minWidth: 48),
-              padding: EdgeInsets.symmetric(horizontal: expanded ? 18 : 13),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: enabled
-                      ? const [Brand.rose, Brand.roseDeep]
-                      : [AppColors.outline, AppColors.outline],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (busy)
-                    const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  else
-                    const Icon(Icons.search, size: 22, color: Colors.white),
-                  AnimatedSize(
-                    duration: SearchPillBar.liftDuration,
-                    curve: Curves.easeOut,
-                    alignment: Alignment.centerLeft,
-                    child: expanded
-                        ? const Padding(
-                            padding: EdgeInsets.only(left: 8),
-                            child: Text(
-                              'Search',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                              ),
-                            ),
-                          )
-                        : const SizedBox.shrink(),
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      // The one call to action on the page, and until now it reached a screen
+      // reader as an unnamed button: a Tooltip sets the semantic *tooltip*,
+      // never the label (QA report 2026-09-18, N7).
+      label: busy ? 'Searching' : 'Search',
+      child: Tooltip(
+        message: busy ? 'Finding that place…' : 'Search',
+        child: Material(
+          shape: const StadiumBorder(),
+          clipBehavior: Clip.antiAlias,
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            child: MouseRegion(
+              cursor:
+                  enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+              child: AnimatedContainer(
+                key: const ValueKey('search-submit'),
+                duration: SearchPillBar.liftDuration,
+                curve: Curves.easeOut,
+                height: 48,
+                constraints: const BoxConstraints(minWidth: 48),
+                padding: EdgeInsets.symmetric(horizontal: expanded ? 18 : 13),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: enabled
+                        ? const [Brand.rose, Brand.roseDeep]
+                        : [AppColors.outline, AppColors.outline],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                ],
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (busy)
+                      const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    else
+                      const Icon(Icons.search, size: 22, color: Colors.white),
+                    AnimatedSize(
+                      duration: SearchPillBar.liftDuration,
+                      curve: Curves.easeOut,
+                      alignment: Alignment.centerLeft,
+                      child: expanded
+                          ? const Padding(
+                              padding: EdgeInsets.only(left: 8),
+                              child: Text(
+                                'Search',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

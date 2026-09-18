@@ -455,6 +455,18 @@ class _HoverPillState extends State<_HoverPill> {
     );
     if (widget.tooltip != null) {
       result = Tooltip(message: widget.tooltip!, child: result);
+      // A Tooltip sets `SemanticsProperties.tooltip`, NOT `label`, so an
+      // icon-only pill (the bell, the leaderboard trophy, the brand) reached
+      // a screen reader as an unnamed button — role, no name. Measured in the
+      // browser with semantics switched on: 38 nodes, 8 labels (QA report
+      // 2026-09-18, N7). The tooltip is already the shortest true name for
+      // each of them, so it is the label too rather than a second string to
+      // keep in step.
+      result = Semantics(
+        button: true,
+        label: widget.tooltip,
+        child: result,
+      );
     }
     return result;
   }
@@ -488,81 +500,86 @@ class _AccountButtonState extends State<_AccountButton> {
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: PopupMenuButton<int>(
-        tooltip: 'Account and more',
-        position: PopupMenuPosition.under,
-        offset: const Offset(0, 6),
-        color: AppColors.surface,
-        elevation: 8,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: BorderSide(color: AppColors.outline, width: 0.5),
-        ),
-        onSelected: (i) => widget.items[i].onTap(),
-        itemBuilder: (context) => [
-          for (var i = 0; i < widget.items.length; i++) ...[
-            if (widget.items[i].dividerAbove) const PopupMenuDivider(),
-            PopupMenuItem<int>(
-              value: i,
-              height: 44,
-              child: Row(
-                children: [
-                  if (widget.items[i].icon != null) ...[
-                    Icon(
-                      widget.items[i].icon,
-                      size: 19,
-                      color: AppColors.inkMuted,
-                    ),
-                    const SizedBox(width: 12),
-                  ],
-                  Text(
-                    widget.items[i].label,
-                    style: TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: widget.items[i].emphasized
-                          ? FontWeight.w700
-                          : FontWeight.w500,
-                      color: AppColors.ink,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          curve: Curves.easeOut,
-          height: 44,
-          padding: const EdgeInsets.fromLTRB(14, 0, 5, 0),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: widget.highlighted ? AppColors.brand : AppColors.outline,
-              width: widget.highlighted ? 1.4 : 1,
-            ),
-            boxShadow: _hovered
-                ? [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.10),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ]
-                : const [],
+    return Semantics(
+      button: true,
+      // `PopupMenuButton.tooltip` is a tooltip, not a name — see _HoverPill.
+      label: 'Account and more',
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: PopupMenuButton<int>(
+          tooltip: 'Account and more',
+          position: PopupMenuPosition.under,
+          offset: const Offset(0, 6),
+          color: AppColors.surface,
+          elevation: 8,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: AppColors.outline, width: 0.5),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.menu_rounded, size: 18, color: AppColors.ink),
-              const SizedBox(width: 10),
-              _Avatar(url: widget.avatarUrl, name: widget.displayName),
+          onSelected: (i) => widget.items[i].onTap(),
+          itemBuilder: (context) => [
+            for (var i = 0; i < widget.items.length; i++) ...[
+              if (widget.items[i].dividerAbove) const PopupMenuDivider(),
+              PopupMenuItem<int>(
+                value: i,
+                height: 44,
+                child: Row(
+                  children: [
+                    if (widget.items[i].icon != null) ...[
+                      Icon(
+                        widget.items[i].icon,
+                        size: 19,
+                        color: AppColors.inkMuted,
+                      ),
+                      const SizedBox(width: 12),
+                    ],
+                    Text(
+                      widget.items[i].label,
+                      style: TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: widget.items[i].emphasized
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                        color: AppColors.ink,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
+          ],
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+            height: 44,
+            padding: const EdgeInsets.fromLTRB(14, 0, 5, 0),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: widget.highlighted ? AppColors.brand : AppColors.outline,
+                width: widget.highlighted ? 1.4 : 1,
+              ),
+              boxShadow: _hovered
+                  ? [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.10),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : const [],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.menu_rounded, size: 18, color: AppColors.ink),
+                const SizedBox(width: 10),
+                _Avatar(url: widget.avatarUrl, name: widget.displayName),
+              ],
+            ),
           ),
         ),
       ),

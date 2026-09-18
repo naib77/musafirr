@@ -43,3 +43,36 @@ const Set<String> guestFacingBookingSqlStates = {'22023', 'P0002', '42501'};
 /// useful to show a guest verbatim.
 bool isGuestFacingBookingRefusal(String? sqlState) =>
     sqlState != null && guestFacingBookingSqlStates.contains(sqlState);
+
+/// The SQLSTATEs that mean "the database gave up on this transaction, try it
+/// again", not "no".
+///
+///   * `40001` serialization_failure
+///   * `40P01` deadlock_detected
+///
+/// This exists because of what several guests racing for one slot actually
+/// look like. `bookings_no_overlap` (078) is an exclusion constraint and it
+/// does its job perfectly — exactly one booking survived every race in QA,
+/// at two, three, four and eight concurrent guests. But **what the losers are
+/// told depends on how many of them there were.** With two guests the loser
+/// gets `23P01` and the sentence written for them. With three or more,
+/// Postgres frequently raises from inside the exclusion check itself:
+///
+///     ERROR:  deadlock detected
+///     CONTEXT: while checking exclusion constraint on tuple (1,25)
+///              in relation "bookings"
+///
+/// The client handled `23P01` only, so under the load this feature exists for
+/// — a popular slot — most losing guests saw an unexplained failure instead of
+/// "this time slot was just booked by someone else". Measured across six
+/// four-racer runs: two runs had all three losers deadlock (QA report
+/// 2026-09-18, N6).
+///
+/// A deadlock rolls the whole transaction back, so retrying is safe: there is
+/// no half-written booking to clean up, and `create_marketplace_booking` is
+/// one statement.
+const Set<String> retryableBookingSqlStates = {'40001', '40P01'};
+
+/// Whether [sqlState] is a transient database failure worth one more attempt.
+bool isRetryableBookingFailure(String? sqlState) =>
+    sqlState != null && retryableBookingSqlStates.contains(sqlState);

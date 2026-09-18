@@ -516,4 +516,44 @@ void main() {
       expect(committed.single.latitude, 23.87);
     });
   });
+
+  group('accessibility', () {
+    // The browser measurement that produced N7 found 38 semantics nodes and 8
+    // labels; the Search button — the one call to action on the page — was a
+    // `button` with no name, because a Tooltip sets the semantic *tooltip*
+    // and never the label. The segments were already named; this pins both.
+    testWidgets('every control in the bar has a name', (tester) async {
+      await pumpPill(tester);
+
+      Finder labelled(String label) => find.byWidgetPredicate(
+            (w) => w is Semantics && w.properties.label == label,
+            description: 'Semantics(label: "$label")',
+          );
+
+      expect(labelled('Search'), findsOneWidget);
+      expect(labelled('Filters'), findsOneWidget);
+      // The three segments name themselves with what they currently hold.
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Semantics && (w.properties.label ?? '').startsWith('Where,'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Semantics && (w.properties.label ?? '').startsWith('When,'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Semantics && (w.properties.label ?? '').startsWith('Who,'),
+        ),
+        findsOneWidget,
+      );
+    });
+  });
 }

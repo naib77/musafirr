@@ -2038,7 +2038,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
     // leaving a phantom local booking that the host never received. Roll back
     // the optimistic add on failure.
     try {
-      final result = await _insertMarketplaceBooking(
+      final result = await _insertMarketplaceBookingWithRetry(
         booking,
         couponCode: couponCode,
         discountAmount: discountAmount,
@@ -2067,6 +2067,21 @@ class SupabaseMusafirRepository extends ChangeNotifier
       // a typed BookingConflictException, so the UI shows a specific "slot was
       // just taken" message instead of a generic failure. Without this the
       // server race-loss surfaces as a bare PostgrestException → generic banner.
+      // A race the database resolved by killing this transaction rather than
+      // by naming the conflict. `_insertMarketplaceBookingWithRetry` has
+      // already tried again once; reaching here means the second attempt
+      // failed too, and by far the likeliest reason is that the winner's row
+      // is now committed and in the way. Telling the guest the slot was taken
+      // is both the most probable truth and the only sentence that suggests a
+      // useful next action — a generic banner suggests retrying the booking
+      // that just lost twice.
+      if (e is PostgrestException && isRetryableBookingFailure(e.code)) {
+        throw BookingConflictException(
+          'This time slot was just booked by someone else',
+          conflictType: ConflictType.listing,
+          conflictingBookings: const [],
+        );
+      }
       if (e is PostgrestException && e.code == '23P01') {
         // Which of the two sentences to show is decided by
         // [bookingConflictTypeFrom] — a pure function with its own tests —
@@ -2096,6 +2111,43 @@ class SupabaseMusafirRepository extends ChangeNotifier
         throw BookingRejectedException(e.message, code: e.code);
       }
       rethrow;
+    }
+  }
+
+  /// [_insertMarketplaceBooking] with one retry on a transient database
+  /// failure — a deadlock or a serialization failure.
+  ///
+  /// Once, not a loop with backoff: a guest is waiting on this, the whole
+  /// point of the retry is that the race has already been decided by the time
+  /// the second attempt runs, and a client that keeps hammering a contended
+  /// slot is adding to the contention it is losing to. If the second attempt
+  /// also fails the caller turns it into the conflict message.
+  ///
+  /// See [retryableBookingSqlStates] for why three or more guests competing
+  /// for one slot produces a deadlock rather than a conflict.
+  Future<({String id, double totalPrice, double discountAmount})>
+      _insertMarketplaceBookingWithRetry(
+    Booking booking, {
+    String? couponCode,
+    double discountAmount = 0,
+    String? couponId,
+  }) async {
+    try {
+      return await _insertMarketplaceBooking(
+        booking,
+        couponCode: couponCode,
+        discountAmount: discountAmount,
+        couponId: couponId,
+      );
+    } on PostgrestException catch (e) {
+      if (!isRetryableBookingFailure(e.code)) rethrow;
+      debugPrint('createMarketplaceBooking: ${e.code}, retrying once');
+      return _insertMarketplaceBooking(
+        booking,
+        couponCode: couponCode,
+        discountAmount: discountAmount,
+        couponId: couponId,
+      );
     }
   }
 
