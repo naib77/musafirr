@@ -1,6 +1,6 @@
 # SSLCommerz payments — integration reference
 
-Guests pay for a booking through **SSLCommerz** (sandbox). Payment is available
+Guests pay for a booking through **SSLCommerz**. Payment is available
 **any time after the host accepts and before the stay is finished** — i.e. while
 `booking_status` is `confirmed` (accepted) or `active` (checked in) — and the
 host can only mark a booking **completed** once `payment_status = 'paid'`.
@@ -193,7 +193,25 @@ Admins see **every** transaction at **Payments** (sidebar):
 Access is via the existing `payments_select` RLS policy (admins can read all).
 Payments are read-only in the panel — the app + Edge Functions own writes.
 
-## Testing (sandbox)
+## Live is PRODUCTION, not sandbox
+
+This document said "sandbox" for as long as it existed and it has been wrong
+since the store went live. Confirmed 2026-09-18 by hashing candidates against
+the Management API's SHA-256 of the secret (the API never returns the value):
+
+    SSLCZ_API_BASE = https://securepay.sslcommerz.com
+
+So **a payment driven against the live project is a real payment with real
+money.** The functions read their secrets at runtime, so nothing about this is
+visible in the deployed code, which is exactly why it went unnoticed.
+
+Testing therefore happens against the **local stack** with a sandbox store —
+see CLAUDE.md's Supabase section for how the local mirror is built, and
+`supabase/functions/.env.local` (git-ignored) for the sandbox credentials. The
+card details below are sandbox cards and will be declined by the production
+gateway.
+
+## Testing (sandbox, against the LOCAL stack)
 1. Create a booking as a guest, accept it as the host → the guest sees **Pay ৳X**.
 2. Tap it, complete payment on the SSLCommerz page with a sandbox test card, e.g.
    VISA `4111 1111 1111 1111`, any future expiry, any CVV, OTP `111111` / `123456`.
@@ -207,8 +225,31 @@ Optional: enable IPN in the merchant panel (Settings → IPN) pointing at
 `https://bojkmonskqlhuakxhzcb.supabase.co/functions/v1/sslcommerz-ipn` for the
 server-to-server path — the success redirect already settles without it.
 
-## Going to production
-- Swap `SSLCZ_API_BASE` to `https://securepay.sslcommerz.com` and set the live
-  `SSLCZ_STORE_ID` / `SSLCZ_STORE_PASSWD`.
-- Refunds (`payment_status = 'refunded'`) are modelled but not yet wired — add a
-  refund path if a host rejects/cancels after payment.
+## Production (already done)
+- `SSLCZ_API_BASE` is `https://securepay.sslcommerz.com` with the live
+  `SSLCZ_STORE_ID` / `SSLCZ_STORE_PASSWD`. Point a *local* stack at
+  `https://sandbox.sslcommerz.com` with the sandbox store instead.
+- Refunds (`payment_status = 'refunded'`) are a bookkeeping flip that posts the
+  reversing ledger entry (101). The console's switch did nothing until
+  migration 137 gave admins an UPDATE policy on `bookings`; sending the guest
+  their money back is still a separate `guest_refund` disbursement on the
+  Payouts screen.
+
+## Attempts, and payments held for review (136)
+
+Two behaviours that are easy to be surprised by:
+
+- **`sslcommerz-init` closes this booking's earlier `initiated` rows** before
+  it creates a new one, and refuses after six attempts in an hour. Before
+  that, six rapid taps made six live attempts and nothing ever closed them —
+  live carried 27 such rows worth ৳52,420. `expire_stale_payment_attempts`
+  sweeps anything `initiated` for over an hour to `abandoned` every 15
+  minutes.
+- **A payment the gateway flags is NOT settled.** SSLCommerz sets
+  `risk_level` non-zero with a `risk_title` on an otherwise VALID transaction
+  when its fraud screen fires, and its guidance is to hold that payment before
+  delivering. Such a payment lands as `pending_review`, the booking stays
+  unpaid, the guest is told their payment is being checked, and every admin is
+  notified. It is resolved from the **Held** tab of the console's Payments
+  screen, which calls `admin_release_payment` / `admin_reject_payment` with
+  the service-role client.

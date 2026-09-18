@@ -80,6 +80,62 @@ the `Supabase CLI` keychain entry.
 Migrations are not automatically applied by any pipeline. Applying one to the
 live database is a real, outward-facing action — say so and confirm first.
 
+### The migration chain does not apply from scratch; local comes from a live baseline
+
+`supabase start` on an empty database used to fail at **003**: `UNIQUE
+(LEAST(a,b), GREATEST(a,b))` is not valid Postgres and never was. That file is
+repaired (it creates `uniq_conversation_per_pair`, the index live actually
+has), and the chain still does not rebuild the database — **and now we know
+why, rather than suspecting it.** Replaying all 137 files into an empty
+database applied 103 and failed 34, and among the failures are eight
+migrations from 062 onward that need `listings.max_guests`, three that need
+`bookings.listing_title`, plus `listings.city`, `facilities.code` and
+`facilities.icon`. Those columns are on live and **nothing in
+`supabase/migrations` adds them**: pieces of the chain were never committed.
+
+So the decision recorded in `supabase/migrations/README.md` is that **the
+baseline is the build and the chain is history.** Read that file before
+adding a migration; the two things it asks of you are to bump
+`NEWER_MIGRATIONS` in `tool/local_db_from_live.sh` and to regenerate the
+baseline after applying to live.
+
+Live cannot be `pg_dump`ed from here either — the `SUPABASE_DB_URL` "value"
+the secrets API returns is a SHA-256, and there is no DB password on this
+machine. So the local database is a **catalog dump through the Management
+API**:
+
+```sh
+supabase start                      # config.toml has migrations+seed OFF
+python3 tool/dump_live_baseline.py  # -> supabase/baseline/live_baseline.sql
+sh tool/local_db_from_live.sh       # baseline (retried to stable), reference
+                                    # rows, migrations newer than live, QA seed
+supabase functions serve --env-file supabase/functions/.env.local --no-verify-jwt
+```
+
+Where it listens, once started:
+
+| Studio UI | <http://127.0.0.1:54323> |
+| Postgres | `postgresql://postgres:postgres@127.0.0.1:54322/postgres` |
+| API / PostgREST / Auth | <http://127.0.0.1:54321> |
+| anon + service keys | `supabase status` (the standard local demo keys, not secrets) |
+
+`supabase start` on an ALREADY-RUNNING stack only prints status — it will not
+add a service you excluded earlier. To gain Studio you must `supabase stop`
+(which keeps the data volume; only `--no-backup` deletes it) and start again
+with a shorter `-x` list.
+
+Checked 2026-09-18 with the same catalog query on both: identical on tables,
+functions, policies, triggers, views, indexes, RLS, cron, definers and anon
+column grants. Not in the mirror: storage policies, auth config, secret
+values. Seed accounts are `phone.170000000N@musaafir.app`, password
+`qa-password`, and the local master OTP `3969` on those five numbers.
+
+Three traps: the baseline is applied **repeatedly** on purpose (function,
+view and policy order settles by retry; a count that stops shrinking above
+zero is a finding); triggers are create-if-absent because `postgres` can
+create but not drop a trigger on `spatial_ref_sys`; and
+`NEWER_MIGRATIONS` in the loader must be bumped when live moves.
+
 ## Availability rules belong in the database, not the booking form
 
 Migration 070 moved the *price* server-side because the client was deciding it.
@@ -412,10 +468,16 @@ guard trigger**. `public_profiles` is `select <safe columns> from profiles`, so:
 PATCH /rest/v1/public_profiles?id=eq.<host>  {"role":"admin"}   →  204
 ```
 
-with the bundled anon key promoted any account to admin. The direct path is
-safe — `update profiles` as anon hits RLS (no matching row) and an
-authenticated self-`role` change is stopped by `fn_guard_verification_verdicts`
-— but the definer view launders the actor into `postgres` and slips both. Fix
+with the bundled anon key promoted any account to admin. The definer view launders the actor into `postgres` and slips
+RLS entirely.
+
+**This note used to claim the direct path was safe, and it was wrong.** It
+said an authenticated self-`role` change is stopped by
+`fn_guard_verification_verdicts`. That function guards identity verification,
+address verification, `nid_verified` and the address audit columns, and never
+mentioned `role`; the direct path was assumed safe without being driven.
+Proved otherwise on live 2026-09-18 (rolled back): one PATCH on your own
+profile row set `role` to `admin`. See 133 below. Fix
 was to **revoke INSERT/UPDATE/DELETE on the view**; reads run as postgres either
 way, so nothing broke.
 
@@ -657,6 +719,277 @@ phone needed a unique index for. Reach is 44 of 44, against SMS's 38.
   pattern again.
 - `notification_bulk_max_recipients` seeded 2000, fail-closed, 0 = disabled.
   `supabase/tests/129_notification_campaigns_test.sql` is 25 rows.
+
+### Settlement columns are written by RPCs, and the trigger knows them by a flag (132, applied 2026-09-18)
+
+Until 132, a guest or a host could `PATCH /rest/v1/bookings?id=eq.<own>`
+with `{"payment_status":"paid"}` and it landed — verified live, rolled back.
+`authenticated` holds column UPDATE, both UPDATE policies admit them, and
+`enforce_booking_update_rules` (051/098) froze price and dates but never
+`payment_status`. The ledger trigger then posts the host an earning for
+money that never moved. Same class as 116 and 117: nothing in the client
+writes the column, so nobody looked at who *could*.
+
+- **The guard is on `payment_status`, `payment_method` and `paid_at`, for
+  anyone with an `auth.uid()` who is not an admin.** The IPN function is
+  service role (uid null) and passes; `mark_cash_payment` and
+  `set_booking_payment_method` are SECURITY DEFINER but run *with* the
+  caller's uid, so they announce themselves with
+  `set_config('musafir.settlement_write','1',true)` around their one update
+  and reset it after. A new writer of these columns must do the same; the
+  test row for it goes red otherwise.
+- **`current_user` cannot do this job, and the first draft tried.** The
+  trigger is itself SECURITY DEFINER, so inside it `current_user` is always
+  `postgres`, whoever is writing. The guard never fired and the rolled-back
+  test still said "update accepted" on all three rows. A transaction-local
+  GUC is the only thing the caller can hand across a definer boundary that a
+  PostgREST client cannot forge (it only materialises `request.*`).
+- **It is a trigger, not a `REVOKE` on the columns**, because the admin
+  console's refund switch writes `payment_status` with the admin's own JWT.
+  That switch matched zero rows until **137** gave `bookings` an admin UPDATE
+  policy — see below. The revoke this note used to propose is now off the
+  table for good: with admins exempt *inside* the trigger, a column revoke
+  would have to exempt them too, and there is no way to write "except admins"
+  in a GRANT.
+- **In a rolled-back impersonation test, clear the claims when you drop
+  the role.** `set_config('role','postgres')` alone leaves `request.jwt.claims`
+  set, `auth.uid()` stays non-null, and the guard correctly refuses even
+  `postgres`. Every block in `supabase/tests/132_*` ends with both.
+- **The Management API's `/database/query` returns `[]` for the repo's
+  standard `select n, case when ok then 'PASS' else 'FAIL' end …` result
+  line.** `select * from t_result order by n` comes back fine. The files keep
+  the standard line (psql is unaffected); when driving a test through the
+  API, swap the last select.
+
+### A profile row is self-service, so every privilege on it needs a guard (133, applied 2026-09-19)
+
+`role` lives on `profiles`, the UPDATE policy is `using (auth.uid() = id)`
+with **no WITH CHECK**, and the only thing between a client and any other
+column on its own row is `fn_guard_verification_verdicts`. Until 133 that
+trigger did not mention `role`, so:
+
+```
+PATCH /rest/v1/profiles?id=eq.<self>   {"role":"admin"}   ->  204
+```
+
+made anyone an admin, and `is_admin()` is what **28 policies** key on: every
+booking, payment, payout method, identity document, exact address, the audit
+log, coupons, the campaigns, plus UPDATE on `app_settings` and on any profile.
+Same class as 116, 117 and 132 — nothing in the client writes the column, so
+nobody asked who *could*.
+
+- **The fix is not a blanket ban, because the app writes `role` itself.**
+  `SupabaseAuthService.becomeHost()` sets `is_host`, `host_since` and
+  `role = 'owner'` in one client-side update. So 133 permits exactly
+  `tenant -> owner` for a non-admin and refuses everything else; `admin` is
+  unreachable from a client in either direction. Test row 3 is that flow and
+  goes red on the obvious over-strict fix.
+- **Measure the effect, not the exception, when testing RLS.** An UPDATE whose
+  rows RLS filters out matches nothing and raises nothing, so "no error" reads
+  as success while the database in fact refused. The first draft of
+  `qa_role_capability_matrix_test.sql` reported four false alarms for exactly
+  this reason; it probes a value before and after now.
+- **Clear `request.jwt.claims` whenever you drop back to `postgres`** in a
+  test. A stale `sub` leaves `auth.uid()` non-null and the guards correctly
+  refuse even `postgres`, which reads as the fix being broken.
+
+Still open after 133: the profiles UPDATE policy has no WITH CHECK at all, so
+the trigger remains the only guard on every other column of your own row.
+
+### `DeviceSessionWatcher` asks before anyone is signed in
+
+`isRevoked()` returns early with no session now. It is called at startup and
+on every resume without asking whether anyone is logged in, so every
+signed-out visitor made a `touch_device` call the database refuses — the
+function is granted to `authenticated` only and carries no `anon` grant. It
+failed open and nothing broke, which is exactly why it went unnoticed for so
+long: it showed up only as a red 401 in the console on every launch, and would
+become one error-tracking event per visitor the moment Sentry is added.
+
+### A bucket name is not an access rule (134, applied 2026-09-19)
+
+`listing-images` granted INSERT, UPDATE and DELETE to **any** authenticated
+user with only `bucket_id = 'listing-images'` as the check — "may this person
+write here" answered by *which bucket it is*. Measured 2026-09-18: a second
+host overwrote another host's image, and a guest who hosts nothing uploaded
+into the bucket. `avatars` next door ties the filename to `auth.uid()` and
+`documents` scopes reads to the owner's folder; this was the odd one out, and
+it is the public one.
+
+134 rewrites all three. Four things in it are worth keeping:
+
+- **Ownership is `storage.objects.owner`, not the path.** The obvious clause —
+  "the first folder must be a listing you own" — refuses every first publish:
+  `CreateListingScreen` uploads photos BEFORE the listing row exists, under a
+  synthetic `listing_<millis>` folder, and only `EditListingScreen` uses the
+  real uuid. On live, 12 of 42 objects sit under a listing uuid. `owner` is
+  stamped by Storage and populated on all 42. `owner_id` (text) is checked
+  too, because which of the two Storage fills depends on its version.
+- **The INSERT gate is deliberately LOOSER than the publish gate.** Publishing
+  is `can_publish_listings()` — verified owner or admin, the predicate the
+  `listings` INSERT policy already used, now called from both so they cannot
+  drift. Uploading is `can_upload_listing_image()`, which is that **or you
+  already own a listing**: live has 4 listings belonging to 2 accounts that
+  predate 114 and could not publish today, and they can still edit those
+  listings, so the strict gate would have let them change everything except
+  the photos.
+- **DELETE cannot be tested through SQL.** Supabase's statement-level
+  `protect_objects_delete` refuses every direct `DELETE` on `storage.objects`,
+  so the Storage API is the only door and the policy is asserted from
+  `pg_policies` instead. That trigger is also the only reason deletion looked
+  safe before 134 — a control we do not own is not a control.
+- Reads stay `to public`. The bucket is public and every listing card on the
+  site loads from it, signed out included.
+
+`supabase/tests/134_137_qa_fixes_test.sql` is 27 rows; three of them go red
+with the old policies put back, which is the negative control.
+
+### The booking RPC is the only booking rule there is (135, applied 2026-09-19)
+
+`create_marketplace_booking` is the single writer of a `bookings` row — 071
+locked direct INSERT — so anything it does not check is not checked. Two
+things it did not:
+
+- **A host could book their own listing.** Measured allowed; live already
+  holds one. The ledger then posts the owner an earning against money that
+  moved between their own two pockets, and a host can black out their own
+  calendar through the booking path instead of `listing_availability_blocks`
+  (110), which is the feature built for it and the only one their own UI can
+  undo.
+- **A booking could be entirely in the past.** A stay starting ten days ago
+  was accepted and returned an id. Past slots are always free, so the
+  availability checks never object, and the auto-complete sweep then walks the
+  row straight to completed — a review prompt and a ledger entry for a stay
+  nobody had.
+
+Both refuse at INSERT time only, the choice 114 made for identity; the live
+rows are left alone. The past-date guard allows **one hour** of slack rather
+than a hard `>= now()`, because booking a turf for *this* hour is the normal
+case for an hourly listing, the client's clock is its own, and `now()` here is
+transaction time. It is there to stop last month, not the last minute.
+
+### Several guests racing for one slot lose in two different ways (N6)
+
+`bookings_no_overlap` (078) is correct and does its job: exactly one booking
+survived every race in QA, at two, three, four and eight concurrent guests,
+across eleven runs. **What the losers are told depended on how many of them
+there were.** With two, the loser gets `23P01` and the sentence written for
+them. With three or more, Postgres frequently raises from inside the exclusion
+check itself:
+
+```
+ERROR:  deadlock detected
+CONTEXT: while checking exclusion constraint on tuple (1,25) in relation "bookings"
+```
+
+The client handled `23P01` only, so under exactly the load this feature exists
+for — a popular slot — most losing guests saw an unexplained failure. Across
+six four-racer runs, two had all three losers deadlock.
+
+`isRetryableBookingFailure` (`40001`, `40P01`) now drives one retry in
+`_insertMarketplaceBookingWithRetry`, and a second failure is rendered as the
+conflict message rather than a generic banner. **Once, not a loop with
+backoff**: the race is already decided by the time the retry runs, and a
+client hammering a contended slot adds to the contention it is losing to.
+
+### A flagged payment is not a settled payment (136, applied 2026-09-19)
+
+**The migration is live and the two edge functions are NOT redeployed yet.**
+That order is the safe one and the reverse is not: the functions write
+`pending_review` and `abandoned`, which the CHECK constraint refused before
+136. Until they are deployed, online payments still send the wrong
+notification type and a risk-flagged payment still settles as paid.
+
+SSLCommerz sets `risk_level` non-zero with a `risk_title` on an otherwise
+VALID transaction when its fraud screen fires, and its own guidance is to hold
+that payment for review before delivering the service. `sslcommerz-ipn` stored
+both fields and marked it paid anyway, which unlocks Service complete and
+posts the host's earning at once.
+
+- Such a payment is now `pending_review`, **and the booking stays unpaid** —
+  that second half is the enforcement; the payment row is bookkeeping. The
+  guest is told their money arrived and is being checked, and every admin gets
+  a `security_alert`.
+- It is resolved from the **Held** tab of the console's Payments screen, which
+  calls `admin_release_payment` / `admin_reject_payment` with the
+  service-role client. Both carry `fn_require_service_role()` like every other
+  `admin_*`: an admin's own JWT is deliberately not enough, because releasing
+  is the one action there that moves money. `admin_release_payment` raises
+  `musafir.settlement_write` around its booking write, exactly as 132 requires
+  of any new writer of those columns.
+- **Attempts are closed now, in two places.** `sslcommerz-init` abandons this
+  booking's earlier `initiated` rows before creating another and refuses after
+  six in an hour; `expire_stale_payment_attempts` sweeps anything `initiated`
+  for over an hour every 15 minutes. Live carried 27 such rows worth ৳52,420
+  from July and August. Neither ever touches `paid` or `pending_review`, and a
+  guest who pays after the sweep still settles — the IPN finds the row by
+  `tran_id`.
+- The window is hardcoded at 60 minutes, unlike `booking_accept_window_hours`
+  (119). That one is a setting because it is visible to guests as a countdown
+  and a host argued about it; this one only decides when a dead row stops
+  being called `initiated`.
+
+### An admin has to be able to write the table the admin screens write (137, applied 2026-09-19)
+
+`bookings` carried five policies and none admitted an admin for UPDATE, so the
+console's "Mark refunded" PATCHed with the admin's JWT, matched nothing, and
+reported *"Only a paid booking can be marked refunded"* however paid the
+booking was — since the screen shipped.
+
+**The failure mode is the lesson, not the policy.** PostgREST does not refuse
+an UPDATE whose rows RLS filtered out: it succeeds, changes nothing, and
+returns `[]`. Nothing errors, nothing logs, and the feature is simply inert.
+The same trap made the first draft of the QA capability matrix report four
+false passes. **Measure the effect, never the exception.**
+
+### An edge function is TypeScript nobody was checking
+
+Three of the thirteen did not `deno check` at all. The one that mattered:
+`messenger-webhook` called `.catch()` on a `PostgrestFilterBuilder`, which is
+a thenable with no such method — the "best-effort" analytics guard was a
+runtime `TypeError`. `validate-discount` passed a possibly-null discount into
+a function that could not take one.
+
+- All nine `esm.sh/@supabase/supabase-js@2` imports are **pinned to 2.45.4**.
+  Unpinned, the specifier resolves to whatever is newest on the day, and two
+  files that resolved differently produced `SupabaseClient<any, "public",
+  any>` against `SupabaseClient<unknown, never, GenericSchema>` — not
+  assignable, for no change on our side.
+- **`ReturnType<typeof createClient>` is not the type `createClient(url, key)`
+  returns.** The bare form picks the unparameterised overload. Annotate
+  helpers with `SupabaseClient` (via a local `Db` alias), not with
+  `ReturnType`.
+- CI has an `edge-functions` job now: Deno, `deno check` on every
+  `supabase/functions/*/index.ts`. Its own job rather than a step inside
+  `analyze-test`, because it needs Deno rather than Flutter and a TypeScript
+  failure should be legible apart from a Dart one.
+
+### A Tooltip does not name a control
+
+Served in a browser with assistive technology switched on — Flutter builds the
+semantics tree only when something asks — the app produced 38 semantics nodes
+and **8 labels**. The Search button, the wishlist hearts, the account menu,
+the notification bell and the leaderboard trophy were all `button` with no
+name.
+
+Nearly every one of them already had a `Tooltip`. **`Tooltip` sets
+`SemanticsProperties.tooltip`; `label` stays empty.** Same for
+`PopupMenuButton.tooltip` and `IconButton.tooltip`. Wrap in
+`Semantics(button: true, label: …)` and, where a tooltip already says the
+right thing, pass the same string to both rather than inventing a second one
+to keep in step.
+
+Two consequences, and the second is why this is not only an accessibility
+item: a screen reader user hears "button" with no idea what it does, and the
+end-to-end strategy in `docs/QA_PLAN.md` selects controls **by accessibility
+label**, so an unnamed control cannot be driven by a test either.
+
+`test/widgets/accessibility_labels_test.dart` pins the names.
+**`find.bySemanticsLabel` is not the finder to use here** — it reads the label
+off the render object's own node and comes back empty for a control whose node
+is merged into a parent, which is most of these; it answered 0 for a heart the
+same test can see the label on. Match on the `Semantics` widget's
+`properties.label` instead.
 
 ## Nothing user-tunable belongs in Dart
 
