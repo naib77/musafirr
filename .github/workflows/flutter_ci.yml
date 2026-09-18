@@ -49,6 +49,41 @@ jobs:
       - name: Test
         run: flutter test
 
+  # The edge functions are not Flutter and were never checked by anything.
+  # Three of the thirteen did not type-check at all when this was first run
+  # (QA report 2026-09-18, F7) — one of them, `messenger-webhook`, because of
+  # a `.catch` on a PostgrestFilterBuilder, which is a thenable with no such
+  # method: the "best-effort" guard was a runtime TypeError. That is the class
+  # of fault a type check catches and a deploy does not, because
+  # `supabase functions deploy` bundles whatever it is given.
+  #
+  # Its own job rather than a step in analyze-test: it needs Deno, not
+  # Flutter, and a Dart failure and a TypeScript failure should be legible
+  # apart. Pinned for the same reason the Flutter SDK is.
+  edge-functions:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v2.x
+
+      - name: Type-check every edge function
+        run: |
+          fail=0
+          for d in supabase/functions/*/; do
+            name=$(basename "$d")
+            [ "$name" = "_shared" ] && continue
+            [ -f "$d/index.ts" ] || continue
+            echo "== $name"
+            deno check "$d/index.ts" || fail=1
+          done
+          exit $fail
+
   # Builds the web bundle and ships it to Cloudflare.
   #
   # Why this job exists: `wrangler deploy` only UPLOADS ./build/web — neither it

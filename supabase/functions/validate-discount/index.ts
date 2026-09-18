@@ -2,7 +2,18 @@
 // Validates promo codes and calculates discount amounts server-side
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4'
+
+// `ReturnType<typeof createClient>` used to be the annotation on the helpers
+// below, and it is not the same type as what `createClient(url, key)` returns:
+// the bare form resolves the UNparameterised overload,
+// `SupabaseClient<unknown, never, GenericSchema>`, while the call site infers
+// `SupabaseClient<any, "public", any>`. The two are not assignable, so every
+// helper call was a TS2345 and `deno check` failed on this file (QA report
+// 2026-09-18, F7). `SupabaseClient` with its own defaults is the one both
+// sides agree on.
+type Db = SupabaseClient;
+
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
@@ -167,6 +178,18 @@ serve(async (req: Request) => {
       )
     }
 
+    // `discount` is only assigned inside the two lookup branches above, and
+    // TypeScript is right that both can leave it null — the narrowing that
+    // makes them safe lives in early returns TypeScript cannot see through.
+    // An explicit guard rather than a `!`: if it is ever null we answer
+    // "not valid" instead of throwing inside the validator.
+    if (!discount) {
+      return new Response(
+        JSON.stringify({ valid: false, error: 'Discount not found' }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+
     // Validate the discount
     const validationResult = await validateDiscount(supabase, discount, body)
 
@@ -193,7 +216,7 @@ serve(async (req: Request) => {
 })
 
 async function validateDiscount(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Db,
   discount: Discount,
   request: ValidationRequest
 ): Promise<{
