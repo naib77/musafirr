@@ -1,0 +1,774 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>html{color-scheme:light dark}body{margin:0;font:14px system-ui}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Musafir QA Programme</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+Bengali:wght@400;600&display=swap">
+<style>
+:root{
+  --ground:#F7F5F2; --panel:#FFFFFF; --ink:#1C1F26; --muted:#5D6470; --line:#E3DFDA;
+  --rose:#C35063; --rose-deep:#A63C4F; --rose-tint:#FBEEF0;
+  --pass:#1F7A4D; --pass-tint:#E6F4EC; --fail:#B3261E; --fail-tint:#FBE9E7;
+  --warn:#8A5A00; --warn-tint:#FBF1DC; --wait:#3D5A80; --wait-tint:#E8EEF5;
+  --code:#F0EDE8; --bar:#C35063; --bar-track:#EFE9E6;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --ground:#141619; --panel:#1D2025; --ink:#ECEAE6; --muted:#A0A6B0; --line:#2C3037;
+  --rose:#E07A8A; --rose-deep:#C35063; --rose-tint:#2E1F23;
+  --pass:#5FCB8C; --pass-tint:#17301F; --fail:#F28B82; --fail-tint:#3A1D1A;
+  --warn:#E8B85A; --warn-tint:#33290F; --wait:#8FB3E0; --wait-tint:#1C2735;
+  --code:#24272D; --bar:#E07A8A; --bar-track:#2A2D33;
+}}
+:root[data-theme="dark"]{
+  --ground:#141619; --panel:#1D2025; --ink:#ECEAE6; --muted:#A0A6B0; --line:#2C3037;
+  --rose:#E07A8A; --rose-deep:#C35063; --rose-tint:#2E1F23;
+  --pass:#5FCB8C; --pass-tint:#17301F; --fail:#F28B82; --fail-tint:#3A1D1A;
+  --warn:#E8B85A; --warn-tint:#33290F; --wait:#8FB3E0; --wait-tint:#1C2735;
+  --code:#24272D; --bar:#E07A8A; --bar-track:#2A2D33;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:"IBM Plex Sans","Noto Sans Bengali",system-ui,sans-serif;font-size:16px;line-height:1.55;padding-block:0 80px;padding-inline:16px}
+.wrap{max-width:980px;margin:0 auto}
+a{color:var(--rose-deep)} a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--rose);outline-offset:2px}
+h1{font-size:clamp(1.7rem,3.4vw,2.4rem);line-height:1.12;margin:0 0 8px;text-wrap:balance;letter-spacing:-0.015em}
+h2{font-size:1.4rem;margin:64px 0 14px;padding-top:22px;border-top:2px solid var(--rose);text-wrap:balance;scroll-margin-top:72px}
+h3{font-size:1.08rem;margin:30px 0 8px;text-wrap:balance}
+p{margin:0 0 12px;max-width:70ch}
+ul,ol{max-width:72ch;padding-left:1.3em;margin:0 0 14px} li{margin:0 0 6px}
+.eyebrow{font-size:.74rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.lede{color:var(--muted);font-size:1.06rem;max-width:70ch}
+.muted{color:var(--muted)}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+code,pre{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.86em}
+code{background:var(--code);padding:1px 5px;border-radius:4px}
+pre{background:var(--code);padding:12px 14px;border-radius:8px;overflow-x:auto;margin:10px 0 14px;line-height:1.5}
+pre code{background:none;padding:0}
+
+/* header + nav */
+.masthead{padding-block:34px 18px;border-bottom:1px solid var(--line)}
+.masthead .meta{display:flex;flex-wrap:wrap;gap:8px 18px;color:var(--muted);font-size:.9rem;margin-top:14px}
+nav.toc{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--ground);border-bottom:1px solid var(--line);margin:0 -16px;padding:8px 16px}
+nav.toc ul{list-style:none;display:flex;gap:4px 14px;flex-wrap:wrap;margin:0;padding:0;max-width:none;font-size:.86rem}
+nav.toc a{color:var(--muted);text-decoration:none;padding:4px 0;display:inline-block;border-bottom:2px solid transparent}
+nav.toc a:hover{color:var(--ink);border-color:var(--rose)}
+
+/* banner */
+.banner{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--rose);border-radius:0 10px 10px 0;padding:14px 18px;margin:22px 0}
+.banner p{max-width:none}
+.banner strong{color:var(--rose-deep)}
+
+/* tiles */
+.score{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:22px 0}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.tile b{display:block;font-size:1.75rem;font-variant-numeric:tabular-nums;line-height:1.1;letter-spacing:-0.01em}
+.tile span{color:var(--muted);font-size:.86rem;display:block;margin-top:4px}
+.tile.accent b{color:var(--rose-deep)}
+
+/* bars */
+.bars{display:grid;grid-template-columns:auto 1fr auto;gap:8px 12px;align-items:center;margin:16px 0 8px;max-width:640px}
+.bars .lab{font-size:.9rem;white-space:nowrap}
+.bars .trk{height:14px;background:var(--bar-track);border-radius:3px;overflow:hidden}
+.bars .fil{height:100%;background:var(--bar);border-radius:0 3px 3px 0}
+.bars .num{font-variant-numeric:tabular-nums;font-size:.9rem;min-width:2.2ch;text-align:right}
+.chart-note{font-size:.82rem;color:var(--muted);margin:4px 0 0}
+
+/* tables */
+.tbl{overflow-x:auto;margin:12px 0 20px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+table{width:100%;border-collapse:collapse;font-size:.92rem}
+th,td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:0}
+th{font-size:.73rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;background:var(--ground);position:sticky;top:0}
+td.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.v{display:inline-block;font-weight:600;font-size:.72rem;letter-spacing:.04em;padding:2px 8px;border-radius:999px;white-space:nowrap;line-height:1.5}
+.pass{background:var(--pass-tint);color:var(--pass)} .fail{background:var(--fail-tint);color:var(--fail)}
+.warn{background:var(--warn-tint);color:var(--warn)} .wait{background:var(--wait-tint);color:var(--wait)} .info{background:var(--code);color:var(--muted)}
+.sev{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:.8rem;display:inline-block;min-width:2.3em;text-align:center;padding:1px 6px;border-radius:4px;background:var(--code)}
+.sev-S1{background:var(--fail-tint);color:var(--fail)} .sev-S2{background:var(--rose-tint);color:var(--rose-deep)} .sev-S3{background:var(--warn-tint);color:var(--warn)} .sev-S4,.sev-H{background:var(--code);color:var(--muted)}
+
+/* register */
+.filters{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin:14px 0 6px;font-size:.88rem}
+.filters label{display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
+.filters select,.filters input{font:inherit;font-size:.9rem;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);min-height:34px}
+.filters input{min-width:200px}
+.filters .count{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
+.reg th:nth-child(1){width:4.5em} .reg th:nth-child(2){width:3.5em}
+.reg td.what{min-width:260px}
+.reg .title{font-weight:600;display:block}
+.reg .area{color:var(--muted);font-size:.8rem}
+.reg details{margin-top:6px}
+.reg summary{cursor:pointer;color:var(--rose-deep);font-size:.86rem;list-style:none}
+.reg summary::-webkit-details-marker{display:none}
+.reg summary::before{content:"▸ ";} .reg details[open] summary::before{content:"▾ ";}
+.reg dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:8px 0 0;font-size:.88rem;max-width:none}
+.reg dt{color:var(--muted);font-size:.74rem;letter-spacing:.06em;text-transform:uppercase;padding-top:2px}
+.reg dd{margin:0}
+tr[hidden]{display:none}
+
+/* top findings */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin:18px 0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:8px}
+.card .kicker{display:flex;gap:8px;align-items:center;font-size:.8rem;color:var(--muted)}
+.card h4{margin:0;font-size:1.02rem;line-height:1.3;text-wrap:balance}
+.card p{margin:0;font-size:.92rem;max-width:none}
+.card .then{border-top:1px dashed var(--line);padding-top:8px}
+.card .then b{color:var(--pass)}
+
+/* layers */
+.layers{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:16px 0}
+.layer{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;font-size:.92rem}
+.layer b{display:block;margin-bottom:4px}
+.layer .where{color:var(--muted);font-size:.82rem;margin-top:6px;font-family:"IBM Plex Mono",monospace}
+
+/* timeline */
+.timeline{list-style:none;padding:0;margin:18px 0;max-width:none;border-left:2px solid var(--line);margin-left:8px}
+.timeline li{position:relative;padding:0 0 22px 22px;margin:0}
+.timeline li::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--rose);border:2px solid var(--ground)}
+.timeline .when{font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.timeline b{display:block;font-size:1rem}
+.timeline p{max-width:70ch;margin:4px 0 0;font-size:.93rem}
+
+/* checklist */
+.steps{counter-reset:s;list-style:none;padding:0;max-width:none}
+.steps li{position:relative;padding:12px 14px 12px 52px;background:var(--panel);border:1px solid var(--line);border-radius:10px;margin:0 0 10px}
+.steps li::before{counter-increment:s;content:counter(s);position:absolute;left:14px;top:12px;width:26px;height:26px;border-radius:50%;background:var(--rose);color:#fff;font-weight:700;font-size:.9rem;display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
+.steps b{display:block}
+.steps p{margin:4px 0 0;font-size:.92rem;max-width:none}
+.steps code{font-size:.82em}
+
+/* legend */
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:.86rem;color:var(--muted);margin:8px 0 0}
+.legend span{display:inline-flex;gap:6px;align-items:center}
+
+footer{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:.86rem}
+@media (prefers-reduced-motion: reduce){*{scroll-behavior:auto!important}}
+@media print{nav.toc{display:none} .reg details{open:true} tr[hidden]{display:table-row}}
+</style>
+<div class="wrap">
+<header class="masthead">
+  <div class="eyebrow">Musafir · quality assurance · September 2026</div>
+  <h1>Three QA rounds, 53 findings, and where every one of them stands</h1>
+  <p class="lede">How the Flutter marketplace and its admin console were tested between 18 and 19 September 2026, what broke, what was fixed and how, and what is still waiting on a production action. Written for the owner and for whoever ships the next release.</p>
+  <div class="meta"><span>Environment: local mirror of the live database, local edge runtime, SSLCommerz sandbox</span><span>Sources: four written reports in <code>docs/qa/</code></span><span>Compiled 26 Sep 2026</span></div>
+</header>
+
+<nav class="toc" aria-label="Sections"><ul>
+<li><a href="#glance">At a glance</a></li><li><a href="#status">Where it stands</a></li><li><a href="#matter">What mattered most</a></li><li><a href="#method">How we tested</a></li><li><a href="#timeline">Timeline</a></li><li><a href="#register">Findings register</a></li><li><a href="#passed">What held</a></li><li><a href="#evidence">Evidence</a></li><li><a href="#ship">Ship list</a></li><li><a href="#lessons">Lessons</a></li>
+</ul></nav>
+
+<div class="banner"><p><strong>Nothing in the second round or its follow-up has reached production.</strong> Migrations 132 to 137 and two payment functions are live and were re-verified there. Migrations 138, 139 and 140, seven edge-function changes, the rebuilt web bundle and the admin console changes are tested on the local mirror and waiting for a deliberate deploy. Until then, every finding marked “written” below is still live behaviour.</p></div>
+
+<h2 id="glance">At a glance</h2>
+<div class="score">
+  <div class="tile"><b>3 + 1</b><span>rounds: payments, full functional, sixty scenarios, and a same-day follow-up</span></div>
+  <div class="tile"><b>53</b><span>distinct findings across all rounds</span></div>
+  <div class="tile accent"><b>10</b><span>S1: money or identity</span></div>
+  <div class="tile"><b>10</b><span>fixes on live and re-verified there</span></div>
+  <div class="tile"><b>36</b><span>fixes tested locally, waiting on deploy</span></div>
+  <div class="tile"><b>0</b><span>findings without a fix in the working tree</span></div>
+</div>
+<h3>Findings by severity</h3>
+<div class="bars"><div class="lab" title="money or identity">S1 · money or identity</div><div class="trk" role="img" aria-label="S1 · money or identity: 10"><div class="fil" style="width:45.5%"></div></div><div class="num">10</div><div class="lab" title="privacy or a broken core flow">S2 · privacy or a broken core flow</div><div class="trk" role="img" aria-label="S2 · privacy or a broken core flow: 10"><div class="fil" style="width:45.5%"></div></div><div class="num">10</div><div class="lab" title="wrong information shown, or cost">S3 · wrong information shown, or cost</div><div class="trk" role="img" aria-label="S3 · wrong information shown, or cost: 22"><div class="fil" style="width:100.0%"></div></div><div class="num">22</div><div class="lab" title="hygiene">S4 · hygiene</div><div class="trk" role="img" aria-label="S4 · hygiene: 7"><div class="fil" style="width:31.8%"></div></div><div class="num">7</div><div class="lab" title="housekeeping">Housekeeping</div><div class="trk" role="img" aria-label="Housekeeping: 4"><div class="fil" style="width:18.2%"></div></div><div class="num">4</div></div>
+<p class="chart-note">Severity follows docs/QA_PLAN.md: S1 money or identity, S2 privacy or a broken core flow, S3 wrong information or cost, S4 hygiene. Housekeeping rows are tooling and documentation with no user-facing effect.</p>
+
+<h3>The pattern behind most of it</h3>
+<p>Thirty-odd of these findings are one bug in different clothes: <strong>a rule the app enforced and the database did not.</strong> The booking form checked capacity, the Dart lifecycle service checked state transitions, the client filtered blocked users, the widget hid past dates. Every one of those is skippable, because the REST layer is a public endpoint and the compiled-in key is in the web bundle. The fix each time was to move the rule into a trigger, a policy or the RPC, and to pin it with a test that goes red when the rule is removed.</p>
+<p>The second pattern is quieter and produced the false “everything passes” of the first drafts: <strong>an UPDATE whose rows row-level security filters out matches nothing and raises nothing.</strong> PostgREST answers 200 with an empty list. The console's refund button had been inert since it shipped for exactly this reason, and four rows of the first capability matrix passed for the same reason. Every write test now reads a value before and after.</p>
+
+<h2 id="status">Where it stands</h2>
+<div class="tbl"><table>
+<thead><tr><th>Piece</th><th>State</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>Migration 132</td><td><span class="v pass">On live</span></td><td>Applied 18 Sep. Settlement columns guarded.</td></tr>
+<tr><td>Migrations 131, 133, 134, 135, 136, 137</td><td><span class="v pass">On live</span></td><td>Applied 19 Sep in order, each dry-run first inside a rolled-back transaction, each re-verified against the applied state. Live's 27 stale payment attempts were closed by the new sweep.</td></tr>
+<tr><td><code>sslcommerz-ipn</code> v14, <code>sslcommerz-init</code> v13</td><td><span class="v pass">Deployed</span></td><td>19 Sep. Notification enum fix, attempt cap, risk hold. Smoke-tested against production touching no data.</td></tr>
+<tr><td>Migration 138</td><td><span class="v warn">Written, not applied</span></td><td>Round-two guards: booking state machine, frozen columns, block enforcement, participant freeze, review reveal, rating recompute, reminders, timezone, coupon binding, hidden-listing read, realtime publication, chat-attachment allowlist.</td></tr>
+<tr><td>Migrations 139, 140</td><td><span class="v warn">Written, not applied</span></td><td>Follow-up: no-show status (139 is the enum label and must be committed before 140), refund policy, suspension, rate-limit counter.</td></tr>
+<tr><td>Seven edge functions</td><td><span class="v warn">Not redeployed</span></td><td><code>sslcommerz-ipn</code> (settlement hold, redirect hardening), <code>sslcommerz-init</code> and <code>verify-otp</code> (suspension), <code>geocode</code>, <code>places-search</code>, <code>google-directions</code>, <code>voice-parse</code> (rate limits).</td></tr>
+<tr><td><code>build/web</code></td><td><span class="v wait">Rebuilt, not committed</span></td><td>Carries the race message, accessibility labels, the signed-out fix, the cancel and no-show flows, the chat picker allowlist, the wishlist placeholder. Stamp <code>eecda462-1789830055</code>.</td></tr>
+<tr><td>Admin console (<code>../musafir-admin</code>)</td><td><span class="v wait">Not deployed</span></td><td>Held payments tab, Refund due tab with amounts, no-show badge and tab, Suspension section. Type-checks and lints clean. Deployment is manual.</td></tr>
+<tr><td><code>validate-discount</code> on live</td><td><span class="v warn">Still deployed (v20)</span></td><td>Dead code removed from the repo; deleting it from live is a production action.</td></tr>
+<tr><td>Both git repositories</td><td><span class="v wait">Uncommitted</span></td><td>48 changed or new files here, 14 in the console repo.</td></tr>
+</tbody></table></div>
+
+<h2 id="matter">What mattered most</h2>
+<p>Six of the 53, chosen for what a guest or host would have called them: theft, spying, or the app lying about money.</p>
+<div class="cards"><article class="card"><div class="kicker"><span class="mono">N1</span><span class="sev sev-S1" title="money or identity">S1</span><span class="v pass">On live</span></div>
+<h4>Anyone signed in could make themselves an admin</h4><p>One request with the key that ships in the web bundle and your own login turned a guest into an administrator with access to every booking, payment, identity document and exact address. Proved on the production database inside a rolled-back transaction.</p><p class="then"><b>Now</b> · Migration 133 permits exactly the “become a host” move and refuses every other role change. Applied 19 Sep; re-verified on live afterwards.</p></article><article class="card"><div class="kicker"><span class="mono">F1</span><span class="sev sev-S1" title="money or identity">S1</span><span class="v pass">On live</span></div>
+<h4>A guest could mark their own booking paid</h4><p>One PATCH set the payment status. The host&#x27;s earning was posted for money that never moved.</p><p class="then"><b>Now</b> · Migration 132 guards the settlement columns for anyone who is not an admin or the payment gateway. Applied 18 Sep.</p></article><article class="card"><div class="kicker"><span class="mono">Q41</span><span class="sev sev-S1" title="money or identity">S1</span><span class="v warn">Function not redeployed</span></div>
+<h4>Paying after a cancellation marked the cancelled booking paid</h4><p>A guest opened the bank page, the booking was cancelled while it was open, the guest completed payment. Driven for real on the SSLCommerz sandbox: the cancelled booking became paid and the host got an earning.</p><p class="then"><b>Now</b> · The settlement decision is a pure function with its own tests. Such a payment is held, the booking stays unpaid, the admin is told to refund and cannot release it by mistake.</p></article><article class="card"><div class="kicker"><span class="mono">Q14</span><span class="sev sev-S1" title="money or identity">S1</span><span class="v warn">Written, not on live</span></div>
+<h4>A host could rewrite a booking&#x27;s history</h4><p>Cancelled back to confirmed, rejected back to confirmed, completed with no check-in. The whole state machine lived in the app; the database accepted any transition from the listing owner.</p><p class="then"><b>Now</b> · Migration 138 holds the state table in a trigger. Terminal states are terminal, which also ends the accept-after-cancel race.</p></article><article class="card"><div class="kicker"><span class="mono">Q8</span><span class="sev sev-S2" title="privacy or a broken core flow">S2</span><span class="v warn">Written, not on live</span></div>
+<h4>Either participant could swap the other out of a conversation</h4><p>A guest replaced the host with a stranger in one request. The stranger read the entire history; the host lost the thread.</p><p class="then"><b>Now</b> · Migration 138 freezes participant ids for anyone who is not an admin.</p></article><article class="card"><div class="kicker"><span class="mono">Q44</span><span class="sev sev-S2" title="privacy or a broken core flow">S2</span><span class="v warn">Written, not on live</span></div>
+<h4>Live realtime never fired for bookings</h4><p>The app subscribes to bookings and the subscription reports active, but the production publication does not include the table. Hosts saw new requests only through the notification row.</p><p class="then"><b>Now</b> · Migration 138 adds bookings to the publication. This one is a production configuration fact, not a code fault.</p></article></div>
+
+<h2 id="method">How we tested</h2>
+<p>The plan assumed a staging database built from the repo's migrations. That was not possible: migration 003 contains SQL that was never valid, and even with it repaired, 34 of the 137 files fail because live carries columns that no file adds. Live cannot be dumped either; there is no database password on this machine. So the first day built the environment everything else ran on.</p>
+<h3>The environment</h3>
+<ul>
+<li><strong>A local mirror built from the live catalogue.</strong> <code>tool/dump_live_baseline.py</code> reads every enum, table, function, view, policy, trigger, grant and cron job through the Management API; <code>tool/local_db_from_live.sh</code> applies it until stable, loads reference rows, applies the migrations newer than live, then a synthetic seed. Checked identical to live on tables, functions, policies, triggers, views, indexes, RLS, cron, definers and grants.</li>
+<li><strong>A synthetic cast standing in for 80 guests and 50 hosts.</strong> Two hosts (a seat and a room; a turf and a hidden house), a verified guest, an unverified guest, eight racer guests, an admin, and an account with no usable phone. No real person or listing. Every scenario names who acted.</li>
+<li><strong>The real SSLCommerz sandbox.</strong> The owner registered a sandbox store; credentials live only in an ignored env file. A headless-Chromium driver (<code>tool/qa/sandbox_pay.js</code>) walks the bank page for Success, Success with risk, Failed and Cancel and rewrites the redirect so settlement lands on the local stack.</li>
+<li><strong>Live, read-only or rolled back.</strong> Two findings were confirmed on the production database inside transactions that were rolled back. Every migration was dry-run there the same way before it was applied.</li>
+</ul>
+<h3>Five layers, each proving something the others cannot</h3>
+<div class="layers">
+<div class="layer"><b>Rolled-back SQL impersonation</b>What the database refuses or allows, measured by effect (a probe before and after), never by exception.<div class="where">supabase/tests/*.sql · tool/qa/run_sql_tests.sh</div></div>
+<div class="layer"><b>Real HTTP through the API</b>What the client actually sees: the 200 [] of a filtered update, a trigger's hint in the body, Storage's 415, a function's error shape.<div class="where">tool/qa/http_smoke.sh · 30 rows</div></div>
+<div class="layer"><b>Deno unit tests</b>The settlement decision and the rate-limit bucketing, which cannot be exercised without a gateway session or a live edge.<div class="where">supabase/functions/_shared/*_test.ts · 15</div></div>
+<div class="layer"><b>Sandbox payments, end to end</b>The plumbing including the cancel-while-paying race, driven twice: before the fix to see it fail, after to see it hold.<div class="where">tool/qa/sandbox_pay.js</div></div>
+<div class="layer"><b>Flutter analyze, format, tests; console tsc and eslint</b>The client and console edits.<div class="where">flutter test · 1004 · npm run lint</div></div>
+</div>
+<h3>Two rules every write test follows</h3>
+<ol>
+<li><strong>Measure the effect, never the exception.</strong> Read a value, attempt the write as the impersonated user, read again, report CHANGED, NO-OP or REFUSED with the SQL state and hint.</li>
+<li><strong>Clear the JWT claims when dropping back to postgres.</strong> A stale subject leaves the guards refusing even the superuser, which reads as the fix being broken.</li>
+</ol>
+<h3>What was not tested</h3>
+<ul>
+<li>The server-to-server IPN from SSLCommerz cannot reach a laptop; the browser redirect path is what settled locally. Both paths run the same code.</li>
+<li>A genuinely fraud-flagged gateway transaction cannot be summoned on demand. The hold is verified at the database level and by one sandbox run that happened to return a risk flag.</li>
+<li>The Flutter payment screens and the Android WebView return were not driven end to end; the functions they call were.</li>
+<li>No real login was automated: the OTP path sends a real SMS. The seeded numbers use the local master code only.</li>
+</ul>
+
+<h2 id="timeline">Timeline</h2>
+<ul class="timeline">
+<li><span class="when">18 Sep · round 1, payments and platform</span><b>Built the mirror; found the self-mark-paid hole and the payment gaps</b><p>Migration 132 written, tested and, on the owner's word, applied to live the same day. Payment refusal matrix (17 cases) and the four sandbox outcomes driven. Coverage baseline 21.4%.</p></li>
+<li><span class="when">18 Sep · round 1, full functional</span><b>Capability matrix, the race, the lifecycle, the interface</b><p>61 checks for what a host and a guest can do; the self-promotion to admin proved on live; 0 double bookings across 11 races; the reservation cycle notifying correctly at every step; 8 of 38 controls labelled.</p></li>
+<li><span class="when">19 Sep · fixes</span><b>Migrations 131 and 133 to 137 applied to live; two functions redeployed</b><p>Each dry-run first, each re-verified against the applied state. The console gained the Held tab. The stale attempt sweep closed 27 rows.</p></li>
+<li><span class="when">19 Sep · round 2</span><b>Sixty scenarios as guests, hosts and the admin would live them</b><p>Messaging, blocking, reviews, the state machine as a host drives it, what a guest can edit after booking, automated messages, reminders, timezone, identity resubmission, coupons, wishlists, hidden listings, chat attachments, realtime, admin actions. 28 failed; all fixed in migration 138 and the settlement refactor.</p></li>
+<li><span class="when">19 Sep · follow-up</span><b>The six items the round had filed as notes</b><p>Refund policy, no-show outcome, account suspension, rate limits, the unsigned IPN redirect, the dead function. Migrations 139 and 140; 57 more test rows; the smoke harness grew to 30.</p></li>
+</ul>
+
+<h2 id="register">Findings register</h2>
+<p>Every finding from every round, one row each. Open a row for what a user saw, the root cause, the fix and how it was verified. Ids: <span class="mono">F</span> payments round, <span class="mono">N</span> functional round, <span class="mono">Q</span> the round-two scenario number.</p>
+<div class="filters" id="filters">
+  <label>Round <select id="f-round"><option value="">All</option><option value="R1P">Round 1 · payments &amp; platform</option><option value="R1F">Round 1 · full functional</option><option value="R2">Round 2 · sixty scenarios</option><option value="R2F">Round 2 · follow-up</option></select></label>
+  <label>Severity <select id="f-sev"><option value="">All</option><option value="S1">S1</option><option value="S2">S2</option><option value="S3">S3</option><option value="S4">S4</option><option value="H">Housekeeping</option></select></label>
+  <label>Status <select id="f-status"><option value="">All</option><option value="live">On live</option><option value="written">Written, not on live</option><option value="function">Function not redeployed</option><option value="client">Client, not deployed</option><option value="console">Console, not deployed</option><option value="repo">Done in repo</option></select></label>
+  <label>Search <input id="f-text" type="search" placeholder="e.g. refund, rating, block"></label>
+  <span class="count" id="f-count">53 of 53</span>
+</div>
+<div class="tbl reg"><table id="register">
+<thead><tr><th>Id</th><th>Sev</th><th>Finding</th><th>Status</th></tr></thead>
+<tbody><tr data-round="R1P" data-sev="S1" data-status="live" data-text="f1 a guest or host could mark their own booking paid money one patch on your own booking set payment_status to paid. the booking showed paid, the host&#x27;s earning was posted, no money had moved. the booking guard trigger froze price and dates but never payment_status; both update policies admit the two parties. migration 132: payment_status, payment_method and paid_at are refused for anyone with a user id who is not an admin. the cash and gateway rpcs announce themselves with a transaction-local flag.">
+<td class="mono">F1</td>
+<td><span class="sev sev-S1" title="money or identity">S1</span></td>
+<td class="what"><span class="title">A guest or host could mark their own booking paid</span><span class="area">Money · Round 1 · payments &amp; platform</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>One PATCH on your own booking set payment_status to paid. The booking showed Paid, the host&#x27;s earning was posted, no money had moved.</dd><dt>Cause</dt><dd>The booking guard trigger froze price and dates but never payment_status; both UPDATE policies admit the two parties.</dd><dt>Fix</dt><dd>Migration 132: payment_status, payment_method and paid_at are refused for anyone with a user id who is not an admin. The cash and gateway RPCs announce themselves with a transaction-local flag.</dd><dt>Verified</dt><dd>132 test: 8 of 8 on live, rolled back; 3 rows red without it.</dd></dl></details></td>
+<td><span class="v pass">On live</span></td>
+</tr>
+<tr data-round="R1P" data-sev="S2" data-status="live" data-text="f2 online payments notified nobody payments after paying online the guest&#x27;s trips did not update and the host was never told they could mark the service complete. 12 live online payments, 0 notifications. sslcommerz-ipn inserted notification type paymentreceived; the enum has payment_received. the insert failed inside a try/catch and was swallowed. cash notifications worked, which hid the gap. one-word fix in the ipn; the failure is logged with its payload instead of discarded.">
+<td class="mono">F2</td>
+<td><span class="sev sev-S2" title="privacy or a broken core flow">S2</span></td>
+<td class="what"><span class="title">Online payments notified nobody</span><span class="area">Payments · Round 1 · payments &amp; platform</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>After paying online the guest&#x27;s Trips did not update and the host was never told they could mark the service complete. 12 live online payments, 0 notifications.</dd><dt>Cause</dt><dd>sslcommerz-ipn inserted notification type paymentReceived; the enum has payment_received. The insert failed inside a try/catch and was swallowed. Cash notifications worked, which hid the gap.</dd><dt>Fix</dt><dd>One-word fix in the IPN; the failure is logged with its payload instead of discarded.</dd><dt>Verified</dt><dd>Enum-walking test row; four sandbox outcomes driven end to end.</dd></dl></details></td>
+<td><span class="v pass">On live</span></td>
+</tr>
+<tr data-round="R1P" data-sev="S2" data-status="live" data-text="f3 the console&#x27;s mark refunded button did nothing admin console every click answered “only a paid booking can be marked refunded”, however paid the booking was, since the screen shipped. bookings had no admin update policy. postgrest does not refuse an update whose rows rls filtered out: it returns 200 with an empty list. migration 137 adds bookings_admin_update, the shape listings already had.">
+<td class="mono">F3</td>
+<td><span class="sev sev-S2" title="privacy or a broken core flow">S2</span></td>
+<td class="what"><span class="title">The console&#x27;s Mark refunded button did nothing</span><span class="area">Admin console · Round 1 · payments &amp; platform</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>Every click answered “Only a paid booking can be marked refunded”, however paid the booking was, since the screen shipped.</dd><dt>Cause</dt><dd>bookings had no admin UPDATE policy. PostgREST does not refuse an update whose rows RLS filtered out: it returns 200 with an empty list.</dd><dt>Fix</dt><dd>Migration 137 adds bookings_admin_update, the shape listings already had.</dd><dt>Verified</dt><dd>Rows 22 to 24; on live an admin moved a booking paid to refunded and its guest was refused.</dd></dl></details></td>
+<td><span class="v pass">On live</span></td>
+</tr>
+<tr data-round="R1P" data-sev="S3" data-status="live" data-text="f4 payment attempts were uncapped and never expired payments six rapid taps made six live payment attempts for one booking. live carried 27 stale attempts worth ৳52,420 from july and august. sslcommerz-init created a row per call and nothing closed old rows. init abandons the booking&#x27;s earlier open attempts and refuses after six in an hour. migration 136 adds the abandoned state and a 15-minute sweep.">
+<td class="mono">F4</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">Payment attempts were uncapped and never expired</span><span class="area">Payments · Round 1 · payments &amp; platform</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>Six rapid taps made six live payment attempts for one booking. Live carried 27 stale attempts worth ৳52,420 from July and August.</dd><dt>Cause</dt><dd>sslcommerz-init created a row per call and nothing closed old rows.</dd><dt>Fix</dt><dd>Init abandons the booking&#x27;s earlier open attempts and refuses after six in an hour. Migration 136 adds the abandoned state and a 15-minute sweep.</dd><dt>Verified</dt><dd>Rows 15 to 17; on live the sweep closed all 27 rows and touched no paid payment.</dd></dl></details></td>
+<td><span class="v pass">On live</span></td>
+</tr>
+<tr data-round="R1P" data-sev="H" data-status="repo" data-text="f5 the migration chain cannot rebuild the database platform a fresh local or staging database could not be built from the repo at all. migration 003 contained sql that was never valid. with it repaired, 103 of 137 files apply; the rest need columns that exist on live and that no file adds. decision recorded: the baseline dumped from live is the build, the chain is history. tools dump_live_baseline.py and local_db_from_live.sh.">
+<td class="mono">F5</td>
+<td><span class="sev sev-H" title="housekeeping">—</span></td>
+<td class="what"><span class="title">The migration chain cannot rebuild the database</span><span class="area">Platform · Round 1 · payments &amp; platform</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>A fresh local or staging database could not be built from the repo at all.</dd><dt>Cause</dt><dd>Migration 003 contained SQL that was never valid. With it repaired, 103 of 137 files apply; the rest need columns that exist on live and that no file adds.</dd><dt>Fix</dt><dd>Decision recorded: the baseline dumped from live is the build, the chain is history. Tools dump_live_baseline.py and local_db_from_live.sh.</dd><dt>Verified</dt><dd>103 of 137 measured; local mirror identical to live on every catalog count.</dd></dl></details></td>
+<td><span class="v info">Done in repo</span></td>
+</tr>
+<tr data-round="R1P" data-sev="S3" data-status="repo" data-text="f6 test 093 hardcoded three live ids tests the address-privacy suite errored on any database but production. real listing, owner and guest uuids typed into the file. the suite resolves its own subjects and seeds an address row when none exists.">
+<td class="mono">F6</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">Test 093 hardcoded three live ids</span><span class="area">Tests · Round 1 · payments &amp; platform</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>The address-privacy suite errored on any database but production.</dd><dt>Cause</dt><dd>Real listing, owner and guest uuids typed into the file.</dd><dt>Fix</dt><dd>The suite resolves its own subjects and seeds an address row when none exists.</dd><dt>Verified</dt><dd>9 rows as documented on the local mirror.</dd></dl></details></td>
+<td><span class="v info">Done in repo</span></td>
+</tr>
+<tr data-round="R1P" data-sev="S3" data-status="repo" data-text="f7 three edge functions did not type-check platform messenger-webhook called .catch() on a query builder, a runtime typeerror in its analytics guard. an unpinned supabase-js import resolved to whatever was newest. all imports pinned to 2.45.4; the three functions fixed; ci runs deno check on every function.">
+<td class="mono">F7</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">Three edge functions did not type-check</span><span class="area">Platform · Round 1 · payments &amp; platform</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>messenger-webhook called .catch() on a query builder, a runtime TypeError in its analytics guard.</dd><dt>Cause</dt><dd>An unpinned supabase-js import resolved to whatever was newest.</dd><dt>Fix</dt><dd>All imports pinned to 2.45.4; the three functions fixed; CI runs deno check on every function.</dd><dt>Verified</dt><dd>13 of 13 clean; CI job green.</dd></dl></details></td>
+<td><span class="v info">Done in repo</span></td>
+</tr>
+<tr data-round="R1P" data-sev="H" data-status="repo" data-text="f8 flutter analyze reported 158 false errors tooling errors from a swift package checkout under build/ masked real ones. analysis_options.yaml did not exclude build/. excluded build/**.">
+<td class="mono">F8</td>
+<td><span class="sev sev-H" title="housekeeping">—</span></td>
+<td class="what"><span class="title">flutter analyze reported 158 false errors</span><span class="area">Tooling · Round 1 · payments &amp; platform</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>Errors from a Swift package checkout under build/ masked real ones.</dd><dt>Cause</dt><dd>analysis_options.yaml did not exclude build/.</dd><dt>Fix</dt><dd>Excluded build/**.</dd><dt>Verified</dt><dd>Analyzer clean.</dd></dl></details></td>
+<td><span class="v info">Done in repo</span></td>
+</tr>
+<tr data-round="R1P" data-sev="H" data-status="repo" data-text="f9 docs/sslcommerz.md said sandbox; live is production docs anyone following the doc would have believed live payments were test payments. stale document. corrected; base url confirmed by hashing the secret.">
+<td class="mono">F9</td>
+<td><span class="sev sev-H" title="housekeeping">—</span></td>
+<td class="what"><span class="title">docs/sslcommerz.md said sandbox; live is production</span><span class="area">Docs · Round 1 · payments &amp; platform</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>Anyone following the doc would have believed live payments were test payments.</dd><dt>Cause</dt><dd>Stale document.</dd><dt>Fix</dt><dd>Corrected; base URL confirmed by hashing the secret.</dd><dt>Verified</dt><dd>By inspection.</dd></dl></details></td>
+<td><span class="v info">Done in repo</span></td>
+</tr>
+<tr data-round="R1P" data-sev="H" data-status="repo" data-text="f10 the management api drops the standard pass/fail result line tooling a sql suite driven through the api appeared to return nothing. the api returns [] for the repo&#x27;s case-when verdict select. documented: use select * when driving a suite through the api.">
+<td class="mono">F10</td>
+<td><span class="sev sev-H" title="housekeeping">—</span></td>
+<td class="what"><span class="title">The Management API drops the standard PASS/FAIL result line</span><span class="area">Tooling · Round 1 · payments &amp; platform</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>A SQL suite driven through the API appeared to return nothing.</dd><dt>Cause</dt><dd>The API returns [] for the repo&#x27;s case-when verdict select.</dd><dt>Fix</dt><dd>Documented: use select * when driving a suite through the API.</dd><dt>Verified</dt><dd>Reproduced.</dd></dl></details></td>
+<td><span class="v info">Done in repo</span></td>
+</tr>
+<tr data-round="R1P" data-sev="S3" data-status="live" data-text="f11 risk-flagged payments settled like clean ones payments sslcommerz marks a transaction risky when its fraud screen fires and asks merchants to hold it. the app marked it paid and posted the host&#x27;s earning at once. the ipn accepted valid and stored the risk fields without reading them. migration 136: such a payment is pending_review and the booking stays unpaid. admins are alerted; the console&#x27;s held tab releases or rejects through service-role rpcs.">
+<td class="mono">F11</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">Risk-flagged payments settled like clean ones</span><span class="area">Payments · Round 1 · payments &amp; platform</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>SSLCommerz marks a transaction risky when its fraud screen fires and asks merchants to hold it. The app marked it paid and posted the host&#x27;s earning at once.</dd><dt>Cause</dt><dd>The IPN accepted VALID and stored the risk fields without reading them.</dd><dt>Fix</dt><dd>Migration 136: such a payment is pending_review and the booking stays unpaid. Admins are alerted; the console&#x27;s Held tab releases or rejects through service-role RPCs.</dd><dt>Verified</dt><dd>Rows 18 to 21; the sandbox produced a risk_level 1 in round 2 and it was held.</dd></dl></details></td>
+<td><span class="v pass">On live</span></td>
+</tr>
+<tr data-round="R1F" data-sev="S1" data-status="live" data-text="n1 anyone signed in could make themselves an admin identity &amp; roles one patch on your own profile set role to admin. that role unlocks 28 policies: every booking, payment, payout method, identity document, exact address, the audit log, campaigns and settings. the profile update policy has no with check, and the guard trigger never mentioned role. proved on live inside a rolled-back transaction. migration 133: a non-admin may make exactly the tenant to owner move (becoming a host) and nothing else.">
+<td class="mono">N1</td>
+<td><span class="sev sev-S1" title="money or identity">S1</span></td>
+<td class="what"><span class="title">Anyone signed in could make themselves an admin</span><span class="area">Identity &amp; roles · Round 1 · full functional</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>One PATCH on your own profile set role to admin. That role unlocks 28 policies: every booking, payment, payout method, identity document, exact address, the audit log, campaigns and settings.</dd><dt>Cause</dt><dd>The profile UPDATE policy has no WITH CHECK, and the guard trigger never mentioned role. Proved on live inside a rolled-back transaction.</dd><dt>Fix</dt><dd>Migration 133: a non-admin may make exactly the tenant to owner move (becoming a host) and nothing else.</dd><dt>Verified</dt><dd>7 of 7 rolled back on live; admin count stayed 1.</dd></dl></details></td>
+<td><span class="v pass">On live</span></td>
+</tr>
+<tr data-round="R1F" data-sev="S2" data-status="live" data-text="n2 any signed-in user could overwrite any listing&#x27;s photos listings &amp; storage a competitor or a guest could replace a host&#x27;s pictures with anything. the storage update policy checked only the bucket name. migration 134: update and delete require the object&#x27;s own owner or an admin.">
+<td class="mono">N2</td>
+<td><span class="sev sev-S2" title="privacy or a broken core flow">S2</span></td>
+<td class="what"><span class="title">Any signed-in user could overwrite any listing&#x27;s photos</span><span class="area">Listings &amp; storage · Round 1 · full functional</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>A competitor or a guest could replace a host&#x27;s pictures with anything.</dd><dt>Cause</dt><dd>The storage UPDATE policy checked only the bucket name.</dd><dt>Fix</dt><dd>Migration 134: UPDATE and DELETE require the object&#x27;s own owner or an admin.</dd><dt>Verified</dt><dd>Rows 1 to 5; on live a guest&#x27;s overwrite changed no rows.</dd></dl></details></td>
+<td><span class="v pass">On live</span></td>
+</tr>
+<tr data-round="R1F" data-sev="S3" data-status="live" data-text="n3 any signed-in user could upload into the public listing bucket listings &amp; storage a guest who hosts nothing could fill a public bucket with 5 mb files. the insert policy checked only the bucket name. migration 134: uploading needs can_upload_listing_image(): a verified owner, an admin, or an account that already owns a listing.">
+<td class="mono">N3</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">Any signed-in user could upload into the public listing bucket</span><span class="area">Listings &amp; storage · Round 1 · full functional</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>A guest who hosts nothing could fill a public bucket with 5 MB files.</dd><dt>Cause</dt><dd>The INSERT policy checked only the bucket name.</dd><dt>Fix</dt><dd>Migration 134: uploading needs can_upload_listing_image(): a verified owner, an admin, or an account that already owns a listing.</dd><dt>Verified</dt><dd>Rows 6 to 8; on live every account that owns a listing can still upload.</dd></dl></details></td>
+<td><span class="v pass">On live</span></td>
+</tr>
+<tr data-round="R1F" data-sev="S3" data-status="live" data-text="n4 a host could book their own listing bookings a host could post an earning to themselves and block their own calendar through the booking path. create_marketplace_booking never compared the owner to the caller. migration 135 refuses at insert time; the one live self-booking is left alone.">
+<td class="mono">N4</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">A host could book their own listing</span><span class="area">Bookings · Round 1 · full functional</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>A host could post an earning to themselves and block their own calendar through the booking path.</dd><dt>Cause</dt><dd>create_marketplace_booking never compared the owner to the caller.</dd><dt>Fix</dt><dd>Migration 135 refuses at insert time; the one live self-booking is left alone.</dd><dt>Verified</dt><dd>Row 10; live refused 42501.</dd></dl></details></td>
+<td><span class="v pass">On live</span></td>
+</tr>
+<tr data-round="R1F" data-sev="S3" data-status="live" data-text="n5 a booking could be created entirely in the past bookings a stay starting ten days ago was accepted; the auto-complete sweep then completed it and prompted reviews for a stay nobody had. no past-date guard in the rpc; the calendar only hid past dates. migration 135 refuses a start more than one hour in the past (booking a turf for this hour is normal).">
+<td class="mono">N5</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">A booking could be created entirely in the past</span><span class="area">Bookings · Round 1 · full functional</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>A stay starting ten days ago was accepted; the auto-complete sweep then completed it and prompted reviews for a stay nobody had.</dd><dt>Cause</dt><dd>No past-date guard in the RPC; the calendar only hid past dates.</dd><dt>Fix</dt><dd>Migration 135 refuses a start more than one hour in the past (booking a turf for this hour is normal).</dd><dt>Verified</dt><dd>Rows 11 to 12; live refused 22023.</dd></dl></details></td>
+<td><span class="v pass">On live</span></td>
+</tr>
+<tr data-round="R1F" data-sev="S3" data-status="client" data-text="n6 losing racers saw an unexplained error at three or more racers bookings several guests racing for one slot: exactly one ever won, but the losers often saw a generic failure instead of “this slot was just booked”. postgres raised deadlock detected (40p01) from inside the exclusion check; the client handled 23p01 only. one retry on 40p01 and 40001, then the conflict message. once, not a loop.">
+<td class="mono">N6</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">Losing racers saw an unexplained error at three or more racers</span><span class="area">Bookings · Round 1 · full functional</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>Several guests racing for one slot: exactly one ever won, but the losers often saw a generic failure instead of “this slot was just booked”.</dd><dt>Cause</dt><dd>Postgres raised deadlock detected (40P01) from inside the exclusion check; the client handled 23P01 only.</dd><dt>Fix</dt><dd>One retry on 40P01 and 40001, then the conflict message. Once, not a loop.</dd><dt>Verified</dt><dd>4 unit tests; 0 double bookings across 11 race runs at 2, 3, 4 and 8 racers.</dd></dl></details></td>
+<td><span class="v wait">Client, not deployed</span></td>
+</tr>
+<tr data-round="R1F" data-sev="S3" data-status="client" data-text="n7 8 of 38 controls carried a screen-reader label accessibility a screen-reader user heard “button” for search, the wishlist hearts, the account menu, the bell and the trophy. a tooltip sets the semantic tooltip and leaves the label empty. semantics labels on six control families.">
+<td class="mono">N7</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">8 of 38 controls carried a screen-reader label</span><span class="area">Accessibility · Round 1 · full functional</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>A screen-reader user heard “button” for Search, the wishlist hearts, the account menu, the bell and the trophy.</dd><dt>Cause</dt><dd>A Tooltip sets the semantic tooltip and leaves the label empty.</dd><dt>Fix</dt><dd>Semantics labels on six control families.</dd><dt>Verified</dt><dd>5 widget tests.</dd></dl></details></td>
+<td><span class="v wait">Client, not deployed</span></td>
+</tr>
+<tr data-round="R1F" data-sev="S4" data-status="client" data-text="n8 every signed-out launch fired a request the database refused client a red 401 in the console on every visit; one error-tracking event per visitor once sentry exists. the device-session watcher called touch_device before anyone was signed in. returns early with no session.">
+<td class="mono">N8</td>
+<td><span class="sev sev-S4" title="hygiene">S4</span></td>
+<td class="what"><span class="title">Every signed-out launch fired a request the database refused</span><span class="area">Client · Round 1 · full functional</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>A red 401 in the console on every visit; one error-tracking event per visitor once Sentry exists.</dd><dt>Cause</dt><dd>The device-session watcher called touch_device before anyone was signed in.</dd><dt>Fix</dt><dd>Returns early with no session.</dd><dt>Verified</dt><dd>By inspection; smoke row.</dd></dl></details></td>
+<td><span class="v wait">Client, not deployed</span></td>
+</tr>
+<tr data-round="R2" data-sev="S2" data-status="written" data-text="q8 either participant could swap the other out of a conversation messaging a guest replaced the host with a stranger in one patch; the stranger read the whole history and the host lost the thread. the conversations update policy has no with check and nothing froze the two ids. migration 138: participant ids are frozen by trigger for non-admins.">
+<td class="mono">Q8</td>
+<td><span class="sev sev-S2" title="privacy or a broken core flow">S2</span></td>
+<td class="what"><span class="title">Either participant could swap the other out of a conversation</span><span class="area">Messaging · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>A guest replaced the host with a stranger in one PATCH; the stranger read the whole history and the host lost the thread.</dd><dt>Cause</dt><dd>The conversations UPDATE policy has no WITH CHECK and nothing froze the two ids.</dd><dt>Fix</dt><dd>Migration 138: participant ids are frozen by trigger for non-admins.</dd><dt>Verified</dt><dd>138 test rows; smoke row.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S4" data-status="written" data-text="q9 a stranger could plant typing indicators and read cursors in any thread messaging fake “typing” and read receipts in conversations the stranger was not in. policies checked only the user id, not membership. 138: every policy requires conversation membership.">
+<td class="mono">Q9</td>
+<td><span class="sev sev-S4" title="hygiene">S4</span></td>
+<td class="what"><span class="title">A stranger could plant typing indicators and read cursors in any thread</span><span class="area">Messaging · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>Fake “typing” and read receipts in conversations the stranger was not in.</dd><dt>Cause</dt><dd>Policies checked only the user id, not membership.</dd><dt>Fix</dt><dd>138: every policy requires conversation membership.</dd><dt>Verified</dt><dd>138 test rows.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S2" data-status="written" data-text="q10 blocking a user hid their thread on your phone and nothing else messaging the blocked person kept messaging and kept raising pushes. user_blocks was a client-side filter. 138: fn_users_blocked is consulted on message insert and thread creation, both directions. automated sends (checkout message) still deliver.">
+<td class="mono">Q10</td>
+<td><span class="sev sev-S2" title="privacy or a broken core flow">S2</span></td>
+<td class="what"><span class="title">Blocking a user hid their thread on your phone and nothing else</span><span class="area">Messaging · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>The blocked person kept messaging and kept raising pushes.</dd><dt>Cause</dt><dd>user_blocks was a client-side filter.</dd><dt>Fix</dt><dd>138: fn_users_blocked is consulted on message insert and thread creation, both directions. Automated sends (checkout message) still deliver.</dd><dt>Verified</dt><dd>138 test rows.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S4" data-status="written" data-text="q11 a “blocked” conversation status could be flipped back by the other side messaging cosmetic once the block itself is enforced server-side. status was a plain column. mitigated by q10; the status is display only.">
+<td class="mono">Q11</td>
+<td><span class="sev sev-S4" title="hygiene">S4</span></td>
+<td class="what"><span class="title">A “blocked” conversation status could be flipped back by the other side</span><span class="area">Messaging · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>Cosmetic once the block itself is enforced server-side.</dd><dt>Cause</dt><dd>Status was a plain column.</dd><dt>Fix</dt><dd>Mitigated by Q10; the status is display only.</dd><dt>Verified</dt><dd>By inspection.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S2" data-status="written" data-text="q12 a blocked guest could still book the host who blocked them bookings the host&#x27;s calendar took a request from someone they had blocked. the booking rpc never asked. 138: the rpc refuses across a block with hint blocked.">
+<td class="mono">Q12</td>
+<td><span class="sev sev-S2" title="privacy or a broken core flow">S2</span></td>
+<td class="what"><span class="title">A blocked guest could still book the host who blocked them</span><span class="area">Bookings · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>The host&#x27;s calendar took a request from someone they had blocked.</dd><dt>Cause</dt><dd>The booking RPC never asked.</dd><dt>Fix</dt><dd>138: the RPC refuses across a block with hint blocked.</dd><dt>Verified</dt><dd>138 test rows.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S1" data-status="written" data-text="q14 a host could set a guest-cancelled booking back to confirmed bookings the guest who cancelled was booked again, and the host&#x27;s earning re-posted. the booking guard returned unconditionally for the listing owner; the state machine lived only in dart. 138: the trigger holds the state table. terminal states are terminal.">
+<td class="mono">Q14</td>
+<td><span class="sev sev-S1" title="money or identity">S1</span></td>
+<td class="what"><span class="title">A host could set a guest-cancelled booking back to confirmed</span><span class="area">Bookings · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>The guest who cancelled was booked again, and the host&#x27;s earning re-posted.</dd><dt>Cause</dt><dd>The booking guard returned unconditionally for the listing owner; the state machine lived only in Dart.</dd><dt>Fix</dt><dd>138: the trigger holds the state table. Terminal states are terminal.</dd><dt>Verified</dt><dd>138 test rows; smoke row 6.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S3" data-status="written" data-text="q15 a cancel through the plain update path notified nobody bookings the host never learned the guest had cancelled (scenarios 15 and 31). the repository sent the status alone; the notifier keys on cancelled_by, which stayed null. 138 stamps cancelled_by and cancelled_at for a caller who omits them; the client now sends both.">
+<td class="mono">Q15</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">A cancel through the plain update path notified nobody</span><span class="area">Bookings · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>The host never learned the guest had cancelled (scenarios 15 and 31).</dd><dt>Cause</dt><dd>The repository sent the status alone; the notifier keys on cancelled_by, which stayed null.</dd><dt>Fix</dt><dd>138 stamps cancelled_by and cancelled_at for a caller who omits them; the client now sends both.</dd><dt>Verified</dt><dd>Smoke row 10: a bare cancel is stamped and the host gets the notification.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S3" data-status="written" data-text="q16 a guest could edit everything the booking rpc had decided bookings guest_count 50, a different listing title, a bigger discount, all on your own booking. only price and dates were frozen. 138 freezes guest_count, unit_count, pricing_unit, the coupon columns, the listing copies and tenant_name.">
+<td class="mono">Q16</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">A guest could edit everything the booking RPC had decided</span><span class="area">Bookings · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>guest_count 50, a different listing title, a bigger discount, all on your own booking.</dd><dt>Cause</dt><dd>Only price and dates were frozen.</dd><dt>Fix</dt><dd>138 freezes guest_count, unit_count, pricing_unit, the coupon columns, the listing copies and tenant_name.</dd><dt>Verified</dt><dd>138 test rows; smoke row 3.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S3" data-status="written" data-text="q17 a guest could cancel in the host&#x27;s name bookings setting cancelled_by to the host&#x27;s id told the guest “cancelled by host” and told the host nothing. cancelled_by was writable. 138: cancelled_by must equal the caller (hint cancelled_by_forged).">
+<td class="mono">Q17</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">A guest could cancel in the host&#x27;s name</span><span class="area">Bookings · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>Setting cancelled_by to the host&#x27;s id told the guest “Cancelled by host” and told the host nothing.</dd><dt>Cause</dt><dd>cancelled_by was writable.</dd><dt>Fix</dt><dd>138: cancelled_by must equal the caller (hint cancelled_by_forged).</dd><dt>Verified</dt><dd>138 test rows.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S1" data-status="written" data-text="q18 a host could un-reject a request and complete a stay nobody checked in to bookings rejected back to confirmed; confirmed straight to completed. no state machine in the database. 138: rejected is terminal. confirmed to completed stays allowed because the auto-complete sweep takes that step.">
+<td class="mono">Q18</td>
+<td><span class="sev sev-S1" title="money or identity">S1</span></td>
+<td class="what"><span class="title">A host could un-reject a request and complete a stay nobody checked in to</span><span class="area">Bookings · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>Rejected back to confirmed; confirmed straight to completed.</dd><dt>Cause</dt><dd>No state machine in the database.</dd><dt>Fix</dt><dd>138: rejected is terminal. Confirmed to completed stays allowed because the auto-complete sweep takes that step.</dd><dt>Verified</dt><dd>138 test rows.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S1" data-status="written" data-text="q19 guest cancels and host accepts at the same moment: the host won bookings two patches, last write wins; the booking ended confirmed with cancelled_by set. same root cause as q14. 138: cancelled is terminal, so the later accept is refused.">
+<td class="mono">Q19</td>
+<td><span class="sev sev-S1" title="money or identity">S1</span></td>
+<td class="what"><span class="title">Guest cancels and host accepts at the same moment: the host won</span><span class="area">Bookings · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>Two PATCHes, last write wins; the booking ended confirmed with cancelled_by set.</dd><dt>Cause</dt><dd>Same root cause as Q14.</dd><dt>Fix</dt><dd>138: cancelled is terminal, so the later accept is refused.</dd><dt>Verified</dt><dd>138 test rows.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S1" data-status="written" data-text="q20 a paid booking cancelled by either side told nobody money was owed money the host&#x27;s earning stayed posted; the guest saw a paid pill on a cancelled trip; no admin knew. no trigger watched for cancelled + paid; no refund policy existed. 138: every admin gets a refund due alert, the guest is told; the console has a refund due tab; the cancel dialog explains the refund. follow-up (140): a refund policy decides how much (see q20b).">
+<td class="mono">Q20</td>
+<td><span class="sev sev-S1" title="money or identity">S1</span></td>
+<td class="what"><span class="title">A paid booking cancelled by either side told nobody money was owed</span><span class="area">Money · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>The host&#x27;s earning stayed posted; the guest saw a Paid pill on a cancelled trip; no admin knew.</dd><dt>Cause</dt><dd>No trigger watched for cancelled + paid; no refund policy existed.</dd><dt>Fix</dt><dd>138: every admin gets a Refund due alert, the guest is told; the console has a Refund due tab; the cancel dialog explains the refund. Follow-up (140): a refund policy decides how much (see Q20b).</dd><dt>Verified</dt><dd>138 test rows 17 to 19.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2F" data-sev="S1" data-status="written" data-text="q20b there was no refund policy, so no one knew how much goes back money every cancellation was a manual judgement. nothing decided. 140: two admin settings (full refund at least 48 h before check-in, 50% inside that window, nothing after check-in time or on a no-show, always full when the host cancels). the verdict is stamped on the booking as it closes; the admin alert quotes the amount; the ledger reversal on mark refunded is the refunded share, not the whole earning.">
+<td class="mono">Q20b</td>
+<td><span class="sev sev-S1" title="money or identity">S1</span></td>
+<td class="what"><span class="title">There was no refund policy, so no one knew how much goes back</span><span class="area">Money · Round 2 · follow-up</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>Every cancellation was a manual judgement.</dd><dt>Cause</dt><dd>Nothing decided.</dd><dt>Fix</dt><dd>140: two admin settings (full refund at least 48 h before check-in, 50% inside that window, nothing after check-in time or on a no-show, always full when the host cancels). The verdict is stamped on the booking as it closes; the admin alert quotes the amount; the ledger reversal on Mark refunded is the refunded share, not the whole earning.</dd><dt>Verified</dt><dd>139_140 rows 1 to 19; console shows the stamp.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S3" data-status="written" data-text="q23 a guest could write the host&#x27;s side of the booking bookings host_message, confirmed_at, actual_check_in and completed_at were editable by the guest. only price and dates were frozen. 138: host-side columns are the host&#x27;s (hint host_columns_protected).">
+<td class="mono">Q23</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">A guest could write the host&#x27;s side of the booking</span><span class="area">Bookings · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>host_message, confirmed_at, actual_check_in and completed_at were editable by the guest.</dd><dt>Cause</dt><dd>Only price and dates were frozen.</dd><dt>Fix</dt><dd>138: host-side columns are the host&#x27;s (hint host_columns_protected).</dd><dt>Verified</dt><dd>Smoke row 2.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2F" data-sev="S3" data-status="written" data-text="q24 a guest who never arrived was treated as if they had stayed bookings 24 hours after checkout the booking auto-completed, both sides were prompted to review, and it counted toward the host&#x27;s leaderboard. no no-show outcome existed. 139 adds no_show to booking_status; 140 teaches the state machine (host only, after check-in time, refused early with no_show_too_early), the notifier and the refund policy (0%). the host gets a “guest didn&#x27;t arrive” button; the guest a trips hint; the console a badge, tab and timeline event.">
+<td class="mono">Q24</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">A guest who never arrived was treated as if they had stayed</span><span class="area">Bookings · Round 2 · follow-up</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>24 hours after checkout the booking auto-completed, both sides were prompted to review, and it counted toward the host&#x27;s leaderboard.</dd><dt>Cause</dt><dd>No no-show outcome existed.</dd><dt>Fix</dt><dd>139 adds no_show to booking_status; 140 teaches the state machine (host only, after check-in time, refused early with no_show_too_early), the notifier and the refund policy (0%). The host gets a “Guest Didn&#x27;t Arrive” button; the guest a trips hint; the console a badge, tab and timeline event.</dd><dt>Verified</dt><dd>139_140 rows 20 to 30; smoke rows.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S2" data-status="written" data-text="q25 both parties reviewed; neither review ever appeared reviews two reviews on one stay stayed hidden for 14 days. check_and_reveal_reviews ran as the second reviewer; rls let them flip only their own row. 138: the reveal runs as security definer.">
+<td class="mono">Q25</td>
+<td><span class="sev sev-S2" title="privacy or a broken core flow">S2</span></td>
+<td class="what"><span class="title">Both parties reviewed; neither review ever appeared</span><span class="area">Reviews · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>Two reviews on one stay stayed hidden for 14 days.</dd><dt>Cause</dt><dd>check_and_reveal_reviews ran as the second reviewer; RLS let them flip only their own row.</dd><dt>Fix</dt><dd>138: the reveal runs as SECURITY DEFINER.</dd><dt>Verified</dt><dd>Lifecycle test step 7 to 9 rewritten (it had passed only because the reveal was broken).</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S3" data-status="written" data-text="q26 listing star ratings never changed reviews the explore card&#x27;s stars were frozen at whatever the listing was created with. the recompute function averaged a column reviews does not have and was attached to nothing. 138: fn_refresh_listing_rating recomputes from revealed guest reviews on every review write; existing rows backfilled.">
+<td class="mono">Q26</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">Listing star ratings never changed</span><span class="area">Reviews · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>The explore card&#x27;s stars were frozen at whatever the listing was created with.</dd><dt>Cause</dt><dd>The recompute function averaged a column reviews does not have and was attached to nothing.</dd><dt>Fix</dt><dd>138: fn_refresh_listing_rating recomputes from revealed guest reviews on every review write; existing rows backfilled.</dd><dt>Verified</dt><dd>138 test rows.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S3" data-status="written" data-text="q27 a host could give their own listing 5 stars and 999 reviews reviews patch rating, review_count and is_superhost on your own listing. owner update policy with no column guard. 138: those columns are refused for owners and zeroed on insert; admins may still award the badge.">
+<td class="mono">Q27</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">A host could give their own listing 5 stars and 999 reviews</span><span class="area">Reviews · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>PATCH rating, review_count and is_superhost on your own listing.</dd><dt>Cause</dt><dd>Owner UPDATE policy with no column guard.</dd><dt>Fix</dt><dd>138: those columns are refused for owners and zeroed on insert; admins may still award the badge.</dd><dt>Verified</dt><dd>Smoke row 8.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S3" data-status="written" data-text="q28 review reminders reached one stay in twenty-four reminders almost nobody got the “leave a review” nudge. a one-hour completed_at window inside a once-a-day job. 138: day-wide windows in asia/dhaka, deduplicated per booking per day.">
+<td class="mono">Q28</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">Review reminders reached one stay in twenty-four</span><span class="area">Reminders · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>Almost nobody got the “leave a review” nudge.</dd><dt>Cause</dt><dd>A one-hour completed_at window inside a once-a-day job.</dd><dt>Fix</dt><dd>138: day-wide windows in Asia/Dhaka, deduplicated per booking per day.</dd><dt>Verified</dt><dd>138 test rows.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S3" data-status="written" data-text="q29 pre-check-in messages named the wrong day for midnight check-ins automated messages a stay from 1 october 00:00 dhaka was announced as “wednesday, september 30”. to_char on a timestamptz renders in the database&#x27;s utc. 138: dates render at time zone asia/dhaka in the pre-check-in and checkout messages.">
+<td class="mono">Q29</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">Pre-check-in messages named the wrong day for midnight check-ins</span><span class="area">Automated messages · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>A stay from 1 October 00:00 Dhaka was announced as “Wednesday, September 30”.</dd><dt>Cause</dt><dd>to_char on a timestamptz renders in the database&#x27;s UTC.</dd><dt>Fix</dt><dd>138: dates render at time zone Asia/Dhaka in the pre-check-in and checkout messages.</dd><dt>Verified</dt><dd>138 test rows.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S2" data-status="written" data-text="q33 a rejected applicant who re-scanned their nid never re-entered the queue identity &amp; roles their status stayed rejected; the app worked around it by writing pending itself. the trigger fired on insert only and moved only none; a re-scan is an upsert. 138: fires on insert or update of file_path, from none or rejected.">
+<td class="mono">Q33</td>
+<td><span class="sev sev-S2" title="privacy or a broken core flow">S2</span></td>
+<td class="what"><span class="title">A rejected applicant who re-scanned their NID never re-entered the queue</span><span class="area">Identity &amp; roles · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>Their status stayed rejected; the app worked around it by writing pending itself.</dd><dt>Cause</dt><dd>The trigger fired on INSERT only and moved only none; a re-scan is an upsert.</dd><dt>Fix</dt><dd>138: fires on insert or update of file_path, from none or rejected.</dd><dt>Verified</dt><dd>138 test rows.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S1" data-status="written" data-text="q36 redeem_coupon burnt a limited coupon on a booking that never used it coupons one call recorded a ৳99,999 discount and consumed the coupon&#x27;s single use. the discount was a parameter and the coupon was not matched to the booking. 138: redemption must match the booking&#x27;s own coupon code and records the booking&#x27;s own discount; anon revoked.">
+<td class="mono">Q36</td>
+<td><span class="sev sev-S1" title="money or identity">S1</span></td>
+<td class="what"><span class="title">redeem_coupon burnt a limited coupon on a booking that never used it</span><span class="area">Coupons · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>One call recorded a ৳99,999 discount and consumed the coupon&#x27;s single use.</dd><dt>Cause</dt><dd>The discount was a parameter and the coupon was not matched to the booking.</dd><dt>Fix</dt><dd>138: redemption must match the booking&#x27;s own coupon code and records the booking&#x27;s own discount; anon revoked.</dd><dt>Verified</dt><dd>138 test rows.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S3" data-status="written" data-text="q39 a guest could not open a listing they had booked once the host hid it listings &amp; storage “view listing” from trips came back empty. the select policy was active-or-mine. 138: a guest with a booking on the listing can read it hidden or not (definer helper to avoid policy recursion).">
+<td class="mono">Q39</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">A guest could not open a listing they had booked once the host hid it</span><span class="area">Listings &amp; storage · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>“View listing” from Trips came back empty.</dd><dt>Cause</dt><dd>The SELECT policy was active-or-mine.</dd><dt>Fix</dt><dd>138: a guest with a booking on the listing can read it hidden or not (definer helper to avoid policy recursion).</dd><dt>Verified</dt><dd>138 test rows 56 to 57.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S3" data-status="written" data-text="q40 the contact card handed over whatever phone number the other party typed messaging a guest could set their profile number to the host&#x27;s own and take the host&#x27;s name. profiles.mobile is free text its owner edits. 138: the number comes from the identity the account logged in with; mobile is the fallback for email-only accounts.">
+<td class="mono">Q40</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">The contact card handed over whatever phone number the other party typed</span><span class="area">Messaging · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>A guest could set their profile number to the host&#x27;s own and take the host&#x27;s name.</dd><dt>Cause</dt><dd>profiles.mobile is free text its owner edits.</dd><dt>Fix</dt><dd>138: the number comes from the identity the account logged in with; mobile is the fallback for email-only accounts.</dd><dt>Verified</dt><dd>138 test rows.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S1" data-status="function" data-text="q41 paying after the booking was cancelled marked the cancelled booking paid payments guest opens the bank page, the booking is cancelled meanwhile, the guest completes payment: the cancelled booking became paid and the host got an earning. driven for real on the sandbox. the ipn checked the payment&#x27;s state, never the booking&#x27;s. decision extracted to _shared/settlement.ts (pure, 9 tests): a payment on a closed booking is held, the booking stays unpaid, admins are told to refund, the guest is told a refund is coming.">
+<td class="mono">Q41</td>
+<td><span class="sev sev-S1" title="money or identity">S1</span></td>
+<td class="what"><span class="title">Paying after the booking was cancelled marked the cancelled booking paid</span><span class="area">Payments · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>Guest opens the bank page, the booking is cancelled meanwhile, the guest completes payment: the cancelled booking became paid and the host got an earning. Driven for real on the sandbox.</dd><dt>Cause</dt><dd>The IPN checked the payment&#x27;s state, never the booking&#x27;s.</dd><dt>Fix</dt><dd>Decision extracted to _shared/settlement.ts (pure, 9 tests): a payment on a closed booking is held, the booking stays unpaid, admins are told to refund, the guest is told a refund is coming.</dd><dt>Verified</dt><dd>Sandbox run before and after; 9 Deno tests.</dd></dl></details></td>
+<td><span class="v warn">Function not redeployed</span></td>
+</tr>
+<tr data-round="R2" data-sev="S4" data-status="client" data-text="q42 deleting a listing with payment history showed a raw constraint name listings &amp; storage “host_ledger_entries_booking_id_fkey” on a host&#x27;s screen. unhandled 23503. client: “this listing has payment history and can&#x27;t be deleted. hide it instead.”">
+<td class="mono">Q42</td>
+<td><span class="sev sev-S4" title="hygiene">S4</span></td>
+<td class="what"><span class="title">Deleting a listing with payment history showed a raw constraint name</span><span class="area">Listings &amp; storage · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>“host_ledger_entries_booking_id_fkey” on a host&#x27;s screen.</dd><dt>Cause</dt><dd>Unhandled 23503.</dd><dt>Fix</dt><dd>Client: “This listing has payment history and can&#x27;t be deleted. Hide it instead.”</dd><dt>Verified</dt><dd>Unit test.</dd></dl></details></td>
+<td><span class="v wait">Client, not deployed</span></td>
+</tr>
+<tr data-round="R2F" data-sev="S4" data-status="client" data-text="q43 a saved listing the host later hid vanished from the wishlist without a word wishlists the wishlist silently shrank. only active listings are loaded; an unmatched favourite fell out of the grid. client: a “no longer available” card with remove stands in for it.">
+<td class="mono">Q43</td>
+<td><span class="sev sev-S4" title="hygiene">S4</span></td>
+<td class="what"><span class="title">A saved listing the host later hid vanished from the wishlist without a word</span><span class="area">Wishlists · Round 2 · follow-up</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>The wishlist silently shrank.</dd><dt>Cause</dt><dd>Only active listings are loaded; an unmatched favourite fell out of the grid.</dd><dt>Fix</dt><dd>Client: a “No longer available” card with Remove stands in for it.</dd><dt>Verified</dt><dd>Widget test.</dd></dl></details></td>
+<td><span class="v wait">Client, not deployed</span></td>
+</tr>
+<tr data-round="R2" data-sev="S2" data-status="written" data-text="q44 live realtime never fired for bookings realtime the host&#x27;s reservations screen subscribes to bookings; the subscription reports active and never fires. hosts saw new requests only because the notification row arrived. a production fact, not a code fault. the live supabase_realtime publication carries conversations, messages, notifications and typing indicators, not bookings. 138 adds bookings to the publication idempotently (and restores the four the local mirror lacked).">
+<td class="mono">Q44</td>
+<td><span class="sev sev-S2" title="privacy or a broken core flow">S2</span></td>
+<td class="what"><span class="title">Live realtime never fired for bookings</span><span class="area">Realtime · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>The host&#x27;s reservations screen subscribes to bookings; the subscription reports active and never fires. Hosts saw new requests only because the notification row arrived. A production fact, not a code fault.</dd><dt>Cause</dt><dd>The live supabase_realtime publication carries conversations, messages, notifications and typing indicators, not bookings.</dd><dt>Fix</dt><dd>138 adds bookings to the publication idempotently (and restores the four the local mirror lacked).</dd><dt>Verified</dt><dd>Publication membership checked after apply.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2" data-sev="S3" data-status="written" data-text="q45 chat attachments accepted any file type and the owner could not delete them listings &amp; storage a 9 mb blob labelled png and an html “musafir login” page both uploaded; an .apk would be offered to the other party as a download. no mime allowlist on chat-attachments; the delete policy checked owner while this storage stamps owner_id. 138: allowlist (images, pdf, office formats, text); the picker offers the same list; delete policy checks both columns.">
+<td class="mono">Q45</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">Chat attachments accepted any file type and the owner could not delete them</span><span class="area">Listings &amp; storage · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>A 9 MB blob labelled PNG and an HTML “Musafir login” page both uploaded; an .apk would be offered to the other party as a download.</dd><dt>Cause</dt><dd>No mime allowlist on chat-attachments; the delete policy checked owner while this Storage stamps owner_id.</dd><dt>Fix</dt><dd>138: allowlist (images, PDF, office formats, text); the picker offers the same list; delete policy checks both columns.</dd><dt>Verified</dt><dd>138 rows 46 to 48; smoke row 11.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2F" data-sev="S4" data-status="function" data-text="q49 an unsigned cancel redirect could rename any non-settled payment attempt payments anyone who knew a transaction id could post ?redirect=cancel and mark the attempt cancelled. browser redirects carry no signature and the update had no state guard. the ipn may close only an attempt still initiated; settled, held or abandoned rows are untouched. a real success ipn still settles over a spoofed cancel.">
+<td class="mono">Q49</td>
+<td><span class="sev sev-S4" title="hygiene">S4</span></td>
+<td class="what"><span class="title">An unsigned cancel redirect could rename any non-settled payment attempt</span><span class="area">Payments · Round 2 · follow-up</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>Anyone who knew a transaction id could POST ?redirect=cancel and mark the attempt cancelled.</dd><dt>Cause</dt><dd>Browser redirects carry no signature and the update had no state guard.</dd><dt>Fix</dt><dd>The IPN may close only an attempt still initiated; settled, held or abandoned rows are untouched. A real success IPN still settles over a spoofed cancel.</dd><dt>Verified</dt><dd>Smoke row 17: a cancel redirect on a paid tran_id changes nothing.</dd></dl></details></td>
+<td><span class="v warn">Function not redeployed</span></td>
+</tr>
+<tr data-round="R2" data-sev="S1" data-status="written" data-text="q51 releasing a held payment on a cancelled booking would have paid it admin console the wrong console button marked a closed booking paid. admin_release_payment checked only the payment&#x27;s status. 138: refuses unless the booking is confirmed or active (hint booking_not_open). reject still works.">
+<td class="mono">Q51</td>
+<td><span class="sev sev-S1" title="money or identity">S1</span></td>
+<td class="what"><span class="title">Releasing a held payment on a cancelled booking would have paid it</span><span class="area">Admin console · Round 2 · sixty scenarios</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>The wrong console button marked a closed booking paid.</dd><dt>Cause</dt><dd>admin_release_payment checked only the payment&#x27;s status.</dd><dt>Fix</dt><dd>138: refuses unless the booking is confirmed or active (hint booking_not_open). Reject still works.</dd><dt>Verified</dt><dd>138 test rows.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2F" data-sev="S2" data-status="written" data-text="q53 there was no way to suspend a fraudulent account identity &amp; roles an admin could hide listings and change roles; the account kept logging in, messaging and booking. missing feature. 140: admin_suspend_user (service role) deletes the account&#x27;s auth sessions, hides and remembers its listings, declines pending requests, withdraws its own; verify-otp refuses the next login; every write path a still-valid token could reach is guarded; the session watcher signs the device out. console: suspension section and badges. admin_unsuspend_user restores exactly what was hidden.">
+<td class="mono">Q53</td>
+<td><span class="sev sev-S2" title="privacy or a broken core flow">S2</span></td>
+<td class="what"><span class="title">There was no way to suspend a fraudulent account</span><span class="area">Identity &amp; roles · Round 2 · follow-up</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>An admin could hide listings and change roles; the account kept logging in, messaging and booking.</dd><dt>Cause</dt><dd>Missing feature.</dd><dt>Fix</dt><dd>140: admin_suspend_user (service role) deletes the account&#x27;s auth sessions, hides and remembers its listings, declines pending requests, withdraws its own; verify-otp refuses the next login; every write path a still-valid token could reach is guarded; the session watcher signs the device out. Console: Suspension section and badges. admin_unsuspend_user restores exactly what was hidden.</dd><dt>Verified</dt><dd>139_140 rows 31 to 50; smoke rows 15: suspend, refused login, lift, login again.</dd></dl></details></td>
+<td><span class="v warn">Written, not on live</span></td>
+</tr>
+<tr data-round="R2F" data-sev="S3" data-status="function" data-text="q56 four google and gemini functions accepted the anon key with no limit platform anyone with the bundle could run up the google and gemini invoices. verify_jwt accepts the anon key and none of the functions checked for a user; signed-out search legitimately needs places-search. 140 + _shared/rate_limit.ts: fixed windows counted in the database; per user when signed in, per ip otherwise with a wider allowance (cgnat). 429 with retry-after; fails open if the counter is unreachable.">
+<td class="mono">Q56</td>
+<td><span class="sev sev-S3" title="wrong information shown, or cost">S3</span></td>
+<td class="what"><span class="title">Four Google and Gemini functions accepted the anon key with no limit</span><span class="area">Platform · Round 2 · follow-up</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>Anyone with the bundle could run up the Google and Gemini invoices.</dd><dt>Cause</dt><dd>verify_jwt accepts the anon key and none of the functions checked for a user; signed-out search legitimately needs places-search.</dd><dt>Fix</dt><dd>140 + _shared/rate_limit.ts: fixed windows counted in the database; per user when signed in, per IP otherwise with a wider allowance (CGNAT). 429 with Retry-After; fails open if the counter is unreachable.</dd><dt>Verified</dt><dd>139_140 rows 51 to 57; 6 Deno tests; smoke row 18.</dd></dl></details></td>
+<td><span class="v warn">Function not redeployed</span></td>
+</tr>
+<tr data-round="R2F" data-sev="S4" data-status="repo" data-text="q57 a dead function was still deployed on live platform validate-discount read tables that do not exist; the app calls validate_coupon. never removed. removed from the repo and the console&#x27;s registry. deleting it from live is a production action.">
+<td class="mono">Q57</td>
+<td><span class="sev sev-S4" title="hygiene">S4</span></td>
+<td class="what"><span class="title">A dead function was still deployed on live</span><span class="area">Platform · Round 2 · follow-up</span>
+<details><summary>What a user saw, why, and the fix</summary>
+<dl><dt>Seen</dt><dd>validate-discount read tables that do not exist; the app calls validate_coupon.</dd><dt>Cause</dt><dd>Never removed.</dd><dt>Fix</dt><dd>Removed from the repo and the console&#x27;s registry. Deleting it from live is a production action.</dd><dt>Verified</dt><dd>Repo clean.</dd></dl></details></td>
+<td><span class="v info">Done in repo</span></td>
+</tr></tbody>
+</table></div>
+<div class="legend"><span><span class="v pass">On live</span> Applied to the production database, or the function is deployed.</span><span><span class="v warn">Written, not on live</span> In migration 138, 139 or 140. Tested on the local mirror. Not applied.</span><span><span class="v warn">Function not redeployed</span> Edge-function change, type-checked and tested. Not deployed.</span><span><span class="v wait">Client, not deployed</span> Flutter fix. build/web is rebuilt but not committed or deployed.</span><span><span class="v wait">Console, not deployed</span> Admin console change. Type-checks and lints clean. Deployment is manual.</span><span><span class="v info">Done in repo</span> Tests, tooling, CI or docs. Nothing to deploy.</span></div>
+
+<h2 id="passed">What held</h2>
+<p>A findings list reads as if nothing works. Much of it does, and was measured to.</p>
+<ul>
+<li><strong>Cross-user isolation</strong> holds everywhere tested except the two storage policies fixed in 134: bookings, payments, payout methods, notifications, favourites, identity documents and profile fields are invisible to strangers by policy, not by the app.</li>
+<li><strong>Identity verification genuinely gates</strong> publishing and booking from the database.</li>
+<li><strong>No slot was ever double-booked</strong>: exactly one booking survived every race at 2, 3, 4 and 8 concurrent guests across 11 runs. The exclusion constraint does the work.</li>
+<li><strong>Every lifecycle transition notified the right party</strong>: request, accept, cash confirmation, check-in, completion, both reviews, and a stranger seeing none of them.</li>
+<li><strong>The payment refusal matrix</strong>: 17 init and IPN cases all answered as specified, including a forged validation id, a replayed genuine one, and a real validation id attached to a different transaction.</li>
+<li><strong>Live reconciliation</strong>: 15 paid bookings, 15 paid payments, 0 orphans either way, ৳13,610.</li>
+<li><strong>Signed-out browsing</strong>: listings, facilities and amenity search work; profiles, bookings and exact addresses are refused outright.</li>
+<li><strong>The interface</strong> renders at 1440, 1000 and 390 px with no sideways scroll.</li>
+<li><strong>Daily and monthly pricing at Dhaka midnight</strong> counts nights and months correctly across month and year boundaries.</li>
+</ul>
+
+<h2 id="evidence">Evidence</h2>
+<p>Final state of the working tree, 19 September. Every suite is repeatable from the repository.</p>
+<div class="tbl"><table>
+<thead><tr><th>Check</th><th class="num">Result</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>SQL suites, all 22 files</td><td class="num">414 rows, 0 failures</td><td><code>sh tool/qa/run_sql_tests.sh</code>; each file inside its own begin and rollback</td></tr>
+<tr><td>Round-two suite <code>138_qa_round2_test.sql</code></td><td class="num">57 / 57</td><td>rows 1 to 3, 9 to 14, 17 to 18, 20 to 22, 26, 28, 30 to 33, 36, 38 to 42, 44 to 48 go red with 138 reverted</td></tr>
+<tr><td>Follow-up suite <code>139_140_open_items_test.sql</code></td><td class="num">57 / 57</td><td>30 rows go red with 140's triggers and RPCs dropped, inside a rolled-back transaction</td></tr>
+<tr><td>Fixes suite <code>134_137_qa_fixes_test.sql</code></td><td class="num">28 / 28</td><td>4 red with the old storage policies restored; 2 red against the pre-135 function</td></tr>
+<tr><td>Capability matrix</td><td class="num">61 / 61</td><td>up from 57 before the fixes</td></tr>
+<tr><td>Reservation lifecycle</td><td class="num">9 / 9</td><td>step 8 rewritten: it had passed only because the review reveal was broken</td></tr>
+<tr><td>HTTP smoke <code>tool/qa/http_smoke.sh</code></td><td class="num">30 / 30</td><td>real logins, PostgREST, Storage, functions; includes a suspension round trip and an IPN spoof</td></tr>
+<tr><td>Edge functions</td><td class="num">12 type-check, 15 tests</td><td><code>deno check</code> on every function; settlement and rate-limit tests</td></tr>
+<tr><td>Flutter</td><td class="num">1004 tests, analyzer clean, format clean</td><td>up from 974 at the start of round one</td></tr>
+<tr><td>Admin console</td><td class="num">tsc and eslint clean</td><td></td></tr>
+<tr><td>Verified on live after applying 133 to 137</td><td class="num">12 checks</td><td>rolled back, real accounts: self-booking refused, past booking refused, photo overwrite changes no rows, guest upload refused, self-promotion refused with the admin count still 1, sweep closed 27 stale rows, admin refund works and its guest is refused, release with an admin JWT refused, every live host can still upload</td></tr>
+</tbody></table></div>
+
+<h2 id="ship">Ship list</h2>
+<p>Every remaining step is a production action. In this order.</p>
+<ol class="steps">
+<li><b>Apply migration 138 to live</b><p>Through the Management API, dry-run in a rolled-back transaction first, as the earlier six were. Then run <code>138_qa_round2_test.sql</code> against live, rolled back, and check <code>bookings</code> appears in the realtime publication.</p></li>
+<li><b>Apply 139, commit, then apply 140</b><p>139 adds an enum label and Postgres will not let 140 use it in the same transaction (55P04). Not reversible. Then <code>139_140_open_items_test.sql</code> rolled back on live.</p></li>
+<li><b>Regenerate the baseline and clear the pin</b><p><code>python3 tool/dump_live_baseline.py</code>; set <code>NEWER_MIGRATIONS</code> in <code>tool/local_db_from_live.sh</code> to empty.</p></li>
+<li><b>Redeploy the seven edge functions</b><p><code>sslcommerz-ipn</code>, <code>sslcommerz-init</code>, <code>verify-otp</code>, <code>geocode</code>, <code>places-search</code>, <code>google-directions</code>, <code>voice-parse</code>. After 140: the rate limiter fails open without its counter, so the order is safe but pointless reversed. Smoke each with a request that touches no data.</p></li>
+<li><b>Delete the dead function</b><p><code>supabase functions delete validate-discount</code>.</p></li>
+<li><b>Commit both repositories and deploy the web bundle</b><p><code>build/web</code> is a committed artifact; a source-only commit ships stale code. Confirm with <code>sh tool/verify_deploy.sh</code>. Deploy the admin console by hand.</p></li>
+<li><b>Afterwards</b><p>Watch the Refund due and Held tabs for the first week; confirm the accept window setting on live (it was 1 hour, set by an admin on 9 Sep, which auto-rejects every request a sleeping host does not answer).</p></li>
+</ol>
+
+<h2 id="lessons">Lessons for the next round</h2>
+<ul>
+<li><strong>PostgREST answers 200 [] to a refused update.</strong> Measure the row, not the status code. The smoke harness keeps one row that exists only to show this.</li>
+<li><strong>The SQL suites do not roll themselves back.</strong> Run them through <code>run_sql_tests.sh</code>. An hour was lost to fixtures a previous run had committed, and the mirror's settings held junk values (<code>whenever</code>, <code>lots</code>) from a suite that proves fallbacks by writing junk.</li>
+<li><strong>A Tooltip does not name a control.</strong> It sets the semantic tooltip and leaves the label empty; the end-to-end strategy selects by label.</li>
+<li><strong>Trigger order is alphabetical by name,</strong> and 140 depends on it: the guard runs before the refund stamp. Rename either and check.</li>
+<li><strong>An enum label is a two-file migration</strong> and cannot be rolled back; the rolled-back-transaction safety net does not exist for it.</li>
+<li><strong>Local Storage stamps <code>owner_id</code>; live stamps <code>owner</code>.</strong> Every ownership policy checks both.</li>
+<li><strong>The sandbox returns a risk flag at random</strong> on identical successful runs. A held sandbox payment is not a bug.</li>
+<li><strong>A negative test proves nothing until the subject is proved negative.</strong> The first live re-check picked “a guest” who turned out to own two listings and read as a failed fix.</li>
+<li><strong>Notification timestamps are transaction time</strong> inside a test, so a wall-clock watermark matches nothing; track ids.</li>
+</ul>
+
+<footer>
+<p>Sources, all in <code>docs/qa/</code>: <code>REPORT_2026-09-18.md</code> (payments and platform), <code>REPORT_FULL_2026-09-18.md</code> (full functional), <code>FIXES_2026-09-19.md</code> (the fixes and the live verification), <code>REPORT_ROUND2_2026-09-19.md</code> (sixty scenarios and the follow-up). The engineering notes behind each migration are in <code>CLAUDE.md</code>.</p>
+<p>Every write to production during these rounds ran inside a rolled-back transaction, except the migrations and deploys named above, each done on the owner's instruction.</p>
+</footer>
+</div>
+
+<script>
+(function(){
+  var rows = Array.prototype.slice.call(document.querySelectorAll('#register tbody tr'));
+  var fr = document.getElementById('f-round'), fs = document.getElementById('f-sev'), ft = document.getElementById('f-status'), fx = document.getElementById('f-text'), fc = document.getElementById('f-count');
+  if (!fr) return;
+  function apply(){
+    var r = fr.value, s = fs.value, st = ft.value, q = fx.value.trim().toLowerCase(), n = 0;
+    rows.forEach(function(tr){
+      var ok = (!r || tr.dataset.round === r) && (!s || tr.dataset.sev === s) && (!st || tr.dataset.status === st) && (!q || tr.dataset.text.indexOf(q) !== -1);
+      tr.hidden = !ok; if (ok) n++;
+    });
+    fc.textContent = n + ' of ' + rows.length;
+  }
+  [fr, fs, ft].forEach(function(el){ el.addEventListener('change', apply); });
+  fx.addEventListener('input', apply);
+  try {
+    var saved = JSON.parse(localStorage.getItem('qa-register-filters') || '{}');
+    if (saved.r) fr.value = saved.r; if (saved.s) fs.value = saved.s; if (saved.st) ft.value = saved.st;
+    apply();
+    [fr, fs, ft, fx].forEach(function(el){ el.addEventListener('change', function(){
+      try { localStorage.setItem('qa-register-filters', JSON.stringify({r: fr.value, s: fs.value, st: ft.value})); } catch (e) {}
+    }); });
+  } catch (e) { apply(); }
+})();
+</script>
+
+</body>
+</html>

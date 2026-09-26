@@ -1219,6 +1219,12 @@ class _EnhancedBookingCard extends StatelessWidget {
           text: byGuest ? 'You cancelled this booking' : 'Cancelled by host',
           color: Colors.grey.shade600,
         );
+      case BookingStatus.noShow:
+        return (
+          icon: Icons.person_off_outlined,
+          text: 'The host reported you did not arrive',
+          color: Colors.grey.shade700,
+        );
     }
   }
 
@@ -1291,6 +1297,7 @@ class _StatusChip extends StatelessWidget {
       BookingStatus.active => Colors.teal.shade600,
       BookingStatus.completed => Colors.blue.shade600,
       BookingStatus.cancelled => Colors.grey.shade600,
+      BookingStatus.noShow => Colors.grey.shade700,
     };
 
     return Container(
@@ -2034,8 +2041,16 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Cancel Booking'),
-        content: const Text(
-          'Are you sure you want to cancel this booking? The host will be notified.',
+        // A guest who has already paid is owed that money back, and nothing
+        // refunds it automatically — an admin arranges it from the console
+        // (migration 138 alerts them). Say so here, or the guest cancels and
+        // is left staring at a "Paid" pill on a cancelled trip.
+        content: Text(
+          booking.isPaid
+              ? 'Are you sure you want to cancel this booking? The host will '
+                  'be notified. You have paid ৳${booking.totalPrice.toStringAsFixed(0)}; '
+                  'our team will arrange your refund and contact you.'
+              : 'Are you sure you want to cancel this booking? The host will be notified.',
         ),
         actions: [
           TextButton(

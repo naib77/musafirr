@@ -209,6 +209,74 @@ void main() {
     });
   });
 
+  group('BookingRules.canMarkNoShow', () {
+    test('returns true for a confirmed booking once check-in time has passed',
+        () {
+      final now = DateTime(2026, 10, 1, 15);
+      final booking = createBooking(
+        status: BookingStatus.confirmed,
+        startAt: DateTime(2026, 10, 1, 14),
+        endAt: DateTime(2026, 10, 2, 11),
+      );
+      expect(rules.canMarkNoShow(booking, now: now), isTrue);
+    });
+
+    test('returns true at exactly check-in time', () {
+      final start = DateTime(2026, 10, 1, 14);
+      final booking = createBooking(
+        status: BookingStatus.confirmed,
+        startAt: start,
+        endAt: DateTime(2026, 10, 2, 11),
+      );
+      expect(rules.canMarkNoShow(booking, now: start), isTrue);
+    });
+
+    test('returns false before check-in time — the guest is not late yet', () {
+      final booking = createBooking(
+        status: BookingStatus.confirmed,
+        startAt: DateTime(2026, 10, 1, 14),
+        endAt: DateTime(2026, 10, 2, 11),
+      );
+      expect(
+        rules.canMarkNoShow(booking, now: DateTime(2026, 10, 1, 13, 59)),
+        isFalse,
+      );
+    });
+
+    test('returns false for a pending booking', () {
+      final booking = createBooking(
+        status: BookingStatus.pending,
+        startAt: DateTime(2026, 10, 1, 14),
+      );
+      expect(
+        rules.canMarkNoShow(booking, now: DateTime(2026, 10, 1, 15)),
+        isFalse,
+      );
+    });
+
+    test('returns false once the guest has checked in', () {
+      final booking = createBooking(
+        status: BookingStatus.active,
+        startAt: DateTime(2026, 10, 1, 14),
+      );
+      expect(
+        rules.canMarkNoShow(booking, now: DateTime(2026, 10, 1, 15)),
+        isFalse,
+      );
+    });
+
+    test('returns false for a no-show already reported', () {
+      final booking = createBooking(
+        status: BookingStatus.noShow,
+        startAt: DateTime(2026, 10, 1, 14),
+      );
+      expect(
+        rules.canMarkNoShow(booking, now: DateTime(2026, 10, 1, 15)),
+        isFalse,
+      );
+    });
+  });
+
   group('BookingRules.canGuestCancel', () {
     test('returns true for pending booking', () {
       final booking = createBooking(status: BookingStatus.pending);

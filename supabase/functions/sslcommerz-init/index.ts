@@ -82,6 +82,22 @@ serve(async (req: Request) => {
     if (booking.tenant_id !== user.id) {
       return jsonResponse(403, { success: false, error: "Not your booking" });
     }
+    // 140: a suspended guest's access token is good for up to an hour after
+    // their sessions were deleted. Starting a payment is the one client action
+    // here that the database triggers cannot see (the row it writes is the
+    // service role's), so it is checked by hand.
+    const { data: payer } = await admin
+      .from("profiles")
+      .select("suspended_at")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (payer?.suspended_at) {
+      return jsonResponse(403, {
+        success: false,
+        error: "This account is suspended.",
+        hint: "account_suspended",
+      });
+    }
     if (booking.payment_status === "paid") {
       return jsonResponse(409, {
         success: false,

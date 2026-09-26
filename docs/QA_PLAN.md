@@ -165,7 +165,7 @@ with it, stop.
    first, then the migration.
 5. Reviews — reveal rules, one review per booking, aggregates exclude
    unrevealed (117 fixed it; pin it).
-6. Coupons / `validate-discount` — expiry, usage cap, per-user cap, stacking.
+6. Coupons / `validate_coupon` + `redeem_coupon` — expiry, usage cap, per-user cap, stacking.
 7. Storage — `listing-images` and identity-document buckets: anon read, owner
    write, cross-user write refused, size/MIME limits.
 8. The 20 `SECURITY DEFINER` functions with mutable `search_path` — one

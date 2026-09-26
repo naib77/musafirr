@@ -1,0 +1,28 @@
+-- =============================================
+-- 139 — `no_show` becomes a booking outcome (2026-09-19)
+--
+-- Scenario 24 of docs/qa/REPORT_ROUND2_2026-09-19.md: a confirmed booking
+-- whose guest never arrives and never pays is auto-completed 24 hours after
+-- checkout as if the stay had happened — both sides are prompted to review a
+-- stay nobody had, and it counts toward the host's leaderboard. The host had
+-- no way to say "they did not come". BookingRules has said since 2025 that
+-- "a host who wants a different outcome (no-show) acts within the grace
+-- window"; there was simply nothing to act with.
+--
+-- THIS FILE ONLY ADDS THE LABEL. Everything that uses it is 140, because
+-- Postgres refuses to let a new enum value be used in the transaction that
+-- added it (55P04 "unsafe use of new value"). Apply 139, COMMIT, then 140 —
+-- the same two-file shape as 120/121 (turf). And like that pair it is not
+-- reversible: there is no ALTER TYPE ... DROP VALUE.
+--
+-- What already does the right thing with a terminal status nobody has to
+-- teach it about (verified on the local mirror before writing this):
+--   * bookings_no_overlap / bookings_no_tenant_overlap are WHERE-filtered to
+--     pending|confirmed|active, so a no-show frees the slot.
+--   * is_booking_available and can_see_listing_address filter the same way.
+--   * reviews_insert requires completed|active, so nobody reviews a no-show.
+--   * host_leaderboard_ranked counts completed only.
+--   * auto_complete_elapsed_bookings walks confirmed|active only.
+-- =============================================
+
+alter type public.booking_status add value if not exists 'no_show';

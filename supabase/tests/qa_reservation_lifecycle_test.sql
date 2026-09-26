@@ -124,28 +124,47 @@ begin
       review_type, overall_rating, cleanliness_rating, accuracy_rating,
       communication_rating, location_rating, value_rating, comment)
     values (v_b, L1, GUESTV, 'QA Guest Verified', HOST1, 'guest_to_host', 5, 5, 5, 5, 5, 5, 'QA guest review');
-  perform set_config('request.jwt.claims',
-    json_build_object('sub', HOST1, 'role', 'authenticated')::text, true);
-  insert into public.reviews (booking_id, listing_id, reviewer_id, reviewer_name, reviewee_id,
-      review_type, overall_rating, comment)
-    values (v_b, L1, HOST1, 'QA Host One', GUESTV, 'host_to_guest', 5, 'QA host review');
   perform set_config('role', 'postgres', true);
   perform set_config('request.jwt.claims', '', true);
 
-  select count(*)::text || ' review(s), revealed: ' || count(*) filter (where is_revealed)::text
-    into v_st from public.reviews where booking_id = v_b;
-  insert into t_step values (7, 'both', 'leave reviews (double-blind until both are in)',
-    v_st, '-', v_st like '2 review%');
-
-  -- 8. what a guest sees of a review before reveal ---------------------------
+  -- 8. what a stranger sees while only ONE side has written ------------------
+  -- The guest's review is in and the host's is not: double-blind means a
+  -- stranger sees nothing yet. (This step used to run after BOTH reviews and
+  -- still expected 0 — which only passed because the reveal was broken; see
+  -- 138. Measure the blind window where it actually is.)
   perform set_config('request.jwt.claims',
     json_build_object('sub', '44444444-4444-4444-4444-444444444444', 'role', 'authenticated')::text, true);
   perform set_config('role', 'authenticated', true);
   select count(*)::text into v_st from public.reviews where booking_id = v_b;
   perform set_config('role', 'postgres', true);
   perform set_config('request.jwt.claims', '', true);
-  insert into t_step values (8, 'stranger', 'read those reviews before they are revealed',
+  insert into t_step values (8, 'stranger', 'read the review while only the guest has written',
     v_st || ' visible', '-', v_st = '0');
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', HOST1, 'role', 'authenticated')::text, true);
+  perform set_config('role', 'authenticated', true);
+  insert into public.reviews (booking_id, listing_id, reviewer_id, reviewer_name, reviewee_id,
+      review_type, overall_rating, comment)
+    values (v_b, L1, HOST1, 'QA Host One', GUESTV, 'host_to_guest', 5, 'QA host review');
+  perform set_config('role', 'postgres', true);
+  perform set_config('request.jwt.claims', '', true);
+
+  -- 7. both in → both revealed at once (138 made this true; it was not) ------
+  select count(*)::text || ' review(s), revealed: ' || count(*) filter (where is_revealed)::text
+    into v_st from public.reviews where booking_id = v_b;
+  insert into t_step values (7, 'both', 'leave reviews (double-blind until both are in)',
+    v_st, '-', v_st = '2 review(s), revealed: 2');
+
+  -- 9. and now a stranger sees both --------------------------------------------
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', '44444444-4444-4444-4444-444444444444', 'role', 'authenticated')::text, true);
+  perform set_config('role', 'authenticated', true);
+  select count(*)::text into v_st from public.reviews where booking_id = v_b;
+  perform set_config('role', 'postgres', true);
+  perform set_config('request.jwt.claims', '', true);
+  insert into t_step values (9, 'stranger', 'read both reviews once both are in',
+    v_st || ' visible', '-', v_st = '2');
 end $$;
 
 select n, actor, step, statuses, notified, case when ok then 'PASS' else 'FAIL' end as verdict

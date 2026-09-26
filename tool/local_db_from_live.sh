@@ -44,8 +44,9 @@ apply supabase/baseline/live_seed.sql
 # number here the moment you write a migration, and clear it again once it is
 # applied to live and the baseline has been regenerated.
 # Last cleared 2026-09-19, after 131 and 133-137 went live.
+# 138 is written and NOT yet applied to live (QA round 2, 2026-09-19).
 echo "== migrations newer than live"
-for m in ${NEWER_MIGRATIONS:-}; do
+for m in ${NEWER_MIGRATIONS:-138 139 140}; do
   f=$(ls supabase/migrations/${m}_*.sql | head -1)
   echo "-- $f"; psql "$DB" -q -v ON_ERROR_STOP=1 -f "$f" 2>&1 | grep -E "ERROR|FATAL" || true
 done

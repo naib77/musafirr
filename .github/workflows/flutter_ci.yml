@@ -84,6 +84,13 @@ jobs:
           done
           exit $fail
 
+      # The settlement decision (_shared/settlement.ts) is the one piece of
+      # the payment path that can be tested without a gateway session; the
+      # IPN handler is a thin shell around it. Anything else that grows a
+      # *_test.ts under _shared runs here too.
+      - name: Test the shared edge-function logic
+        run: deno test supabase/functions/_shared/
+
   # Builds the web bundle and ships it to Cloudflare.
   #
   # Why this job exists: `wrangler deploy` only UPLOADS ./build/web — neither it

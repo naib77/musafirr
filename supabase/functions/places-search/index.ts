@@ -28,6 +28,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, jsonResponse } from "../_shared/otp.ts";
+import { enforceRateLimit } from "../_shared/rate_limit.ts";
 
 const SERVER_KEY = Deno.env.get("GOOGLE_MAPS_SERVER_KEY") ?? "";
 
@@ -264,6 +265,10 @@ serve(async (req: Request) => {
   if (req.method !== "POST") {
     return jsonResponse(405, { error: "Method not allowed" });
   }
+  // Per user when signed in, per IP when not — see _shared/rate_limit.ts for
+  // why the two differ. Fails open if the counter is unreachable.
+  const limited = await enforceRateLimit(req, "places-search", { perUser: 120, perIp: 600, windowSeconds: 60 });
+  if (limited) return limited;
   if (!SERVER_KEY) {
     return jsonResponse(500, { error: "GOOGLE_MAPS_SERVER_KEY not configured" });
   }

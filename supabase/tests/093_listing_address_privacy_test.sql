@@ -94,11 +94,16 @@ begin
     v_made_address := true;
   end if;
 
-  -- Somebody with no booking on this listing at all.
+  -- Somebody with no booking on this listing at all — and not an admin, who
+  -- is entitled to every address by design and would turn every "stranger"
+  -- row green for the wrong reason (it did, on the local mirror, where the
+  -- seeded admin sorts first).
   select p.id into v_stranger from public.profiles p
    where p.id not in (select tenant_id from public.bookings
                        where listing_id = v_l and tenant_id is not null)
-     and p.id <> v_owner limit 1;
+     and p.id <> v_owner
+     and p.role <> 'admin'
+   limit 1;
 
   if v_stranger is null then
     raise exception 'Every profile has a booking on the subject listing; '

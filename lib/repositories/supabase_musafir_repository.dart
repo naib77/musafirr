@@ -1014,17 +1014,8 @@ class SupabaseMusafirRepository extends ChangeNotifier
     };
   }
 
-  BookingStatus _bookingStatusFromString(String? value) {
-    return switch (value?.toLowerCase()) {
-      'pending' => BookingStatus.pending,
-      'confirmed' => BookingStatus.confirmed,
-      'rejected' => BookingStatus.rejected,
-      'active' => BookingStatus.active,
-      'completed' => BookingStatus.completed,
-      'cancelled' => BookingStatus.cancelled,
-      _ => BookingStatus.pending,
-    };
-  }
+  BookingStatus _bookingStatusFromString(String? status) =>
+      BookingStatusWire.fromWire(status);
 
   // ============== Reviews ==============
 
@@ -1637,8 +1628,25 @@ class SupabaseMusafirRepository extends ChangeNotifier
 
     try {
       await _client.from('listings').delete().eq('id', listingId);
-    } catch (e) {
+    } on PostgrestException catch (e) {
       // Restore the optimistic removal so the UI reflects reality.
+      _listings.addAll(removed);
+      notifyListeners();
+      debugPrint('Error deleting listing: $e');
+      // 23503 (foreign_key_violation): host_ledger_entries and disbursements
+      // reference this listing's bookings with ON DELETE RESTRICT, so a
+      // listing with any PAID history cannot be deleted — and the host used
+      // to be shown the constraint's own words (QA round 2, scenario 42).
+      // Deleting would also cascade away payments and reviews, which are
+      // financial records; hiding is the right verb for a place that is done.
+      if (e.code == '23503') {
+        throw Exception(
+          'This listing has payment history and can\'t be deleted. '
+          'Hide it instead — guests won\'t see it, and your records stay intact.',
+        );
+      }
+      rethrow;
+    } catch (e) {
       _listings.addAll(removed);
       notifyListeners();
       debugPrint('Error deleting listing: $e');
@@ -2197,15 +2205,26 @@ class SupabaseMusafirRepository extends ChangeNotifier
   void cancelBooking(String bookingId) async {
     final index = _bookings.indexWhere((b) => b.id == bookingId);
     if (index != -1) {
+      // Say who cancelled. notify_on_booking_lifecycle decides "cancelled by
+      // guest" vs "cancelled by host" from cancelled_by, and this path used to
+      // send the status alone — so a guest cancelling through it notified
+      // nobody (QA round 2, scenario 15). Migration 138 stamps the caller on
+      // the server as well; sending it here keeps the local copy honest.
+      final now = DateTime.now();
+      final me = _client.auth.currentUser?.id;
       _bookings[index] = _bookings[index].copyWith(
         status: BookingStatus.cancelled,
+        cancelledBy: me,
+        cancelledAt: now,
       );
       notifyListeners();
 
       try {
-        await _client
-            .from('bookings')
-            .update({'booking_status': 'cancelled'}).eq('id', bookingId);
+        await _client.from('bookings').update({
+          'booking_status': 'cancelled',
+          if (me != null) 'cancelled_by': me,
+          'cancelled_at': now.toUtc().toIso8601String(),
+        }).eq('id', bookingId);
       } catch (e) {
         debugPrint('Error cancelling booking: $e');
       }
@@ -2240,7 +2259,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
     try {
       final currentUserId = _client.auth.currentUser?.id;
       final updateData = <String, dynamic>{
-        'booking_status': booking.status.name,
+        'booking_status': booking.status.wire,
       };
       debugPrint('[DEBUG-booking] Updating Supabase with: $updateData');
       debugPrint(
