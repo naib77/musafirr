@@ -80,6 +80,62 @@ the `Supabase CLI` keychain entry.
 Migrations are not automatically applied by any pipeline. Applying one to the
 live database is a real, outward-facing action — say so and confirm first.
 
+### The migration chain does not apply from scratch; local comes from a live baseline
+
+`supabase start` on an empty database used to fail at **003**: `UNIQUE
+(LEAST(a,b), GREATEST(a,b))` is not valid Postgres and never was. That file is
+repaired (it creates `uniq_conversation_per_pair`, the index live actually
+has), and the chain still does not rebuild the database — **and now we know
+why, rather than suspecting it.** Replaying all 137 files into an empty
+database applied 103 and failed 34, and among the failures are eight
+migrations from 062 onward that need `listings.max_guests`, three that need
+`bookings.listing_title`, plus `listings.city`, `facilities.code` and
+`facilities.icon`. Those columns are on live and **nothing in
+`supabase/migrations` adds them**: pieces of the chain were never committed.
+
+So the decision recorded in `supabase/migrations/README.md` is that **the
+baseline is the build and the chain is history.** Read that file before
+adding a migration; the two things it asks of you are to bump
+`NEWER_MIGRATIONS` in `tool/local_db_from_live.sh` and to regenerate the
+baseline after applying to live.
+
+Live cannot be `pg_dump`ed from here either — the `SUPABASE_DB_URL` "value"
+the secrets API returns is a SHA-256, and there is no DB password on this
+machine. So the local database is a **catalog dump through the Management
+API**:
+
+```sh
+supabase start                      # config.toml has migrations+seed OFF
+python3 tool/dump_live_baseline.py  # -> supabase/baseline/live_baseline.sql
+sh tool/local_db_from_live.sh       # baseline (retried to stable), reference
+                                    # rows, migrations newer than live, QA seed
+supabase functions serve --env-file supabase/functions/.env.local --no-verify-jwt
+```
+
+Where it listens, once started:
+
+| Studio UI | <http://127.0.0.1:54323> |
+| Postgres | `postgresql://postgres:postgres@127.0.0.1:54322/postgres` |
+| API / PostgREST / Auth | <http://127.0.0.1:54321> |
+| anon + service keys | `supabase status` (the standard local demo keys, not secrets) |
+
+`supabase start` on an ALREADY-RUNNING stack only prints status — it will not
+add a service you excluded earlier. To gain Studio you must `supabase stop`
+(which keeps the data volume; only `--no-backup` deletes it) and start again
+with a shorter `-x` list.
+
+Checked 2026-09-18 with the same catalog query on both: identical on tables,
+functions, policies, triggers, views, indexes, RLS, cron, definers and anon
+column grants. Not in the mirror: storage policies, auth config, secret
+values. Seed accounts are `phone.170000000N@musaafir.app`, password
+`qa-password`, and the local master OTP `3969` on those five numbers.
+
+Three traps: the baseline is applied **repeatedly** on purpose (function,
+view and policy order settles by retry; a count that stops shrinking above
+zero is a finding); triggers are create-if-absent because `postgres` can
+create but not drop a trigger on `spatial_ref_sys`; and
+`NEWER_MIGRATIONS` in the loader must be bumped when live moves.
+
 ## Availability rules belong in the database, not the booking form
 
 Migration 070 moved the *price* server-side because the client was deciding it.
@@ -412,10 +468,16 @@ guard trigger**. `public_profiles` is `select <safe columns> from profiles`, so:
 PATCH /rest/v1/public_profiles?id=eq.<host>  {"role":"admin"}   →  204
 ```
 
-with the bundled anon key promoted any account to admin. The direct path is
-safe — `update profiles` as anon hits RLS (no matching row) and an
-authenticated self-`role` change is stopped by `fn_guard_verification_verdicts`
-— but the definer view launders the actor into `postgres` and slips both. Fix
+with the bundled anon key promoted any account to admin. The definer view launders the actor into `postgres` and slips
+RLS entirely.
+
+**This note used to claim the direct path was safe, and it was wrong.** It
+said an authenticated self-`role` change is stopped by
+`fn_guard_verification_verdicts`. That function guards identity verification,
+address verification, `nid_verified` and the address audit columns, and never
+mentioned `role`; the direct path was assumed safe without being driven.
+Proved otherwise on live 2026-09-18 (rolled back): one PATCH on your own
+profile row set `role` to `admin`. See 133 below. Fix
 was to **revoke INSERT/UPDATE/DELETE on the view**; reads run as postgres either
 way, so nothing broke.
 
@@ -657,6 +719,464 @@ phone needed a unique index for. Reach is 44 of 44, against SMS's 38.
   pattern again.
 - `notification_bulk_max_recipients` seeded 2000, fail-closed, 0 = disabled.
   `supabase/tests/129_notification_campaigns_test.sql` is 25 rows.
+
+### Settlement columns are written by RPCs, and the trigger knows them by a flag (132, applied 2026-09-18)
+
+Until 132, a guest or a host could `PATCH /rest/v1/bookings?id=eq.<own>`
+with `{"payment_status":"paid"}` and it landed — verified live, rolled back.
+`authenticated` holds column UPDATE, both UPDATE policies admit them, and
+`enforce_booking_update_rules` (051/098) froze price and dates but never
+`payment_status`. The ledger trigger then posts the host an earning for
+money that never moved. Same class as 116 and 117: nothing in the client
+writes the column, so nobody looked at who *could*.
+
+- **The guard is on `payment_status`, `payment_method` and `paid_at`, for
+  anyone with an `auth.uid()` who is not an admin.** The IPN function is
+  service role (uid null) and passes; `mark_cash_payment` and
+  `set_booking_payment_method` are SECURITY DEFINER but run *with* the
+  caller's uid, so they announce themselves with
+  `set_config('musafir.settlement_write','1',true)` around their one update
+  and reset it after. A new writer of these columns must do the same; the
+  test row for it goes red otherwise.
+- **`current_user` cannot do this job, and the first draft tried.** The
+  trigger is itself SECURITY DEFINER, so inside it `current_user` is always
+  `postgres`, whoever is writing. The guard never fired and the rolled-back
+  test still said "update accepted" on all three rows. A transaction-local
+  GUC is the only thing the caller can hand across a definer boundary that a
+  PostgREST client cannot forge (it only materialises `request.*`).
+- **It is a trigger, not a `REVOKE` on the columns**, because the admin
+  console's refund switch writes `payment_status` with the admin's own JWT.
+  That switch matched zero rows until **137** gave `bookings` an admin UPDATE
+  policy — see below. The revoke this note used to propose is now off the
+  table for good: with admins exempt *inside* the trigger, a column revoke
+  would have to exempt them too, and there is no way to write "except admins"
+  in a GRANT.
+- **In a rolled-back impersonation test, clear the claims when you drop
+  the role.** `set_config('role','postgres')` alone leaves `request.jwt.claims`
+  set, `auth.uid()` stays non-null, and the guard correctly refuses even
+  `postgres`. Every block in `supabase/tests/132_*` ends with both.
+- **The Management API's `/database/query` returns `[]` for the repo's
+  standard `select n, case when ok then 'PASS' else 'FAIL' end …` result
+  line.** `select * from t_result order by n` comes back fine. The files keep
+  the standard line (psql is unaffected); when driving a test through the
+  API, swap the last select.
+
+### A profile row is self-service, so every privilege on it needs a guard (133, applied 2026-09-19)
+
+`role` lives on `profiles`, the UPDATE policy is `using (auth.uid() = id)`
+with **no WITH CHECK**, and the only thing between a client and any other
+column on its own row is `fn_guard_verification_verdicts`. Until 133 that
+trigger did not mention `role`, so:
+
+```
+PATCH /rest/v1/profiles?id=eq.<self>   {"role":"admin"}   ->  204
+```
+
+made anyone an admin, and `is_admin()` is what **28 policies** key on: every
+booking, payment, payout method, identity document, exact address, the audit
+log, coupons, the campaigns, plus UPDATE on `app_settings` and on any profile.
+Same class as 116, 117 and 132 — nothing in the client writes the column, so
+nobody asked who *could*.
+
+- **The fix is not a blanket ban, because the app writes `role` itself.**
+  `SupabaseAuthService.becomeHost()` sets `is_host`, `host_since` and
+  `role = 'owner'` in one client-side update. So 133 permits exactly
+  `tenant -> owner` for a non-admin and refuses everything else; `admin` is
+  unreachable from a client in either direction. Test row 3 is that flow and
+  goes red on the obvious over-strict fix.
+- **Measure the effect, not the exception, when testing RLS.** An UPDATE whose
+  rows RLS filters out matches nothing and raises nothing, so "no error" reads
+  as success while the database in fact refused. The first draft of
+  `qa_role_capability_matrix_test.sql` reported four false alarms for exactly
+  this reason; it probes a value before and after now.
+- **Clear `request.jwt.claims` whenever you drop back to `postgres`** in a
+  test. A stale `sub` leaves `auth.uid()` non-null and the guards correctly
+  refuse even `postgres`, which reads as the fix being broken.
+
+Still open after 133: the profiles UPDATE policy has no WITH CHECK at all, so
+the trigger remains the only guard on every other column of your own row.
+
+### `DeviceSessionWatcher` asks before anyone is signed in
+
+`isRevoked()` returns early with no session now. It is called at startup and
+on every resume without asking whether anyone is logged in, so every
+signed-out visitor made a `touch_device` call the database refuses — the
+function is granted to `authenticated` only and carries no `anon` grant. It
+failed open and nothing broke, which is exactly why it went unnoticed for so
+long: it showed up only as a red 401 in the console on every launch, and would
+become one error-tracking event per visitor the moment Sentry is added.
+
+### A bucket name is not an access rule (134, applied 2026-09-19)
+
+`listing-images` granted INSERT, UPDATE and DELETE to **any** authenticated
+user with only `bucket_id = 'listing-images'` as the check — "may this person
+write here" answered by *which bucket it is*. Measured 2026-09-18: a second
+host overwrote another host's image, and a guest who hosts nothing uploaded
+into the bucket. `avatars` next door ties the filename to `auth.uid()` and
+`documents` scopes reads to the owner's folder; this was the odd one out, and
+it is the public one.
+
+134 rewrites all three. Four things in it are worth keeping:
+
+- **Ownership is `storage.objects.owner`, not the path.** The obvious clause —
+  "the first folder must be a listing you own" — refuses every first publish:
+  `CreateListingScreen` uploads photos BEFORE the listing row exists, under a
+  synthetic `listing_<millis>` folder, and only `EditListingScreen` uses the
+  real uuid. On live, 12 of 42 objects sit under a listing uuid. `owner` is
+  stamped by Storage and populated on all 42. `owner_id` (text) is checked
+  too, because which of the two Storage fills depends on its version.
+- **The INSERT gate is deliberately LOOSER than the publish gate.** Publishing
+  is `can_publish_listings()` — verified owner or admin, the predicate the
+  `listings` INSERT policy already used, now called from both so they cannot
+  drift. Uploading is `can_upload_listing_image()`, which is that **or you
+  already own a listing**: live has 4 listings belonging to 2 accounts that
+  predate 114 and could not publish today, and they can still edit those
+  listings, so the strict gate would have let them change everything except
+  the photos.
+- **DELETE cannot be tested through SQL.** Supabase's statement-level
+  `protect_objects_delete` refuses every direct `DELETE` on `storage.objects`,
+  so the Storage API is the only door and the policy is asserted from
+  `pg_policies` instead. That trigger is also the only reason deletion looked
+  safe before 134 — a control we do not own is not a control.
+- Reads stay `to public`. The bucket is public and every listing card on the
+  site loads from it, signed out included.
+
+`supabase/tests/134_137_qa_fixes_test.sql` is 27 rows; three of them go red
+with the old policies put back, which is the negative control.
+
+### The booking RPC is the only booking rule there is (135, applied 2026-09-19)
+
+`create_marketplace_booking` is the single writer of a `bookings` row — 071
+locked direct INSERT — so anything it does not check is not checked. Two
+things it did not:
+
+- **A host could book their own listing.** Measured allowed; live already
+  holds one. The ledger then posts the owner an earning against money that
+  moved between their own two pockets, and a host can black out their own
+  calendar through the booking path instead of `listing_availability_blocks`
+  (110), which is the feature built for it and the only one their own UI can
+  undo.
+- **A booking could be entirely in the past.** A stay starting ten days ago
+  was accepted and returned an id. Past slots are always free, so the
+  availability checks never object, and the auto-complete sweep then walks the
+  row straight to completed — a review prompt and a ledger entry for a stay
+  nobody had.
+
+Both refuse at INSERT time only, the choice 114 made for identity; the live
+rows are left alone. The past-date guard allows **one hour** of slack rather
+than a hard `>= now()`, because booking a turf for *this* hour is the normal
+case for an hourly listing, the client's clock is its own, and `now()` here is
+transaction time. It is there to stop last month, not the last minute.
+
+### Several guests racing for one slot lose in two different ways (N6)
+
+`bookings_no_overlap` (078) is correct and does its job: exactly one booking
+survived every race in QA, at two, three, four and eight concurrent guests,
+across eleven runs. **What the losers are told depended on how many of them
+there were.** With two, the loser gets `23P01` and the sentence written for
+them. With three or more, Postgres frequently raises from inside the exclusion
+check itself:
+
+```
+ERROR:  deadlock detected
+CONTEXT: while checking exclusion constraint on tuple (1,25) in relation "bookings"
+```
+
+The client handled `23P01` only, so under exactly the load this feature exists
+for — a popular slot — most losing guests saw an unexplained failure. Across
+six four-racer runs, two had all three losers deadlock.
+
+`isRetryableBookingFailure` (`40001`, `40P01`) now drives one retry in
+`_insertMarketplaceBookingWithRetry`, and a second failure is rendered as the
+conflict message rather than a generic banner. **Once, not a loop with
+backoff**: the race is already decided by the time the retry runs, and a
+client hammering a contended slot adds to the contention it is losing to.
+
+### A flagged payment is not a settled payment (136, applied 2026-09-19)
+
+**The migration is live and the two edge functions are NOT redeployed yet.**
+That order is the safe one and the reverse is not: the functions write
+`pending_review` and `abandoned`, which the CHECK constraint refused before
+136. Until they are deployed, online payments still send the wrong
+notification type and a risk-flagged payment still settles as paid.
+
+SSLCommerz sets `risk_level` non-zero with a `risk_title` on an otherwise
+VALID transaction when its fraud screen fires, and its own guidance is to hold
+that payment for review before delivering the service. `sslcommerz-ipn` stored
+both fields and marked it paid anyway, which unlocks Service complete and
+posts the host's earning at once.
+
+- Such a payment is now `pending_review`, **and the booking stays unpaid** —
+  that second half is the enforcement; the payment row is bookkeeping. The
+  guest is told their money arrived and is being checked, and every admin gets
+  a `security_alert`.
+- It is resolved from the **Held** tab of the console's Payments screen, which
+  calls `admin_release_payment` / `admin_reject_payment` with the
+  service-role client. Both carry `fn_require_service_role()` like every other
+  `admin_*`: an admin's own JWT is deliberately not enough, because releasing
+  is the one action there that moves money. `admin_release_payment` raises
+  `musafir.settlement_write` around its booking write, exactly as 132 requires
+  of any new writer of those columns.
+- **Attempts are closed now, in two places.** `sslcommerz-init` abandons this
+  booking's earlier `initiated` rows before creating another and refuses after
+  six in an hour; `expire_stale_payment_attempts` sweeps anything `initiated`
+  for over an hour every 15 minutes. Live carried 27 such rows worth ৳52,420
+  from July and August. Neither ever touches `paid` or `pending_review`, and a
+  guest who pays after the sweep still settles — the IPN finds the row by
+  `tran_id`.
+- The window is hardcoded at 60 minutes, unlike `booking_accept_window_hours`
+  (119). That one is a setting because it is visible to guests as a countdown
+  and a host argued about it; this one only decides when a dead row stops
+  being called `initiated`.
+
+### An admin has to be able to write the table the admin screens write (137, applied 2026-09-19)
+
+`bookings` carried five policies and none admitted an admin for UPDATE, so the
+console's "Mark refunded" PATCHed with the admin's JWT, matched nothing, and
+reported *"Only a paid booking can be marked refunded"* however paid the
+booking was — since the screen shipped.
+
+**The failure mode is the lesson, not the policy.** PostgREST does not refuse
+an UPDATE whose rows RLS filtered out: it succeeds, changes nothing, and
+returns `[]`. Nothing errors, nothing logs, and the feature is simply inert.
+The same trap made the first draft of the QA capability matrix report four
+false passes. **Measure the effect, never the exception.**
+
+### The rules that lived only in Dart (138, written 2026-09-19, NOT yet on live)
+
+The second QA round (`docs/qa/REPORT_ROUND2_2026-09-19.md`, sixty
+scenarios, twenty-eight failed) found the same class of hole seven more times:
+a rule the client enforced and the database did not. 138 closes them all;
+`supabase/tests/138_qa_round2_test.sql` (57 rows) goes red with it reverted.
+Until it is applied to live, **every one of these is live behaviour.**
+
+- **A host could rewrite a booking's history.** `enforce_booking_update_rules`
+  returned `new` for the listing owner unconditionally — the state machine
+  was `BookingLifecycleService` (Dart). Measured: cancelled → confirmed,
+  rejected → confirmed, confirmed → completed with no check-in. The
+  accept-after-cancel race ends the same way: two PATCHes, last one wins.
+  The trigger now holds the table the Dart service documents (pending →
+  confirmed | rejected | cancelled; confirmed → active | completed |
+  cancelled; active → completed | cancelled; terminal states immutable).
+  `confirmed → completed` stays allowed because `auto_complete_elapsed_bookings`
+  takes exactly that step. Admins and the service role are still exempt.
+- **A guest could edit anything the RPC decided.** `guest_count`,
+  `unit_count`, `pricing_unit`, the coupon columns, the `listing_*` copies
+  and `tenant_name` are frozen for non-admins now; host-side columns
+  (`host_message`, `confirmed_at`, …) are the host's. `cancelled_by` must be
+  the caller and is stamped when omitted — the repository's bare cancel sent
+  the status alone, `notify_on_booking_lifecycle` keys on `cancelled_by`, so
+  that path notified nobody, and a guest who set it to the HOST's id was told
+  "Cancelled by host".
+- **A paid cancellation told nobody money was owed.** `trg_alert_paid_cancellation`
+  puts "Refund due" in every admin's inbox and tells the guest; the console
+  has a **Refund due** tab (Bookings). There is still no refund policy — this
+  only makes the ৳ visible.
+- **Either participant could swap the other out of a conversation.** The
+  UPDATE policy has no WITH CHECK; a guest replaced the host with a stranger,
+  who then read the host's messages. Participant ids are frozen by trigger.
+- **Blocks were a client-side filter.** `user_blocks` hid threads on the
+  blocker's phone; the blocked person kept messaging, kept raising pushes,
+  and could book the blocker's listing. `fn_users_blocked` is consulted on
+  message insert, `get_or_create_conversation` and
+  `create_marketplace_booking` — both directions, `42501 blocked`. Automated
+  sends (null uid) still deliver: a host who blocks a guest mid-stay still
+  owes them the checkout message. `fn_users_blocked` and `fn_identity_phone`
+  are revoked from every client role; the triggers that call them are
+  SECURITY DEFINER for that reason.
+- **The double-blind reveal never worked for the second reviewer.**
+  `check_and_reveal_reviews` was SECURITY INVOKER; its UPDATE ran as the
+  reviewer, and `reviews_update_own` let them flip only their own row. Both
+  stayed hidden until the 14-day sweep. Definer now. Live has 3 hidden
+  reviews on 3 bookings and no pair yet.
+- **`listings.rating` never changed.** `update_listing_rating()` averaged a
+  column reviews does not have and was attached to nothing; the explore card
+  reads `listings.rating`. `fn_refresh_listing_rating` recomputes from
+  **revealed** `guest_to_host` reviews on every review write (backfilled
+  once), announcing itself with `musafir.rating_write` — 132's flag pattern —
+  so `fn_freeze_listing_reputation` can refuse an owner's own `rating` /
+  `review_count` / `is_superhost` write and zero them on insert.
+- **Review reminders reached 1 stay in 24.** A one-hour `completed_at` window
+  inside a once-a-day cron. Day-wide now, deduplicated per booking per day.
+- **Automated message dates were UTC.** A stay from midnight Dhaka on 1 Oct
+  is 18:00 UTC on 30 Sept, so `to_char(starts_at, …)` said September 30.
+  `send_precheckin_for_booking` / `send_checkout_for_booking` render
+  `at time zone 'Asia/Dhaka'`; Bangladesh has one zone and no DST.
+- **A rejected applicant never re-entered the queue.** `set_verification_pending`
+  fired on INSERT only and moved only `none`; a re-scan is an upsert. INSERT
+  or UPDATE of `file_path`, from `none` or `rejected`.
+- **`redeem_coupon` took the discount as a parameter.** One call burnt a
+  limited coupon's single use on a booking that never carried it. It must now
+  match `bookings.coupon_code`, records the booking's own `discount_amount`,
+  and is revoked from `anon`.
+- **The contact card handed over `profiles.mobile`**, which its owner can
+  type anything into. `fn_identity_phone` derives the number from the auth
+  identity (`phone.<n>@musaafir.app`), the same way `admin_sms_audience`
+  does; `mobile` is only the fallback for email-only accounts.
+- **A guest who booked a now-hidden listing could not open it.** The SELECT
+  policy was "active or mine"; `listings_select_booked_guest` adds "or I have
+  a booking on it".
+- **`admin_release_payment` would pay a cancelled booking.** It checked only
+  the payment's status. It refuses unless the booking is confirmed or active;
+  Reject is the only move on a closed booking.
+- **Live's realtime publication does not include `bookings`.** The app
+  subscribes to it; the subscription reports active and never fires. 138
+  adds it, idempotently, plus the four live already has — the local mirror
+  had none, because the catalog dump does not carry publication membership.
+- **`chat-attachments` accepted any file type.** Mime allowlist set (images,
+  PDF, office formats, text); the picker offers the same list
+  (`ImageUploadService.chatAttachmentExtensions`, pinned by a test); the
+  delete policy checks `owner_id` as well as `owner`.
+
+**`sslcommerz-ipn` holds a payment that lands on a closed booking.** A guest
+who starts paying, whose booking is cancelled while the bank page is open,
+and who completes the payment, used to get the cancelled booking marked
+paid and the host an earning. The decision is `_shared/settlement.ts`
+(`decideSettlement`), a pure function with its own Deno tests that CI runs;
+the booking's state is checked BEFORE the fraud flag on purpose, because the
+admin's next step differs (refund, never release). Driven for real on the
+sandbox. **Not yet redeployed.**
+
+Two things about running the SQL suites, learned the expensive way this
+round: **most of them do not roll themselves back.** They were written to be
+pasted into the Management API inside a transaction a human opens. `psql -f`
+commits them; so does `psql -1`. Twelve listings, eight bookings, eleven
+devices and forty-four notifications were left in the local mirror, and the
+seed hosts came out unverified. Use `sh tool/qa/run_sql_tests.sh`, which
+wraps each file. And `tool/qa/http_smoke.sh` is the same round one layer up
+— real logins, real PostgREST — for the things only the API shows (a
+stranger's PATCH answering `200 []`).
+
+### Refunds, no-shows, suspension and a rate limit (139/140, written 2026-09-19, NOT yet on live)
+
+The follow-up to the second round closed the four items 138 left open
+(`docs/qa/REPORT_ROUND2_2026-09-19.md` §7). `supabase/tests/139_140_open_items_test.sql`
+(57 rows) goes red with 140 reverted. **139 must be COMMITTED before 140
+runs** — it adds `no_show` to `booking_status`, and a new enum label cannot
+be used in the transaction that added it (55P04, the 120/121 shape). Not
+reversible.
+
+- **The refund policy is two settings and one pure function.**
+  `refund_full_window_hours` (48) and `refund_late_pct` (50);
+  `fn_refund_policy_pct(status, cancelled_by, tenant, starts_at, at)`.
+  Host or admin cancels → 100. Guest cancels ≥ window before check-in → 100;
+  inside it → late pct; after check-in time → 0. No-show → 0. A BEFORE
+  trigger (`trg_stamp_refund_policy`) writes `refund_pct` / `refund_amount`
+  on a PAID booking as it closes; both columns are in the frozen list, so a
+  client cannot pre-fill them. **Trigger order is by name and it matters:**
+  `trg_enforce…` runs before `trg_stamp…`, so the guard sees what the client
+  sent, then the stamp fills it in. Rename either and check that still holds.
+- **The admin alert fires only when money is owed; the guest is always
+  told.** A silent zero reads as a forgotten refund. The alert title carries
+  the amount (`Refund due: ৳500.00`) — a test that matches the old bare
+  title now fails, which is how 138's row 17 was found.
+- **"Mark refunded" reverses the refunded SHARE.** `fn_post_booking_ledger`
+  used to negate the host's whole entry whatever went back to the guest; it
+  is `refund_pct` of it now, null meaning all (rows that closed before 140).
+  A 0% policy posts nothing — the CHECK forbids a zero-amount row anyway.
+- **`no_show` is `confirmed → no_show`, host only, after `starts_at`.**
+  Early is refused with hint `no_show_too_early` (its own hint, because the
+  client wants to say "not yet" rather than "not allowed"). Terminal. Nothing
+  else needed teaching: both exclusion constraints, `is_booking_available`,
+  `can_see_listing_address`, `reviews_insert`, the leaderboard and the
+  auto-complete sweep already filter on `pending|confirmed|active` or on
+  `completed`. The test pins that a no-show frees the slot and opens no
+  review, so a future rewrite of any of those lists fails loudly.
+- **`BookingStatus.noShow` is the first value whose Dart name and label
+  differ.** The repository sent `.name` to PostgREST; it sends `.wire` now
+  and parses with `BookingStatusWire.fromWire`, which reads an unknown label
+  as pending rather than throwing. Three exhaustive switches had to grow an
+  arm (`booking_status.dart`, the host reservations screen twice, the trips
+  screen twice); the analyzer finds them.
+- **Suspension is a deleted session, not a flag.** `admin_suspend_user`
+  (service role only — an admin's own JWT cannot end another person's access
+  from a table write) sets `suspended_at/_reason/_by`, deletes
+  `auth.sessions` for the user, deactivates their push tokens, hides their
+  live listings (`listings.suspended_hidden` remembers which, so
+  `admin_unsuspend_user` restores exactly those), declines pending requests
+  on their listings and withdraws their own. An admin cannot be suspended;
+  change the role first. **The flag alone stops nothing for an hour** — an
+  access token already issued is valid until it expires — so every write
+  path is guarded: `fn_refuse_suspended_writer` on messages, conversations,
+  listings, reviews; `enforce_booking_update_rules`;
+  `create_marketplace_booking` and `get_or_create_conversation` (either
+  party); `sslcommerz-init`; `verify-otp` refuses the next login BEFORE
+  rotating the password; and `touch_device` answers "revoked" so
+  `DeviceSessionWatcher` signs the device out on resume. `fn_is_suspended` is
+  revoked from every client role; the guards are SECURITY DEFINER.
+- **The rate limit is a table, and it fails open.** `fn_rate_limit_hit`
+  (service role only) counts fixed windows in `edge_rate_limits`;
+  `_shared/rate_limit.ts` keys by the JWT `sub` when `role` is
+  `authenticated` and by IP otherwise — the anon key is itself a JWT with no
+  `sub`, so checking for a token would put every signed-out visitor in one
+  bucket. **Per-IP limits are deliberately several times the per-user
+  ones**: Bangladeshi operators put thousands of subscribers behind one
+  CGNAT address. An unreachable counter logs and lets the request through; a
+  limiter that can take search down is the worse outage. 429 carries
+  `Retry-After`. Reaped daily.
+- **The IPN's `?redirect=fail|cancel` may only close an `initiated`
+  attempt.** Those redirects are unsigned browser POSTs; anyone with a
+  tran_id could rename a settled row before. The success path still skips
+  only `paid` and `pending_review`, so a real IPN settles over a spoofed
+  cancel.
+- `validate-discount` is gone from the repo and the console's registry; it
+  is still deployed on live (v20) until someone runs
+  `supabase functions delete validate-discount`.
+
+Running 139_140 also found the local mirror carrying `whenever` and `lots`
+in `booking_accept_window_hours` / `max_devices_per_user` — 119's and 125's
+tests write junk past the validator to prove the fallback, and had once been
+run without a rollback. `run_sql_tests.sh` exists so that cannot recur; if a
+setting on the mirror looks wrong, that is why.
+
+### An edge function is TypeScript nobody was checking
+
+Three of the thirteen did not `deno check` at all. The one that mattered:
+`messenger-webhook` called `.catch()` on a `PostgrestFilterBuilder`, which is
+a thenable with no such method — the "best-effort" analytics guard was a
+runtime `TypeError`. `validate-discount` passed a possibly-null discount into
+a function that could not take one.
+
+- All nine `esm.sh/@supabase/supabase-js@2` imports are **pinned to 2.45.4**.
+  Unpinned, the specifier resolves to whatever is newest on the day, and two
+  files that resolved differently produced `SupabaseClient<any, "public",
+  any>` against `SupabaseClient<unknown, never, GenericSchema>` — not
+  assignable, for no change on our side.
+- **`ReturnType<typeof createClient>` is not the type `createClient(url, key)`
+  returns.** The bare form picks the unparameterised overload. Annotate
+  helpers with `SupabaseClient` (via a local `Db` alias), not with
+  `ReturnType`.
+- CI has an `edge-functions` job now: Deno, `deno check` on every
+  `supabase/functions/*/index.ts`. Its own job rather than a step inside
+  `analyze-test`, because it needs Deno rather than Flutter and a TypeScript
+  failure should be legible apart from a Dart one.
+
+### A Tooltip does not name a control
+
+Served in a browser with assistive technology switched on — Flutter builds the
+semantics tree only when something asks — the app produced 38 semantics nodes
+and **8 labels**. The Search button, the wishlist hearts, the account menu,
+the notification bell and the leaderboard trophy were all `button` with no
+name.
+
+Nearly every one of them already had a `Tooltip`. **`Tooltip` sets
+`SemanticsProperties.tooltip`; `label` stays empty.** Same for
+`PopupMenuButton.tooltip` and `IconButton.tooltip`. Wrap in
+`Semantics(button: true, label: …)` and, where a tooltip already says the
+right thing, pass the same string to both rather than inventing a second one
+to keep in step.
+
+Two consequences, and the second is why this is not only an accessibility
+item: a screen reader user hears "button" with no idea what it does, and the
+end-to-end strategy in `docs/QA_PLAN.md` selects controls **by accessibility
+label**, so an unnamed control cannot be driven by a test either.
+
+`test/widgets/accessibility_labels_test.dart` pins the names.
+**`find.bySemanticsLabel` is not the finder to use here** — it reads the label
+off the render object's own node and comes back empty for a control whose node
+is merged into a parent, which is most of these; it answered 0 for a heart the
+same test can see the label on. Match on the `Semantics` widget's
+`properties.label` instead.
 
 ## Nothing user-tunable belongs in Dart
 
@@ -1173,6 +1693,32 @@ still be brought down instead of being stranded above a `max` below its value.
   segment in a post-frame callback and holds the rectangles in state (guarded
   on `attached` as well as `hasSize`, since it runs a frame late). The panel is
   an `AnimatedPositioned` over those numbers.
+- **The lifted white segment is ONE card that travels, not a colour on each
+  segment.** It was the latter: every `_Segment` cross-faded its own
+  background, so Where→When was Where going grey while When went white — two
+  dissolves that line up, which the eye reads as "selected", not "moved". The
+  card is an `AnimatedPositioned` layered under the segments in
+  `SearchPillBar`, moved between their measured slots (a frame late, against
+  the Stack, not the bar — the 1px border is `Container` padding), and an
+  active segment paints `alpha: 0` of its own. Opening from closed snaps
+  (`Duration.zero`) rather than sliding in from wherever the bar was last
+  open. The motion test's first version compared the card to the *label*,
+  which sits 22px inside the slot, and passed against a snapping card; it
+  reads the slot now, and the negative control is `duration: Duration.zero`.
+- **The Search button is `Brand.rose`, not the palette's `brand`, and it
+  grows a label while any panel is open.** It is the one call to action on
+  the page and has to read the same under every palette — under `coral_ink`
+  the palette brand is #222222 and it was a black disc like every other icon.
+  `Brand.roseDeep` is the gradient's far end; `brand_test.dart` holds white
+  on both ends to 4.5:1. The label is the editing-state cue (Airbnb's), and
+  **the room it takes comes out of Who's slot only**: the mic, ✕ and button
+  live *inside* Who's `Expanded` (flex 4:3:5), because beside the three
+  segments their growth squeezed all three — Where and When slid 25px and
+  19px as the button opened and the lifted card, measured a frame late,
+  chased them. The card for Who covers that whole outer slot (`_whoSlot`), so
+  an open Who is a white card with the Search button inside it, which is
+  also what Airbnb draws. A motion test pins Where, When and Who's label
+  still on every frame of the expansion.
 - **Every panel is the same width, and that is load-bearing.** They differed
   per segment and the card animated between them — but the cross-fade lays
   *both* panels out during the transition, so the calendar got laid out at the
@@ -1189,6 +1735,17 @@ still be brought down instead of being stranded above a `max` below its value.
   Where panel's listener therefore treats an empty query as "show the default
   destinations", not "show nothing" — the earlier version emptied the list the
   instant the panel opened.
+- **Outside-click dismissal is a `TapRegion` group, not the scrim.** The scrim
+  starts 16px below the bar on purpose (the header stays bright), so it cannot
+  see a click beside or above the bar — the logo, the destinations, the account
+  menu, the empty header space — and the panel sat open through all of them.
+  The bar, the Filters button and the panel card share `groupId: this` on
+  `SearchPill`; a tap landing in none of them closes. `TapRegion` does not
+  swallow the tap, so the account menu still opens. **The handler checks
+  `ModalRoute.isCurrent` first**: the hourly time pickers are dialogs *above*
+  this route, and every tap inside one is "outside" the bar — without the
+  guard, picking a time closed the panel under the dialog. The negative
+  control is removing `onTapOutside`; one test goes red.
 - The landmark picker is a route-level modal sheet, so `SearchPill` closes the
   popover, awaits the pick and reopens it. A bottom sheet over a dropdown reads
   as two competing surfaces.

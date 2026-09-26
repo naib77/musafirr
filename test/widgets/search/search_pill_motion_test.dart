@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:musafir/core/theme/app_colors.dart';
 import 'package:musafir/models/search_filters.dart';
 import 'package:musafir/widgets/search/search_pill.dart';
+import 'package:musafir/widgets/search/search_pill_segments.dart';
 import 'package:musafir/widgets/search/where_panel.dart';
 
 /// How the panel behaves *between* states, which is the whole of what the user
@@ -248,9 +249,33 @@ void main() {
       expect(paintedLuminance(tester, 'Where'), closeTo(floor, 0.01));
     });
 
-    // The same lerp runs when a segment lifts into the open state, and it is
-    // the more visible of the two: the card is going to *white*, so a dark
-    // frame in the middle reads as the bar blinking as the panel opens.
+    /// The lifted card's own box, wherever it currently is.
+    Finder lifted() => find.byKey(const ValueKey('search-lifted'));
+
+    /// What the card paints right now, flattened against the grey bar under
+    /// it: its colour at its current fade-in opacity.
+    double cardLuminance(WidgetTester tester) {
+      final fade = tester.widget<AnimatedOpacity>(find.descendant(
+        of: lifted(),
+        matching: find.byType(AnimatedOpacity),
+      ));
+      final box = tester.widget<DecoratedBox>(find.descendant(
+        of: lifted(),
+        matching: find.byType(DecoratedBox),
+      ));
+      final colour = (box.decoration as BoxDecoration).color!;
+      // The fade is an opacity, not a colour lerp, so this is what it looks
+      // like: the card's colour at that alpha over the bar.
+      return Color.alphaBlend(
+        colour.withValues(alpha: fade.opacity),
+        AppColors.surfaceMuted,
+      ).computeLuminance();
+    }
+
+    // The card is going to *white* over a grey bar, so a dark frame in the
+    // middle reads as the bar blinking as the panel opens. It fades by opacity
+    // rather than by colour lerp; this pins that no frame is darker than the
+    // bar it sits on.
     testWidgets('lifting a segment never flashes dark', (tester) async {
       await pumpPill(tester);
       final floor = Color.alphaBlend(AppColors.surfaceMuted, Colors.white)
@@ -260,12 +285,138 @@ void main() {
       for (var i = 0; i < 12; i++) {
         await tester.pump(const Duration(milliseconds: 20));
         expect(
-          paintedLuminance(tester, 'When'),
+          cardLuminance(tester),
           greaterThanOrEqualTo(floor - 0.01),
-          reason: 'the segment darkened on its way to white',
+          reason: 'the card darkened on its way to white',
         );
+        // And the segment's own box paints nothing of its own, or two whites
+        // stack and the card's travel is hidden under a dissolve.
+        expect(paintedLuminance(tester, 'When'), closeTo(1, 0.01));
       }
       await tester.pumpAndSettle();
+    });
+
+    // The bug this exists for: every segment cross-faded its own background,
+    // so switching from Where to When was Where going grey while When went
+    // white — two dissolves, no movement. The white has to be one card that
+    // travels between the two segments' rectangles, like the panel does.
+    testWidgets('the lifted card slides from one segment to the next',
+        (tester) async {
+      await pumpPill(tester);
+      await open(tester, 'Where');
+      final whereLeft = tester.getTopLeft(lifted()).dx;
+      // The segment's slot, not its label: the label sits 22px inside it, so
+      // a card that had already snapped onto When would still read as "left
+      // of the text" and the assertion below would pass on the very jump it
+      // exists to catch. That happened.
+      final whenLeft = tester
+          .getTopLeft(find.ancestor(
+            of: find.text('When'),
+            matching: find.byType(GestureDetector),
+          ))
+          .dx;
+      expect(whereLeft, lessThan(whenLeft));
+
+      await tester.tap(find.text('When'));
+      await tester.pump();
+      await tester.pump(SearchPillBar.liftDuration ~/ 2);
+      final midLeft = tester.getTopLeft(lifted()).dx;
+      expect(midLeft, greaterThan(whereLeft + 8),
+          reason: 'half way through, the card has not left Where');
+      expect(midLeft, lessThan(whenLeft - 8),
+          reason: 'half way through, the card is already on When: a jump');
+
+      await tester.pumpAndSettle();
+      final endRect = tester.getRect(lifted());
+      final whenRect = tester.getRect(find.ancestor(
+        of: find.text('When'),
+        matching: find.byType(GestureDetector),
+      ));
+      expect(endRect.left, closeTo(whenRect.left, 1));
+      expect(endRect.right, closeTo(whenRect.right, 1));
+    });
+
+    // Opening from closed is not a switch. The card has no "from" the user
+    // can see, so it must appear on the tapped segment, not slide in from
+    // wherever the bar was last open.
+    testWidgets('the lifted card appears in place when opening from closed',
+        (tester) async {
+      await pumpPill(tester);
+      await open(tester, 'Where');
+      await tester.tap(find.byKey(const ValueKey('search-scrim')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Who'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
+      final whoLeft = tester
+          .getTopLeft(find.ancestor(
+            of: find.text('Who'),
+            matching: find.byType(GestureDetector),
+          ))
+          .dx;
+      expect(tester.getTopLeft(lifted()).dx, closeTo(whoLeft, 1),
+          reason: 'the card drifted in from the segment that was open before');
+    });
+  });
+
+  group('the search button', () {
+    Finder submit() => find.byKey(const ValueKey('search-submit'));
+
+    // Airbnb's cue that the bar is in an editing state: a round icon at rest,
+    // and a labelled pill the moment a panel is open. The label is what tells
+    // the guest that what they are choosing has to be committed.
+    testWidgets('is an icon at rest and grows a label while a panel is open',
+        (tester) async {
+      await pumpPill(tester);
+      expect(find.text('Search'), findsNothing);
+      final restWidth = tester.getSize(submit()).width;
+      expect(restWidth, closeTo(48, 1));
+
+      await open(tester, 'Where');
+      expect(find.text('Search'), findsOneWidget);
+      expect(tester.getSize(submit()).width, greaterThan(restWidth + 40));
+
+      await tester.tap(find.byKey(const ValueKey('search-scrim')));
+      await tester.pumpAndSettle();
+      expect(find.text('Search'), findsNothing);
+      expect(tester.getSize(submit()).width, closeTo(48, 1));
+    });
+
+    // The room the label takes has to come out of Who's own slot. When the
+    // controls sat beside the three segments it came out of all three: Where
+    // and When slid left by 25px and 19px as the button opened, and the lifted
+    // card, measured a frame late, chased them. This pins the other two still.
+    testWidgets('growing does not move Where or When', (tester) async {
+      await pumpPill(tester);
+      Rect slot(String label) => tester.getRect(find.ancestor(
+            of: find.text(label),
+            matching: find.byType(GestureDetector),
+          ));
+      final whereRest = slot('Where'), whenRest = slot('When');
+      final whoTextRest = tester.getTopLeft(find.text('Who')).dx;
+
+      await tester.tap(find.text('Where'));
+      for (var i = 0; i < 12; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        expect(slot('Where'), whereRest);
+        expect(slot('When'), whenRest);
+        expect(tester.getTopLeft(find.text('Who')).dx, whoTextRest);
+      }
+    });
+
+    testWidgets('grows over several frames rather than popping',
+        (tester) async {
+      await pumpPill(tester);
+      await tester.tap(find.text('Where'));
+      await tester.pump();
+      await tester.pump(SearchPillBar.liftDuration ~/ 2);
+      final mid = tester.getSize(submit()).width;
+      await tester.pumpAndSettle();
+      final end = tester.getSize(submit()).width;
+      expect(mid, greaterThan(49));
+      expect(mid, lessThan(end - 4),
+          reason: 'half way through, the button is already full width');
     });
   });
 

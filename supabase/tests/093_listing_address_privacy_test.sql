@@ -20,7 +20,7 @@
 --
 --   1_anon                      PERMISSION DENIED   (grant revoked, not just RLS)
 --   2_owner                     1 rows
---   3_guest_completed_booking   1 rows
+--   3_guest_live_entitlement    1 rows
 --   4_stranger_no_booking       0 rows
 --   5_stranger_pending_booking  0 rows   <- the point of the whole change
 --   6_stranger_after_accept     1 rows
@@ -29,8 +29,19 @@
 --   8_stranger_write            0 rows affected (blocked by RLS)
 --   9_guest_sees_addresses      area-level labels only, no house/flat/road
 --
--- The subject listing/host/guest ids are resolved from live data, so they differ
--- per environment; `subjects` echoes what was picked.
+-- The subject listing/host/guest are RESOLVED BY QUERY, not typed in.
+--
+-- They used to be three hardcoded live uuids — the real "cozy room 1", its
+-- real owner and a real guest — so the file worked against exactly one
+-- database and errored on every other, local mirror included (QA report
+-- 2026-09-18, F6). Nothing about this rule is specific to that listing.
+--
+-- The lookup prefers a listing that already HAS an address row and a settled
+-- booking, so on live it still tests real data; where there is none — a fresh
+-- local mirror has zero `listing_addresses` — it makes the fixture it needs.
+-- Everything it writes is rolled back with the transaction. `subjects` echoes
+-- what was picked, and the file refuses to run rather than silently testing
+-- nothing if the database cannot supply a subject at all.
 
 create temp table res(name text, value text);
 grant all on res to public;
@@ -39,15 +50,70 @@ grant all on res to public;
 -- STRANGER: a profile with no booking on L
 do $$
 declare
-  v_l uuid := '9c5181a0-b69f-476c-958f-0202c8f8f4d4';
-  v_owner uuid := '5969711b-0e43-45f1-9664-ddc1836a8850';
-  v_ok uuid := '8322efdf-22d1-4f18-8913-cd1d4b30250d';
+  v_l uuid;
+  v_owner uuid;
+  v_ok uuid;
   v_stranger uuid;
+  v_made_address boolean := false;
 begin
+  -- A listing whose host has ACCEPTED a booking from someone. That guest is
+  -- the one row 3 is about, so the pair has to come from the same query or
+  -- they can disagree. Prefer one that already has an address row.
+  --
+  -- The entitlement has to be LIVE, which is not the same as "has a booking":
+  -- `completed` is time-boxed to `address_disclosure_grace_days` from
+  -- `ends_at` (103), so an old finished stay correctly discloses nothing. A
+  -- query that ignored that would pick a months-old completed booking and
+  -- read the grace window working as a broken test. `can_see_listing_address`
+  -- is asked directly rather than reimplemented here.
+  select b.listing_id, l.owner_id, b.tenant_id
+    into v_l, v_owner, v_ok
+    from public.bookings b
+    join public.listings l on l.id = b.listing_id
+   where b.tenant_id is not null
+     and b.tenant_id <> l.owner_id
+     and (b.booking_status in ('confirmed', 'active')
+          or (b.booking_status = 'completed'
+              and b.ends_at > now() - interval '7 days'))
+   order by exists (select 1 from public.listing_addresses a
+                     where a.listing_id = b.listing_id) desc,
+            b.created_at
+   limit 1;
+
+  if v_l is null then
+    raise exception 'No listing with a LIVE guest entitlement to test against. '
+      'Seed one (supabase/baseline/qa_seed.sql) and run this again.'
+      using errcode = 'P0002';
+  end if;
+
+  -- 093 is about who may read the exact address, so there has to BE one.
+  if not exists (select 1 from public.listing_addresses where listing_id = v_l) then
+    insert into public.listing_addresses
+      (listing_id, house_no, flat_floor, street, exact_address)
+    values (v_l, '12', 'B, 3rd floor', 'Road 4', 'House 12, Road 4, Uttara');
+    v_made_address := true;
+  end if;
+
+  -- Somebody with no booking on this listing at all — and not an admin, who
+  -- is entitled to every address by design and would turn every "stranger"
+  -- row green for the wrong reason (it did, on the local mirror, where the
+  -- seeded admin sorts first).
   select p.id into v_stranger from public.profiles p
-   where p.id not in (select tenant_id from public.bookings where listing_id = v_l and tenant_id is not null)
-     and p.id <> v_owner limit 1;
-  insert into res values ('subjects', format('L=%s owner=%s ok=%s stranger=%s', v_l, v_owner, v_ok, v_stranger));
+   where p.id not in (select tenant_id from public.bookings
+                       where listing_id = v_l and tenant_id is not null)
+     and p.id <> v_owner
+     and p.role <> 'admin'
+   limit 1;
+
+  if v_stranger is null then
+    raise exception 'Every profile has a booking on the subject listing; '
+      'there is no stranger to test with.' using errcode = 'P0002';
+  end if;
+
+  insert into res values ('subjects',
+    format('L=%s owner=%s ok=%s stranger=%s address=%s',
+           v_l, v_owner, v_ok, v_stranger,
+           case when v_made_address then 'seeded' else 'existing' end));
   create temp table subj(l uuid, owner uuid, ok uuid, stranger uuid);
   grant all on subj to public;
   insert into subj values (v_l, v_owner, v_ok, v_stranger);
@@ -75,7 +141,7 @@ grant execute on function pg_temp.chk(text, text, uuid) to public;
 
 select pg_temp.chk('1_anon', 'anon', '00000000-0000-0000-0000-000000000000');
 select pg_temp.chk('2_owner', 'authenticated', (select owner from subj));
-select pg_temp.chk('3_guest_completed_booking', 'authenticated', (select ok from subj));
+select pg_temp.chk('3_guest_live_entitlement', 'authenticated', (select ok from subj));
 select pg_temp.chk('4_stranger_no_booking', 'authenticated', (select stranger from subj));
 
 -- A pending booking must NOT unlock it. Inserted/deleted rather than

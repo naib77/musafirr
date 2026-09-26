@@ -132,6 +132,17 @@ class DeviceRegistry implements DeviceDirectory {
   /// its access token expires, which is the hour in which a stolen phone is
   /// still reading messages.
   Future<bool> isRevoked() async {
+    // No session, nothing to check. `DeviceSessionWatcher` runs this at
+    // startup and on every resume without asking whether anyone is signed in,
+    // so before this line every signed-out visitor to the site made a
+    // `touch_device` call that the database refuses — the function is granted
+    // to `authenticated` only, and there is no `anon` grant. It failed open
+    // and nothing broke, which is exactly why it went unnoticed: it showed up
+    // only as a red 401 in the console on every single launch, and would show
+    // up as an error-tracking event per visitor the moment Sentry is added
+    // (QA report 2026-09-18, N8).
+    if (_client.auth.currentSession == null) return false;
+
     try {
       final id = await deviceId();
       final revoked = await _client.rpc('touch_device', params: {

@@ -1014,17 +1014,8 @@ class SupabaseMusafirRepository extends ChangeNotifier
     };
   }
 
-  BookingStatus _bookingStatusFromString(String? value) {
-    return switch (value?.toLowerCase()) {
-      'pending' => BookingStatus.pending,
-      'confirmed' => BookingStatus.confirmed,
-      'rejected' => BookingStatus.rejected,
-      'active' => BookingStatus.active,
-      'completed' => BookingStatus.completed,
-      'cancelled' => BookingStatus.cancelled,
-      _ => BookingStatus.pending,
-    };
-  }
+  BookingStatus _bookingStatusFromString(String? status) =>
+      BookingStatusWire.fromWire(status);
 
   // ============== Reviews ==============
 
@@ -1637,8 +1628,25 @@ class SupabaseMusafirRepository extends ChangeNotifier
 
     try {
       await _client.from('listings').delete().eq('id', listingId);
-    } catch (e) {
+    } on PostgrestException catch (e) {
       // Restore the optimistic removal so the UI reflects reality.
+      _listings.addAll(removed);
+      notifyListeners();
+      debugPrint('Error deleting listing: $e');
+      // 23503 (foreign_key_violation): host_ledger_entries and disbursements
+      // reference this listing's bookings with ON DELETE RESTRICT, so a
+      // listing with any PAID history cannot be deleted — and the host used
+      // to be shown the constraint's own words (QA round 2, scenario 42).
+      // Deleting would also cascade away payments and reviews, which are
+      // financial records; hiding is the right verb for a place that is done.
+      if (e.code == '23503') {
+        throw Exception(
+          'This listing has payment history and can\'t be deleted. '
+          'Hide it instead — guests won\'t see it, and your records stay intact.',
+        );
+      }
+      rethrow;
+    } catch (e) {
       _listings.addAll(removed);
       notifyListeners();
       debugPrint('Error deleting listing: $e');
@@ -2038,7 +2046,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
     // leaving a phantom local booking that the host never received. Roll back
     // the optimistic add on failure.
     try {
-      final result = await _insertMarketplaceBooking(
+      final result = await _insertMarketplaceBookingWithRetry(
         booking,
         couponCode: couponCode,
         discountAmount: discountAmount,
@@ -2067,6 +2075,21 @@ class SupabaseMusafirRepository extends ChangeNotifier
       // a typed BookingConflictException, so the UI shows a specific "slot was
       // just taken" message instead of a generic failure. Without this the
       // server race-loss surfaces as a bare PostgrestException → generic banner.
+      // A race the database resolved by killing this transaction rather than
+      // by naming the conflict. `_insertMarketplaceBookingWithRetry` has
+      // already tried again once; reaching here means the second attempt
+      // failed too, and by far the likeliest reason is that the winner's row
+      // is now committed and in the way. Telling the guest the slot was taken
+      // is both the most probable truth and the only sentence that suggests a
+      // useful next action — a generic banner suggests retrying the booking
+      // that just lost twice.
+      if (e is PostgrestException && isRetryableBookingFailure(e.code)) {
+        throw BookingConflictException(
+          'This time slot was just booked by someone else',
+          conflictType: ConflictType.listing,
+          conflictingBookings: const [],
+        );
+      }
       if (e is PostgrestException && e.code == '23P01') {
         // Which of the two sentences to show is decided by
         // [bookingConflictTypeFrom] — a pure function with its own tests —
@@ -2096,6 +2119,43 @@ class SupabaseMusafirRepository extends ChangeNotifier
         throw BookingRejectedException(e.message, code: e.code);
       }
       rethrow;
+    }
+  }
+
+  /// [_insertMarketplaceBooking] with one retry on a transient database
+  /// failure — a deadlock or a serialization failure.
+  ///
+  /// Once, not a loop with backoff: a guest is waiting on this, the whole
+  /// point of the retry is that the race has already been decided by the time
+  /// the second attempt runs, and a client that keeps hammering a contended
+  /// slot is adding to the contention it is losing to. If the second attempt
+  /// also fails the caller turns it into the conflict message.
+  ///
+  /// See [retryableBookingSqlStates] for why three or more guests competing
+  /// for one slot produces a deadlock rather than a conflict.
+  Future<({String id, double totalPrice, double discountAmount})>
+      _insertMarketplaceBookingWithRetry(
+    Booking booking, {
+    String? couponCode,
+    double discountAmount = 0,
+    String? couponId,
+  }) async {
+    try {
+      return await _insertMarketplaceBooking(
+        booking,
+        couponCode: couponCode,
+        discountAmount: discountAmount,
+        couponId: couponId,
+      );
+    } on PostgrestException catch (e) {
+      if (!isRetryableBookingFailure(e.code)) rethrow;
+      debugPrint('createMarketplaceBooking: ${e.code}, retrying once');
+      return _insertMarketplaceBooking(
+        booking,
+        couponCode: couponCode,
+        discountAmount: discountAmount,
+        couponId: couponId,
+      );
     }
   }
 
@@ -2145,15 +2205,26 @@ class SupabaseMusafirRepository extends ChangeNotifier
   void cancelBooking(String bookingId) async {
     final index = _bookings.indexWhere((b) => b.id == bookingId);
     if (index != -1) {
+      // Say who cancelled. notify_on_booking_lifecycle decides "cancelled by
+      // guest" vs "cancelled by host" from cancelled_by, and this path used to
+      // send the status alone — so a guest cancelling through it notified
+      // nobody (QA round 2, scenario 15). Migration 138 stamps the caller on
+      // the server as well; sending it here keeps the local copy honest.
+      final now = DateTime.now();
+      final me = _client.auth.currentUser?.id;
       _bookings[index] = _bookings[index].copyWith(
         status: BookingStatus.cancelled,
+        cancelledBy: me,
+        cancelledAt: now,
       );
       notifyListeners();
 
       try {
-        await _client
-            .from('bookings')
-            .update({'booking_status': 'cancelled'}).eq('id', bookingId);
+        await _client.from('bookings').update({
+          'booking_status': 'cancelled',
+          if (me != null) 'cancelled_by': me,
+          'cancelled_at': now.toUtc().toIso8601String(),
+        }).eq('id', bookingId);
       } catch (e) {
         debugPrint('Error cancelling booking: $e');
       }
@@ -2188,7 +2259,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
     try {
       final currentUserId = _client.auth.currentUser?.id;
       final updateData = <String, dynamic>{
-        'booking_status': booking.status.name,
+        'booking_status': booking.status.wire,
       };
       debugPrint('[DEBUG-booking] Updating Supabase with: $updateData');
       debugPrint(

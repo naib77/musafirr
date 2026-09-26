@@ -33,6 +33,38 @@ void main() {
     });
   });
 
+  group('isRetryableBookingFailure', () {
+    test('accepts the two codes a lost race can arrive as', () {
+      // 40P01 is what three or more guests racing for one slot actually
+      // produce — raised from INSIDE the exclusion-constraint check, not as
+      // a conflict. 40001 is its serializable-isolation sibling.
+      expect(isRetryableBookingFailure('40P01'), isTrue);
+      expect(isRetryableBookingFailure('40001'), isTrue);
+    });
+
+    test('does not retry a refusal', () {
+      // Retrying these would re-run a booking the server has already decided
+      // about, and 23P01 in particular already has the right message.
+      for (final code in ['23P01', '22023', 'P0002', '42501']) {
+        expect(isRetryableBookingFailure(code), isFalse,
+            reason: '$code is an answer, not a transient failure');
+      }
+    });
+
+    test('a missing code is not retryable', () {
+      expect(isRetryableBookingFailure(null), isFalse);
+      expect(isRetryableBookingFailure(''), isFalse);
+    });
+
+    test('the two sets do not overlap', () {
+      // A code in both would be retried AND shown to the guest verbatim.
+      expect(
+        guestFacingBookingSqlStates.intersection(retryableBookingSqlStates),
+        isEmpty,
+      );
+    });
+  });
+
   test('carries the server sentence through unchanged', () {
     // The whole point: the guest reads the server's words, not ours.
     const e = BookingRejectedException('This place hosts up to 4 guests',

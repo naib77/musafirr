@@ -2,7 +2,18 @@
 // Handles incoming messages and webhook verification from Facebook Messenger Platform
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4'
+
+// `ReturnType<typeof createClient>` used to be the annotation on the helpers
+// below, and it is not the same type as what `createClient(url, key)` returns:
+// the bare form resolves the UNparameterised overload,
+// `SupabaseClient<unknown, never, GenericSchema>`, while the call site infers
+// `SupabaseClient<any, "public", any>`. The two are not assignable, so every
+// helper call was a TS2345 and `deno check` failed on this file (QA report
+// 2026-09-18, F7). `SupabaseClient` with its own defaults is the one both
+// sides agree on.
+type Db = SupabaseClient;
+
 
 const VERIFY_TOKEN = Deno.env.get('MESSENGER_WEBHOOK_VERIFY_TOKEN') || ''
 const PAGE_ACCESS_TOKEN = Deno.env.get('MESSENGER_PAGE_ACCESS_TOKEN') || ''
@@ -182,7 +193,7 @@ serve(async (req: Request) => {
 })
 
 async function processIncomingMessage(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Db,
   event: MessagingEvent,
   pageId: string
 ) {
@@ -333,7 +344,7 @@ async function processIncomingMessage(
 }
 
 async function processPostback(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Db,
   event: MessagingEvent,
   pageId: string
 ) {
@@ -374,7 +385,7 @@ async function processPostback(
 }
 
 async function processReferral(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Db,
   event: MessagingEvent,
   pageId: string
 ) {
@@ -405,11 +416,18 @@ async function processReferral(
         ad_id: referral.ad_id,
       },
     })
-    .catch((err: Error) => console.log('Analytics insert failed:', err))
+    .then(({ error }) => {
+      // `.catch` used to sit here, and a PostgrestFilterBuilder is a thenable,
+      // not a Promise — it has no `catch`, so this line was a TypeError at
+      // runtime rather than the best-effort guard it was written as, and it
+      // was one of the three files `deno check` failed on (QA report
+      // 2026-09-18, F7). A rejected insert lands in `error`, not in a throw.
+      if (error) console.log('Analytics insert failed:', error.message)
+    })
 }
 
 async function processReadReceipt(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Db,
   event: MessagingEvent,
   pageId: string
 ) {
@@ -426,7 +444,7 @@ async function processReadReceipt(
 }
 
 async function processDeliveryReceipt(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Db,
   event: MessagingEvent,
   pageId: string
 ) {

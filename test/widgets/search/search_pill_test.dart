@@ -312,6 +312,39 @@ void main() {
       expect(find.text('Adults'), findsNothing);
     });
 
+    // The scrim starts below the bar on purpose (the header stays bright), so
+    // it cannot catch a click beside or above the bar. Those closed nothing:
+    // the panel sat open through a click on the logo or the account menu.
+    testWidgets('a click in the header beside the bar dismisses',
+        (tester) async {
+      await pumpPill(tester);
+      await openSegment(tester, 'Who');
+      expect(find.text('Adults'), findsOneWidget);
+      final bar = tester.getRect(find.byKey(const ValueKey('search-bar')));
+      // Level with the bar, well to its left: header band, not scrim.
+      await tester.tapAt(Offset(bar.left / 2, bar.center.dy));
+      await tester.pumpAndSettle();
+      expect(find.text('Adults'), findsNothing);
+    });
+
+    testWidgets('a click inside the panel does not dismiss', (tester) async {
+      await pumpPill(tester);
+      await openSegment(tester, 'Who');
+      await tester.tap(find.text('Adults'));
+      await tester.pumpAndSettle();
+      expect(find.text('Adults'), findsOneWidget);
+    });
+
+    testWidgets('tapping another segment switches, it does not close',
+        (tester) async {
+      await pumpPill(tester);
+      await openSegment(tester, 'Who');
+      await tester.tap(find.text('When'));
+      await tester.pumpAndSettle();
+      expect(find.text('Adults'), findsNothing);
+      expect(find.byKey(const ValueKey('search-panel')), findsOneWidget);
+    });
+
     testWidgets('escape dismisses', (tester) async {
       await pumpPill(tester);
       await openSegment(tester, 'Who');
@@ -481,6 +514,46 @@ void main() {
 
       expect(geocodes, 0);
       expect(committed.single.latitude, 23.87);
+    });
+  });
+
+  group('accessibility', () {
+    // The browser measurement that produced N7 found 38 semantics nodes and 8
+    // labels; the Search button — the one call to action on the page — was a
+    // `button` with no name, because a Tooltip sets the semantic *tooltip*
+    // and never the label. The segments were already named; this pins both.
+    testWidgets('every control in the bar has a name', (tester) async {
+      await pumpPill(tester);
+
+      Finder labelled(String label) => find.byWidgetPredicate(
+            (w) => w is Semantics && w.properties.label == label,
+            description: 'Semantics(label: "$label")',
+          );
+
+      expect(labelled('Search'), findsOneWidget);
+      expect(labelled('Filters'), findsOneWidget);
+      // The three segments name themselves with what they currently hold.
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Semantics && (w.properties.label ?? '').startsWith('Where,'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Semantics && (w.properties.label ?? '').startsWith('When,'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Semantics && (w.properties.label ?? '').startsWith('Who,'),
+        ),
+        findsOneWidget,
+      );
     });
   });
 }

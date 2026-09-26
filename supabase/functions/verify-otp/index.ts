@@ -19,7 +19,7 @@
 // Secrets: (shared with send-otp) optional MASTER_OTP + MASTER_OTP_PHONES
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import {
   corsHeaders,
   formatPhoneForDisplay,
@@ -153,13 +153,26 @@ serve(async (req) => {
     let isExistingUser = false;
 
     if (userId) {
-      // Rotate away any old phone-derived password.
-      await admin.updateUserById(userId, { password: randomPassword() });
       const { data: profile } = await supabase
         .from("profiles")
-        .select("signup_completed")
+        .select("signup_completed, suspended_at")
         .eq("id", userId)
         .maybeSingle();
+      // 140: a suspended account does not get a session. Checked BEFORE the
+      // password rotation and the magic link, so nothing about the account is
+      // touched; the code they typed was correct and is consumed, which is
+      // the honest answer — the number is theirs, the account is closed.
+      // admin_suspend_user already deleted their sessions; this is the door
+      // staying shut when they come back.
+      if (profile?.suspended_at) {
+        return jsonResponse(200, {
+          success: false,
+          error: "This account has been suspended. Contact support.",
+          suspended: true,
+        });
+      }
+      // Rotate away any old phone-derived password.
+      await admin.updateUserById(userId, { password: randomPassword() });
       isExistingUser = profile?.signup_completed === true;
     } else {
       const { data: created, error: createError } = await admin.createUser({

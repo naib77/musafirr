@@ -170,7 +170,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// Pick a document/file, upload it, and send it as a file message.
   Future<void> _sendFile() async {
-    final picked = await ImageUploadService.instance.pickFile();
+    final picked = await ImageUploadService.instance.pickChatAttachment();
     if (picked == null || !mounted) return;
 
     ModernBanner.showInfo(context, 'Sending file…');

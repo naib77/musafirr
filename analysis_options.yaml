@@ -1,1 +1,10 @@
 include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  # `build/` holds the committed web bundle and, after any iOS build, a Swift
+  # Package Manager checkout of flutterfire under build/ios/SourcePackages.
+  # That checkout carries its own Dart test files against a package version we
+  # do not depend on, and without this exclude `flutter analyze` reports ~160
+  # errors from it — none of them ours. QA 2026-09-18.
+  exclude:
+    - build/**

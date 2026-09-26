@@ -33,6 +33,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, jsonResponse } from "../_shared/otp.ts";
+import { enforceRateLimit } from "../_shared/rate_limit.ts";
 
 const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 
@@ -134,6 +135,10 @@ serve(async (req: Request) => {
   if (req.method !== "POST") {
     return jsonResponse(405, { error: "Method not allowed" });
   }
+  // Per user when signed in, per IP when not — see _shared/rate_limit.ts for
+  // why the two differ. Fails open if the counter is unreachable.
+  const limited = await enforceRateLimit(req, "voice-parse", { perUser: 20, perIp: 60, windowSeconds: 60 });
+  if (limited) return limited;
   if (!GEMINI_KEY) {
     return jsonResponse(500, { error: "GEMINI_API_KEY not configured" });
   }

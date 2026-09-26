@@ -325,7 +325,7 @@ supabase/functions/
 ├── send-push-notification/
 ├── sslcommerz-init/ sslcommerz-ipn/   ← payments
 ├── whatsapp-webhook/ messenger-webhook/
-├── validate-discount/ google-directions/ …
+├── google-directions/ geocode/ places-search/ …
 ```
 
 Use an Edge Function whenever logic must be **trusted** (holds a secret, must
