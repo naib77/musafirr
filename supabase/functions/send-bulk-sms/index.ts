@@ -26,7 +26,7 @@
 // batches, because the claim uses `for update skip locked`.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders, generateCsmsId, jsonResponse } from "../_shared/otp.ts";
 
 const GENNET_BASE_URL = Deno.env.get("GENNET_BASE_URL") ??

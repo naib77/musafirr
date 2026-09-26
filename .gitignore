@@ -34,3 +34,7 @@ local.properties
 # Local wrangler dev state (workerd cache, asset manifest). Created by
 # `wrangler dev` — e.g. tool/verify_link_previews.sh. Never deployed.
 .wrangler/
+coverage/
+
+# macOS Finder metadata. Committed once by accident (docs/.DS_Store).
+.DS_Store

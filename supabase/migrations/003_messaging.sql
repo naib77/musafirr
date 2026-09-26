@@ -62,15 +62,28 @@ CREATE TABLE conversations (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
 
-  -- Ensure unique conversation between two users (regardless of order)
-  CONSTRAINT unique_conversation UNIQUE (
-    LEAST(participant_one_id, participant_two_id),
-    GREATEST(participant_one_id, participant_two_id)
-  ),
-
   -- Prevent self-conversations
   CONSTRAINT no_self_conversation CHECK (participant_one_id != participant_two_id)
 );
+
+-- One conversation per pair, whichever way round the two ids arrive.
+--
+-- This was written as a table constraint — `CONSTRAINT unique_conversation
+-- UNIQUE (LEAST(a, b), GREATEST(a, b))` — and that is **not valid Postgres
+-- and never has been**: a UNIQUE constraint takes bare column names, and only
+-- a unique INDEX may be built over expressions. So this file has never
+-- applied to an empty database, `supabase start` failed here, and the whole
+-- migration chain below it was unreachable (QA report 2026-09-18, F5).
+--
+-- The live database has exactly the index below, under the name
+-- `uniq_conversation_per_pair`, which is how we know live was built from SQL
+-- this repo does not hold rather than from these files. The name is kept as
+-- live has it so the two cannot end up with one object each.
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_conversation_per_pair
+  ON conversations (
+    LEAST(participant_one_id, participant_two_id),
+    GREATEST(participant_one_id, participant_two_id)
+  );
 
 -- Messages table
 CREATE TABLE messages (

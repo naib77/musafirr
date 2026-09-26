@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Host Guest And Reservation QA</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+Bengali:wght@400;600&display=swap">
+<style>
+html{color-scheme:light dark}
+body{margin:0}
+img{max-width:100%}
+pre.mermaid{background:none;padding:0;font-size:.78em;color:var(--muted);overflow-x:auto}
+pre.mermaid[data-processed]{font-family:inherit;font-size:inherit;color:inherit;text-align:center}
+pre.mermaid svg{max-width:100%;height:auto}
+</style>
+<style>
+:root{
+  --ground:#F7F5F2; --panel:#FFFFFF; --ink:#1C1F26; --muted:#5D6470; --line:#E3DFDA;
+  --rose:#C35063; --rose-deep:#A63C4F; --rose-tint:#FBEEF0;
+  --pass:#1F7A4D; --pass-tint:#E6F4EC; --fail:#B3261E; --fail-tint:#FBE9E7;
+  --warn:#8A5A00; --warn-tint:#FBF1DC; --code:#F0EDE8;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --ground:#141619; --panel:#1D2025; --ink:#ECEAE6; --muted:#A0A6B0; --line:#2C3037;
+  --rose:#E07A8A; --rose-deep:#C35063; --rose-tint:#2E1F23;
+  --pass:#5FCB8C; --pass-tint:#17301F; --fail:#F28B82; --fail-tint:#3A1D1A;
+  --warn:#E8B85A; --warn-tint:#33290F; --code:#24272D;
+}}
+:root[data-theme="dark"]{
+  --ground:#141619; --panel:#1D2025; --ink:#ECEAE6; --muted:#A0A6B0; --line:#2C3037;
+  --rose:#E07A8A; --rose-deep:#C35063; --rose-tint:#2E1F23;
+  --pass:#5FCB8C; --pass-tint:#17301F; --fail:#F28B82; --fail-tint:#3A1D1A;
+  --warn:#E8B85A; --warn-tint:#33290F; --code:#24272D;
+}
+body{background:var(--ground);color:var(--ink);font-family:"IBM Plex Sans","Noto Sans Bengali",system-ui,sans-serif;font-size:16px;line-height:1.55;padding-block:32px 80px;padding-inline:16px}
+.wrap{max-width:820px;margin:0 auto}
+h1{font-size:2rem;line-height:1.15;margin:0 0 6px;text-wrap:balance;letter-spacing:-0.01em}
+h2{font-size:1.35rem;margin:56px 0 12px;padding-top:20px;border-top:2px solid var(--rose);text-wrap:balance}
+h3{font-size:1.05rem;margin:28px 0 8px}
+p{margin:0 0 12px;max-width:68ch}
+.eyebrow{font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.lede{color:var(--muted);font-size:1.05rem;max-width:68ch}
+.bn{font-family:"Noto Sans Bengali","IBM Plex Sans",sans-serif;background:var(--rose-tint);border-left:3px solid var(--rose);padding:12px 16px;border-radius:0 8px 8px 0;margin:14px 0 20px;font-size:1rem;line-height:1.7}
+.bn p{max-width:none}
+.score{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:22px 0}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.tile b{display:block;font-size:1.5rem;font-variant-numeric:tabular-nums;line-height:1.1}
+.tile span{color:var(--muted);font-size:.85rem}
+table{width:100%;border-collapse:collapse;font-size:.92rem;margin:12px 0 18px}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line)}
+th{font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.tbl{overflow-x:auto}
+code,pre{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.86em}
+code{background:var(--code);padding:1px 5px;border-radius:4px}
+pre{background:var(--code);padding:12px 14px;border-radius:8px;overflow-x:auto;margin:10px 0 14px;line-height:1.5}
+pre code{background:none;padding:0}
+.v{display:inline-block;font-weight:600;font-size:.75rem;letter-spacing:.04em;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.pass{background:var(--pass-tint);color:var(--pass)} .fail{background:var(--fail-tint);color:var(--fail)} .warn{background:var(--warn-tint);color:var(--warn)} .info{background:var(--code);color:var(--muted)}
+.sev{font-family:"IBM Plex Mono",monospace;font-weight:600}
+.diagram{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin:14px 0 18px;overflow-x:auto}
+.diagram figcaption{font-size:.85rem;color:var(--muted);margin-top:8px}
+.scenario{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:14px 0}
+.scenario h4{margin:0 0 10px;font-size:1rem;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.scenario dl{display:grid;grid-template-columns:110px 1fr;gap:6px 14px;margin:0;font-size:.95rem}
+.scenario dt{color:var(--muted);font-size:.8rem;letter-spacing:.05em;text-transform:uppercase;padding-top:3px}
+.scenario dd{margin:0}
+/* A 1fr grid track keeps min-width:auto, so one long code string pushes the
+   whole page wider than the phone. These three lines are what stop the body
+   scrolling sideways at 390px. */
+.scenario dt,.scenario dd{min-width:0}
+.scenario dd p{overflow-wrap:anywhere}
+code{overflow-wrap:anywhere}
+pre code{overflow-wrap:normal}
+.scenario dd p{margin:0 0 6px}
+@media (max-width:520px){.scenario dl{grid-template-columns:1fr}}
+.note{font-size:.9rem;color:var(--muted)}
+ul,ol{padding-left:22px;margin:0 0 12px}
+li{margin-bottom:4px}
+a{color:var(--rose-deep)}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<div class="eyebrow">Full functional QA · 18 September 2026 · written for the Musafir owner</div>
+<h1>Host, Guest And Reservation QA</h1>
+<p class="lede">Everything a host can do, everything a guest can do, one reservation walked end to end, eight guests fighting over one slot, the notification each step raises, and the interface at three widths. Nothing was applied to live in this round.</p>
+
+<div class="bn">
+<p><b>সংক্ষেপে।</b> হোস্ট আর গেস্ট আসলে কী কী করতে পারে তা ৬১টা পরীক্ষায় মেপে দেখা হয়েছে (৫৭টা ঠিক, ৪টা সমস্যা)। একটা বুকিং শুরু থেকে রিভিউ পর্যন্ত চালানো হয়েছে, প্রতিটা ধাপে সঠিক নোটিফিকেশন গেছে (৮/৮)। আটজন গেস্ট একসাথে একই স্লট বুক করার চেষ্টা করেছে — <b>প্রতিবারই ঠিক একটা বুকিং টিকেছে, কখনো ডাবল বুকিং হয়নি</b>। সবচেয়ে বড় সমস্যা: <b>যে কোনো লগইন করা ব্যক্তি নিজেকে অ্যাডমিন বানিয়ে নিতে পারে</b> — লাইভে (rollback করে) প্রমাণ করা হয়েছে, মাইগ্রেশন ১৩৩ লেখা ও পরীক্ষা করা আছে, কিন্তু <b>এখনো লাইভে প্রয়োগ করা হয়নি</b>, আপনার অনুমতি লাগবে।</p>
+</div>
+
+<div class="score">
+  <div class="tile"><b>57 / 61</b><span>capability checks passing</span></div>
+  <div class="tile"><b>8 / 8</b><span>lifecycle steps, notification correct each time</span></div>
+  <div class="tile"><b>1</b><span>booking survived every race, always</span></div>
+  <div class="tile"><b>0</b><span>double bookings across 11 races</span></div>
+  <div class="tile"><b>8 / 38</b><span>controls with an accessibility label</span></div>
+  <div class="tile"><b>1 · 1 · 6</b><span>new findings S1 · S2 · S3</span></div>
+</div>
+
+<h2>1. The S1: anyone signed in can become an admin</h2>
+<div class="bn"><p><b>বাংলায়:</b> একজন সাধারণ ইউজার নিজের প্রোফাইলে <code>role</code> বদলে <code>admin</code> লিখে পাঠালে ডাটাবেজ মেনে নেয়। তখন সে সবার বুকিং, পেমেন্ট, এনআইডি ডকুমেন্ট, ঠিকানা — সব দেখতে পারে। লাইভে rollback করে প্রমাণ করা হয়েছে: admin সংখ্যা ১ থেকে ২ হয়ে গিয়েছিল।</p></div>
+<figure class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Any signed-in user
+  participant PR as PostgREST
+  participant POL as RLS policy "update own profile"
+  participant TRG as fn_guard_verification_verdicts
+  participant DB as profiles
+  rect rgb(251,233,231)
+  Note over U,DB: TODAY ON LIVE (proved, rolled back)
+  U->>PR: PATCH /rest/v1/profiles?id=eq.self {"role":"admin"}
+  PR->>POL: auth.uid() = id ?
+  POL-->>PR: yes, and there is no WITH CHECK
+  PR->>TRG: before update
+  TRG->>TRG: guards identity, address, nid… never role
+  TRG-->>DB: allowed
+  Note over DB: admin count 1 to 2
+  DB-->>U: 204, and 28 admin-gated policies now open
+  end
+  rect rgb(230,244,236)
+  Note over U,DB: WITH MIGRATION 133
+  U->>PR: same request
+  PR->>TRG: before update
+  TRG-->>PR: 42501 the admin role is granted by an admin, not by the user
+  end
+</pre>
+<figcaption>The fix still permits the one role change the app makes: a tenant becoming a host.</figcaption>
+</figure>
+<div class="tbl"><table>
+<tr><th>Migration 133 test row</th><th>Without</th><th>With</th></tr>
+<tr><td>1 user makes themselves admin</td><td><span class="v fail">FAIL</span> role became admin</td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>2 demote then promote</td><td><span class="v fail">FAIL</span> role became admin</td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>3 a tenant still becomes a host</td><td><span class="v pass">PASS</span></td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>4 name and bio still self-service</td><td><span class="v pass">PASS</span></td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>5 an admin can still grant roles</td><td><span class="v pass">PASS</span></td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>6 service role still writes roles</td><td><span class="v pass">PASS</span></td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>7 self-approving identity still refused</td><td><span class="v pass">PASS</span></td><td><span class="v pass">PASS</span></td></tr>
+</table></div>
+<p class="note">CLAUDE.md claimed this path was already blocked by the verification guard. It was not, and that sentence has been corrected.</p>
+
+<h2>2. Eight guests, one slot</h2>
+<div class="bn"><p><b>বাংলায়:</b> আটটা আলাদা কানেকশন, আটজন গেস্ট, একই মুহূর্তে একই স্লট। ফল: সবসময় ঠিক একটা বুকিং টিকেছে। কিন্তু তিনজনের বেশি হলে হেরে যাওয়া গেস্টরা ভুল এরর পায় — "এই সময়টা এইমাত্র বুক হয়ে গেছে" না দেখিয়ে সাধারণ ব্যর্থতার বার্তা দেখায়।</p></div>
+<figure class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant G1 as Guest 1
+  participant G2 as Guest 2
+  participant G3 as Guest 3
+  participant DB as bookings + exclusion constraint
+  Note over G1,G3: all released at one shared instant
+  G1->>DB: create_marketplace_booking (same slot)
+  G2->>DB: create_marketplace_booking (same slot)
+  G3->>DB: create_marketplace_booking (same slot)
+  DB-->>G2: booking created
+  DB-->>G1: 40P01 deadlock detected, inside the exclusion check
+  DB-->>G3: 40P01 deadlock detected
+  Note over DB: exactly one row survives, every run
+  Note over G1,G3: the client maps only 23P01, so these two see a generic error
+</pre>
+</figure>
+<div class="tbl"><table>
+<tr><th>Racers</th><th>Runs</th><th>Bookings surviving</th><th>What the losers were told</th></tr>
+<tr><td>2</td><td>1</td><td>1</td><td><span class="v pass">23P01, correct message</span></td></tr>
+<tr><td>3</td><td>1</td><td>1</td><td><span class="v warn">deadlock, generic banner</span></td></tr>
+<tr><td>4</td><td>7</td><td>1 every run</td><td><span class="v warn">mixed, 2 of 7 runs all deadlock</span></td></tr>
+<tr><td>8</td><td>2</td><td>1 every run</td><td><span class="v warn">mixed</span></td></tr>
+</table></div>
+<p>Safety is not in question. The fix is one retry on <code>40P01</code> and <code>40001</code>, which lands on a clean conflict and produces the sentence already written for it.</p>
+
+<h2>3. One reservation, end to end</h2>
+<figure class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  [*] --> pending: guest requests
+  pending --> confirmed: host accepts
+  confirmed --> active: host checks in
+  active --> completed: host completes
+  pending --> rejected: nobody answers in the window
+  pending --> cancelled: guest cancels
+  confirmed --> cancelled: guest cancels
+  completed --> [*]
+  note right of pending: host is notified
+  note right of confirmed: guest notified, again when payment lands
+  note right of active: guest is notified
+  note right of completed: both notified, host earning posted
+</pre>
+</figure>
+<div class="tbl"><table>
+<tr><th>#</th><th>Actor</th><th>Step</th><th>State after</th><th>Who was told</th><th></th></tr>
+<tr><td>1</td><td>guest</td><td>request a 2-hour stay</td><td>pending / unpaid</td><td>host: New Booking Request</td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>2</td><td>host</td><td>accept</td><td>confirmed / unpaid</td><td>guest: Booking Confirmed</td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>3</td><td>both</td><td>choose cash, confirm receipt</td><td>confirmed / paid</td><td>guest: Cash payment confirmed</td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>4</td><td>host</td><td>check in</td><td>active / paid</td><td>guest: Enjoy Your Stay</td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>5</td><td>host</td><td>mark service complete</td><td>completed / paid</td><td>guest and host</td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>6</td><td>system</td><td>host earning posted</td><td>1 ledger row</td><td>—</td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>7</td><td>both</td><td>leave reviews</td><td>2 reviews, 0 revealed</td><td>—</td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>8</td><td>stranger</td><td>read those reviews</td><td>0 visible</td><td>—</td><td><span class="v pass">PASS</span></td></tr>
+</table></div>
+<div class="scenario"><h4>Correction · Musafir does take a commission</h4>
+<dl><dt>What</dt><dd><code>platform_commission_pct = 15</code> is live, and the ledger function posts it. The live ledger holds online bookings totalling 11,305, cash bookings totalling -46.50 (commission a host owes on cash they took directly), plus payouts and reversals. The standing note saying there is no commission model was stale and has been corrected.</dd></dl></div>
+
+<h2>4. The other three capability failures</h2>
+<div class="scenario"><h4>Any signed-in user can overwrite any listing image <span class="v fail">S2</span></h4>
+<dl><dt>Why</dt><dd>The storage policy is <code>using (bucket_id = 'listing-images')</code> with no owner clause. Measured: another host changed the object's metadata to <code>{"hacked": true}</code>. Deleting is refused, but only by Supabase's own protect trigger, and overwriting defaces just as well.</dd>
+<dt>Fix</dt><dd>Tie the object path to the listing's owner, the way the avatars policy ties a filename to the user's id.</dd></dl></div>
+<div class="scenario"><h4>Any signed-in user can upload into that public bucket <span class="v warn">S3</span></h4>
+<dl><dt>Why</dt><dd>The insert policy checks only the bucket name. A guest who hosts nothing can upload 5 MB images with no rate limit in front of it.</dd></dl></div>
+<div class="scenario"><h4>A host can book their own listing, and anyone can book the past <span class="v warn">S3</span></h4>
+<dl><dt>Self-booking</dt><dd>The booking function never compares the listing's owner to the caller, so a host can post earnings to themselves.</dd>
+<dt>Past dates</dt><dd>No past-date guard exists server-side. A booking starting ten days ago was accepted and returned an id. Past slots are always free, so availability never objects, and the auto-complete sweep marks it done at once. The calendar hides past dates, which is the "form is not enforcement" pattern again.</dd></dl></div>
+
+<h2>5. Interface and experience</h2>
+<div class="tbl"><table>
+<tr><th>Width</th><th>Renders</th><th>Sideways scroll</th><th>Console</th></tr>
+<tr><td>1440 desktop</td><td>search pill, Filters, account menu, curated rows</td><td><span class="v pass">none</span></td><td>one 401</td></tr>
+<tr><td>1000 tablet</td><td>same header, wide layout</td><td><span class="v pass">none</span></td><td>one 401</td></tr>
+<tr><td>390 phone</td><td>compact search, carousels, two-item signed-out bottom bar</td><td><span class="v pass">none</span></td><td>one 401</td></tr>
+</table></div>
+<div class="scenario"><h4>Almost nothing is labelled for a screen reader <span class="v warn">S3</span></h4>
+<dl><dt>Measured</dt><dd>With the accessibility tree switched on, 38 nodes exist and <b>8 carry a label</b>: the two section headings and the six listing cards. The search pill's three segments, Filters, the search and voice buttons, the wishlist hearts, the account menu and the bottom navigation have a role but no name.</dd>
+<dt>Two costs</dt><dd>A screen reader user hears "button" with no idea what it does. And the end-to-end plan, which selects controls by accessibility label, cannot address most of the interface. One <code>Semantics(label: …)</code> per control fixes both.</dd></dl></div>
+<div class="scenario"><h4>Signed-out visitors trigger a failing request on every launch <span class="v info">S4</span></h4>
+<dl><dt>What</dt><dd>The device watcher runs at startup and on every resume without checking for a session, so <code>touch_device</code> is called with no user and refused. It is caught and fails open, but it is a red 401 on every visit and will fill error tracking once that exists.</dd></dl></div>
+
+<h2>6. What this round proved is working</h2>
+<ul>
+<li>Cross-user isolation holds everywhere tested except the two storage policies above. Bookings, payments, payout methods, notifications, favourites, identity documents and profile fields are invisible to strangers, by policy rather than by the app.</li>
+<li>Identity verification really gates publishing and booking, from the database.</li>
+<li>Migration 132 holds both ways: neither guest nor host can stamp a booking paid, while cash and gateway settlement still work.</li>
+<li>The state machine refuses every wrong actor: a guest cannot accept, a host cannot touch another host's reservations, a stranger cannot cancel.</li>
+<li>Under genuine contention no slot was ever double-booked.</li>
+<li>Every lifecycle transition notifies the right person.</li>
+<li>Reviews stay double-blind until revealed.</li>
+</ul>
+
+<h2>7. Findings</h2>
+<div class="tbl"><table>
+<tr><th>#</th><th>Sev</th><th>Finding</th><th>State</th></tr>
+<tr><td>N1</td><td class="sev">S1</td><td>Any signed-in user can make themselves admin</td><td><span class="v warn">fix written and verified as 133, NOT applied</span></td></tr>
+<tr><td>N2</td><td class="sev">S2</td><td>Any signed-in user can overwrite any listing image</td><td><span class="v fail">open</span></td></tr>
+<tr><td>N3</td><td class="sev">S3</td><td>Any signed-in user can upload into the public listing bucket</td><td><span class="v fail">open</span></td></tr>
+<tr><td>N4</td><td class="sev">S3</td><td>A host can book their own listing</td><td><span class="v fail">open, decision</span></td></tr>
+<tr><td>N5</td><td class="sev">S3</td><td>A booking can be created entirely in the past</td><td><span class="v fail">open</span></td></tr>
+<tr><td>N6</td><td class="sev">S3</td><td>Concurrent losers get a deadlock the client cannot explain</td><td><span class="v fail">open</span></td></tr>
+<tr><td>N7</td><td class="sev">S3</td><td>8 of 38 controls carry an accessibility label</td><td><span class="v fail">open, also blocks the E2E plan</span></td></tr>
+<tr><td>N8</td><td class="sev">S4</td><td>Signed-out visitors trigger a 401 on every launch</td><td><span class="v fail">open</span></td></tr>
+</table></div>
+<p class="note">Still open from the payments report: online payments notify nobody, the admin refund switch matches zero rows, payment attempts are uncapped per booking, a risky payment settles like a clean one.</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script>
+  // Diagrams render natively inside a published Artifact; a file opened from
+  // disk has no renderer, so load one. Pinned, and the source stays readable
+  // as plain text if the CDN is unreachable.
+  var dark = matchMedia('(prefers-color-scheme: dark)').matches
+             && document.documentElement.getAttribute('data-theme') !== 'light';
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: dark ? 'dark' : 'neutral',
+    // Noto Sans Bengali is in the stack so the taka sign and any Bengali
+    // label render instead of falling back to tofu boxes.
+    themeVariables: { fontFamily: '"IBM Plex Sans", "Noto Sans Bengali", system-ui, sans-serif', fontSize: '14px' },
+    flowchart: { useMaxWidth: true, htmlLabels: true },
+    sequence: { useMaxWidth: true, actorMargin: 40, width: 150 }
+  });
+</script>
+</body>
+</html>

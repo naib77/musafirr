@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Musafir QA Scenarios</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+Bengali:wght@400;600&display=swap">
+<style>
+html{color-scheme:light dark}
+body{margin:0}
+img{max-width:100%}
+pre.mermaid{background:none;padding:0;font-size:.78em;color:var(--muted);overflow-x:auto}
+pre.mermaid[data-processed]{font-family:inherit;font-size:inherit;color:inherit;text-align:center}
+pre.mermaid svg{max-width:100%;height:auto}
+</style>
+<style>
+:root{
+  --ground:#F7F5F2; --panel:#FFFFFF; --ink:#1C1F26; --muted:#5D6470; --line:#E3DFDA;
+  --rose:#C35063; --rose-deep:#A63C4F; --rose-tint:#FBEEF0;
+  --pass:#1F7A4D; --pass-tint:#E6F4EC; --fail:#B3261E; --fail-tint:#FBE9E7;
+  --warn:#8A5A00; --warn-tint:#FBF1DC; --code:#F0EDE8;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --ground:#141619; --panel:#1D2025; --ink:#ECEAE6; --muted:#A0A6B0; --line:#2C3037;
+  --rose:#E07A8A; --rose-deep:#C35063; --rose-tint:#2E1F23;
+  --pass:#5FCB8C; --pass-tint:#17301F; --fail:#F28B82; --fail-tint:#3A1D1A;
+  --warn:#E8B85A; --warn-tint:#33290F; --code:#24272D;
+}}
+:root[data-theme="dark"]{
+  --ground:#141619; --panel:#1D2025; --ink:#ECEAE6; --muted:#A0A6B0; --line:#2C3037;
+  --rose:#E07A8A; --rose-deep:#C35063; --rose-tint:#2E1F23;
+  --pass:#5FCB8C; --pass-tint:#17301F; --fail:#F28B82; --fail-tint:#3A1D1A;
+  --warn:#E8B85A; --warn-tint:#33290F; --code:#24272D;
+}
+body{background:var(--ground);color:var(--ink);font-family:"IBM Plex Sans","Noto Sans Bengali",system-ui,sans-serif;font-size:16px;line-height:1.55;padding-block:32px 80px;padding-inline:16px}
+.wrap{max-width:820px;margin:0 auto}
+h1{font-size:2rem;line-height:1.15;margin:0 0 6px;text-wrap:balance;letter-spacing:-0.01em}
+h2{font-size:1.35rem;margin:56px 0 12px;padding-top:20px;border-top:2px solid var(--rose);text-wrap:balance}
+h3{font-size:1.05rem;margin:28px 0 8px}
+p{margin:0 0 12px;max-width:68ch}
+.eyebrow{font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.lede{color:var(--muted);font-size:1.05rem;max-width:68ch}
+.bn{font-family:"Noto Sans Bengali","IBM Plex Sans",sans-serif;background:var(--rose-tint);border-left:3px solid var(--rose);padding:12px 16px;border-radius:0 8px 8px 0;margin:14px 0 20px;font-size:1rem;line-height:1.7}
+.bn p{max-width:none}
+.score{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:22px 0}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.tile b{display:block;font-size:1.5rem;font-variant-numeric:tabular-nums;line-height:1.1}
+.tile span{color:var(--muted);font-size:.85rem}
+table{width:100%;border-collapse:collapse;font-size:.92rem;margin:12px 0 18px}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line)}
+th{font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.tbl{overflow-x:auto}
+code,pre{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.86em}
+code{background:var(--code);padding:1px 5px;border-radius:4px}
+pre{background:var(--code);padding:12px 14px;border-radius:8px;overflow-x:auto;margin:10px 0 14px;line-height:1.5}
+pre code{background:none;padding:0}
+.v{display:inline-block;font-weight:600;font-size:.75rem;letter-spacing:.04em;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.pass{background:var(--pass-tint);color:var(--pass)} .fail{background:var(--fail-tint);color:var(--fail)} .warn{background:var(--warn-tint);color:var(--warn)} .info{background:var(--code);color:var(--muted)}
+.sev{font-family:"IBM Plex Mono",monospace;font-weight:600}
+.diagram{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin:14px 0 18px;overflow-x:auto}
+.diagram figcaption{font-size:.85rem;color:var(--muted);margin-top:8px}
+.scenario{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:14px 0}
+.scenario h4{margin:0 0 10px;font-size:1rem;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.scenario dl{display:grid;grid-template-columns:110px 1fr;gap:6px 14px;margin:0;font-size:.95rem}
+.scenario dt{color:var(--muted);font-size:.8rem;letter-spacing:.05em;text-transform:uppercase;padding-top:3px}
+.scenario dd{margin:0}
+/* A 1fr grid track keeps min-width:auto, so one long code string pushes the
+   whole page wider than the phone. These three lines are what stop the body
+   scrolling sideways at 390px. */
+.scenario dt,.scenario dd{min-width:0}
+.scenario dd p{overflow-wrap:anywhere}
+code{overflow-wrap:anywhere}
+pre code{overflow-wrap:normal}
+.scenario dd p{margin:0 0 6px}
+@media (max-width:520px){.scenario dl{grid-template-columns:1fr}}
+.note{font-size:.9rem;color:var(--muted)}
+ul,ol{padding-left:22px;margin:0 0 12px}
+li{margin-bottom:4px}
+a{color:var(--rose-deep)}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<div class="eyebrow">QA report · 18 September 2026 · written for the Musafir owner</div>
+<h1>Musafir QA Scenarios</h1>
+<p class="lede">Every scenario that was run, how it was run, the exact request or SQL, what came back, and the verdict. Nothing was committed to git. Live was written to only once, migration 132, on your instruction. Everything else on live ran inside a transaction that was rolled back.</p>
+
+<div class="bn">
+<p><b>সংক্ষেপে।</b> আজ তিন জায়গায় পরীক্ষা হয়েছে: (১) আপনার ম্যাকে Flutter টেস্ট, (২) লাইভ ডাটাবেজে শুধু পড়া বা rollback-করা ট্রানজ্যাকশন, (৩) লাইভের একটা <b>লোকাল কপি</b>, যেটা আজই বানানো হয়েছে কারণ রিপোর সব মাইগ্রেশন একসাথে চালালে ০০৩-এ ভেঙে যায়। পেমেন্টের ১৭টা ভুল-পথ (refusal) লোকালে সত্যিকারের API কল দিয়ে পরীক্ষা হয়েছে, সবগুলো ঠিক আচরণ করেছে। একটা গুরুতর গর্ত (S1) পাওয়া গেছে এবং আপনার অনুমতিতে মাইগ্রেশন ১৩২ দিয়ে লাইভে বন্ধ করা হয়েছে। সন্ধ্যায় আপনার দেওয়া SSLCommerz sandbox store দিয়ে সফল-পথও পরীক্ষা হয়েছে: Success, Success with risk, Failed, Cancel চারটাই ঠিকভাবে বসেছে (অংশ 6b)। নিচে প্রতিটা দৃশ্যপট ডায়াগ্রাম আর উদাহরণ সহ।</p>
+</div>
+
+<div class="score">
+  <div class="tile"><b>974</b><span>Flutter tests passed, 0 failed</span></div>
+  <div class="tile"><b>210 / 0</b><span>SQL contract rows PASS / FAIL, local, re-run</span></div>
+  <div class="tile"><b>17 + 7</b><span>payment refusal cases + sandbox outcomes, all correct</span></div>
+  <div class="tile"><b>8 / 8</b><span>migration 132 test rows, live, after apply</span></div>
+  <div class="tile"><b>1 · 2 · 5</b><span>findings S1 · S2 · S3 (S1 closed)</span></div>
+  <div class="tile"><b>21.4 %</b><span>line coverage baseline</span></div>
+</div>
+
+<h2>1. Where each test ran, and why three places</h2>
+<p>The plan called for a staging database built from the repo's migrations. That turned out to be impossible today (section 2), so the work split across three environments. The diagram shows what touched what.</p>
+<figure class="diagram">
+<pre class="mermaid">
+flowchart LR
+  subgraph mac["Your Mac"]
+    FT["flutter test --coverage<br/>flutter analyze · dart format"]
+    DC["deno check<br/>13 edge functions"]
+    subgraph local["Local Supabase (Docker, built today)"]
+      LDB[("Postgres 17<br/>mirror of live")]
+      LFN["edge functions<br/>sslcommerz-init / ipn / verify-otp"]
+      LAPI["PostgREST + GoTrue"]
+    end
+  end
+  subgraph live["Live project (production)"]
+    LIVE[("Postgres 17.6")]
+    SEC["secrets (names + hashes)"]
+  end
+  SBX["SSLCommerz sandbox<br/>(real test store, evening run)"]
+  MAPI["Management API<br/>/database/query"]
+  DUMP["tool/dump_live_baseline.py"] -->|"reads catalog"| MAPI --> LIVE
+  DUMP -->|"live_baseline.sql"| LDB
+  LFN --> SBX
+  LFN --> LDB
+  LAPI --> LDB
+  T132["132 test, rolled back"] --> MAPI
+  A132["migration 132, committed"] --> MAPI
+  style A132 fill:#FBEEF0,stroke:#C35063,color:#1C1F26
+</pre>
+<figcaption>Solid arrows are the only paths used. Live was never connected to directly; there is no database password on this machine. The one committed write is highlighted.</figcaption>
+</figure>
+
+<div class="tbl"><table>
+<tr><th>Environment</th><th>What ran there</th><th>Writes</th></tr>
+<tr><td>Your Mac, no database</td><td>Flutter suite with coverage, analyzer, formatter, <code>deno check</code></td><td>none</td></tr>
+<tr><td>Live, through the Management API</td><td>Read the catalog, hashes of two secrets, row counts, function bodies. Ran the 132 test twice in <code>begin … rollback</code>. Applied 132 once, committed, on your "apply 132".</td><td>one, migration 132</td></tr>
+<tr><td>Local mirror</td><td>All 16 SQL test files, the payment refusal matrix over real HTTP, master OTP login, admin refund PATCH, guest PATCH, init flooding</td><td>many, all local</td></tr>
+</table></div>
+
+<h2>2. The migrations do not rebuild the database</h2>
+<p>First thing tried: <code>supabase start</code> on an empty Docker database, which applies <code>supabase/migrations</code> 001 to 132 in order. It stopped at 003.</p>
+<pre><code>Applying migration 001_initial_schema.sql...
+Applying migration 002_notifications.sql...
+Applying migration 003_messaging.sql...
+ERROR: syntax error at or near "(" (SQLSTATE 42601)
+  CONSTRAINT unique_conversation UNIQUE (
+    LEAST(participant_one_id, participant_two_id),
+    ^</code></pre>
+<p>A UNIQUE constraint cannot contain expressions in any Postgres version. So this file was never applied to live as written. Live has a unique <em>index</em> of that shape and a text column with a check instead of the enum 003 declares. The repo does not hold the SQL live was actually built from.</p>
+<figure class="diagram">
+<pre class="mermaid">
+flowchart TB
+  M["supabase/migrations<br/>001 … 132"] -->|"001, 002 apply"| OK["✓"]
+  M -->|"003 fails: invalid SQL"| X["✗ stop"]
+  LIVE[("live database")] -->|"built from SQL<br/>not in the repo"| Q["?"]
+  MAPI["Management API<br/>catalog read"] --> BASE["live_baseline.sql<br/>replayable, idempotent"]
+  LIVE --> MAPI
+  BASE --> LOCAL[("local mirror")]
+  M131["131, 132 applied on top"] --> LOCAL
+  SEED["qa_seed.sql<br/>6 synthetic accounts"] --> LOCAL
+  style X fill:#FBE9E7,stroke:#B3261E,color:#1C1F26
+</pre>
+<figcaption>Left: what the repo can do. Right: how the local mirror was actually produced.</figcaption>
+</figure>
+<p>Parity check, the same catalog query run on both databases:</p>
+<div class="tbl"><table>
+<tr><th>Count</th><th>Live</th><th>Local</th></tr>
+<tr><td>tables</td><td>43</td><td>43</td></tr>
+<tr><td>functions in <code>public</code></td><td>144</td><td>144</td></tr>
+<tr><td>RLS policies</td><td>95</td><td>95</td></tr>
+<tr><td>triggers (public + auth hook)</td><td>59</td><td>59</td></tr>
+<tr><td>views</td><td>8</td><td>8</td></tr>
+<tr><td>indexes</td><td>133</td><td>133</td></tr>
+<tr><td>tables with RLS on</td><td>42</td><td>42</td></tr>
+<tr><td>cron jobs</td><td>8</td><td>8</td></tr>
+<tr><td>SECURITY DEFINER functions</td><td>95</td><td>95</td></tr>
+<tr><td>anon column SELECT grants</td><td>523</td><td>523</td></tr>
+</table></div>
+<p class="note">Not mirrored: storage bucket policies, GoTrue configuration, secret values (placeholders), real user rows (synthetic). Everything the SQL tests and the payment functions touch is mirrored.</p>
+
+<h2>3. How a payment is supposed to work</h2>
+<p>Read this once; every scenario in sections 4 to 6 is a deviation from it.</p>
+<figure class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor G as Guest (Rahim)
+  participant App as Flutter app
+  participant Init as sslcommerz-init
+  participant DB as Database
+  participant SSL as SSLCommerz
+  participant IPN as sslcommerz-ipn
+  actor H as Host (Karim)
+  G->>App: Reserve room, ৳1,500
+  App->>DB: create_marketplace_booking
+  Note over DB: booking pending, unpaid
+  H->>DB: Accept
+  Note over DB: booking confirmed, unpaid
+  G->>App: Tap "Pay ৳1,500"
+  App->>Init: booking_id + guest JWT
+  Init->>DB: read total_price (server decides amount)
+  Init->>DB: insert payments row, status initiated
+  Init->>SSL: create session (store id + password)
+  SSL-->>Init: GatewayPageURL
+  Init-->>App: gateway_url
+  App->>SSL: guest pays with bKash
+  SSL->>IPN: POST tran_id, val_id, status=VALID
+  IPN->>SSL: Validation API: is val_id real, amount right?
+  SSL-->>IPN: VALID, 1500.00, same tran_id
+  IPN->>DB: payments paid · bookings payment_status = paid
+  Note over DB: ledger posts ৳1,500 earning to Karim
+  IPN->>DB: notify guest and host
+  H->>DB: Service complete (only allowed when paid)
+</pre>
+<figcaption>Two facts carry all the security: the amount comes from the database, never the client (step 8), and the IPN trusts nothing until SSLCommerz's own Validation API confirms it (steps 15 and 16).</figcaption>
+</figure>
+
+<h2>4. The S1: stamping a booking paid without paying</h2>
+<div class="bn"><p><b>বাংলায়:</b> রহিম টাকা না দিয়ে ব্রাউজারের Developer Tools থেকে একটা রিকোয়েস্ট পাঠায়, যাতে লেখা <code>payment_status: paid</code>। ডাটাবেজ মেনে নেয়। করিমের আয়ে ১,৫০০ টাকা যোগ হয়, অথচ কোনো টাকা আসেনি। মাইগ্রেশন ১৩২-এর পরে এই রিকোয়েস্ট ফেরত যায়।</p></div>
+
+<figure class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor G as Guest (own JWT)
+  participant PR as PostgREST
+  participant TR as trigger enforce_booking_update_rules
+  participant DB as bookings
+  participant LG as ledger trigger
+  rect rgb(251,233,231)
+  Note over G,LG: BEFORE 132 (confirmed on live, rolled back, and locally over HTTP)
+  G->>PR: PATCH /rest/v1/bookings?id=eq.&lt;mine&gt; {"payment_status":"paid"}
+  PR->>TR: RLS: tenant may update own row ✓
+  TR->>TR: checks price, dates, listing, tenant… payment_status not in list
+  TR-->>DB: allowed
+  DB->>LG: payment_status → paid
+  LG->>LG: post ৳1,500 earning to host
+  PR-->>G: 204 No Content
+  end
+  rect rgb(230,244,236)
+  Note over G,LG: AFTER 132 (applied to live 2026-09-18)
+  G->>PR: same PATCH
+  PR->>TR: RLS ✓
+  TR->>TR: payment_status changed by a signed-in non-admin, no settlement flag
+  TR-->>PR: 42501 "Payment status is set by the payment gateway or the host's cash confirmation, not directly"
+  PR-->>G: 403
+  end
+</pre>
+</figure>
+
+<div class="scenario">
+<h4>S1-a · Guest marks own booking paid <span class="v fail">before: accepted</span> <span class="v pass">after: refused</span></h4>
+<dl>
+<dt>How</dt><dd><p>Live, rolled back: impersonate the tenant of a real <code>completed, unpaid</code> booking with <code>set_config('request.jwt.claims', …)</code> and <code>set role authenticated</code>, then <code>update bookings set payment_status='paid'</code>.</p><p>Local, over HTTP with a real JWT from GoTrue:</p>
+<pre><code>PATCH http://127.0.0.1:54321/rest/v1/bookings?id=eq.bbbbbbbb-…-0003
+Authorization: Bearer &lt;guest JWT&gt;
+{"payment_status":"paid"}</code></pre></dd>
+<dt>Before 132</dt><dd>Live: <code>update accepted, now paid</code>. Local: row flipped to <code>paid</code>.</dd>
+<dt>After 132</dt><dd>Live test row 1: <code>PASS</code>, hint <code>payment_columns_protected</code>. Local HTTP: <code>403</code>, booking still <code>unpaid</code>.</dd>
+</dl></div>
+
+<div class="scenario">
+<h4>S1-b · Host marks a booking on their listing paid <span class="v fail">before: accepted</span> <span class="v pass">after: refused</span></h4>
+<dl><dt>How</dt><dd>Same as S1-a with the listing owner's identity. A host can inflate their own payout balance this way.</dd>
+<dt>After 132</dt><dd>Test row 2 <code>PASS</code>.</dd></dl></div>
+
+<div class="scenario">
+<h4>S1-c · Host writes <code>paid_at</code> and <code>payment_method</code> directly <span class="v pass">after: refused</span></h4>
+<dl><dt>Why it matters</dt><dd><code>paid_at</code> feeds reports; <code>payment_method</code> decides whether the cash-confirm button appears. Both are in the guard.</dd>
+<dt>Result</dt><dd>Test row 3 <code>PASS</code>.</dd></dl></div>
+
+<h3>The five paths that must keep working</h3>
+<p>A guard that also broke real payments would be worse than the hole. Each legitimate writer was exercised with 132 in place.</p>
+<div class="tbl"><table>
+<tr><th>#</th><th>Who</th><th>How it was exercised</th><th>Result</th></tr>
+<tr><td>4</td><td>Guest chooses cash</td><td><code>select set_booking_payment_method(booking, 'cash')</code> as the guest. This RPC runs with the guest's identity, so a naive guard would block it. It raises the settlement flag around its own write.</td><td><span class="v pass">payment_method=cash</span></td></tr>
+<tr><td>5</td><td>Host confirms cash received</td><td><code>select mark_cash_payment(booking)</code> as the host</td><td><span class="v pass">payment_status=paid</span></td></tr>
+<tr><td>6</td><td>Admin marks refunded</td><td><code>update … set payment_status='refunded'</code> with an admin identity (as <code>postgres</code> so RLS is not what is measured; see F3)</td><td><span class="v pass">refunded</span></td></tr>
+<tr><td>7</td><td>Guest cancels</td><td><code>update … set booking_status='cancelled'</code> as the guest. Proves the guard watches only the three payment columns.</td><td><span class="v pass">cancelled</span></td></tr>
+<tr><td>8</td><td>Payment gateway settles</td><td><code>set role service_role</code>, no user, <code>update … set payment_status='paid'</code>. This is what <code>sslcommerz-ipn</code> does.</td><td><span class="v pass">paid</span></td></tr>
+</table></div>
+<p>Run three times: live without 132 (rows 1 to 3 <span class="v fail">FAIL</span>, proving the hole), live with 132 inside a rolled-back transaction (8 of 8), local with 132 really applied (8 of 8), and once more on live after the real apply (8 of 8). Row counts on live before and after the apply: bookings 106, payments 51, paid 15, unchanged.</p>
+
+<h2>5. <code>sslcommerz-init</code>: eight ways to start a payment wrongly</h2>
+<div class="bn"><p><b>বাংলায়:</b> "Pay" বাটন চাপলে যে সার্ভার ফাংশন চলে, তাকে আটটা ভুল অবস্থায় ডাকা হয়েছে: লগইন ছাড়া, অন্যের বুকিং, এখনো একসেপ্ট হয়নি, আগেই paid, শেষ হয়ে গেছে, ভুয়া আইডি, এবং ক্লায়েন্ট থেকে নিজের ইচ্ছামতো কম টাকা পাঠিয়ে। সবগুলোতে সার্ভার সঠিক উত্তর দিয়েছে।</p></div>
+<p>Each row is one real HTTP call to the function running locally, with JWTs minted by the local GoTrue for the seeded accounts. Guest = <code>QA Guest Verified</code>, Other = <code>QA Guest Unverified</code>. Bookings are the seeded ones: 01 completed+paid, 02 completed+unpaid, 03 confirmed+unpaid (৳10), 04 pending.</p>
+<div class="tbl"><table>
+<tr><th>Scenario</th><th>Request</th><th>Expected</th><th>Observed</th><th></th></tr>
+<tr><td>No login</td><td>no Authorization header, booking 03</td><td>401</td><td><code>401 Not authenticated</code></td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>Pay before host accepts</td><td>guest, booking 04 (pending)</td><td>409, explain</td><td><code>409 Payment is available after the host accepts your booking</code></td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>Pay twice</td><td>guest, booking 01 (already paid)</td><td>409</td><td><code>409 This booking is already paid</code></td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>Pay after completion</td><td>guest, booking 02 (completed, unpaid)</td><td>409</td><td><code>409 This booking can no longer be paid</code></td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>Someone else's booking</td><td>Other user's JWT, booking 03</td><td>403</td><td><code>403 Not your booking</code></td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>No booking id</td><td>guest, <code>{}</code></td><td>400</td><td><code>400 Missing booking_id</code></td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>Unknown booking id</td><td>guest, all-zero uuid</td><td>404</td><td><code>404 Booking not found</code></td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>Client sends a lower amount</td><td>guest, booking 03, body <code>{"amount":1,"total_amount":"1.00"}</code></td><td>ignored; row at server's ৳10</td><td>payments row <code>amount=10</code>; sandbox answered <code>Store Credential Error</code> (placeholder credentials), row <code>failed</code>, booking still <code>unpaid</code></td><td><span class="v pass">PASS</span></td></tr>
+</table></div>
+<figure class="diagram">
+<pre class="mermaid">
+flowchart TD
+  A["POST sslcommerz-init"] --> B{JWT valid?}
+  B -- no --> R401["401 Not authenticated"]
+  B -- yes --> C{booking_id given?}
+  C -- no --> R400["400 Missing booking_id"]
+  C -- yes --> D{booking exists?}
+  D -- no --> R404["404 Booking not found"]
+  D -- yes --> E{tenant_id = caller?}
+  E -- no --> R403["403 Not your booking"]
+  E -- yes --> F{payment_status = paid?}
+  F -- yes --> R409a["409 already paid"]
+  F -- no --> G{status confirmed or active?}
+  G -- pending --> R409b["409 after the host accepts"]
+  G -- other --> R409c["409 no longer be paid"]
+  G -- yes --> H["amount := booking.total_price<br/>(client body ignored)"]
+  H --> I["insert payments initiated"] --> J["SSLCommerz session"]
+  J -- ok --> K["200 gateway_url"]
+  J -- error --> L["502, row failed"]
+  style R401 fill:#FBE9E7,stroke:#B3261E,color:#1C1F26
+  style R400 fill:#FBE9E7,stroke:#B3261E,color:#1C1F26
+  style R404 fill:#FBE9E7,stroke:#B3261E,color:#1C1F26
+  style R403 fill:#FBE9E7,stroke:#B3261E,color:#1C1F26
+  style R409a fill:#FBE9E7,stroke:#B3261E,color:#1C1F26
+  style R409b fill:#FBE9E7,stroke:#B3261E,color:#1C1F26
+  style R409c fill:#FBE9E7,stroke:#B3261E,color:#1C1F26
+  style K fill:#E6F4EC,stroke:#1F7A4D,color:#1C1F26
+</pre>
+<figcaption>Every red exit was hit by one of the eight calls above; the green exit needs a sandbox store (section 10).</figcaption>
+</figure>
+
+<div class="scenario">
+<h4>Extra probe · Flooding one booking with attempts <span class="v warn">F4 · S3</span></h4>
+<dl><dt>How</dt><dd>Six rapid calls for booking 03 with the same guest JWT.</dd>
+<dt>Observed</dt><dd><code>7 payment rows for booking 03</code>. Nothing caps or reuses attempts. Live carries 27 <code>initiated</code> rows worth ৳52,420 from July and August that nothing expires.</dd></dl></div>
+
+<h2>6. <code>sslcommerz-ipn</code>: nine ways to lie to the settlement endpoint</h2>
+<div class="bn"><p><b>বাংলায়:</b> এই ফাংশনটা ইন্টারনেটে খোলা থাকতে বাধ্য, কারণ SSLCommerz-এর সার্ভার এটাকে ডাকে। তাই যে কেউ এটাকে ডেকে "টাকা এসেছে" বলতে পারে। পরীক্ষা: ভুয়া <code>val_id</code>, অন্যের <code>tran_id</code>, আগেই paid এমন লেনদেন আবার পাঠানো, ইত্যাদি। কোনোটাতেই বুকিং paid হয়নি, কারণ ফাংশন সবসময় SSLCommerz-কে আবার জিজ্ঞেস করে।</p></div>
+<p>The function is deployed without JWT verification because SSLCommerz cannot send one. Calls below are plain form POSTs, exactly what an attacker could send. <code>T</code> is the <code>tran_id</code> created by the init scenario above (<code>MSFR-BBBBBBBB-AC053620</code>); <code>SEED</code> is the seeded already-paid transaction.</p>
+<div class="tbl"><table>
+<tr><th>Scenario</th><th>Request body</th><th>Expected</th><th>Observed</th><th></th></tr>
+<tr><td>No transaction</td><td><code>status=VALID</code></td><td>400</td><td><code>400 no tran_id</code></td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>Unknown transaction</td><td><code>tran_id=NOPE&amp;status=VALID&amp;val_id=x</code></td><td>404, nothing written</td><td><code>404 unknown tran_id</code></td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>Success claim, no validation id</td><td><code>tran_id=T&amp;status=VALID</code></td><td>400</td><td><code>400 no val_id</code></td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>Forged validation id</td><td><code>tran_id=T&amp;status=VALID&amp;val_id=FORGED123</code></td><td>Validation API says no; row failed; booking unpaid</td><td><code>200 validation failed</code>; row <code>failed</code>; booking 03 <code>unpaid</code></td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>Gateway says failed</td><td><code>?redirect=fail</code> <code>tran_id=T&amp;status=FAILED</code></td><td>row failed, HTML page</td><td><code>200</code> HTML "Payment failed"</td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>Guest cancels on gateway</td><td><code>?redirect=cancel</code> <code>tran_id=T</code></td><td>row cancelled, HTML page</td><td><code>200</code> HTML "Payment cancelled"</td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>Replay a paid transaction with a forged id</td><td><code>tran_id=SEED&amp;status=VALID&amp;val_id=FORGED</code></td><td>idempotent, untouched</td><td><code>200 already paid</code>; row still <code>paid</code>, <code>validated_at</code> kept</td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>Mark a paid transaction failed</td><td><code>?redirect=fail</code> <code>tran_id=SEED</code></td><td>untouched</td><td>row still <code>paid</code>, booking still <code>paid</code></td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>Booking after all of the above</td><td>read <code>bookings.payment_status</code> for 03</td><td>unpaid</td><td><code>unpaid</code></td><td><span class="v pass">PASS</span></td></tr>
+</table></div>
+<figure class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor X as Attacker
+  participant IPN as sslcommerz-ipn (public URL)
+  participant DB as payments
+  participant SSL as SSLCommerz Validation API
+  X->>IPN: POST tran_id=T, status=VALID, val_id=FORGED123
+  IPN->>DB: find T → status initiated, amount 10
+  IPN->>SSL: validationserverAPI?val_id=FORGED123&amp;store_id&amp;store_passwd
+  SSL-->>IPN: not VALID
+  IPN->>DB: T → failed, gateway_response saved
+  IPN-->>X: 200 "validation failed"
+  Note over DB: bookings.payment_status stays unpaid
+</pre>
+<figcaption>The attacker's own claim is never used. Only SSLCommerz's answer about the <code>val_id</code>, compared to the stored amount and <code>tran_id</code>, can flip a row to paid.</figcaption>
+</figure>
+
+<div class="scenario">
+<h4>Found while reading this function · Online payments never notify anyone <span class="v warn">F2 · S2</span></h4>
+<dl><dt>What</dt><dd>On success the function inserts a notification with <code>type: "paymentReceived"</code>. The enum has <code>payment_received</code>. The insert throws, the <code>try/catch</code> swallows it, and settlement proceeds.</dd>
+<dt>Proof, local</dt><dd><pre><code>insert into notifications (…, type, …) values (…, 'paymentReceived', …);
+ERROR: invalid input value for enum notification_type: "paymentReceived"</code></pre></dd>
+<dt>Proof, live</dt><dd>12 online payments are <code>paid</code>; 0 notifications came from them. The 3 <code>payment_received</code> rows that exist all came from cash confirmations, which use the correct spelling.</dd>
+<dt>Effect</dt><dd>Guest's Trips does not update live after paying; host never gets "you can now mark the service complete".</dd></dl></div>
+
+<h2>6b. Evening re-test with a real sandbox store</h2>
+<div class="bn"><p><b>বাংলায়:</b> আপনি sandbox store দেওয়ার পরে সফল-পথটাও পরীক্ষা হয়েছে: টেস্ট কার্ড দিয়ে সত্যিকারের SSLCommerz sandbox পেজে পেমেন্ট, তারপর Success / Success with risk / Failed / Cancel চারটা ফলই লোকাল ডাটাবেজে সঠিকভাবে বসেছে। আসল <code>val_id</code> আবার পাঠালে বা অন্য লেনদেনে লাগালে সার্ভার প্রত্যাখ্যান করেছে। নতুন একটা পর্যবেক্ষণ: ঝুঁকিপূর্ণ (risk 1) পেমেন্টও সরাসরি paid হয়ে যায়।</p></div>
+<p>Store <code>testiobytbbve</code>, credentials only in the git-ignored <code>supabase/functions/.env.local</code>. Driver <code>tool/qa/sandbox_pay.js</code>: headless Chromium fills the test VISA on the real sandbox page, presses the chosen bank-page button, and rewrites the in-container redirect URL to the host so the settlement lands in the mirror.</p>
+<figure class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant PW as Headless Chromium
+  participant SSL as sandbox.sslcommerz.com
+  participant IPN as sslcommerz-ipn (local)
+  participant DB as local database
+  PW->>SSL: open EasyCheckOut, type 4111 1111 1111 1111, PAY 10 BDT
+  SSL-->>PW: bank page: Success · Success with risk · Failed
+  PW->>SSL: click outcome
+  SSL-->>PW: 302 to http://kong:8000/…/sslcommerz-ipn?redirect=success (in-container URL)
+  Note over PW: page.route rewrites kong:8000 → 127.0.0.1:54321
+  PW->>IPN: POST tran_id, val_id, status
+  IPN->>SSL: Validation API (real store credentials)
+  SSL-->>IPN: VALID, amount 10.00, same tran_id, risk_level
+  IPN->>DB: payments paid · bookings paid · ledger entry
+  IPN-->>PW: "Payment successful"
+</pre></figure>
+<div class="tbl"><table>
+<tr><th>Outcome</th><th>payments row</th><th>booking</th><th></th></tr>
+<tr><td>Success</td><td><code>paid</code>, <code>val_id</code> set, <code>VISA-Dutch Bangla</code>, <code>bank_tran_id</code>, <code>risk_level 0</code>, <code>validated_at</code></td><td><code>paid</code>, <code>paid_at</code> set, ledger row posted, <b>0 notifications</b> (F2)</td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>Success with risk</td><td><code>paid</code>, <code>risk_level 1</code></td><td><code>paid</code></td><td><span class="v warn">settles; F11</span></td></tr>
+<tr><td>Failed</td><td><code>failed</code></td><td><code>unpaid</code></td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>Cancel (X, "YES, CANCEL")</td><td><code>cancelled</code></td><td><code>unpaid</code></td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>Replay genuine IPN, real <code>val_id</code></td><td>untouched, "already paid"</td><td>untouched</td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>Real <code>val_id</code> on another <code>tran_id</code></td><td><code>failed</code> (tran_id mismatch)</td><td><code>unpaid</code></td><td><span class="v pass">PASS</span></td></tr>
+<tr><td>Client body <code>amount: 1</code>, real store</td><td>row at server's ৳10</td><td>—</td><td><span class="v pass">PASS</span></td></tr>
+</table></div>
+<div class="scenario"><h4>F11 · A risky payment is settled like a clean one <span class="v warn">S3</span></h4>
+<dl><dt>What</dt><dd>SSLCommerz sets <code>risk_level 1</code> when its fraud screen fires and advises holding delivery. The IPN accepts any <code>VALID</code>/<code>VALIDATED</code> answer and only stores the risk fields, so a risky payment unlocks Service complete and posts the host's earning immediately.</dd>
+<dt>Decide</dt><dd>hold as pending review with an admin notification, or accept knowingly and record it.</dd></dl></div>
+<div class="scenario"><h4>Observation · Host response window on live is 1 hour</h4>
+<dl><dt>What</dt><dd><code>booking_accept_window_hours = 1</code> on live, set by an admin 2026-09-09. The local cron rejected a fixture booking after an hour, exactly as configured. Not a bug; confirm it is intended.</dd></dl></div>
+<h2>7. The 16 SQL contract test files, on the local mirror</h2>
+<p>Each file is the repo's pattern: open a transaction, build fixtures, impersonate roles with <code>set local role</code>, assert as rows, roll back. Run on the mirror with the synthetic seed.</p>
+<div class="tbl"><table>
+<tr><th>File</th><th>What it proves</th><th>Rows</th><th></th></tr>
+<tr><td>093 address privacy</td><td>only host, admin or an accepted guest reads a listing's exact address</td><td>12 errors</td><td><span class="v warn">hardcodes live ids (F6)</span></td></tr>
+<tr><td>113/114 public browse + identity</td><td>anon reads listings, facilities, ratings, public profiles; cannot read addresses, profiles, bookings; unverified cannot book or publish; verified owner can</td><td>16 matrix</td><td><span class="v pass">all as expected</span></td></tr>
+<tr><td>115 spatial_ref_sys</td><td>anon/authenticated/service_role cannot delete or truncate PostGIS's table; reads stay open</td><td>9 matrix</td><td><span class="v pass">all as expected</span></td></tr>
+<tr><td>116 internal grants</td><td>the 14 formerly public SECURITY DEFINER functions are unreachable by anon/authenticated</td><td>21</td><td><span class="v pass">21 / 0</span></td></tr>
+<tr><td>117 definer views</td><td><code>public_profiles</code> cannot be written through; ratings exclude unrevealed reviews</td><td>8</td><td><span class="v pass">8 / 0</span></td></tr>
+<tr><td>118 party capacity</td><td>adults/children/infants/pets caps in <code>search_listings</code>, null vs zero, pets default deny</td><td>19</td><td><span class="v pass">19 / 0</span></td></tr>
+<tr><td>119 accept window</td><td>configurable host-response window; junk value falls back to 24h; sweep expires pending</td><td>17</td><td><span class="v pass">17 / 0</span></td></tr>
+<tr><td>120/121 turf</td><td>turf enum, field constraints, two hourly slots one day, real overlap refused, facilities</td><td>13</td><td><span class="v pass">13 / 0</span></td></tr>
+<tr><td>123 user devices</td><td>no direct insert, label-only update, cross-user reads refused</td><td>13</td><td><span class="v pass">13 / 0</span></td></tr>
+<tr><td>124/125 device limit</td><td>revoke deletes auth session, internal functions ungranted, arriving device protected by id</td><td>20</td><td><span class="v pass">20 / 0</span></td></tr>
+<tr><td>126 reap devices</td><td>180/365-day windows</td><td>6</td><td><span class="v pass">6 / 0</span></td></tr>
+<tr><td>127 limit at login</td><td>cap enforced inside verify-otp's RPC, non-fatal</td><td>7</td><td><span class="v pass">7 / 0</span></td></tr>
+<tr><td>128 SMS campaigns</td><td>canonical phone gate, claim-before-send, dedupe index, fail-closed cap, suppressions</td><td>31</td><td><span class="v pass">31 / 0 after seed fix</span></td></tr>
+<tr><td>129 notification campaigns</td><td>left-join preferences, quiet hours across midnight, enum coverage, cap</td><td>25</td><td><span class="v pass">25 / 0 after seed fix</span></td></tr>
+<tr><td>130 edge invoke key</td><td>push trigger carries the current key, no hardcoded JWT, missing key warns not breaks</td><td>9</td><td><span class="v pass">9 / 0</span></td></tr>
+<tr><td>132 payment columns (new)</td><td>section 4</td><td>8</td><td><span class="v pass">8 / 0</span></td></tr>
+</table></div>
+<p class="note">"After seed fix": 128 row 21 and 129 row 5 assume the audience is smaller than the profile count, because live has junk phone numbers. The first synthetic seed had none, so one account with no phone was added and both went green. That is a fixture assumption, not a bug.</p>
+
+<h2>8. Other probes on the mirror</h2>
+<div class="scenario">
+<h4>Master OTP login, the path the Play reviewer and QA use <span class="v pass">works as documented</span></h4>
+<dl><dt>How</dt><dd><pre><code>POST /functions/v1/verify-otp  {"phone":"01700000003","otp":"3969"}
+→ {"success":true,"email":"phone.1700000003@musaafir.app","tokenHash":"…"}
+
+POST /functions/v1/verify-otp  {"phone":"01700000003","otp":"0000"}
+→ {"success":false,"error":"No active code. Please request a new one."}</code></pre></dd>
+<dt>Reads as</dt><dd>A wrong code falls through to the normal path and finds no row, without counting an attempt. That is the documented "master path is unthrottled" behaviour; locally it is harmless, on production it is why the secrets should be unset after each review.</dd></dl></div>
+
+<div class="scenario">
+<h4>Admin console "Mark refunded" exactly as the console sends it <span class="v warn">F3 · S2</span></h4>
+<dl><dt>How</dt><dd><pre><code>PATCH /rest/v1/bookings?id=eq.bbbbbbbb-…-0002&amp;payment_status=eq.paid
+Authorization: Bearer &lt;admin JWT&gt;
+Prefer: return=representation
+{"payment_status":"refunded"}
+→ []            row still: paid</code></pre></dd>
+<dt>Why</dt><dd><code>bookings</code> has UPDATE policies for the host and the tenant only. An admin's JWT matches neither, so PostgREST updates zero rows and returns an empty list. The console then shows "Only a paid booking can be marked refunded" for a booking that is paid. Same result expected on live; fix belongs in <code>../musafir-admin</code> (service-role client or an <code>admin_*</code> RPC).</dd></dl></div>
+
+<div class="scenario">
+<h4>Live reconciliation, read-only <span class="v pass">clean</span></h4>
+<dl><dt>Query</dt><dd>bookings marked paid vs distinct bookings with a paid payment row, orphans both ways, total.</dd>
+<dt>Result</dt><dd>15 paid bookings, 15 with a paid payment, 0 paid bookings without a payment, 0 paid payments without a paid booking, ৳13,610 total.</dd></dl></div>
+
+<h2>9. App-side checks</h2>
+<div class="tbl"><table>
+<tr><th>Check</th><th>Command</th><th>Result</th></tr>
+<tr><td>Unit and widget suite</td><td><code>flutter test --coverage</code></td><td><span class="v pass">974 passed, 0 failed</span></td></tr>
+<tr><td>Coverage</td><td>from <code>coverage/lcov.info</code></td><td>21.4 % lines. widgets 45.5 %, core 46 %, models 34 %, services 24 %, state 14 %, screens 7.6 %, repositories 0.5 %. Zero-coverage large files: <code>supabase_musafir_repository.dart</code>, <code>explore_screen.dart</code>, <code>main_shell.dart</code>, <code>create_listing_screen.dart</code>.</td></tr>
+<tr><td>Analyzer</td><td><code>flutter analyze</code></td><td><span class="v pass">clean</span> after excluding <code>build/**</code>; it had been reporting 158 errors from a flutterfire Swift-package checkout under <code>build/ios</code> (F8)</td></tr>
+<tr><td>Formatter</td><td><code>dart format --set-exit-if-changed</code></td><td><span class="v pass">0 changed</span></td></tr>
+<tr><td>Edge functions type-check</td><td><code>deno check</code> × 13</td><td>10 pass. <code>messenger-webhook</code>, <code>whatsapp-webhook</code>, <code>validate-discount</code> fail on <code>SupabaseClient</code> generics because <code>esm.sh/@supabase/supabase-js@2</code> is unpinned and resolves to the newest release (F7)</td></tr>
+</table></div>
+
+<h2>10. What was not tested, and why</h2>
+<ul>
+<li><b>Server-to-server IPN.</b> The sandbox cannot reach localhost, so only the browser-redirect settlement was observed. The IPN-and-redirect race needs a tunnel (cloudflared or ngrok) in front of the local gateway.</li>
+<li><b>The Flutter payment screens</b> and the Android WebView return. The mirror is ready for an app build pointed at <code>127.0.0.1:54321</code>; this is where <code>/flutter-add-integration-test</code> and Playwright come in.</li>
+<li><b>Production smoke</b> with the master account and ৳10. Deliberately last, after the above pass locally; runbook in <code>docs/QA_PAYMENT_TEST_PLAN.md</code> section 3.</li>
+</ul>
+
+<h2>11. Findings</h2>
+<div class="tbl"><table>
+<tr><th>#</th><th>Sev</th><th>Finding</th><th>Status</th></tr>
+<tr><td>F1</td><td class="sev">S1</td><td>Guest or host can mark their own booking paid with one PATCH; ledger owes a payout for no money</td><td><span class="v pass">CLOSED</span> migration 132 applied to live 2026-09-18, 8/8 test rows</td></tr>
+<tr><td>F2</td><td class="sev">S2</td><td>Online payments never notify guest or host (enum spelling, error swallowed)</td><td><span class="v fail">open</span> one-word fix in <code>sslcommerz-ipn</code> + enum-walk test row</td></tr>
+<tr><td>F3</td><td class="sev">S2</td><td>Admin console "Mark refunded" matches zero rows (no admin UPDATE policy on bookings)</td><td><span class="v fail">open</span> fix in <code>../musafir-admin</code></td></tr>
+<tr><td>F4</td><td class="sev">S3</td><td>No cap on payment attempts per booking; 27 stale <code>initiated</code> rows on live</td><td><span class="v fail">open</span></td></tr>
+<tr><td>F5</td><td class="sev">S3</td><td>Migration chain fails at 003; staging cannot be built from the repo</td><td><span class="v warn">worked around</span> by <code>tool/dump_live_baseline.py</code>; decision needed</td></tr>
+<tr><td>F6</td><td class="sev">S3</td><td>Test 093 hardcodes live listing ids</td><td><span class="v fail">open</span></td></tr>
+<tr><td>F7</td><td class="sev">S3</td><td>Three edge functions fail <code>deno check</code>; unpinned <code>supabase-js@2</code></td><td><span class="v fail">open</span></td></tr>
+<tr><td>F11</td><td class="sev">S3</td><td>Payments with <code>risk_level 1</code> settle and post earnings immediately</td><td><span class="v fail">open</span> decision needed</td></tr>
+<tr><td>F8</td><td class="sev">hyg</td><td>Analyzer scanned <code>build/ios</code></td><td><span class="v pass">fixed</span> <code>analysis_options.yaml</code></td></tr>
+<tr><td>F9</td><td class="sev">hyg</td><td><code>docs/sslcommerz.md</code> says sandbox; live is production</td><td><span class="v fail">open</span></td></tr>
+<tr><td>F10</td><td class="sev">hyg</td><td>Management API drops rows from the repo's standard verdict select</td><td><span class="v pass">documented</span> in CLAUDE.md</td></tr>
+</table></div>
+
+<h2>12. Files this work produced</h2>
+<ul>
+<li><code>tool/qa/sandbox_pay.js</code>, <code>tool/dump_live_baseline.py</code>, <code>tool/local_db_from_live.sh</code>, <code>supabase/baseline/{live_baseline,live_seed,qa_seed}.sql</code>, <code>supabase/config.toml</code>, <code>supabase/functions/.env.local</code> (ignored)</li>
+<li><code>supabase/migrations/132_guard_payment_columns.sql</code>, <code>supabase/tests/132_guard_payment_columns_test.sql</code></li>
+<li><code>docs/QA_PLAN.md</code>, <code>docs/QA_PAYMENT_TEST_PLAN.md</code>, <code>docs/qa/payment-runs.md</code>, <code>docs/qa/REPORT_2026-09-18.md</code>, this page</li>
+<li>Modified: <code>analysis_options.yaml</code>, <code>CLAUDE.md</code>, <code>.gitignore</code>, <code>supabase/.gitignore</code></li>
+</ul>
+<p class="note">Nothing committed. The local stack is still running; <code>supabase stop</code> ends it. Seed logins for the mirror: <code>phone.170000000N@musaafir.app</code>, password <code>qa-password</code>, or master OTP <code>3969</code> on <code>0170000000N</code>.</p>
+</div>
+
+<!-- NOTE: a ";" inside any diagram label ends the statement and the whole
+     diagram renders as "Syntax error in text". Use a comma. -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script>
+  // Diagrams render natively inside a published Artifact; a file opened from
+  // disk has no renderer, so load one. Pinned, and the source stays readable
+  // as plain text if the CDN is unreachable.
+  var dark = matchMedia('(prefers-color-scheme: dark)').matches
+             && document.documentElement.getAttribute('data-theme') !== 'light';
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: dark ? 'dark' : 'neutral',
+    // Noto Sans Bengali is in the stack so the taka sign and any Bengali
+    // label render instead of falling back to tofu boxes.
+    themeVariables: { fontFamily: '"IBM Plex Sans", "Noto Sans Bengali", system-ui, sans-serif', fontSize: '14px' },
+    flowchart: { useMaxWidth: true, htmlLabels: true },
+    sequence: { useMaxWidth: true, actorMargin: 40, width: 150 }
+  });
+</script>
+</body>
+</html>

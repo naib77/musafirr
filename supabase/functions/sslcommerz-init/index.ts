@@ -14,7 +14,7 @@
 //   optional:  SSLCZ_API_BASE (default sandbox), SSLCZ_CURRENCY (default BDT)
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders, jsonResponse } from "../_shared/otp.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -24,6 +24,10 @@ const STORE_PASSWD = Deno.env.get("SSLCZ_STORE_PASSWD") ?? "";
 const API_BASE = Deno.env.get("SSLCZ_API_BASE") ??
   "https://sandbox.sslcommerz.com";
 const CURRENCY = Deno.env.get("SSLCZ_CURRENCY") ?? "BDT";
+// See the attempt-hygiene block below. Six is generous for a guest
+// legitimately retrying a card that keeps being declined, and far below
+// what an accidental retry loop produces.
+const MAX_ATTEMPTS_PER_HOUR = 6;
 
 const SESSION_API = `${API_BASE}/gwprocess/v4/api.php`;
 const IPN_URL = `${SUPABASE_URL}/functions/v1/sslcommerz-ipn`;
@@ -78,6 +82,22 @@ serve(async (req: Request) => {
     if (booking.tenant_id !== user.id) {
       return jsonResponse(403, { success: false, error: "Not your booking" });
     }
+    // 140: a suspended guest's access token is good for up to an hour after
+    // their sessions were deleted. Starting a payment is the one client action
+    // here that the database triggers cannot see (the row it writes is the
+    // service role's), so it is checked by hand.
+    const { data: payer } = await admin
+      .from("profiles")
+      .select("suspended_at")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (payer?.suspended_at) {
+      return jsonResponse(403, {
+        success: false,
+        error: "This account is suspended.",
+        hint: "account_suspended",
+      });
+    }
     if (booking.payment_status === "paid") {
       return jsonResponse(409, {
         success: false,
@@ -99,6 +119,40 @@ serve(async (req: Request) => {
       return jsonResponse(400, {
         success: false,
         error: "Invalid booking amount",
+      });
+    }
+
+    // Attempt hygiene (QA report 2026-09-18, F4). This function writes a
+    // `payments` row before it calls the gateway and nothing used to close
+    // it, so six rapid taps made six live `initiated` rows for one booking,
+    // and live still carries 27 of them from July and August. Two rules:
+    //
+    //   1. This booking's earlier open attempts are abandoned here and now.
+    //      A guest starting a new payment has, by definition, not finished
+    //      the old one, and only the newest session can succeed. The
+    //      `expire_stale_payment_attempts` sweep (136) is the backstop for
+    //      the guest who never comes back at all; this is the common case.
+    //      Never touches `paid` or `pending_review`.
+    //   2. A ceiling per booking per hour. Not a security control — the
+    //      caller is already authenticated as the booking's own guest — but
+    //      a runaway retry loop should stop rather than bill the gateway and
+    //      fill the table forever.
+    await admin.from("payments")
+      .update({ status: "abandoned" })
+      .eq("booking_id", bookingId)
+      .eq("status", "initiated");
+
+    const anHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { count: recentAttempts } = await admin
+      .from("payments")
+      .select("id", { count: "exact", head: true })
+      .eq("booking_id", bookingId)
+      .gte("created_at", anHourAgo);
+    if ((recentAttempts ?? 0) >= MAX_ATTEMPTS_PER_HOUR) {
+      return jsonResponse(429, {
+        success: false,
+        error:
+          "Too many payment attempts for this booking. Please try again in an hour.",
       });
     }
 

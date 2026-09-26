@@ -2,7 +2,18 @@
 // Handles incoming messages and webhook verification from WhatsApp Business API
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4'
+
+// `ReturnType<typeof createClient>` used to be the annotation on the helpers
+// below, and it is not the same type as what `createClient(url, key)` returns:
+// the bare form resolves the UNparameterised overload,
+// `SupabaseClient<unknown, never, GenericSchema>`, while the call site infers
+// `SupabaseClient<any, "public", any>`. The two are not assignable, so every
+// helper call was a TS2345 and `deno check` failed on this file (QA report
+// 2026-09-18, F7). `SupabaseClient` with its own defaults is the one both
+// sides agree on.
+type Db = SupabaseClient;
+
 
 const VERIFY_TOKEN = Deno.env.get('WHATSAPP_WEBHOOK_VERIFY_TOKEN') || ''
 const APP_SECRET = Deno.env.get('WHATSAPP_APP_SECRET') || ''
@@ -165,7 +176,7 @@ serve(async (req: Request) => {
 })
 
 async function processIncomingMessage(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Db,
   message: WhatsAppMessage,
   contact: { profile: { name: string }; wa_id: string } | undefined,
   phoneNumberId: string
@@ -287,7 +298,7 @@ async function processIncomingMessage(
 }
 
 async function processStatusUpdate(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Db,
   status: WhatsAppStatus,
   phoneNumberId: string
 ) {

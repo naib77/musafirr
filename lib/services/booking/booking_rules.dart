@@ -78,6 +78,26 @@ class BookingRules {
     return currentTime.isBefore(booking.effectiveCheckOut);
   }
 
+  /// Returns true if the host can report that the guest never arrived.
+  ///
+  /// Only a confirmed booking, and only once check-in time has passed — before
+  /// that the guest is not late, they are simply not here yet, and a no-show
+  /// reported early would be the host cancelling while keeping the guest's
+  /// money (the refund policy returns nothing on a no-show). The window closes
+  /// when the auto-complete sweep presumes the stay happened, 24 hours after
+  /// checkout; a host acting after that finds the booking already completed.
+  ///
+  /// The database enforces the same rule (`no_show_too_early`, migration 140)
+  /// against `starts_at`; this is the copy the button reads so it is not
+  /// offered when the tap would be refused.
+  bool canMarkNoShow(Booking booking, {DateTime? now}) {
+    if (booking.status != BookingStatus.confirmed) {
+      return false;
+    }
+    final currentTime = now ?? DateTime.now();
+    return !currentTime.isBefore(booking.effectiveCheckIn);
+  }
+
   /// Returns true if host can mark service as complete.
   ///
   /// Requires the booking to be active (checked in). For multi-day stays,

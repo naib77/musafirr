@@ -241,29 +241,41 @@ class _AnimatedNotificationBellState extends State<AnimatedNotificationBell>
           ),
         );
 
+        // A Tooltip sets the semantic *tooltip*, never the label, so both
+        // shapes below reached a screen reader as an unnamed button (QA
+        // report 2026-09-18, N7). The name carries the count, because "3
+        // unread notifications" is the whole reason to go there.
         if (widget.decorated) {
           // Soft circular chip matching HeaderActionButton.
-          return Tooltip(
-            message: tooltip,
-            child: Material(
-              color: AppColors.surfaceMuted,
-              shape: const CircleBorder(),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: widget.onTap,
-                child: Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: iconStack,
+          return Semantics(
+            button: true,
+            label: tooltip,
+            child: Tooltip(
+              message: tooltip,
+              child: Material(
+                color: AppColors.surfaceMuted,
+                shape: const CircleBorder(),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: widget.onTap,
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: iconStack,
+                  ),
                 ),
               ),
             ),
           );
         }
 
-        return IconButton(
-          onPressed: widget.onTap,
-          icon: iconStack,
-          tooltip: tooltip,
+        return Semantics(
+          button: true,
+          label: tooltip,
+          child: IconButton(
+            onPressed: widget.onTap,
+            icon: iconStack,
+            tooltip: tooltip,
+          ),
         );
       },
     );

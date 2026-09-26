@@ -59,6 +59,7 @@ class SearchPopover extends StatelessWidget {
     required this.reveal,
     required this.inert,
     required this.onDismiss,
+    required this.tapGroup,
     required this.child,
   });
 
@@ -101,6 +102,11 @@ class SearchPopover extends StatelessWidget {
   final bool inert;
 
   final VoidCallback onDismiss;
+
+  /// The [TapRegion] group the card shares with the bar and the Filters
+  /// button. A tap landing in none of them dismisses — see `SearchPill`.
+  final Object tapGroup;
+
   final Widget child;
 
   @override
@@ -151,12 +157,15 @@ class SearchPopover extends StatelessWidget {
                   begin: const Offset(0, -0.03),
                   end: Offset.zero,
                 ).animate(reveal),
-                child: _Panel(
-                  maxHeight: maxHeight,
-                  onDismiss: onDismiss,
-                  contentKey: contentKey,
-                  travel: travel,
-                  child: child,
+                child: TapRegion(
+                  groupId: tapGroup,
+                  child: _Panel(
+                    maxHeight: maxHeight,
+                    onDismiss: onDismiss,
+                    contentKey: contentKey,
+                    travel: travel,
+                    child: child,
+                  ),
                 ),
               ),
             ),
