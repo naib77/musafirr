@@ -942,13 +942,17 @@ returns `[]`. Nothing errors, nothing logs, and the feature is simply inert.
 The same trap made the first draft of the QA capability matrix report four
 false passes. **Measure the effect, never the exception.**
 
-### The rules that lived only in Dart (138, written 2026-09-19, NOT yet on live)
+### The rules that lived only in Dart (138, applied 2026-09-26)
 
 The second QA round (`docs/qa/REPORT_ROUND2_2026-09-19.md`, sixty
 scenarios, twenty-eight failed) found the same class of hole seven more times:
 a rule the client enforced and the database did not. 138 closes them all;
 `supabase/tests/138_qa_round2_test.sql` (57 rows) goes red with it reverted.
-Until it is applied to live, **every one of these is live behaviour.**
+It is on live as of 2026-09-26, so each bullet below describes what the
+database *used* to allow. **The suite cannot verify live**: it impersonates
+`qa_seed` accounts that exist only on the mirror. Live was checked instead
+with a rolled-back probe — a real host was refused `42501` reopening a
+rejected booking, and the rating backfill matched the revealed reviews.
 
 - **A host could rewrite a booking's history.** `enforce_booking_update_rules`
   returned `new` for the listing owner unconditionally — the state machine
@@ -995,7 +999,11 @@ Until it is applied to live, **every one of these is live behaviour.**
   **revealed** `guest_to_host` reviews on every review write (backfilled
   once), announcing itself with `musafir.rating_write` — 132's flag pattern —
   so `fn_freeze_listing_reputation` can refuse an owner's own `rating` /
-  `review_count` / `is_superhost` write and zero them on insert.
+  `review_count` / `is_superhost` write and zero them on insert. The backfill
+  rounds to two places but **the column is `numeric(2,1)`**, so a computed
+  4.81 is stored as 4.8 — do not read that one-decimal difference as the
+  backfill having missed a review. On apply it set 8 of 20 listings and
+  nulled the other 12, which have no revealed review.
 - **Review reminders reached 1 stay in 24.** A one-hour `completed_at` window
   inside a once-a-day cron. Day-wide now, deduplicated per booking per day.
 - **Automated message dates were UTC.** A stay from midnight Dhaka on 1 Oct
@@ -1047,7 +1055,7 @@ wraps each file. And `tool/qa/http_smoke.sh` is the same round one layer up
 — real logins, real PostgREST — for the things only the API shows (a
 stranger's PATCH answering `200 []`).
 
-### Refunds, no-shows, suspension and a rate limit (139/140, written 2026-09-19, NOT yet on live)
+### Refunds, no-shows, suspension and a rate limit (139/140, applied 2026-09-26)
 
 The follow-up to the second round closed the four items 138 left open
 (`docs/qa/REPORT_ROUND2_2026-09-19.md` §7). `supabase/tests/139_140_open_items_test.sql`

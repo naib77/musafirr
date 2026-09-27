@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>Musafir face check</title>
+<style>
+:root{color-scheme:light;--brand:#0b7285;--ink:#0e1f23;--muted:#5b6b70;--surface:#f6f8f7}
+*{box-sizing:border-box}body{margin:0;background:var(--surface);color:var(--ink);font:16px/1.5 system-ui,sans-serif}
+main{max-width:520px;margin:auto;padding:16px 20px 24px;text-align:center}h1{font-size:clamp(22px,5vw,30px);line-height:1.2;margin:12px 0;font-weight:650;letter-spacing:-.6px}
+p{color:var(--muted);margin:8px 0 16px}.camera{position:relative;background:#18282c;border-radius:28px;overflow:hidden;aspect-ratio:4/4.3;max-height:48vh;margin:20px auto;width:100%}
+video{width:100%;height:100%;object-fit:contain;transform:scaleX(-1)}.oval{position:absolute;inset:9% 18%;border:3px solid white;border-radius:50%;box-shadow:0 0 0 200px #0005;pointer-events:none;transition:border-color .2s}
+.oval.ready{border-color:#8ce9ce}.pill{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);border-radius:20px;padding:5px 14px;background:#18282ce6;color:white;font-size:13px;white-space:nowrap}
+progress{width:100%;height:6px;accent-color:var(--brand);display:block;margin:20px 0}button{font:inherit;font-weight:600;border:0;border-radius:14px;padding:15px 20px;background:var(--brand);color:white;min-height:52px;width:100%;cursor:pointer}button:disabled{opacity:.5;cursor:wait}button:focus-visible{outline:3px solid var(--ink);outline-offset:3px}.note{font-size:13px;margin-top:16px}#error{color:#b42318}#instruction{min-height:2.5em} [hidden]{display:none!important}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body><main>
+<h1 id="instruction" aria-live="polite">Preparing your camera</h1>
+<p id="hint">Find even light. Keep your whole face visible.</p>
+<div class="camera"><video id="camera" autoplay playsinline muted></video><div id="oval" class="oval"></div><span class="pill" id="step">Camera stays private</span></div>
+<progress id="progress" max="3" value="0" aria-label="Completed actions"></progress>
+<p id="error" role="alert" hidden></p>
+<button id="start" disabled>Preparing…</button>
+<p class="note">No audio. Only your capture is sent for admin review.</p>
+</main><script type="module" src="./capture.mjs"></script></body></html>

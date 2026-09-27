@@ -41,11 +41,9 @@ class PublishGate {
 
     final userId = authState.currentUser!.id;
 
-    // Identity gate: a host must have an admin-approved identity (ID document +
-    // selfie, verified by an admin) before publishing a listing. Migration 114
-    // enforces the same rule in the listings INSERT policy — before it, a
-    // role='tenant' account with no verification at all had published three
-    // real listings through the ungated entry points.
+    // Publishing requires explicit admin face review or historical identity
+    // approval. Migration 141 enforces the same decision server-side; upload
+    // completion alone never opens this gate.
     if (!await IdentityGate.ensure(
       context,
       userId,

@@ -4,8 +4,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../models/support_links.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../services/app_settings_service.dart';
-import '../../services/image_upload_service.dart';
 import '../../services/verification/publish_gate.dart';
+import '../../services/verification/face_verification_service.dart';
 import '../../state/auth_state.dart';
 import '../../state/notification_state.dart';
 import '../../widgets/avatar_upload.dart';
@@ -17,7 +17,7 @@ import '../host/host_dashboard_screen.dart';
 import '../host/scheduled_messages_screen.dart';
 import '../notifications/notification_settings_screen.dart';
 import '../safety/safety_screen.dart';
-import '../verification/identity_verification_screen.dart';
+import '../verification/verification_overview_screen.dart';
 import 'edit_profile_screen.dart';
 import 'login_security_screen.dart';
 import 'payments_payouts_screen.dart';
@@ -108,8 +108,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final user = authState.currentUser;
     if (user == null) return;
     _loadedForUserId = user.id;
-    final status =
-        await ImageUploadService.instance.identityVerificationStatus(user.id);
+    final status = await FaceVerificationService.instance.gateStatus(user.id);
     if (!mounted) return;
     setState(() => _verificationStatus = status);
   }
@@ -118,13 +117,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _verificationSubtitle() {
     switch (_verificationStatus) {
       case 'verified':
-        return 'Verified';
+        return 'Admin approved';
       case 'pending':
         return 'Under review';
+      case 'retry':
+        return 'Another capture requested';
+      case 'unavailable':
+        return 'Could not load status — tap to retry';
       case 'rejected':
         return 'Rejected — tap to resubmit';
       default:
-        return 'Verify your identity to host or book';
+        return 'Get admin approval to host or book';
     }
   }
 
@@ -246,7 +249,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   _SettingsItem(
                     icon: Icons.verified_user_outlined,
-                    title: 'Identity verification',
+                    title: 'ID & face verification',
                     subtitle: _verificationSubtitle(),
                     onTap: () => _navigateToVerification(context, user.id),
                   ),
@@ -471,7 +474,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => IdentityVerificationScreen(userId: userId),
+        builder: (context) => VerificationOverviewScreen(userId: userId),
       ),
     );
     // A fresh submission flips the status to 'pending' — reflect it here.

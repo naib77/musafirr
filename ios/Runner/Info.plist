@@ -31,9 +31,9 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Musaafir uses your location to center the map and help you find nearby rentals.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Musaafir needs camera access to scan your NID card for identity verification.</string>
+	<string>Musaafir uses your camera for private face review and listing photos. Face review does not record audio.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Musaafir needs photo access so you can upload your NID card and listing photos.</string>
+	<string>Musaafir uses photo access for identity-document review, listing, profile, and address-proof images.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Musaafir uses the microphone for voice search, so you can say where you want to stay.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

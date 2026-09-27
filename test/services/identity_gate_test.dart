@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:musafir/screens/verification/identity_verification_screen.dart';
+import 'package:musafir/screens/verification/verification_overview_screen.dart';
 import 'package:musafir/services/verification/identity_gate.dart';
 
 /// Pumps a button that runs [IdentityGate.ensure] and records its result.
@@ -46,7 +46,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(result, isTrue);
-    expect(find.byType(IdentityVerificationScreen), findsNothing);
+    expect(find.byType(VerificationOverviewScreen), findsNothing);
   });
 
   testWidgets('blocks without prompting while verification is pending',
@@ -59,7 +59,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // No upload screen — they've already submitted and are awaiting an admin.
-    expect(find.byType(IdentityVerificationScreen), findsNothing);
+    expect(find.byType(VerificationOverviewScreen), findsNothing);
     expect(result, isFalse);
   });
 
@@ -76,7 +76,7 @@ void main() {
     await tester.tap(find.text('go'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(IdentityVerificationScreen), findsOneWidget);
+    expect(find.byType(VerificationOverviewScreen), findsOneWidget);
 
     await tester.tap(find.byType(BackButton));
     await tester.pumpAndSettle();
@@ -93,14 +93,37 @@ void main() {
     await tester.pumpAndSettle();
 
     // The upload screen is shown and the action is still pending.
-    expect(find.byType(IdentityVerificationScreen), findsOneWidget);
+    expect(find.byType(VerificationOverviewScreen), findsOneWidget);
     expect(result, isNull);
 
     // User backs out of the upload screen.
     await tester.tap(find.byType(BackButton));
     await tester.pumpAndSettle();
 
-    expect(find.byType(IdentityVerificationScreen), findsNothing);
+    expect(find.byType(VerificationOverviewScreen), findsNothing);
     expect(result, isFalse);
+  });
+  testWidgets('status outage never opens the action', (tester) async {
+    IdentityGate.statusOf = (_) async => 'unavailable';
+    bool? result;
+    await _pumpGate(tester, onResult: (value) => result = value);
+    await tester.tap(find.text('go'));
+    await tester.pumpAndSettle();
+    expect(result, isFalse);
+    expect(find.byType(VerificationOverviewScreen), findsNothing);
+  });
+
+  testWidgets('returning from capture rechecks admin approval', (tester) async {
+    var status = 'none';
+    IdentityGate.statusOf = (_) async => status;
+    bool? result;
+    await _pumpGate(tester, onResult: (value) => result = value);
+    await tester.tap(find.text('go'));
+    await tester.pumpAndSettle();
+    status = 'verified';
+    final context = tester.element(find.byType(VerificationOverviewScreen));
+    Navigator.of(context).pop(true);
+    await tester.pumpAndSettle();
+    expect(result, isTrue);
   });
 }
