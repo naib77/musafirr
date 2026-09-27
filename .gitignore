@@ -23,6 +23,7 @@ local.properties
 
 # Local tooling
 .claude/
+graphify-out/
 
 # Stray Windows device-name artifact
 /nul

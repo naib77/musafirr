@@ -14,7 +14,7 @@ create extension if not exists "uuid-ossp";
 do $e$ begin if not exists (select 1 from pg_type where typname='app_role' and typnamespace='public'::regnamespace) then
   create type public.app_role as enum ('admin', 'owner', 'tenant'); end if; end $e$;
 do $e$ begin if not exists (select 1 from pg_type where typname='booking_status' and typnamespace='public'::regnamespace) then
-  create type public.booking_status as enum ('pending', 'confirmed', 'rejected', 'active', 'completed', 'cancelled'); end if; end $e$;
+  create type public.booking_status as enum ('pending', 'confirmed', 'rejected', 'active', 'completed', 'cancelled', 'no_show'); end if; end $e$;
 do $e$ begin if not exists (select 1 from pg_type where typname='listing_type' and typnamespace='public'::regnamespace) then
   create type public.listing_type as enum ('seat', 'room', 'fullHouse', 'turf'); end if; end $e$;
 do $e$ begin if not exists (select 1 from pg_type where typname='notification_priority' and typnamespace='public'::regnamespace) then
@@ -100,7 +100,9 @@ create table if not exists public.bookings (
   payment_status text default 'unpaid'::text not null,
   paid_at timestamp with time zone,
   payment_method text,
-  rejected_at timestamp with time zone
+  rejected_at timestamp with time zone,
+  refund_pct integer,
+  refund_amount numeric
 );
 do $c$ begin if not exists (select 1 from pg_constraint where conname='bookings_no_overlap' and conrelid='public.bookings'::regclass) then
   alter table public.bookings add constraint bookings_no_overlap EXCLUDE USING gist (listing_id WITH =, tstzrange(starts_at, ends_at, '[)'::text) WITH &&) WHERE ((booking_status = ANY (ARRAY['pending'::booking_status, 'confirmed'::booking_status, 'active'::booking_status]))); end if; end $c$;
@@ -112,6 +114,10 @@ do $c$ begin if not exists (select 1 from pg_constraint where conname='bookings_
   alter table public.bookings add constraint bookings_payment_method_check CHECK ((payment_method = ANY (ARRAY['online'::text, 'cash'::text]))); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='bookings_payment_status_check' and conrelid='public.bookings'::regclass) then
   alter table public.bookings add constraint bookings_payment_status_check CHECK ((payment_status = ANY (ARRAY['unpaid'::text, 'paid'::text, 'refunded'::text]))); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='bookings_refund_amount_check' and conrelid='public.bookings'::regclass) then
+  alter table public.bookings add constraint bookings_refund_amount_check CHECK (((refund_amount IS NULL) OR (refund_amount >= (0)::numeric))); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='bookings_refund_pct_check' and conrelid='public.bookings'::regclass) then
+  alter table public.bookings add constraint bookings_refund_pct_check CHECK (((refund_pct IS NULL) OR ((refund_pct >= 0) AND (refund_pct <= 100)))); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='valid_booking_dates' and conrelid='public.bookings'::regclass) then
   alter table public.bookings add constraint valid_booking_dates CHECK ((ends_at > starts_at)); end if; end $c$;
 create table if not exists public.conversation_participants (
@@ -213,6 +219,47 @@ do $c$ begin if not exists (select 1 from pg_constraint where conname='disbursem
   alter table public.disbursements add constraint disbursements_kind_check CHECK ((kind = ANY (ARRAY['host_payout'::text, 'guest_refund'::text]))); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='disbursements_status_check' and conrelid='public.disbursements'::regclass) then
   alter table public.disbursements add constraint disbursements_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'sent'::text, 'failed'::text]))); end if; end $c$;
+create table if not exists public.edge_rate_limits (
+  bucket text not null,
+  window_start timestamp with time zone not null,
+  hits integer default 0 not null
+);
+do $c$ begin if not exists (select 1 from pg_constraint where conname='edge_rate_limits_pkey' and conrelid='public.edge_rate_limits'::regclass) then
+  alter table public.edge_rate_limits add constraint edge_rate_limits_pkey PRIMARY KEY (bucket, window_start); end if; end $c$;
+create table if not exists public.face_verification_attempts (
+  id uuid default gen_random_uuid() not null,
+  user_id uuid not null,
+  nonce uuid default gen_random_uuid() not null,
+  method text not null,
+  actions text[] not null,
+  challenge_version integer default 1 not null,
+  consent_version text default 'face-v1'::text not null,
+  status text default 'draft'::text not null,
+  created_at timestamp with time zone default clock_timestamp() not null,
+  expires_at timestamp with time zone default (now() + '00:10:00'::interval) not null,
+  submitted_at timestamp with time zone,
+  clip_path text,
+  selfie_path text,
+  evidence_version uuid default gen_random_uuid() not null,
+  reviewed_by uuid,
+  reviewed_at timestamp with time zone,
+  review_note text,
+  media_deleted_at timestamp with time zone
+);
+do $c$ begin if not exists (select 1 from pg_constraint where conname='face_verification_attempts_pkey' and conrelid='public.face_verification_attempts'::regclass) then
+  alter table public.face_verification_attempts add constraint face_verification_attempts_pkey PRIMARY KEY (id); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='face_verification_attempts_challenge_version_check' and conrelid='public.face_verification_attempts'::regclass) then
+  alter table public.face_verification_attempts add constraint face_verification_attempts_challenge_version_check CHECK ((challenge_version = 1)); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='face_verification_attempts_check' and conrelid='public.face_verification_attempts'::regclass) then
+  alter table public.face_verification_attempts add constraint face_verification_attempts_check CHECK (((status <> ALL (ARRAY['approved'::text, 'rejected'::text, 'retry'::text])) OR ((reviewed_by IS NOT NULL) AND (reviewed_at IS NOT NULL)))); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='face_verification_attempts_check1' and conrelid='public.face_verification_attempts'::regclass) then
+  alter table public.face_verification_attempts add constraint face_verification_attempts_check1 CHECK (((status <> 'approved'::text) OR (submitted_at IS NOT NULL))); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='face_verification_attempts_method_check' and conrelid='public.face_verification_attempts'::regclass) then
+  alter table public.face_verification_attempts add constraint face_verification_attempts_method_check CHECK ((method = ANY (ARRAY['guided'::text, 'manual'::text]))); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='face_verification_attempts_review_note_check' and conrelid='public.face_verification_attempts'::regclass) then
+  alter table public.face_verification_attempts add constraint face_verification_attempts_review_note_check CHECK ((length(review_note) <= 500)); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='face_verification_attempts_status_check' and conrelid='public.face_verification_attempts'::regclass) then
+  alter table public.face_verification_attempts add constraint face_verification_attempts_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'pending'::text, 'approved'::text, 'rejected'::text, 'retry'::text, 'superseded'::text]))); end if; end $c$;
 create table if not exists public.facilities (
   id uuid default uuid_generate_v4() not null,
   name text not null,
@@ -409,7 +456,8 @@ create table if not exists public.listings (
   max_pets integer,
   turf_sport text,
   turf_format text,
-  turf_surface text
+  turf_surface text,
+  suspended_hidden boolean default false not null
 );
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_pkey' and conrelid='public.listings'::regclass) then
   alter table public.listings add constraint listings_pkey PRIMARY KEY (id); end if; end $c$;
@@ -642,7 +690,10 @@ create table if not exists public.profiles (
   address_verified_at timestamp with time zone,
   address_verified_by uuid,
   address_rejection_reason text,
-  address_visit_notes text
+  address_visit_notes text,
+  suspended_at timestamp with time zone,
+  suspended_reason text,
+  suspended_by uuid
 );
 do $c$ begin if not exists (select 1 from pg_constraint where conname='profiles_pkey' and conrelid='public.profiles'::regclass) then
   alter table public.profiles add constraint profiles_pkey PRIMARY KEY (id); end if; end $c$;
@@ -881,6 +932,10 @@ do $c$ begin if not exists (select 1 from pg_constraint where conname='disbursem
   alter table public.disbursements add constraint disbursements_payout_method_id_fkey FOREIGN KEY (payout_method_id) REFERENCES payout_methods(id) ON DELETE RESTRICT; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='disbursements_user_id_fkey' and conrelid='public.disbursements'::regclass) then
   alter table public.disbursements add constraint disbursements_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE RESTRICT; end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='face_verification_attempts_reviewed_by_fkey' and conrelid='public.face_verification_attempts'::regclass) then
+  alter table public.face_verification_attempts add constraint face_verification_attempts_reviewed_by_fkey FOREIGN KEY (reviewed_by) REFERENCES profiles(id); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='face_verification_attempts_user_id_fkey' and conrelid='public.face_verification_attempts'::regclass) then
+  alter table public.face_verification_attempts add constraint face_verification_attempts_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='favorites_listing_id_fkey' and conrelid='public.favorites'::regclass) then
   alter table public.favorites add constraint favorites_listing_id_fkey FOREIGN KEY (listing_id) REFERENCES listings(id) ON DELETE CASCADE; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='favorites_user_id_fkey' and conrelid='public.favorites'::regclass) then
@@ -943,6 +998,8 @@ do $c$ begin if not exists (select 1 from pg_constraint where conname='profiles_
   alter table public.profiles add constraint profiles_address_verified_by_fkey FOREIGN KEY (address_verified_by) REFERENCES profiles(id); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='profiles_id_fkey' and conrelid='public.profiles'::regclass) then
   alter table public.profiles add constraint profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE; end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='profiles_suspended_by_fkey' and conrelid='public.profiles'::regclass) then
+  alter table public.profiles add constraint profiles_suspended_by_fkey FOREIGN KEY (suspended_by) REFERENCES profiles(id) ON DELETE SET NULL; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='push_tokens_user_id_fkey' and conrelid='public.push_tokens'::regclass) then
   alter table public.push_tokens add constraint push_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='read_cursors_conversation_id_fkey' and conrelid='public.read_cursors'::regclass) then
@@ -1514,6 +1571,7 @@ CREATE OR REPLACE FUNCTION public.admin_release_payment(p_payment_id uuid)
 AS $function$
 declare
   v_payment public.payments%rowtype;
+  v_booking_status text;
 begin
   perform public.fn_require_service_role();
 
@@ -1526,13 +1584,18 @@ begin
       v_payment.status using errcode = '22023';
   end if;
 
+  select booking_status::text into v_booking_status
+    from public.bookings where id = v_payment.booking_id;
+  if v_booking_status is null or v_booking_status not in ('confirmed', 'active') then
+    raise exception 'This booking is % — the payment can only be rejected and refunded, not released',
+      coalesce(v_booking_status, 'gone')
+      using errcode = '22023', hint = 'booking_not_open';
+  end if;
+
   update public.payments
      set status = 'paid', updated_at = now()
    where id = p_payment_id;
 
-  -- The same announcement the two payment RPCs make (132). Without it
-  -- `enforce_booking_update_rules` refuses this write, exactly as it should:
-  -- a SECURITY DEFINER function still runs with the caller's `auth.uid()`.
   perform set_config('musafir.settlement_write', '1', true);
   update public.bookings
      set payment_status = 'paid',
@@ -1807,6 +1870,156 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.admin_suspend_user(p_user_id uuid, p_reason text, p_actor uuid DEFAULT NULL::uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'auth'
+AS $function$
+declare
+  v_role     text;
+  v_already  timestamptz;
+  v_sessions integer := 0;
+  v_listings integer := 0;
+  v_declined integer := 0;
+  v_own      integer := 0;
+begin
+  perform public.fn_require_service_role();
+
+  select role, suspended_at into v_role, v_already
+    from public.profiles where id = p_user_id for update;
+  if v_role is null then
+    raise exception 'User not found' using errcode = 'P0002';
+  end if;
+  -- An admin is suspended by taking the role away first; doing both in one
+  -- move from a text box is how a console loses its last admin.
+  if v_role = 'admin' then
+    raise exception 'Change this account''s role before suspending it'
+      using errcode = '42501';
+  end if;
+  if v_already is not null then
+    return jsonb_build_object('already_suspended', true, 'suspended_at', v_already);
+  end if;
+  if coalesce(btrim(p_reason), '') = '' then
+    raise exception 'A reason is required' using errcode = '22023';
+  end if;
+
+  update public.profiles
+     set suspended_at = now(), suspended_reason = btrim(p_reason), suspended_by = p_actor
+   where id = p_user_id;
+
+  -- The enforcement. postgres holds DELETE on auth.sessions (124, proven by
+  -- doing it); every device dies at its next token refresh.
+  delete from auth.sessions where user_id = p_user_id;
+  get diagnostics v_sessions = row_count;
+
+  -- No more pushes to a phone that can no longer act on them.
+  update public.fcm_tokens set is_active = false
+   where user_id = p_user_id and is_active;
+
+  -- A suspended host's live listings come down, and are marked so
+  -- admin_unsuspend_user can put back exactly these.
+  update public.listings
+     set is_active = false, suspended_hidden = true
+   where owner_id = p_user_id and is_active;
+  get diagnostics v_listings = row_count;
+
+  -- Requests waiting on this host would otherwise sit until the sweep expires
+  -- them; the guests are told now, through the normal "declined" path.
+  update public.bookings b
+     set booking_status = 'rejected',
+         rejection_reason = 'The host''s account is no longer active'
+   where b.booking_status = 'pending'
+     and exists (select 1 from public.listings l
+                  where l.id = b.listing_id and l.owner_id = p_user_id);
+  get diagnostics v_declined = row_count;
+
+  -- And this account's own open requests as a guest are withdrawn. Named as
+  -- the guest's own cancellation so the host is told the way they would be
+  -- for any other withdrawn request.
+  update public.bookings
+     set booking_status = 'cancelled', cancelled_by = p_user_id, cancelled_at = now()
+   where tenant_id = p_user_id and booking_status = 'pending';
+  get diagnostics v_own = row_count;
+
+  return jsonb_build_object(
+    'suspended_at', now(),
+    'sessions_ended', v_sessions,
+    'listings_hidden', v_listings,
+    'requests_declined', v_declined,
+    'own_requests_withdrawn', v_own);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.admin_unsuspend_user(p_user_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_already timestamptz;
+  v_listings integer := 0;
+begin
+  perform public.fn_require_service_role();
+
+  select suspended_at into v_already
+    from public.profiles where id = p_user_id for update;
+  if not found then
+    raise exception 'User not found' using errcode = 'P0002';
+  end if;
+  if v_already is null then
+    return jsonb_build_object('was_suspended', false);
+  end if;
+
+  update public.profiles
+     set suspended_at = null, suspended_reason = null, suspended_by = null
+   where id = p_user_id;
+
+  update public.listings
+     set is_active = true, suspended_hidden = false
+   where owner_id = p_user_id and suspended_hidden;
+  get diagnostics v_listings = row_count;
+
+  return jsonb_build_object('was_suspended', true, 'listings_restored', v_listings);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.approve_identity_document(p_user_id uuid, p_document_type text, p_front_path text, p_back_path text DEFAULT NULL::text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if auth.uid() is null or not public.is_admin() or auth.uid()=p_user_id then
+    raise exception 'Another admin must approve this document' using errcode='42501'; end if;
+  perform 1 from public.profiles where id=p_user_id and id_document_type is not distinct from p_document_type and verification_status='pending' for update;
+  if not found then raise exception 'Submission changed. Refresh the review queue'; end if;
+  if p_document_type='nid' and p_back_path is null then raise exception 'NID requires both sides'; end if;
+  perform 1 from public.owner_documents where user_id=p_user_id and document_type in ('nid_front','nid_back') for update;
+  if not exists(select 1 from public.owner_documents where user_id=p_user_id and document_type='nid_front' and file_path=p_front_path)
+    or (p_back_path is not null and not exists(select 1 from public.owner_documents where user_id=p_user_id and document_type='nid_back' and file_path=p_back_path))
+    or (p_back_path is null and exists(select 1 from public.owner_documents where user_id=p_user_id and document_type='nid_back')) then
+    raise exception 'Documents changed. Refresh the review queue'; end if;
+  if not exists(select 1 from storage.objects where bucket_id='documents' and name=p_front_path)
+    or (p_back_path is not null and not exists(select 1 from storage.objects where bucket_id='documents' and name=p_back_path)) then
+    raise exception 'Document evidence is unavailable'; end if;
+  update public.owner_documents set verified_at=now(),verified_by=auth.uid(),rejection_reason=null
+    where user_id=p_user_id and document_type in ('nid_front','nid_back');
+  update public.profiles set verification_status='verified',nid_verified=true where id=p_user_id;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.approve_nid_verification(p_user_id uuid, p_front_path text, p_back_path text)
+ RETURNS void
+ LANGUAGE sql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select public.approve_identity_document(p_user_id,'nid',p_front_path,p_back_path);
+$function$;
+
 CREATE OR REPLACE FUNCTION public.auto_complete_elapsed_bookings()
  RETURNS integer
  LANGUAGE plpgsql
@@ -2065,12 +2278,8 @@ CREATE OR REPLACE FUNCTION public.can_publish_listings()
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-  select exists (
-    select 1 from public.profiles p
-    where p.id = auth.uid()
-      and p.role in ('owner', 'admin')
-      and p.verification_status = 'verified'
-  );
+  select exists(select 1 from public.profiles p where p.id=auth.uid()
+    and p.role in ('owner','admin') and public.has_approved_face_or_identity(p.id));
 $function$;
 
 CREATE OR REPLACE FUNCTION public.can_see_listing_address(p_listing_id uuid)
@@ -2145,27 +2354,27 @@ $function$;
 CREATE OR REPLACE FUNCTION public.check_and_reveal_reviews()
  RETURNS trigger
  LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
 AS $function$
-DECLARE
+declare
     other_review_exists boolean;
-BEGIN
-    -- Check if the other party has already submitted a review
-    SELECT EXISTS (
-        SELECT 1 FROM public.reviews
-        WHERE booking_id = NEW.booking_id
-        AND review_type != NEW.review_type
-        AND is_revealed = false
-    ) INTO other_review_exists;
+begin
+    select exists (
+        select 1 from public.reviews
+        where booking_id = new.booking_id
+          and review_type != new.review_type
+          and is_revealed = false
+    ) into other_review_exists;
 
-    -- If both reviews exist, reveal them both
-    IF other_review_exists THEN
-        UPDATE public.reviews
-        SET is_revealed = true, revealed_at = timezone('utc', now())
-        WHERE booking_id = NEW.booking_id AND is_revealed = false;
-    END IF;
+    if other_review_exists then
+        update public.reviews
+        set is_revealed = true, revealed_at = timezone('utc', now())
+        where booking_id = new.booking_id and is_revealed = false;
+    end if;
 
-    RETURN NEW;
-END;
+    return new;
+end;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.cleanup_old_otps()
@@ -2228,24 +2437,10 @@ begin
     raise exception 'You must be signed in to book' using errcode = '42501';
   end if;
 
-  -- Identity verification (114). Until now this lived ONLY in the Flutter
-  -- client -- IdentityGate.ensure, called from the Reserve button -- and this
-  -- function never looked at it. Live has 8 bookings from guests whose
-  -- verification_status is 'none', so that gate demonstrably leaked even
-  -- before Explore went public; a public browse page makes the RPC reachable
-  -- by anyone holding the publishable anon key.
-  --
-  -- Reads the column directly rather than trusting a client claim. 095's
-  -- trg_guard_verification_verdicts already stops a non-admin awarding
-  -- themselves 'verified', so this check cannot be defeated by a PostgREST
-  -- write to one's own profile -- the two halves only work together.
-  --
-  -- The hint is how the client tells this apart from an availability
-  -- conflict. Never match on the message prose: that is the mistake
-  -- bookingConflictTypeFrom was rewritten to stop making.
-  if (select verification_status from public.profiles where id = v_uid)
-     is distinct from 'verified' then
-    raise exception 'Your identity must be verified before you can book'
+  -- Either historical identity approval or explicit current face-review approval.
+  -- Keep the stable error hint consumed by the booking client.
+  if not public.has_approved_face_or_identity(v_uid) then
+    raise exception 'Admin face review is required before booking'
       using errcode = '42501', hint = 'identity_unverified';
   end if;
 
@@ -2292,6 +2487,28 @@ begin
   if v_listing.owner_id = v_uid then
     raise exception 'You cannot book your own listing'
       using errcode = '42501', hint = 'self_booking';
+  end if;
+
+  -- 138: a block is a wall, not a filter. `user_blocks` (SAFETY.md) only ever
+  -- hid the other party's listings and threads in the CLIENT; measured
+  -- 2026-09-19, a guest a host had blocked booked that host's listing and
+  -- opened a conversation with them without a hitch. Either direction counts:
+  -- a host who blocked a guest does not want their money, and a guest who
+  -- blocked a host does not want to stay there.
+  -- 140: a suspended account keeps its access token for up to an hour.
+  if public.fn_is_suspended(v_uid) then
+    raise exception 'This account is suspended'
+      using errcode = '42501', hint = 'account_suspended';
+  end if;
+  -- And a suspended host's listings are hidden, but a deep link or a stale
+  -- client can still name one.
+  if public.fn_is_suspended(v_listing.owner_id) then
+    raise exception 'This listing is no longer available' using errcode = '22023';
+  end if;
+
+  if public.fn_users_blocked(v_uid, v_listing.owner_id) then
+    raise exception 'You cannot book this listing'
+      using errcode = '42501', hint = 'blocked';
   end if;
 
   -- The host-wide Away switch (038). Only ever a search filter before this, so
@@ -2476,6 +2693,13 @@ begin
     return new;
   end if;
 
+  -- 140: a suspended account keeps its access token for up to an hour after
+  -- its sessions are deleted. Nothing it does in that hour lands.
+  if public.fn_is_suspended(v_uid) then
+    raise exception 'This account is suspended'
+      using errcode = '42501', hint = 'account_suspended';
+  end if;
+
   -- Financial / identity fields never change after creation for non-admins.
   if new.tenant_id  is distinct from old.tenant_id
      or new.listing_id  is distinct from old.listing_id
@@ -2484,6 +2708,29 @@ begin
      or new.ends_at     is distinct from old.ends_at then
     raise exception
       'Booking amount, dates and parties cannot be modified after creation';
+  end if;
+
+  -- 138: and neither does anything else create_marketplace_booking decided.
+  -- guest_count is the capacity the host agreed to; unit_count and
+  -- pricing_unit are what total_price was computed from; the coupon columns
+  -- are what the ledger and the coupon's usage count rest on; the listing_*
+  -- and tenant_name copies are what the OTHER party's screens display.
+  -- 140: refund_pct / refund_amount are the policy's answer, not an input.
+  if new.guest_count       is distinct from old.guest_count
+     or new.unit_count        is distinct from old.unit_count
+     or new.pricing_unit      is distinct from old.pricing_unit
+     or new.coupon_code       is distinct from old.coupon_code
+     or new.discount_amount   is distinct from old.discount_amount
+     or new.listing_title     is distinct from old.listing_title
+     or new.listing_image_url is distinct from old.listing_image_url
+     or new.listing_city      is distinct from old.listing_city
+     or new.tenant_name       is distinct from old.tenant_name
+     or new.created_at        is distinct from old.created_at
+     or new.refund_pct        is distinct from old.refund_pct
+     or new.refund_amount     is distinct from old.refund_amount then
+    raise exception
+      'Booking details are fixed once the request is made'
+      using errcode = '42501', hint = 'booking_columns_protected';
   end if;
 
   -- 132: settlement columns are written only by the service role, by admins,
@@ -2499,29 +2746,86 @@ begin
       using errcode = '42501', hint = 'payment_columns_protected';
   end if;
 
+  -- 138: whoever cancels is the one recorded as cancelling. The lifecycle
+  -- notification decides "cancelled by guest" vs "cancelled by host" from this
+  -- column, and both the trips screen and the reservations screen print it.
+  -- A caller may only ever name themselves; a caller who cancels without
+  -- naming anyone is stamped, so the plain-update path notifies the other
+  -- party like every other path does.
+  if new.cancelled_by is distinct from old.cancelled_by
+     and new.cancelled_by is distinct from v_uid then
+    raise exception 'cancelled_by must be the account doing the cancelling'
+      using errcode = '42501', hint = 'cancelled_by_forged';
+  end if;
+  if new.booking_status = 'cancelled' and old.booking_status <> 'cancelled' then
+    new.cancelled_by := coalesce(new.cancelled_by, v_uid);
+    new.cancelled_at := coalesce(new.cancelled_at, now());
+  end if;
+
   select exists (
     select 1 from public.listings l
     where l.id = new.listing_id and l.owner_id = v_uid
   ) into v_is_owner;
   v_is_tenant := (new.tenant_id = v_uid);
 
-  -- Guest: cancellation only.
+  -- Guest: cancellation only, and none of the host's lifecycle fields.
   if v_is_tenant and not v_is_owner then
+    if new.host_message      is distinct from old.host_message
+       or new.rejection_reason is distinct from old.rejection_reason
+       or new.confirmed_at     is distinct from old.confirmed_at
+       or new.actual_check_in  is distinct from old.actual_check_in
+       or new.completed_at     is distinct from old.completed_at then
+      raise exception 'Only the host writes the host''s side of a booking'
+        using errcode = '42501', hint = 'host_columns_protected';
+    end if;
     if new.booking_status is distinct from old.booking_status then
       if new.booking_status <> 'cancelled' then
         raise exception
           'Guests may only cancel a booking (attempted % -> %)',
-          old.booking_status, new.booking_status;
+          old.booking_status, new.booking_status
+          using errcode = '42501', hint = 'booking_transition_forbidden';
       end if;
       if old.booking_status not in ('pending', 'confirmed') then
-        raise exception 'Cannot cancel a booking in % state', old.booking_status;
+        raise exception 'Cannot cancel a booking in % state', old.booking_status
+          using errcode = '42501', hint = 'booking_transition_forbidden';
       end if;
     end if;
     return new;
   end if;
 
-  -- Host (listing owner) drives accept/reject/check-in/complete/cancel.
+  -- Host (listing owner) drives accept/reject/check-in/complete/cancel/no-show
+  -- — forwards only. This is BookingLifecycleService's table, now enforced:
+  --   pending   -> confirmed | rejected | cancelled
+  --   confirmed -> active | completed | cancelled | no_show
+  --   active    -> completed | cancelled
+  -- completed, rejected, cancelled and no_show are terminal. A host who needs
+  -- to undo a wrong tap asks the guest to book again; a host who could re-open
+  -- a cancelled booking could re-block a guest's calendar and re-post the
+  -- earning the guest already walked away from. `confirmed -> completed` stays
+  -- allowed because auto_complete_elapsed_bookings takes exactly that step for
+  -- a guest who never tapped check-in, and a host finalising by hand is the
+  -- same fact.
   if v_is_owner then
+    if new.booking_status is distinct from old.booking_status then
+      if old.booking_status = 'confirmed' and new.booking_status = 'no_show' then
+        if now() < old.starts_at then
+          raise exception 'A no-show can only be reported after check-in time (%)',
+            old.starts_at
+            using errcode = '42501', hint = 'no_show_too_early';
+        end if;
+      elsif not (
+           (old.booking_status = 'pending'
+              and new.booking_status in ('confirmed', 'rejected', 'cancelled'))
+        or (old.booking_status = 'confirmed'
+              and new.booking_status in ('active', 'completed', 'cancelled'))
+        or (old.booking_status = 'active'
+              and new.booking_status in ('completed', 'cancelled'))
+      ) then
+        raise exception 'A booking cannot go from % to %',
+          old.booking_status, new.booking_status
+          using errcode = '42501', hint = 'booking_transition_forbidden';
+      end if;
+    end if;
     return new;
   end if;
 
@@ -2668,6 +2972,100 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.face_verification_status()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare a public.face_verification_attempts;
+begin
+  if auth.uid() is null then raise exception 'Sign in first' using errcode='42501'; end if;
+  select * into a from public.face_verification_attempts where user_id=auth.uid()
+    order by created_at desc,id desc limit 1;
+  return jsonb_build_object('status',case when a.status='approved' then 'verified'
+    when a.status in ('pending','rejected','retry') then a.status else 'none' end,
+    'note',a.review_note,'method',a.method,
+    'enabled',coalesce((select value='true' from public.app_settings where key='face_review_enabled'),false));
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_alert_paid_cancellation()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_title  text;
+  v_admin  uuid;
+  v_amount text;
+  v_total  text;
+  v_by     text;
+  v_policy text;
+begin
+  if not (new.booking_status in ('cancelled', 'no_show')
+          and old.booking_status not in ('cancelled', 'no_show')
+          and new.payment_status = 'paid') then
+    return null;
+  end if;
+
+  v_title  := coalesce(new.listing_title,
+                       (select l.title from public.listings l where l.id = new.listing_id),
+                       'a booking');
+  v_total  := trim(to_char(coalesce(new.total_price, 0), 'FM999999990.00'));
+  v_amount := trim(to_char(coalesce(new.refund_amount, 0), 'FM999999990.00'));
+  v_by     := case when new.booking_status = 'no_show' then 'The host reported a no-show on'
+                   when new.cancelled_by = new.tenant_id then 'The guest cancelled'
+                   else 'The host cancelled' end;
+  v_policy := case coalesce(new.refund_pct, 100)
+                when 100 then 'full refund'
+                when 0 then 'no refund'
+                else new.refund_pct || '% refund' end;
+
+  if coalesce(new.refund_amount, 0) > 0 then
+    for v_admin in select p.id from public.profiles p where p.role = 'admin' loop
+      insert into public.notifications (user_id, type, title, body, priority, action_url, data)
+      values (
+        v_admin, 'system_alert', 'Refund due: ৳' || v_amount,
+        format('%s a paid booking at %s (৳%s). Policy: %s — refund ৳%s from Payouts and mark the booking refunded.',
+               v_by, v_title, v_total, v_policy, v_amount),
+        'high', '/bookings/' || new.id,
+        jsonb_build_object('booking_id', new.id, 'reason', 'paid_cancellation',
+                           'amount', new.total_price, 'refund_amount', new.refund_amount,
+                           'refund_pct', new.refund_pct, 'cancelled_by', new.cancelled_by)
+      );
+    end loop;
+  end if;
+
+  if new.tenant_id is not null then
+    insert into public.notifications (user_id, type, title, body, priority, action_url, data)
+    values (
+      new.tenant_id, 'system_alert',
+      case when coalesce(new.refund_amount, 0) > 0 then 'Your refund is being arranged'
+           else 'No refund for this booking' end,
+      case when coalesce(new.refund_amount, 0) > 0 then
+        format('Your booking at %s was %s after you paid ৳%s. Under the cancellation policy you get ৳%s back (%s). Our team will refund you and be in touch.',
+               v_title,
+               case when new.booking_status = 'no_show' then 'marked as a no-show' else 'cancelled' end,
+               v_total, v_amount, v_policy)
+      else
+        format('Your booking at %s was %s after you paid ৳%s. Under the cancellation policy no refund is due (%s).',
+               v_title,
+               case when new.booking_status = 'no_show' then 'marked as a no-show' else 'cancelled' end,
+               v_total,
+               case when new.booking_status = 'no_show' then 'you did not check in'
+                    else 'cancelled after check-in time' end)
+      end,
+      'high', '/trips/' || new.id,
+      jsonb_build_object('booking_id', new.id, 'reason', 'paid_cancellation',
+                         'amount', new.total_price, 'refund_amount', new.refund_amount,
+                         'refund_pct', new.refund_pct)
+    );
+  end if;
+  return null;
+end $function$;
+
 CREATE OR REPLACE FUNCTION public.fn_audit()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -2739,6 +3137,18 @@ begin
   raise exception 'audit_log is append-only (% blocked)', tg_op
     using errcode = '42501';
 end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_caller_booked_listing(p_listing_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select auth.uid() is not null and exists (
+    select 1 from public.bookings b
+    where b.listing_id = p_listing_id and b.tenant_id = auth.uid()
+  );
 $function$;
 
 CREATE OR REPLACE FUNCTION public.fn_canonical_bd_phone(p_raw text)
@@ -2867,6 +3277,51 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.fn_freeze_conversation_participants()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if auth.uid() is null or public.is_admin() then
+    return new;
+  end if;
+  if new.participant_one_id is distinct from old.participant_one_id
+     or new.participant_two_id is distinct from old.participant_two_id then
+    raise exception 'The two people in a conversation cannot be changed'
+      using errcode = '42501', hint = 'participants_frozen';
+  end if;
+  return new;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.fn_freeze_listing_reputation()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if auth.uid() is null or public.is_admin()
+     or coalesce(current_setting('musafir.rating_write', true), '') = '1' then
+    return new;
+  end if;
+  if tg_op = 'INSERT' then
+    -- A new listing starts with no reputation, whatever the client sent.
+    new.rating := null;
+    new.review_count := 0;
+    new.is_superhost := false;
+    return new;
+  end if;
+  if new.rating       is distinct from old.rating
+     or new.review_count is distinct from old.review_count
+     or new.is_superhost is distinct from old.is_superhost then
+    raise exception 'A listing''s rating and badges come from reviews, not from its owner'
+      using errcode = '42501', hint = 'reputation_columns_protected';
+  end if;
+  return new;
+end $function$;
+
 CREATE OR REPLACE FUNCTION public.fn_guard_disbursement_transitions()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -2909,6 +3364,26 @@ begin
   end if;
 
   new.updated_at := now();
+  return new;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_guard_suspension_columns()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if auth.uid() is null or public.is_admin() then
+    return new;
+  end if;
+  if new.suspended_at     is distinct from old.suspended_at
+     or new.suspended_reason is distinct from old.suspended_reason
+     or new.suspended_by     is distinct from old.suspended_by then
+    raise exception 'suspension is set by an admin, not by the account'
+      using errcode = '42501', hint = 'suspension_columns_protected';
+  end if;
   return new;
 end;
 $function$;
@@ -2990,6 +3465,54 @@ AS $function$
   end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.fn_identity_phone(p_user_id uuid)
+ RETURNS text
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'auth'
+AS $function$
+  select public.fn_canonical_bd_phone(
+           substring(u.email from '^phone\.([0-9]+)@musaafir\.app$'))
+  from auth.users u
+  where u.id = p_user_id;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_is_suspended(p_user_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select p_user_id is not null and exists (
+    select 1 from public.profiles p where p.id = p_user_id and p.suspended_at is not null
+  );
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_messages_block_guard()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_other uuid;
+begin
+  -- Automated sends (pre-check-in, checkout, map, contacts) run with no uid
+  -- on a booking that exists; they are the host's own words to their guest
+  -- and must be delivered regardless.
+  if auth.uid() is null then
+    return new;
+  end if;
+  select case when c.participant_one_id = new.sender_id
+              then c.participant_two_id else c.participant_one_id end
+    into v_other
+    from public.conversations c where c.id = new.conversation_id;
+  if public.fn_users_blocked(new.sender_id, v_other) then
+    raise exception 'You cannot message this user'
+      using errcode = '42501', hint = 'blocked';
+  end if;
+  return new;
+end $function$;
+
 CREATE OR REPLACE FUNCTION public.fn_msisdn(p_canonical text)
  RETURNS text
  LANGUAGE sql
@@ -3046,6 +3569,7 @@ declare
   v_net    numeric;
   v_comm   numeric;
   v_method text;
+  v_share  numeric;
 begin
   -- ── Became paid ────────────────────────────────────────────────────────────
   if new.payment_status = 'paid'
@@ -3104,22 +3628,31 @@ begin
     end if;
   end if;
 
-  -- ── Paid → refunded: negate whatever was posted ────────────────────────────
+  -- ── Paid → refunded: reverse the refunded share of whatever was posted ────
   if tg_op = 'UPDATE'
      and new.payment_status = 'refunded'
      and old.payment_status = 'paid' then
-    insert into public.host_ledger_entries
-      (host_id, booking_id, entry_type, amount,
-       booking_net, commission_rate_pct, commission_amount)
-    select e.host_id, e.booking_id, 'booking_refund_reversal',
-           -e.amount, e.booking_net, e.commission_rate_pct, -e.commission_amount
-      from public.host_ledger_entries e
-     where e.booking_id = new.id
-       and e.entry_type in ('booking_online', 'booking_cash')
-       and not exists (
-         select 1 from public.host_ledger_entries r
-          where r.booking_id = new.id
-            and r.entry_type = 'booking_refund_reversal');
+    -- null = a refund marked on a booking that closed before 140 stamped
+    -- anything, or one refunded by hand while still open: whole thing back,
+    -- which is what the reversal always did.
+    v_share := coalesce(new.refund_pct, 100) / 100.0;
+    if v_share > 0 then
+      insert into public.host_ledger_entries
+        (host_id, booking_id, entry_type, amount,
+         booking_net, commission_rate_pct, commission_amount, note)
+      select e.host_id, e.booking_id, 'booking_refund_reversal',
+             -round(e.amount * v_share, 2), e.booking_net, e.commission_rate_pct,
+             -round(e.commission_amount * v_share, 2),
+             case when v_share < 1 then format('%s%% refund under policy', new.refund_pct) end
+        from public.host_ledger_entries e
+       where e.booking_id = new.id
+         and e.entry_type in ('booking_online', 'booking_cash')
+         and round(e.amount * v_share, 2) <> 0
+         and not exists (
+           select 1 from public.host_ledger_entries r
+            where r.booking_id = new.id
+              and r.entry_type = 'booking_refund_reversal');
+    end if;
   end if;
 
   return null;
@@ -3162,6 +3695,121 @@ begin
   end if;
 
   return null;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_rate_limit_hit(p_bucket text, p_limit integer, p_window_seconds integer)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_start timestamptz;
+  v_hits  integer;
+begin
+  perform public.fn_require_service_role();
+  if p_limit < 1 or p_window_seconds < 1 or coalesce(btrim(p_bucket), '') = '' then
+    raise exception 'fn_rate_limit_hit: bad arguments' using errcode = '22023';
+  end if;
+
+  v_start := to_timestamp(floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds);
+
+  insert into public.edge_rate_limits (bucket, window_start, hits)
+  values (p_bucket, v_start, 1)
+  on conflict (bucket, window_start) do update set hits = edge_rate_limits.hits + 1
+  returning hits into v_hits;
+
+  return jsonb_build_object(
+    'allowed', v_hits <= p_limit,
+    'hits', v_hits,
+    'limit', p_limit,
+    'retry_after_seconds',
+      greatest(1, ceil(extract(epoch from (v_start + make_interval(secs => p_window_seconds) - now())))::integer));
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_refresh_listing_rating()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_listing uuid;
+begin
+  v_listing := case when tg_op = 'DELETE' then old.listing_id else new.listing_id end;
+  if v_listing is null then return null; end if;
+  perform set_config('musafir.rating_write', '1', true);
+  update public.listings l
+     set rating = (select round(avg(r.overall_rating), 2) from public.reviews r
+                    where r.listing_id = v_listing and r.review_type = 'guest_to_host'
+                      and r.is_revealed),
+         review_count = (select count(*) from public.reviews r
+                          where r.listing_id = v_listing and r.review_type = 'guest_to_host'
+                            and r.is_revealed)
+   where l.id = v_listing;
+  perform set_config('musafir.rating_write', '0', true);
+  return null;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.fn_refund_policy_pct(p_status booking_status, p_cancelled_by uuid, p_tenant_id uuid, p_starts_at timestamp with time zone, p_at timestamp with time zone DEFAULT now())
+ RETURNS integer
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_window_hours integer;
+  v_late_pct     integer;
+  v_raw          text;
+begin
+  -- A guest who did not turn up is the late-cancellation rule taken to its
+  -- end: nothing back. Same answer as cancelling after check-in time.
+  if p_status = 'no_show' then
+    return 0;
+  end if;
+  if p_status <> 'cancelled' then
+    return null;
+  end if;
+
+  -- Anyone but the guest cancelling (the host, an admin, a sweep) means the
+  -- guest is owed everything: they did not choose this.
+  if p_cancelled_by is null or p_cancelled_by is distinct from p_tenant_id then
+    return 100;
+  end if;
+
+  select value into v_raw from public.app_settings where key = 'refund_full_window_hours';
+  v_window_hours := case when btrim(coalesce(v_raw, '')) ~ '^[0-9]+$'
+                         then btrim(v_raw)::integer else 48 end;
+  select value into v_raw from public.app_settings where key = 'refund_late_pct';
+  v_late_pct := case when btrim(coalesce(v_raw, '')) ~ '^[0-9]+$'
+                     then least(btrim(v_raw)::integer, 100) else 50 end;
+
+  if p_at >= p_starts_at then
+    return 0;
+  end if;
+  if p_starts_at - p_at >= make_interval(hours => v_window_hours) then
+    return 100;
+  end if;
+  return v_late_pct;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_refuse_suspended_writer()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_uid uuid := auth.uid();
+begin
+  if v_uid is not null
+     and public.fn_is_suspended(v_uid)
+     and not public.is_admin(v_uid) then
+    raise exception 'This account is suspended'
+      using errcode = '42501', hint = 'account_suspended';
+  end if;
+  return new;
 end;
 $function$;
 
@@ -3300,6 +3948,29 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.fn_stamp_refund_policy()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_pct integer;
+begin
+  if new.booking_status in ('cancelled', 'no_show')
+     and old.booking_status not in ('cancelled', 'no_show')
+     and new.payment_status = 'paid' then
+    v_pct := public.fn_refund_policy_pct(
+      new.booking_status,
+      -- enforce_booking_update_rules has already stamped cancelled_by for a
+      -- caller who omitted it; a no-show carries no canceller.
+      new.cancelled_by, new.tenant_id, new.starts_at, now());
+    new.refund_pct    := v_pct;
+    new.refund_amount := round(coalesce(new.total_price, 0) * v_pct / 100.0, 2);
+  end if;
+  return new;
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.fn_touch_disbursements()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -3309,6 +3980,19 @@ begin
   new.updated_at := now();
   return new;
 end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_users_blocked(p_a uuid, p_b uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select p_a is not null and p_b is not null and exists (
+    select 1 from public.user_blocks ub
+    where (ub.blocker_id = p_a and ub.blocked_id = p_b)
+       or (ub.blocker_id = p_b and ub.blocked_id = p_a)
+  );
 $function$;
 
 CREATE OR REPLACE FUNCTION public.fn_validate_app_setting()
@@ -3339,6 +4023,10 @@ begin
       perform public.fn_validate_setting_sms_max_recipients(new.value);
     when 'notification_bulk_max_recipients' then
       perform public.fn_validate_setting_notification_max_recipients(new.value);
+    when 'refund_full_window_hours' then
+      perform public.fn_validate_setting_refund_window_hours(new.value);
+    when 'refund_late_pct' then
+      perform public.fn_validate_setting_refund_late_pct(new.value);
     else
       null;
   end case;
@@ -3516,6 +4204,48 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.fn_validate_setting_refund_late_pct(p_value text)
+ RETURNS void
+ LANGUAGE plpgsql
+ IMMUTABLE
+ SET search_path TO 'public'
+AS $function$
+declare n integer;
+begin
+  if btrim(coalesce(p_value, '')) !~ '^[0-9]+$' then
+    raise exception 'refund_late_pct must be a whole-number percentage'
+      using errcode = '22023';
+  end if;
+  n := btrim(p_value)::integer;
+  if n > 100 then
+    raise exception 'refund_late_pct: % is more than 100', n using errcode = '22023';
+  end if;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_validate_setting_refund_window_hours(p_value text)
+ RETURNS void
+ LANGUAGE plpgsql
+ IMMUTABLE
+ SET search_path TO 'public'
+AS $function$
+declare n integer;
+begin
+  if btrim(coalesce(p_value, '')) !~ '^[0-9]+$' then
+    raise exception 'refund_full_window_hours must be a whole number of hours'
+      using errcode = '22023';
+  end if;
+  n := btrim(p_value)::integer;
+  -- 0 is a real policy ("full refund right up to check-in"); 720 hours is
+  -- thirty days, past which the window is longer than most stays are booked
+  -- ahead and every cancellation would be a partial one.
+  if n > 720 then
+    raise exception 'refund_full_window_hours: % is more than 720 hours (30 days)', n
+      using errcode = '22023';
+  end if;
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.fn_validate_setting_search_radius_tiers(p_value text)
  RETURNS void
  LANGUAGE plpgsql
@@ -3633,9 +4363,9 @@ begin
 
     return query
     select coalesce(b.tenant_name, gp.full_name, 'Guest'),
-           gp.mobile,
+           coalesce(public.fn_identity_phone(gp.id), gp.mobile),
            coalesce(hp.full_name, 'Host'),
-           hp.mobile
+           coalesce(public.fn_identity_phone(hp.id), hp.mobile)
     from public.bookings b
     join public.listings l on l.id = b.listing_id
     left join public.profiles gp on gp.id = b.tenant_id
@@ -3721,6 +4451,20 @@ begin
     raise exception 'Not authorized' using errcode = '42501';
   end if;
 
+  -- 138: same wall as create_marketplace_booking. Only for a real caller —
+  -- the cron-driven automated messages (pre-check-in, checkout) run with a
+  -- null uid on a booking that already exists and must still be delivered.
+  if auth.uid() is not null
+     and (public.fn_is_suspended(user_one) or public.fn_is_suspended(user_two)) then
+    raise exception 'This account is suspended'
+      using errcode = '42501', hint = 'account_suspended';
+  end if;
+
+  if auth.uid() is not null and public.fn_users_blocked(user_one, user_two) then
+    raise exception 'You cannot message this user'
+      using errcode = '42501', hint = 'blocked';
+  end if;
+
   select id into conv_id from public.conversations
   where least(participant_one_id, participant_two_id) = least(user_one, user_two)
     and greatest(participant_one_id, participant_two_id) = greatest(user_one, user_two)
@@ -3793,6 +4537,22 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.guard_nid_document_write()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+begin
+  if current_user not in ('postgres','service_role','supabase_admin') and not public.is_admin()
+    and ((tg_op<>'DELETE' and new.document_type in ('nid_front','nid_back'))
+      or (tg_op<>'INSERT' and old.document_type in ('nid_front','nid_back'))) then
+    raise exception 'Use the NID submission flow' using errcode='42501';
+  end if;
+  if tg_op='DELETE' then return old; end if;
+  return new;
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.handle_new_user()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -3835,6 +4595,19 @@ BEGIN
     updated_at = timezone('utc', now());
   RETURN new;
 END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.has_approved_face_or_identity(p_user_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  -- Retain the function signature used by booking and publishing callers.
+  select exists(select 1 from public.profiles where id=p_user_id
+    and verification_status='verified' and nid_verified)
+    and coalesce((select status='approved' from public.face_verification_attempts
+      where user_id=p_user_id order by created_at desc,id desc limit 1),false);
 $function$;
 
 CREATE OR REPLACE FUNCTION public.host_leaderboard_ranked(p_period text)
@@ -4138,6 +4911,24 @@ AS $function$
   ) x;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.nid_verification_status()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare p public.profiles;
+begin
+  if auth.uid() is null then raise exception 'Sign in first' using errcode='42501'; end if;
+  select * into strict p from public.profiles where id=auth.uid();
+  return jsonb_build_object('status',case when p.verification_status='verified' and not coalesce(p.nid_verified,false)
+    then 'none' else p.verification_status::text end,
+    'document_type',p.id_document_type,
+    'note',(select rejection_reason from public.owner_documents where user_id=p.id
+      and document_type in ('nid_front','nid_back') and rejection_reason is not null order by uploaded_at desc limit 1));
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.normalise_bd_msisdn(p_raw text)
  RETURNS text
  LANGUAGE sql
@@ -4310,6 +5101,7 @@ CREATE OR REPLACE FUNCTION public.notify_on_booking_lifecycle()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public'
 AS $function$
 DECLARE
     listing_record RECORD;
@@ -4321,19 +5113,15 @@ DECLARE
     target_user_id uuid;
     action_url text;
 BEGIN
-    -- Get listing info (using owner_id, not host_id)
     SELECT l.title, l.owner_id INTO listing_record
     FROM public.listings l
     WHERE l.id = NEW.listing_id;
 
-    -- Get guest info from profiles
     SELECT p.full_name INTO guest_record
     FROM public.profiles p
     WHERE p.id = NEW.tenant_id;
 
-    -- Handle different status transitions
     CASE
-        -- New booking request
         WHEN TG_OP = 'INSERT' AND NEW.booking_status = 'pending' THEN
             notification_title := 'New Booking Request';
             notification_body := format('%s wants to book %s',
@@ -4344,7 +5132,6 @@ BEGIN
             target_user_id := listing_record.owner_id;
             action_url := '/host/reservations/' || NEW.id;
 
-        -- Booking confirmed
         WHEN TG_OP = 'UPDATE' AND OLD.booking_status = 'pending' AND NEW.booking_status = 'confirmed' THEN
             notification_title := 'Booking Confirmed!';
             notification_body := format('Your booking at %s has been confirmed',
@@ -4354,7 +5141,6 @@ BEGIN
             target_user_id := NEW.tenant_id;
             action_url := '/trips/' || NEW.id;
 
-        -- Booking rejected
         WHEN TG_OP = 'UPDATE' AND OLD.booking_status = 'pending' AND NEW.booking_status = 'rejected' THEN
             notification_title := 'Booking Declined';
             notification_body := CASE
@@ -4368,7 +5154,6 @@ BEGIN
             target_user_id := NEW.tenant_id;
             action_url := '/trips/' || NEW.id;
 
-        -- Guest checked in
         WHEN TG_OP = 'UPDATE' AND OLD.booking_status = 'confirmed' AND NEW.booking_status = 'active' THEN
             notification_title := 'Enjoy Your Stay!';
             notification_body := format('You are now checked in at %s',
@@ -4378,9 +5163,7 @@ BEGIN
             target_user_id := NEW.tenant_id;
             action_url := '/trips/' || NEW.id;
 
-        -- Service completed
         WHEN TG_OP = 'UPDATE' AND OLD.booking_status = 'active' AND NEW.booking_status = 'completed' THEN
-            -- Notify guest to leave review
             notification_title := 'How Was Your Stay?';
             notification_body := format('Your stay at %s is complete. Leave a review!',
                 COALESCE(listing_record.title, 'the property'));
@@ -4389,7 +5172,6 @@ BEGIN
             target_user_id := NEW.tenant_id;
             action_url := '/review/' || NEW.id || '/guest';
 
-            -- Insert notification for guest
             INSERT INTO public.notifications (
                 user_id, type, title, body, priority, action_url, data
             ) VALUES (
@@ -4406,14 +5188,25 @@ BEGIN
                 )
             );
 
-            -- Also notify host to leave review
             notification_title := 'Leave a Guest Review';
             notification_body := format('Your guest %s has checked out. Leave a review!',
                 COALESCE(guest_record.full_name, 'your guest'));
             target_user_id := listing_record.owner_id;
             action_url := '/review/' || NEW.id || '/host';
 
-        -- Booking cancelled by guest
+        -- 140: the host reported that the guest never arrived. The guest is
+        -- told in plain words; there is no review window and (see the refund
+        -- policy) nothing comes back, which fn_alert_paid_cancellation says
+        -- separately when the booking was paid.
+        WHEN TG_OP = 'UPDATE' AND OLD.booking_status = 'confirmed' AND NEW.booking_status = 'no_show' THEN
+            notification_title := 'Marked as a no-show';
+            notification_body := format('The host reported that you did not arrive for your booking at %s. If that is wrong, reply to the host from Messages.',
+                COALESCE(listing_record.title, 'the property'));
+            notification_type := 'booking_cancelled';
+            notification_priority := 'high';
+            target_user_id := NEW.tenant_id;
+            action_url := '/trips/' || NEW.id;
+
         WHEN TG_OP = 'UPDATE' AND NEW.booking_status = 'cancelled' AND NEW.cancelled_by = NEW.tenant_id THEN
             notification_title := 'Booking Cancelled';
             notification_body := format('%s cancelled their booking at %s',
@@ -4424,7 +5217,6 @@ BEGIN
             target_user_id := listing_record.owner_id;
             action_url := '/host/reservations/' || NEW.id;
 
-        -- Booking cancelled by host
         WHEN TG_OP = 'UPDATE' AND NEW.booking_status = 'cancelled' AND NEW.cancelled_by != NEW.tenant_id THEN
             notification_title := 'Booking Cancelled by Host';
             notification_body := format('Your booking at %s was cancelled by the host',
@@ -4435,11 +5227,9 @@ BEGIN
             action_url := '/trips/' || NEW.id;
 
         ELSE
-            -- No notification needed for other cases
             RETURN NEW;
     END CASE;
 
-    -- Insert notification
     INSERT INTO public.notifications (
         user_id, type, title, body, priority, action_url, data
     ) VALUES (
@@ -4587,6 +5377,21 @@ EXCEPTION
 END;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.orphan_face_evidence()
+ RETURNS TABLE(name text)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  perform public.fn_require_service_role();
+  return query select o.name from storage.objects o where o.bucket_id='face-evidence'
+    and not exists(select 1 from public.face_verification_attempts a
+      where a.id::text=split_part(o.name,'/',2) and a.user_id::text=split_part(o.name,'/',1))
+    limit 100;
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.otp_log_attempts(p_id uuid, p_attempts integer)
  RETURNS void
  LANGUAGE plpgsql
@@ -4622,6 +5427,20 @@ begin
   set verified_at = now(), is_used = true
   where id = p_id;
 end $function$;
+
+CREATE OR REPLACE FUNCTION public.reap_edge_rate_limits()
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare n integer;
+begin
+  delete from public.edge_rate_limits where window_start < now() - interval '1 day';
+  get diagnostics n = row_count;
+  return n;
+end;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.reap_stale_devices()
  RETURNS integer
@@ -4716,6 +5535,20 @@ exception
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.record_face_evidence_deleted(p_attempt_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  perform public.fn_require_service_role();
+  update public.face_verification_attempts set media_deleted_at=now(),
+    status=case when status in ('draft','pending') then 'superseded' else status end
+    where id=p_attempt_id;
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.record_host_ledger_entry(p_host_id uuid, p_entry_type text, p_amount numeric, p_note text DEFAULT NULL::text, p_reference text DEFAULT NULL::text)
  RETURNS uuid
  LANGUAGE plpgsql
@@ -4767,14 +5600,13 @@ AS $function$
 declare
   c public.coupons%rowtype;
   v_uid uuid := auth.uid();
-  v_booking_owner uuid;
+  v_booking public.bookings%rowtype;
   v_user_uses int;
 begin
   if v_uid is null then raise exception 'Not authenticated'; end if;
 
-  -- Redemptions may only be recorded for the caller's own booking.
-  select tenant_id into v_booking_owner from public.bookings where id = p_booking_id;
-  if v_booking_owner is null or v_booking_owner <> v_uid then
+  select * into v_booking from public.bookings where id = p_booking_id;
+  if v_booking.tenant_id is null or v_booking.tenant_id <> v_uid then
     raise exception 'Not authorized' using errcode = '42501';
   end if;
 
@@ -4785,6 +5617,14 @@ begin
 
   select * into c from public.coupons where id = p_coupon_id for update;
   if not found or not c.is_active then raise exception 'Coupon unavailable'; end if;
+
+  -- 138: the booking must actually carry this coupon. The parameter is kept
+  -- for the existing signature but the amount recorded is the booking's own.
+  if v_booking.coupon_code is distinct from c.code then
+    raise exception 'This booking was not made with that coupon'
+      using errcode = '42501', hint = 'coupon_not_on_booking';
+  end if;
+
   if c.usage_limit is not null and c.used_count >= c.usage_limit then
     raise exception 'Coupon usage limit reached';
   end if;
@@ -4795,7 +5635,7 @@ begin
   end if;
 
   insert into public.coupon_redemptions (coupon_id, user_id, booking_id, discount_amount)
-    values (c.id, v_uid, p_booking_id, coalesce(p_discount_amount, 0));
+    values (c.id, v_uid, p_booking_id, coalesce(v_booking.discount_amount, 0));
   update public.coupons set used_count = used_count + 1 where id = c.id;
 end;
 $function$;
@@ -4907,6 +5747,33 @@ begin
         limit 1
      );
   end if;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.review_face_verification(p_attempt_id uuid, p_evidence_version uuid, p_decision text, p_note text DEFAULT ''::text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare a public.face_verification_attempts; target_user uuid;
+begin
+  if auth.uid() is null or not public.is_admin() then raise exception 'Admin approval required' using errcode='42501'; end if;
+  if p_decision is null or p_decision not in ('approved','rejected','retry') then raise exception 'Invalid review decision'; end if;
+  if length(coalesce(p_note,''))>500 then raise exception 'Keep the note under 500 characters'; end if;
+  select user_id into target_user from public.face_verification_attempts where id=p_attempt_id;
+  if target_user=auth.uid() then raise exception 'Another admin must review your submission' using errcode='42501'; end if;
+  perform 1 from public.profiles where id=target_user for update;
+  select * into a from public.face_verification_attempts where id=p_attempt_id for update;
+  if not found or a.status<>'pending' or a.evidence_version is distinct from p_evidence_version
+     or a.media_deleted_at is not null then raise exception 'Submission changed. Refresh the review queue'; end if;
+  if exists(select 1 from public.face_verification_attempts where user_id=a.user_id and created_at>a.created_at) then
+    raise exception 'A newer submission exists'; end if;
+  if (p_decision<>'approved' or a.method='manual') and coalesce(btrim(p_note),'')='' then
+    raise exception 'A reason is required, including for manual approval'; end if;
+  update public.face_verification_attempts set status=p_decision, reviewed_by=auth.uid(),
+    reviewed_at=now(),review_note=nullif(btrim(p_note),'') where id=a.id;
+  -- Deliberately never writes profiles.verification_status or nid_verified.
 end;
 $function$;
 
@@ -5242,10 +6109,10 @@ declare
 begin
     select b.id as booking_id, b.tenant_id, b.listing_id,
            coalesce(b.tenant_name, gp.full_name, 'Guest') as guest_name,
-           gp.mobile as guest_phone,
+           coalesce(public.fn_identity_phone(gp.id), gp.mobile) as guest_phone,
            l.owner_id as host_id,
            coalesce(hp.full_name, 'Host') as host_name,
-           hp.mobile as host_phone,
+           coalesce(public.fn_identity_phone(hp.id), hp.mobile) as host_phone,
            coalesce(hp.message_language, gp.message_language, 'en') as lang
     into rec
     from public.bookings b
@@ -5436,13 +6303,13 @@ BEGIN
     v_conv_id := public.get_or_create_conversation(
         rec.tenant_id, rec.host_id, rec.booking_id, rec.listing_id);
 
-    v_nights := GREATEST(1, (rec.ends_at::date - rec.starts_at::date));
+    v_nights := GREATEST(1, ((rec.ends_at at time zone 'Asia/Dhaka')::date - (rec.starts_at at time zone 'Asia/Dhaka')::date));
     IF rec.pricing_unit::text = 'hour' THEN
         v_units := GREATEST(1, FLOOR(EXTRACT(EPOCH FROM (rec.ends_at - rec.starts_at)) / 3600)::int);
         v_duration := v_units || CASE WHEN v_lang = 'bn' THEN ' ঘণ্টা'
                                       WHEN v_units = 1 THEN ' hour' ELSE ' hours' END;
     ELSIF rec.pricing_unit::text = 'month' THEN
-        v_units := GREATEST(1, ROUND((rec.ends_at::date - rec.starts_at::date) / 30.0)::int);
+        v_units := GREATEST(1, ROUND(((rec.ends_at at time zone 'Asia/Dhaka')::date - (rec.starts_at at time zone 'Asia/Dhaka')::date) / 30.0)::int);
         v_duration := v_units || CASE WHEN v_lang = 'bn' THEN ' মাস'
                                       WHEN v_units = 1 THEN ' month' ELSE ' months' END;
     ELSE
@@ -5450,8 +6317,8 @@ BEGIN
                                        WHEN v_nights = 1 THEN ' night' ELSE ' nights' END;
     END IF;
 
-    v_ci_date := to_char(rec.starts_at, 'FMDay, FMMonth FMDD');
-    v_co_date := to_char(rec.ends_at, 'FMDay, FMMonth FMDD');
+    v_ci_date := to_char(rec.starts_at at time zone 'Asia/Dhaka', 'FMDay, FMMonth FMDD');
+    v_co_date := to_char(rec.ends_at at time zone 'Asia/Dhaka', 'FMDay, FMMonth FMDD');
     IF v_lang = 'bn' THEN
         v_ci_date := public._localize_date_bn(v_ci_date);
         v_co_date := public._localize_date_bn(v_co_date);
@@ -5611,13 +6478,13 @@ BEGIN
     v_conv_id := public.get_or_create_conversation(
         rec.tenant_id, rec.host_id, rec.booking_id, rec.listing_id);
 
-    v_nights := GREATEST(1, (rec.ends_at::date - rec.starts_at::date));
+    v_nights := GREATEST(1, ((rec.ends_at at time zone 'Asia/Dhaka')::date - (rec.starts_at at time zone 'Asia/Dhaka')::date));
     IF rec.pricing_unit::text = 'hour' THEN
         v_units := GREATEST(1, FLOOR(EXTRACT(EPOCH FROM (rec.ends_at - rec.starts_at)) / 3600)::int);
         v_duration := v_units || CASE WHEN v_lang = 'bn' THEN ' ঘণ্টা'
                                       WHEN v_units = 1 THEN ' hour' ELSE ' hours' END;
     ELSIF rec.pricing_unit::text = 'month' THEN
-        v_units := GREATEST(1, ROUND((rec.ends_at::date - rec.starts_at::date) / 30.0)::int);
+        v_units := GREATEST(1, ROUND(((rec.ends_at at time zone 'Asia/Dhaka')::date - (rec.starts_at at time zone 'Asia/Dhaka')::date) / 30.0)::int);
         v_duration := v_units || CASE WHEN v_lang = 'bn' THEN ' মাস'
                                       WHEN v_units = 1 THEN ' month' ELSE ' months' END;
     ELSE
@@ -5632,8 +6499,8 @@ BEGIN
                        OR rec.listing_address NOT ILIKE '%' || rec.listing_city || '%')
              THEN ', ' || rec.listing_city ELSE '' END), '');
 
-    v_ci_date := to_char(rec.starts_at, 'FMDay, FMMonth FMDD');
-    v_co_date := to_char(rec.ends_at, 'FMDay, FMMonth FMDD');
+    v_ci_date := to_char(rec.starts_at at time zone 'Asia/Dhaka', 'FMDay, FMMonth FMDD');
+    v_co_date := to_char(rec.ends_at at time zone 'Asia/Dhaka', 'FMDay, FMMonth FMDD');
     IF v_lang = 'bn' THEN
         v_ci_date := public._localize_date_bn(v_ci_date);
         v_co_date := public._localize_date_bn(v_co_date);
@@ -5746,100 +6613,83 @@ CREATE OR REPLACE FUNCTION public.send_review_reminders()
  RETURNS integer
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public'
 AS $function$
-DECLARE
-    reminder_count integer;
-    booking_record RECORD;
-    listing_record RECORD;
-    existing_guest_review boolean;
-    existing_host_review boolean;
-BEGIN
-    reminder_count := 0;
+declare
+    reminder_count integer := 0;
+    booking_record record;
+    listing_record record;
+    v_day text;
+begin
+    for booking_record in
+        select b.*, case when (b.completed_at at time zone 'Asia/Dhaka')::date
+                              = ((now() - interval '3 days') at time zone 'Asia/Dhaka')::date
+                         then '3' else '7' end as which
+        from public.bookings b
+        where b.booking_status = 'completed'
+          and b.completed_at is not null
+          and (b.completed_at at time zone 'Asia/Dhaka')::date in (
+                ((now() - interval '3 days') at time zone 'Asia/Dhaka')::date,
+                ((now() - interval '7 days') at time zone 'Asia/Dhaka')::date)
+    loop
+        v_day := booking_record.which;
 
-    -- Find completed bookings that are 3 or 7 days old
-    FOR booking_record IN
-        SELECT b.*
-        FROM public.bookings b
-        WHERE b.booking_status = 'completed'
-        AND b.completed_at IS NOT NULL
-        AND (
-            -- 3-day reminder
-            (b.completed_at >= NOW() - INTERVAL '3 days 1 hour'
-             AND b.completed_at < NOW() - INTERVAL '3 days')
-            OR
-            -- 7-day reminder
-            (b.completed_at >= NOW() - INTERVAL '7 days 1 hour'
-             AND b.completed_at < NOW() - INTERVAL '7 days')
-        )
-    LOOP
-        -- Get listing info
-        SELECT l.title, l.owner_id INTO listing_record
-        FROM public.listings l
-        WHERE l.id = booking_record.listing_id;
+        select l.title, l.owner_id into listing_record
+        from public.listings l
+        where l.id = booking_record.listing_id;
 
-        -- Check if guest has already reviewed
-        SELECT EXISTS (
-            SELECT 1 FROM public.reviews r
-            WHERE r.booking_id = booking_record.id
-            AND r.review_type = 'guest_to_host'
-        ) INTO existing_guest_review;
-
-        -- Check if host has already reviewed
-        SELECT EXISTS (
-            SELECT 1 FROM public.reviews r
-            WHERE r.booking_id = booking_record.id
-            AND r.review_type = 'host_to_guest'
-        ) INTO existing_host_review;
-
-        -- Send reminder to guest if they haven't reviewed
-        IF NOT existing_guest_review THEN
-            INSERT INTO public.notifications (
-                user_id, type, title, body, priority, action_url, data
-            ) VALUES (
-                booking_record.tenant_id,
-                'review_reminder'::notification_type,
+        if booking_record.tenant_id is not null
+           and not exists (select 1 from public.reviews r
+                            where r.booking_id = booking_record.id
+                              and r.review_type = 'guest_to_host')
+           and not exists (select 1 from public.notifications n
+                            where n.user_id = booking_record.tenant_id
+                              and n.type = 'review_reminder'
+                              and n.data ->> 'booking_id' = booking_record.id::text
+                              and n.data ->> 'day' = v_day) then
+            insert into public.notifications (user_id, type, title, body, priority, action_url, data)
+            values (
+                booking_record.tenant_id, 'review_reminder',
                 'Don''t Forget to Review!',
                 format('Share your experience at %s. Your review helps other travelers!',
-                    COALESCE(listing_record.title, 'your recent stay')),
-                'normal'::notification_priority,
-                '/review/' || booking_record.id || '/guest',
-                jsonb_build_object(
-                    'booking_id', booking_record.id,
-                    'listing_id', booking_record.listing_id,
-                    'reminder_type', 'guest'
-                )
+                    coalesce(listing_record.title, 'your recent stay')),
+                'normal', '/review/' || booking_record.id || '/guest',
+                jsonb_build_object('booking_id', booking_record.id,
+                                   'listing_id', booking_record.listing_id,
+                                   'reminder_type', 'guest', 'day', v_day)
             );
             reminder_count := reminder_count + 1;
-        END IF;
+        end if;
 
-        -- Send reminder to host if they haven't reviewed
-        IF NOT existing_host_review THEN
-            INSERT INTO public.notifications (
-                user_id, type, title, body, priority, action_url, data
-            ) VALUES (
-                listing_record.owner_id,
-                'review_reminder'::notification_type,
+        if listing_record.owner_id is not null
+           and not exists (select 1 from public.reviews r
+                            where r.booking_id = booking_record.id
+                              and r.review_type = 'host_to_guest')
+           and not exists (select 1 from public.notifications n
+                            where n.user_id = listing_record.owner_id
+                              and n.type = 'review_reminder'
+                              and n.data ->> 'booking_id' = booking_record.id::text
+                              and n.data ->> 'day' = v_day) then
+            insert into public.notifications (user_id, type, title, body, priority, action_url, data)
+            values (
+                listing_record.owner_id, 'review_reminder',
                 'Review Your Guest',
                 format('Don''t forget to review your guest from %s. Your feedback helps the community!',
-                    COALESCE(listing_record.title, 'your property')),
-                'normal'::notification_priority,
-                '/review/' || booking_record.id || '/host',
-                jsonb_build_object(
-                    'booking_id', booking_record.id,
-                    'listing_id', booking_record.listing_id,
-                    'reminder_type', 'host'
-                )
+                    coalesce(listing_record.title, 'your property')),
+                'normal', '/review/' || booking_record.id || '/host',
+                jsonb_build_object('booking_id', booking_record.id,
+                                   'listing_id', booking_record.listing_id,
+                                   'reminder_type', 'host', 'day', v_day)
             );
             reminder_count := reminder_count + 1;
-        END IF;
-    END LOOP;
+        end if;
+    end loop;
 
-    IF reminder_count > 0 THEN
-        RAISE NOTICE 'Sent % review reminders', reminder_count;
-    END IF;
-
-    RETURN reminder_count;
-END;
+    if reminder_count > 0 then
+        raise notice 'Sent % review reminders', reminder_count;
+    end if;
+    return reminder_count;
+end;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.set_address_verification(p_user_id uuid, p_status verification_status, p_visit_notes text DEFAULT NULL::text, p_rejection_reason text DEFAULT NULL::text)
@@ -6106,25 +6956,20 @@ CREATE OR REPLACE FUNCTION public.set_verification_pending()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public'
 AS $function$
-BEGIN
-  -- Set profile to pending if both documents exist
-  IF EXISTS (
-    SELECT 1 FROM public.owner_documents
-    WHERE user_id = NEW.user_id
-      AND document_type = 'nid_front'
-  ) AND EXISTS (
-    SELECT 1 FROM public.owner_documents
-    WHERE user_id = NEW.user_id
-      AND document_type = 'nid_back'
-  ) THEN
-    UPDATE public.profiles
-    SET verification_status = 'pending'
-    WHERE id = NEW.user_id AND verification_status = 'none';
-  END IF;
-
-  RETURN NEW;
-END;
+begin
+  if exists (select 1 from public.owner_documents
+              where user_id = new.user_id and document_type = 'nid_front')
+     and exists (select 1 from public.owner_documents
+                  where user_id = new.user_id and document_type = 'nid_back') then
+    update public.profiles
+       set verification_status = 'pending'
+     where id = new.user_id
+       and verification_status in ('none', 'rejected');
+  end if;
+  return new;
+end;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.sms_bulk_max_recipients()
@@ -6150,6 +6995,37 @@ CREATE OR REPLACE FUNCTION public.snap_coordinate(p_degrees numeric)
  IMMUTABLE
 AS $function$
   select round(p_degrees / 0.001) * 0.001;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.start_face_verification(p_method text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare a public.face_verification_attempts; sequence text[];
+begin
+  if auth.uid() is null then raise exception 'Sign in first' using errcode='42501'; end if;
+  if not coalesce((select value='true' from public.app_settings where key='face_review_enabled'),false) then
+    raise exception 'Face review is not available yet. Please try later'; end if;
+  if p_method is null or p_method not in ('guided','manual') then raise exception 'Invalid capture method'; end if;
+  -- Serialize starts/submission/review for a user, including simultaneous devices.
+  perform 1 from public.profiles where id=auth.uid() and suspended_at is null for update;
+  if not found then raise exception 'Account unavailable' using errcode='42501'; end if;
+  if (select status='approved' from public.face_verification_attempts where user_id=auth.uid() order by created_at desc,id desc limit 1) then raise exception 'Face already approved'; end if;
+  if exists(select 1 from public.face_verification_attempts where user_id=auth.uid() and status='pending') then
+    raise exception 'Your submission is already awaiting review'; end if;
+  if (select count(*) from public.face_verification_attempts where user_id=auth.uid()
+      and created_at > now()-interval '24 hours') >= 5 then
+    raise exception 'Daily attempt limit reached. Please try tomorrow'; end if;
+  update public.face_verification_attempts set status='superseded' where user_id=auth.uid() and status='draft';
+  sequence := case when random() < 0.5 then array['blink','left','right'] else array['blink','right','left'] end;
+  if random() < 0.5 then sequence := array[sequence[2],sequence[1],sequence[3]]; end if;
+  if p_method='manual' then sequence := '{}'::text[]; end if;
+  insert into public.face_verification_attempts(user_id,method,actions)
+    values(auth.uid(),p_method,sequence) returning * into a;
+  return to_jsonb(a);
+end;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.submit_address_verification(p_address_line text)
@@ -6180,6 +7056,84 @@ begin
          address_submitted_at = now()
    where id = v_uid;
 end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.submit_face_verification(p_attempt_id uuid, p_nonce uuid, p_clip_extension text DEFAULT NULL::text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare a public.face_verification_attempts; clip text; selfie text;
+begin
+  if auth.uid() is null then raise exception 'Sign in first' using errcode='42501'; end if;
+  perform 1 from public.profiles where id=auth.uid() and suspended_at is null for update;
+  if not found then raise exception 'Account unavailable' using errcode='42501'; end if;
+  select * into a from public.face_verification_attempts where id=p_attempt_id and user_id=auth.uid() for update;
+  if not found or a.nonce is distinct from p_nonce then raise exception 'Invalid attempt' using errcode='42501'; end if;
+  if a.status='pending' then return; end if;
+  if a.status<>'draft' or a.expires_at<=now() then raise exception 'Attempt expired. Start again'; end if;
+  selfie := a.user_id::text||'/'||a.id::text||'/selfie.jpg';
+  if not exists(select 1 from storage.objects where bucket_id='face-evidence' and name=selfie
+    and (metadata->>'size')::bigint between 100 and 524288 and metadata->>'mimetype'='image/jpeg') then
+    raise exception 'Selfie upload is missing or invalid'; end if;
+  if a.method='guided' then
+    if p_clip_extension is null or p_clip_extension not in ('webm','mp4') then raise exception 'Invalid video format'; end if;
+    clip := a.user_id::text||'/'||a.id::text||'/clip.'||p_clip_extension;
+    if not exists(select 1 from storage.objects where bucket_id='face-evidence' and name=clip
+      and (metadata->>'size')::bigint between 100 and 8388608
+      and metadata->>'mimetype'='video/'||p_clip_extension) then raise exception 'Video upload is missing or invalid'; end if;
+  end if;
+  -- No client liveness boolean is trusted. The admin must review the media.
+  update public.face_verification_attempts set status='pending', submitted_at=now(),
+    clip_path=clip, selfie_path=selfie where id=a.id;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.submit_identity_document(p_document_type text, p_front_path text, p_back_path text DEFAULT NULL::text, p_document_number text DEFAULT NULL::text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare uid uuid:=auth.uid(); p public.profiles; path text; mime text;
+begin
+  if uid is null then raise exception 'Sign in first' using errcode='42501'; end if;
+  select * into p from public.profiles where id=uid and suspended_at is null for update;
+  if not found then raise exception 'Account unavailable' using errcode='42501'; end if;
+  if p_document_type is null or p_document_type not in ('nid','passport','driving_license','student_id','office_id') then raise exception 'Unsupported document type'; end if;
+  if p_document_number is not null and (length(btrim(p_document_number))=0 or length(p_document_number)>100) then raise exception 'Invalid document number'; end if;
+  -- Lost-response retries may reuse the same paths without replacing evidence.
+  if p.verification_status='pending' and p.id_document_type=p_document_type and p.nid is not distinct from nullif(btrim(p_document_number),'') and exists(select 1 from public.owner_documents where user_id=uid and document_type='nid_front' and file_path=p_front_path)
+    and ((p_back_path is null and not exists(select 1 from public.owner_documents where user_id=uid and document_type='nid_back')) or exists(select 1 from public.owner_documents where user_id=uid and document_type='nid_back' and file_path=p_back_path)) then return; end if;
+  if p.verification_status in ('pending','verified') then raise exception 'Your document is already submitted. Refresh status.'; end if;
+  if p_front_path is null or (p_document_type='nid' and p_back_path is null) or p_front_path=p_back_path then raise exception 'Front image is required; NID also requires the back'; end if;
+  foreach path in array array[p_front_path,p_back_path] loop
+    if path is null then continue; end if;
+    if path not like uid::text||'/nid/%' then raise exception 'Invalid document owner' using errcode='42501'; end if;
+    select metadata->>'mimetype' into mime from storage.objects where bucket_id='documents' and name=path
+      and (metadata->>'size')::bigint between 100 and 5242880;
+    if not found or mime not in ('image/jpeg','image/png') or mime is null then raise exception 'Upload a JPG or PNG of each side, under 5 MB'; end if;
+  end loop;
+  -- A replacement with a single-sided document must not inherit an old back.
+  -- Stored historical image bytes are preserved; only the current slot changes.
+  if p_back_path is null then delete from public.owner_documents where user_id=uid and document_type='nid_back'; end if;
+  insert into public.owner_documents(user_id,document_type,file_path,mime_type,uploaded_at,verified_at,verified_by,rejection_reason)
+    select uid,sides.slot,sides.file_path,(select metadata->>'mimetype' from storage.objects where bucket_id='documents' and name=sides.file_path),now(),null,null,null
+    from (values ('nid_front',p_front_path),('nid_back',p_back_path)) sides(slot,file_path) where sides.file_path is not null
+    on conflict(user_id,document_type) do update set file_path=excluded.file_path,mime_type=excluded.mime_type,
+      uploaded_at=excluded.uploaded_at,verified_at=null,verified_by=null,rejection_reason=null;
+  update public.profiles set verification_status='pending',nid_verified=false,id_document_type=p_document_type,nid=nullif(btrim(p_document_number),'') where id=uid;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.submit_nid_verification(p_front_path text, p_back_path text)
+ RETURNS void
+ LANGUAGE sql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select public.submit_identity_document('nid',p_front_path,p_back_path,null);
 $function$;
 
 CREATE OR REPLACE FUNCTION public.sweep_sms_campaigns()
@@ -6257,6 +7211,10 @@ declare
 begin
   if v_user is null then
     raise exception 'Not authorized' using errcode = '42501';
+  end if;
+
+  if public.fn_is_suspended(v_user) then
+    return true;
   end if;
 
   update public.user_devices
@@ -6396,20 +7354,6 @@ BEGIN
     IF NEW.latitude IS NOT NULL AND NEW.longitude IS NOT NULL THEN
         NEW.location = ST_SetSRID(ST_MakePoint(NEW.longitude, NEW.latitude), 4326)::geography;
     END IF;
-    RETURN NEW;
-END;
-$function$;
-
-CREATE OR REPLACE FUNCTION public.update_listing_rating()
- RETURNS trigger
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-    UPDATE listings
-    SET
-        rating = (SELECT AVG(rating) FROM reviews WHERE listing_id = NEW.listing_id),
-        review_count = (SELECT COUNT(*) FROM reviews WHERE listing_id = NEW.listing_id)
-    WHERE id = NEW.listing_id;
     RETURN NEW;
 END;
 $function$;
@@ -6563,6 +7507,22 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.verification_overview()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare n jsonb; f jsonb; state text;
+begin
+  n:=public.nid_verification_status(); f:=public.face_verification_status();
+  state:=case when n->>'status'='verified' and f->>'status'='verified' then 'verified'
+    when n->>'status' in ('pending','verified') and f->>'status' in ('pending','verified') then 'pending'
+    else 'none' end;
+  return jsonb_build_object('status',state,'nid_status',n->>'status','face_status',f->>'status','face_enabled',f->'enabled');
+end;
+$function$;
+
 -- ===== views =====
 create or replace view public.financial_audit with (security_invoker=true) as
  SELECT id,
@@ -6669,6 +7629,8 @@ CREATE INDEX IF NOT EXISTS disbursements_method_idx ON public.disbursements USIN
 CREATE UNIQUE INDEX IF NOT EXISTS disbursements_one_live_per_booking_kind ON public.disbursements USING btree (booking_id, kind) WHERE ((booking_id IS NOT NULL) AND (status <> 'failed'::text));
 CREATE INDEX IF NOT EXISTS disbursements_pending_idx ON public.disbursements USING btree (created_at) WHERE (status = 'pending'::text);
 CREATE INDEX IF NOT EXISTS disbursements_user_idx ON public.disbursements USING btree (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS face_attempts_pending ON public.face_verification_attempts USING btree (submitted_at) WHERE (status = 'pending'::text);
+CREATE INDEX IF NOT EXISTS face_attempts_user_created ON public.face_verification_attempts USING btree (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS favorites_by_listing ON public.favorites USING btree (listing_id);
 CREATE INDEX IF NOT EXISTS favorites_by_user ON public.favorites USING btree (user_id);
 CREATE INDEX IF NOT EXISTS idx_fcm_tokens_active ON public.fcm_tokens USING btree (user_id, is_active) WHERE (is_active = true);
@@ -6738,6 +7700,8 @@ alter table public.conversations enable row level security;
 alter table public.coupon_redemptions enable row level security;
 alter table public.coupons enable row level security;
 alter table public.disbursements enable row level security;
+alter table public.edge_rate_limits enable row level security;
+alter table public.face_verification_attempts enable row level security;
 alter table public.facilities enable row level security;
 alter table public.favorites enable row level security;
 alter table public.fcm_tokens enable row level security;
@@ -6863,6 +7827,10 @@ create policy "coupons_admin_all" on public.coupons
   with check (is_admin());
 drop policy if exists "disbursements_select" on public.disbursements;
 create policy "disbursements_select" on public.disbursements
+  as permissive for select to authenticated
+  using (((user_id = auth.uid()) OR is_admin()));
+drop policy if exists "face_attempts_read" on public.face_verification_attempts;
+create policy "face_attempts_read" on public.face_verification_attempts
   as permissive for select to authenticated
   using (((user_id = auth.uid()) OR is_admin()));
 drop policy if exists "facilities_read_public" on public.facilities;
@@ -7000,6 +7968,10 @@ create policy "listings_admin_update" on public.listings
   as permissive for update to public
   using (is_admin())
   with check (is_admin());
+drop policy if exists "listings_select_booked_guest" on public.listings;
+create policy "listings_select_booked_guest" on public.listings
+  as permissive for select to authenticated
+  using (fn_caller_booked_listing(id));
 drop policy if exists "owners_insert_own_listings" on public.listings;
 create policy "owners_insert_own_listings" on public.listings
   as permissive for insert to authenticated
@@ -7135,7 +8107,12 @@ create policy "push_tokens_update_own" on public.push_tokens
 drop policy if exists "Users can manage own read cursors" on public.read_cursors;
 create policy "Users can manage own read cursors" on public.read_cursors
   as permissive for all to public
-  using ((auth.uid() = user_id));
+  using (((auth.uid() = user_id) AND (EXISTS ( SELECT 1
+   FROM conversations c
+  WHERE ((c.id = read_cursors.conversation_id) AND ((auth.uid() = c.participant_one_id) OR (auth.uid() = c.participant_two_id)))))))
+  with check (((auth.uid() = user_id) AND (EXISTS ( SELECT 1
+   FROM conversations c
+  WHERE ((c.id = read_cursors.conversation_id) AND ((auth.uid() = c.participant_one_id) OR (auth.uid() = c.participant_two_id)))))));
 drop policy if exists "reports_admin_update" on public.reports;
 create policy "reports_admin_update" on public.reports
   as permissive for update to authenticated
@@ -7190,7 +8167,12 @@ create policy "sms_suppressions_admin_read" on public.sms_suppressions
 drop policy if exists "Users can manage own typing" on public.typing_indicators;
 create policy "Users can manage own typing" on public.typing_indicators
   as permissive for all to public
-  using ((auth.uid() = user_id));
+  using (((auth.uid() = user_id) AND (EXISTS ( SELECT 1
+   FROM conversations c
+  WHERE ((c.id = typing_indicators.conversation_id) AND ((auth.uid() = c.participant_one_id) OR (auth.uid() = c.participant_two_id)))))))
+  with check (((auth.uid() = user_id) AND (EXISTS ( SELECT 1
+   FROM conversations c
+  WHERE ((c.id = typing_indicators.conversation_id) AND ((auth.uid() = c.participant_one_id) OR (auth.uid() = c.participant_two_id)))))));
 drop policy if exists "Users can view typing in own conversations" on public.typing_indicators;
 create policy "Users can view typing in own conversations" on public.typing_indicators
   as permissive for select to public
@@ -7230,12 +8212,16 @@ do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_audit_immutable' and c.relname='audit_log' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_audit_immutable BEFORE DELETE OR UPDATE ON public.audit_log FOR EACH ROW EXECUTE FUNCTION fn_audit_immutable() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='booking_lifecycle_notifications' and c.relname='bookings' and n.nspname='public') then execute $q$ CREATE TRIGGER booking_lifecycle_notifications AFTER INSERT OR UPDATE OF booking_status, cancelled_by ON public.bookings FOR EACH ROW EXECUTE FUNCTION notify_on_booking_lifecycle() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='bookings_touch_updated_at' and c.relname='bookings' and n.nspname='public') then execute $q$ CREATE TRIGGER bookings_touch_updated_at BEFORE UPDATE ON public.bookings FOR EACH ROW EXECUTE FUNCTION touch_updated_at() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_alert_paid_cancellation' and c.relname='bookings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_alert_paid_cancellation AFTER UPDATE OF booking_status ON public.bookings FOR EACH ROW EXECUTE FUNCTION fn_alert_paid_cancellation() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_audit_bookings_ins' and c.relname='bookings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_audit_bookings_ins AFTER INSERT ON public.bookings FOR EACH ROW EXECUTE FUNCTION fn_audit('financial') $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_audit_bookings_upd' and c.relname='bookings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_audit_bookings_upd AFTER UPDATE ON public.bookings FOR EACH ROW WHEN (((old.payment_status IS DISTINCT FROM new.payment_status) OR (old.payment_method IS DISTINCT FROM new.payment_method) OR (old.booking_status IS DISTINCT FROM new.booking_status) OR (old.total_price IS DISTINCT FROM new.total_price))) EXECUTE FUNCTION fn_audit('financial') $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_enforce_booking_update_rules' and c.relname='bookings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_enforce_booking_update_rules BEFORE UPDATE ON public.bookings FOR EACH ROW EXECUTE FUNCTION enforce_booking_update_rules() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_post_booking_ledger' and c.relname='bookings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_post_booking_ledger AFTER INSERT OR UPDATE OF payment_status ON public.bookings FOR EACH ROW EXECUTE FUNCTION fn_post_booking_ledger() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_set_booking_paid_at' and c.relname='bookings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_set_booking_paid_at BEFORE INSERT OR UPDATE OF payment_status ON public.bookings FOR EACH ROW EXECUTE FUNCTION set_booking_paid_at() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_set_booking_rejected_at' and c.relname='bookings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_set_booking_rejected_at BEFORE INSERT OR UPDATE OF booking_status ON public.bookings FOR EACH ROW EXECUTE FUNCTION set_booking_rejected_at() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_stamp_refund_policy' and c.relname='bookings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_stamp_refund_policy BEFORE UPDATE OF booking_status ON public.bookings FOR EACH ROW EXECUTE FUNCTION fn_stamp_refund_policy() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_freeze_conversation_participants' and c.relname='conversations' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_freeze_conversation_participants BEFORE UPDATE ON public.conversations FOR EACH ROW EXECUTE FUNCTION fn_freeze_conversation_participants() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_refuse_suspended_writer' and c.relname='conversations' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_refuse_suspended_writer BEFORE INSERT OR UPDATE ON public.conversations FOR EACH ROW EXECUTE FUNCTION fn_refuse_suspended_writer() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_audit_coupon_redemptions_ins' and c.relname='coupon_redemptions' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_audit_coupon_redemptions_ins AFTER INSERT ON public.coupon_redemptions FOR EACH ROW EXECUTE FUNCTION fn_audit('discount') $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='coupons_normalize_code_trg' and c.relname='coupons' and n.nspname='public') then execute $q$ CREATE TRIGGER coupons_normalize_code_trg BEFORE INSERT OR UPDATE ON public.coupons FOR EACH ROW EXECUTE FUNCTION coupons_normalize_code() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_audit_coupons_del' and c.relname='coupons' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_audit_coupons_del AFTER DELETE ON public.coupons FOR EACH ROW EXECUTE FUNCTION fn_audit('discount') $q$; end if; end $t$;
@@ -7253,16 +8239,20 @@ do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_touch_listing_address' and c.relname='listing_addresses' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_touch_listing_address BEFORE UPDATE ON public.listing_addresses FOR EACH ROW EXECUTE FUNCTION touch_listing_address() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='enforce_listing_public_location' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER enforce_listing_public_location BEFORE INSERT OR UPDATE ON public.listings FOR EACH ROW EXECUTE FUNCTION enforce_listing_public_location() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='listing_location_trigger' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER listing_location_trigger BEFORE INSERT OR UPDATE ON public.listings FOR EACH ROW EXECUTE FUNCTION update_listing_location() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_freeze_listing_reputation' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_freeze_listing_reputation BEFORE INSERT OR UPDATE ON public.listings FOR EACH ROW EXECUTE FUNCTION fn_freeze_listing_reputation() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_refuse_suspended_writer' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_refuse_suspended_writer BEFORE INSERT OR UPDATE ON public.listings FOR EACH ROW EXECUTE FUNCTION fn_refuse_suspended_writer() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_set_listing_geog' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_set_listing_geog BEFORE INSERT OR UPDATE OF latitude, longitude ON public.listings FOR EACH ROW EXECUTE FUNCTION set_listing_geog() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_set_listing_host_available' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_set_listing_host_available BEFORE INSERT ON public.listings FOR EACH ROW EXECUTE FUNCTION set_listing_host_available() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='on_message_template_update' and c.relname='message_templates' and n.nspname='public') then execute $q$ CREATE TRIGGER on_message_template_update BEFORE UPDATE ON public.message_templates FOR EACH ROW EXECUTE FUNCTION touch_message_templates_updated_at() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='on_message_notify_recipient' and c.relname='messages' and n.nspname='public') then execute $q$ CREATE TRIGGER on_message_notify_recipient AFTER INSERT ON public.messages FOR EACH ROW EXECUTE FUNCTION notify_recipient_on_new_message() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_messages_block_guard' and c.relname='messages' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_messages_block_guard BEFORE INSERT ON public.messages FOR EACH ROW EXECUTE FUNCTION fn_messages_block_guard() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_refuse_suspended_writer' and c.relname='messages' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_refuse_suspended_writer BEFORE INSERT OR UPDATE ON public.messages FOR EACH ROW EXECUTE FUNCTION fn_refuse_suspended_writer() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trigger_update_conversation_last_message' and c.relname='messages' and n.nspname='public') then execute $q$ CREATE TRIGGER trigger_update_conversation_last_message AFTER INSERT ON public.messages FOR EACH ROW EXECUTE FUNCTION update_conversation_last_message() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='notification_preferences_updated_at' and c.relname='notification_preferences' and n.nspname='public') then execute $q$ CREATE TRIGGER notification_preferences_updated_at BEFORE UPDATE ON public.notification_preferences FOR EACH ROW EXECUTE FUNCTION update_notifications_updated_at() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='notifications_updated_at' and c.relname='notifications' and n.nspname='public') then execute $q$ CREATE TRIGGER notifications_updated_at BEFORE UPDATE ON public.notifications FOR EACH ROW EXECUTE FUNCTION update_notifications_updated_at() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='on_notification_send_push' and c.relname='notifications' and n.nspname='public') then execute $q$ CREATE TRIGGER on_notification_send_push AFTER INSERT ON public.notifications FOR EACH ROW EXECUTE FUNCTION send_push_on_notification_insert() $q$; end if; end $t$;
-do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='on_document_uploaded' and c.relname='owner_documents' and n.nspname='public') then execute $q$ CREATE TRIGGER on_document_uploaded AFTER INSERT ON public.owner_documents FOR EACH ROW EXECUTE FUNCTION set_verification_pending() $q$; end if; end $t$;
-do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='on_document_verified' and c.relname='owner_documents' and n.nspname='public') then execute $q$ CREATE TRIGGER on_document_verified AFTER UPDATE OF verified_at ON public.owner_documents FOR EACH ROW WHEN (((new.verified_at IS NOT NULL) AND (old.verified_at IS NULL))) EXECUTE FUNCTION update_profile_verification_status() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='guard_nid_document_write' and c.relname='owner_documents' and n.nspname='public') then execute $q$ CREATE TRIGGER guard_nid_document_write BEFORE INSERT OR DELETE OR UPDATE ON public.owner_documents FOR EACH ROW EXECUTE FUNCTION guard_nid_document_write() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='on_document_uploaded' and c.relname='owner_documents' and n.nspname='public') then execute $q$ CREATE TRIGGER on_document_uploaded AFTER INSERT OR UPDATE OF file_path ON public.owner_documents FOR EACH ROW EXECUTE FUNCTION set_verification_pending() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_audit_owner_documents_upd' and c.relname='owner_documents' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_audit_owner_documents_upd AFTER UPDATE ON public.owner_documents FOR EACH ROW WHEN (((old.verified_at IS DISTINCT FROM new.verified_at) OR (old.verified_by IS DISTINCT FROM new.verified_by) OR (old.rejection_reason IS DISTINCT FROM new.rejection_reason))) EXECUTE FUNCTION fn_audit('verification') $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='payments_touch_updated_at' and c.relname='payments' and n.nspname='public') then execute $q$ CREATE TRIGGER payments_touch_updated_at BEFORE UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION touch_payments_updated_at() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_audit_payments_ins' and c.relname='payments' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_audit_payments_ins AFTER INSERT ON public.payments FOR EACH ROW EXECUTE FUNCTION fn_audit('financial') $q$; end if; end $t$;
@@ -7272,6 +8262,7 @@ do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_payout_methods_immutable' and c.relname='payout_methods' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_payout_methods_immutable BEFORE UPDATE ON public.payout_methods FOR EACH ROW EXECUTE FUNCTION fn_guard_payout_method_immutable() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_audit_profiles_address_verification' and c.relname='profiles' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_audit_profiles_address_verification AFTER UPDATE ON public.profiles FOR EACH ROW WHEN (((old.address_verification_status IS DISTINCT FROM new.address_verification_status) OR (old.address_verified_by IS DISTINCT FROM new.address_verified_by))) EXECUTE FUNCTION fn_audit('verification') $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_audit_profiles_upd' and c.relname='profiles' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_audit_profiles_upd AFTER UPDATE ON public.profiles FOR EACH ROW WHEN (((old.role IS DISTINCT FROM new.role) OR (old.is_host IS DISTINCT FROM new.is_host))) EXECUTE FUNCTION fn_audit('auth') $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_guard_suspension_columns' and c.relname='profiles' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_guard_suspension_columns BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION fn_guard_suspension_columns() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_guard_verification_verdicts' and c.relname='profiles' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_guard_verification_verdicts BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION fn_guard_verification_verdicts() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_sync_listings_host_available' and c.relname='profiles' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_sync_listings_host_available AFTER UPDATE OF is_available ON public.profiles FOR EACH ROW EXECUTE FUNCTION sync_listings_host_available() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='push_tokens_updated_at' and c.relname='push_tokens' and n.nspname='public') then execute $q$ CREATE TRIGGER push_tokens_updated_at BEFORE UPDATE ON public.push_tokens FOR EACH ROW EXECUTE FUNCTION update_notifications_updated_at() $q$; end if; end $t$;
@@ -7280,6 +8271,8 @@ do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='reveal_reviews_on_insert' and c.relname='reviews' and n.nspname='public') then execute $q$ CREATE TRIGGER reveal_reviews_on_insert AFTER INSERT ON public.reviews FOR EACH ROW EXECUTE FUNCTION check_and_reveal_reviews() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='review_revealed_notification' and c.relname='reviews' and n.nspname='public') then execute $q$ CREATE TRIGGER review_revealed_notification AFTER UPDATE OF is_revealed ON public.reviews FOR EACH ROW EXECUTE FUNCTION notify_on_review_revealed() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='reviews_updated_at' and c.relname='reviews' and n.nspname='public') then execute $q$ CREATE TRIGGER reviews_updated_at BEFORE UPDATE ON public.reviews FOR EACH ROW EXECUTE FUNCTION update_reviews_updated_at() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_refresh_listing_rating' and c.relname='reviews' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_refresh_listing_rating AFTER INSERT OR DELETE OR UPDATE ON public.reviews FOR EACH ROW EXECUTE FUNCTION fn_refresh_listing_rating() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_refuse_suspended_writer' and c.relname='reviews' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_refuse_suspended_writer BEFORE INSERT OR UPDATE ON public.reviews FOR EACH ROW EXECUTE FUNCTION fn_refuse_suspended_writer() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_spatial_ref_sys_no_truncate' and c.relname='spatial_ref_sys' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_spatial_ref_sys_no_truncate BEFORE TRUNCATE ON public.spatial_ref_sys FOR EACH STATEMENT EXECUTE FUNCTION fn_spatial_ref_sys_readonly() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_spatial_ref_sys_readonly' and c.relname='spatial_ref_sys' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_spatial_ref_sys_readonly BEFORE INSERT OR DELETE OR UPDATE ON public.spatial_ref_sys FOR EACH ROW EXECUTE FUNCTION fn_spatial_ref_sys_readonly() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='user_devices_revoked_tokens' and c.relname='user_devices' and n.nspname='public') then execute $q$ CREATE TRIGGER user_devices_revoked_tokens AFTER UPDATE ON public.user_devices FOR EACH ROW EXECUTE FUNCTION fn_deactivate_device_tokens() $q$; end if; end $t$;
@@ -7327,6 +8320,11 @@ revoke all on table public.disbursements from public, anon, authenticated, servi
 grant delete, insert, references, select, trigger, truncate, update on table public.disbursements to anon;
 grant delete, insert, references, select, trigger, truncate, update on table public.disbursements to authenticated;
 grant delete, insert, references, select, trigger, truncate, update on table public.disbursements to service_role;
+revoke all on table public.edge_rate_limits from public, anon, authenticated, service_role;
+grant delete, insert, references, select, trigger, truncate, update on table public.edge_rate_limits to service_role;
+revoke all on table public.face_verification_attempts from public, anon, authenticated, service_role;
+grant delete, insert, references, select, trigger, truncate, update on table public.face_verification_attempts to service_role;
+grant select on table public.face_verification_attempts to authenticated;
 revoke all on table public.facilities from public, anon, authenticated, service_role;
 grant delete, insert, references, select, trigger, truncate, update on table public.facilities to anon;
 grant delete, insert, references, select, trigger, truncate, update on table public.facilities to authenticated;
@@ -7531,6 +8529,16 @@ revoke all on function public.admin_sms_audience(p_filters jsonb) from public, a
 grant execute on function public.admin_sms_audience(p_filters jsonb) to service_role;
 revoke all on function public.admin_start_sms_campaign(p_campaign_id uuid) from public, anon, authenticated, service_role;
 grant execute on function public.admin_start_sms_campaign(p_campaign_id uuid) to service_role;
+revoke all on function public.admin_suspend_user(p_user_id uuid, p_reason text, p_actor uuid) from public, anon, authenticated, service_role;
+grant execute on function public.admin_suspend_user(p_user_id uuid, p_reason text, p_actor uuid) to service_role;
+revoke all on function public.admin_unsuspend_user(p_user_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.admin_unsuspend_user(p_user_id uuid) to service_role;
+revoke all on function public.approve_identity_document(p_user_id uuid, p_document_type text, p_front_path text, p_back_path text) from public, anon, authenticated, service_role;
+grant execute on function public.approve_identity_document(p_user_id uuid, p_document_type text, p_front_path text, p_back_path text) to authenticated;
+grant execute on function public.approve_identity_document(p_user_id uuid, p_document_type text, p_front_path text, p_back_path text) to service_role;
+revoke all on function public.approve_nid_verification(p_user_id uuid, p_front_path text, p_back_path text) from public, anon, authenticated, service_role;
+grant execute on function public.approve_nid_verification(p_user_id uuid, p_front_path text, p_back_path text) to authenticated;
+grant execute on function public.approve_nid_verification(p_user_id uuid, p_front_path text, p_back_path text) to service_role;
 revoke all on function public.auto_complete_elapsed_bookings() from public, anon, authenticated, service_role;
 grant execute on function public.auto_complete_elapsed_bookings() to service_role;
 revoke all on function public.auto_reveal_old_reviews() from public, anon, authenticated, service_role;
@@ -7587,6 +8595,11 @@ revoke all on function public.expire_stale_bookings() from public, anon, authent
 grant execute on function public.expire_stale_bookings() to service_role;
 revoke all on function public.expire_stale_payment_attempts() from public, anon, authenticated, service_role;
 grant execute on function public.expire_stale_payment_attempts() to service_role;
+revoke all on function public.face_verification_status() from public, anon, authenticated, service_role;
+grant execute on function public.face_verification_status() to authenticated;
+grant execute on function public.face_verification_status() to service_role;
+revoke all on function public.fn_alert_paid_cancellation() from public, anon, authenticated, service_role;
+grant execute on function public.fn_alert_paid_cancellation() to service_role;
 revoke all on function public.fn_audit() from public, anon, authenticated, service_role;
 grant execute on function public.fn_audit() to public;
 grant execute on function public.fn_audit() to anon;
@@ -7597,6 +8610,9 @@ grant execute on function public.fn_audit_immutable() to public;
 grant execute on function public.fn_audit_immutable() to anon;
 grant execute on function public.fn_audit_immutable() to authenticated;
 grant execute on function public.fn_audit_immutable() to service_role;
+revoke all on function public.fn_caller_booked_listing(p_listing_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.fn_caller_booked_listing(p_listing_id uuid) to authenticated;
+grant execute on function public.fn_caller_booked_listing(p_listing_id uuid) to service_role;
 revoke all on function public.fn_canonical_bd_phone(p_raw text) from public, anon, authenticated, service_role;
 grant execute on function public.fn_canonical_bd_phone(p_raw text) to public;
 grant execute on function public.fn_canonical_bd_phone(p_raw text) to anon;
@@ -7609,6 +8625,10 @@ grant execute on function public.fn_deactivate_device_tokens() to authenticated;
 grant execute on function public.fn_deactivate_device_tokens() to service_role;
 revoke all on function public.fn_enforce_device_limit(p_user_id uuid, p_keep uuid) from public, anon, authenticated, service_role;
 grant execute on function public.fn_enforce_device_limit(p_user_id uuid, p_keep uuid) to service_role;
+revoke all on function public.fn_freeze_conversation_participants() from public, anon, authenticated, service_role;
+grant execute on function public.fn_freeze_conversation_participants() to service_role;
+revoke all on function public.fn_freeze_listing_reputation() from public, anon, authenticated, service_role;
+grant execute on function public.fn_freeze_listing_reputation() to service_role;
 revoke all on function public.fn_guard_disbursement_transitions() from public, anon, authenticated, service_role;
 grant execute on function public.fn_guard_disbursement_transitions() to public;
 grant execute on function public.fn_guard_disbursement_transitions() to anon;
@@ -7619,6 +8639,11 @@ grant execute on function public.fn_guard_payout_method_immutable() to public;
 grant execute on function public.fn_guard_payout_method_immutable() to anon;
 grant execute on function public.fn_guard_payout_method_immutable() to authenticated;
 grant execute on function public.fn_guard_payout_method_immutable() to service_role;
+revoke all on function public.fn_guard_suspension_columns() from public, anon, authenticated, service_role;
+grant execute on function public.fn_guard_suspension_columns() to public;
+grant execute on function public.fn_guard_suspension_columns() to anon;
+grant execute on function public.fn_guard_suspension_columns() to authenticated;
+grant execute on function public.fn_guard_suspension_columns() to service_role;
 revoke all on function public.fn_guard_verification_verdicts() from public, anon, authenticated, service_role;
 grant execute on function public.fn_guard_verification_verdicts() to public;
 grant execute on function public.fn_guard_verification_verdicts() to anon;
@@ -7631,6 +8656,12 @@ grant execute on function public.fn_host_ledger_immutable() to authenticated;
 grant execute on function public.fn_host_ledger_immutable() to service_role;
 revoke all on function public.fn_humanise_hours(p_hours integer) from public, anon, authenticated, service_role;
 grant execute on function public.fn_humanise_hours(p_hours integer) to service_role;
+revoke all on function public.fn_identity_phone(p_user_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.fn_identity_phone(p_user_id uuid) to service_role;
+revoke all on function public.fn_is_suspended(p_user_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.fn_is_suspended(p_user_id uuid) to service_role;
+revoke all on function public.fn_messages_block_guard() from public, anon, authenticated, service_role;
+grant execute on function public.fn_messages_block_guard() to service_role;
 revoke all on function public.fn_msisdn(p_canonical text) from public, anon, authenticated, service_role;
 grant execute on function public.fn_msisdn(p_canonical text) to public;
 grant execute on function public.fn_msisdn(p_canonical text) to anon;
@@ -7648,6 +8679,18 @@ grant execute on function public.fn_post_disbursement_ledger() to public;
 grant execute on function public.fn_post_disbursement_ledger() to anon;
 grant execute on function public.fn_post_disbursement_ledger() to authenticated;
 grant execute on function public.fn_post_disbursement_ledger() to service_role;
+revoke all on function public.fn_rate_limit_hit(p_bucket text, p_limit integer, p_window_seconds integer) from public, anon, authenticated, service_role;
+grant execute on function public.fn_rate_limit_hit(p_bucket text, p_limit integer, p_window_seconds integer) to service_role;
+revoke all on function public.fn_refresh_listing_rating() from public, anon, authenticated, service_role;
+grant execute on function public.fn_refresh_listing_rating() to service_role;
+revoke all on function public.fn_refund_policy_pct(p_status booking_status, p_cancelled_by uuid, p_tenant_id uuid, p_starts_at timestamp with time zone, p_at timestamp with time zone) from public, anon, authenticated, service_role;
+grant execute on function public.fn_refund_policy_pct(p_status booking_status, p_cancelled_by uuid, p_tenant_id uuid, p_starts_at timestamp with time zone, p_at timestamp with time zone) to authenticated;
+grant execute on function public.fn_refund_policy_pct(p_status booking_status, p_cancelled_by uuid, p_tenant_id uuid, p_starts_at timestamp with time zone, p_at timestamp with time zone) to service_role;
+revoke all on function public.fn_refuse_suspended_writer() from public, anon, authenticated, service_role;
+grant execute on function public.fn_refuse_suspended_writer() to public;
+grant execute on function public.fn_refuse_suspended_writer() to anon;
+grant execute on function public.fn_refuse_suspended_writer() to authenticated;
+grant execute on function public.fn_refuse_suspended_writer() to service_role;
 revoke all on function public.fn_render_sms_body(p_body text, p_name text) from public, anon, authenticated, service_role;
 grant execute on function public.fn_render_sms_body(p_body text, p_name text) to public;
 grant execute on function public.fn_render_sms_body(p_body text, p_name text) to anon;
@@ -7672,11 +8715,18 @@ grant execute on function public.fn_spatial_ref_sys_readonly() to public;
 grant execute on function public.fn_spatial_ref_sys_readonly() to anon;
 grant execute on function public.fn_spatial_ref_sys_readonly() to authenticated;
 grant execute on function public.fn_spatial_ref_sys_readonly() to service_role;
+revoke all on function public.fn_stamp_refund_policy() from public, anon, authenticated, service_role;
+grant execute on function public.fn_stamp_refund_policy() to public;
+grant execute on function public.fn_stamp_refund_policy() to anon;
+grant execute on function public.fn_stamp_refund_policy() to authenticated;
+grant execute on function public.fn_stamp_refund_policy() to service_role;
 revoke all on function public.fn_touch_disbursements() from public, anon, authenticated, service_role;
 grant execute on function public.fn_touch_disbursements() to public;
 grant execute on function public.fn_touch_disbursements() to anon;
 grant execute on function public.fn_touch_disbursements() to authenticated;
 grant execute on function public.fn_touch_disbursements() to service_role;
+revoke all on function public.fn_users_blocked(p_a uuid, p_b uuid) from public, anon, authenticated, service_role;
+grant execute on function public.fn_users_blocked(p_a uuid, p_b uuid) to service_role;
 revoke all on function public.fn_validate_app_setting() from public, anon, authenticated, service_role;
 grant execute on function public.fn_validate_app_setting() to public;
 grant execute on function public.fn_validate_app_setting() to anon;
@@ -7722,6 +8772,16 @@ grant execute on function public.fn_validate_setting_payout_channels(p_value tex
 grant execute on function public.fn_validate_setting_payout_channels(p_value text) to anon;
 grant execute on function public.fn_validate_setting_payout_channels(p_value text) to authenticated;
 grant execute on function public.fn_validate_setting_payout_channels(p_value text) to service_role;
+revoke all on function public.fn_validate_setting_refund_late_pct(p_value text) from public, anon, authenticated, service_role;
+grant execute on function public.fn_validate_setting_refund_late_pct(p_value text) to public;
+grant execute on function public.fn_validate_setting_refund_late_pct(p_value text) to anon;
+grant execute on function public.fn_validate_setting_refund_late_pct(p_value text) to authenticated;
+grant execute on function public.fn_validate_setting_refund_late_pct(p_value text) to service_role;
+revoke all on function public.fn_validate_setting_refund_window_hours(p_value text) from public, anon, authenticated, service_role;
+grant execute on function public.fn_validate_setting_refund_window_hours(p_value text) to public;
+grant execute on function public.fn_validate_setting_refund_window_hours(p_value text) to anon;
+grant execute on function public.fn_validate_setting_refund_window_hours(p_value text) to authenticated;
+grant execute on function public.fn_validate_setting_refund_window_hours(p_value text) to service_role;
 revoke all on function public.fn_validate_setting_search_radius_tiers(p_value text) from public, anon, authenticated, service_role;
 grant execute on function public.fn_validate_setting_search_radius_tiers(p_value text) to public;
 grant execute on function public.fn_validate_setting_search_radius_tiers(p_value text) to anon;
@@ -7771,11 +8831,19 @@ grant execute on function public.get_unread_notification_count(p_user_id uuid) t
 grant execute on function public.get_unread_notification_count(p_user_id uuid) to anon;
 grant execute on function public.get_unread_notification_count(p_user_id uuid) to authenticated;
 grant execute on function public.get_unread_notification_count(p_user_id uuid) to service_role;
+revoke all on function public.guard_nid_document_write() from public, anon, authenticated, service_role;
+grant execute on function public.guard_nid_document_write() to public;
+grant execute on function public.guard_nid_document_write() to anon;
+grant execute on function public.guard_nid_document_write() to authenticated;
+grant execute on function public.guard_nid_document_write() to service_role;
 revoke all on function public.handle_new_user() from public, anon, authenticated, service_role;
 grant execute on function public.handle_new_user() to public;
 grant execute on function public.handle_new_user() to anon;
 grant execute on function public.handle_new_user() to authenticated;
 grant execute on function public.handle_new_user() to service_role;
+revoke all on function public.has_approved_face_or_identity(p_user_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.has_approved_face_or_identity(p_user_id uuid) to authenticated;
+grant execute on function public.has_approved_face_or_identity(p_user_id uuid) to service_role;
 revoke all on function public.host_leaderboard_ranked(p_period text) from public, anon, authenticated, service_role;
 grant execute on function public.host_leaderboard_ranked(p_period text) to public;
 grant execute on function public.host_leaderboard_ranked(p_period text) to anon;
@@ -7820,6 +8888,9 @@ grant execute on function public.nearby_landmarks(p_lat double precision, p_lng 
 grant execute on function public.nearby_landmarks(p_lat double precision, p_lng double precision, p_limit integer, p_type text) to anon;
 grant execute on function public.nearby_landmarks(p_lat double precision, p_lng double precision, p_limit integer, p_type text) to authenticated;
 grant execute on function public.nearby_landmarks(p_lat double precision, p_lng double precision, p_limit integer, p_type text) to service_role;
+revoke all on function public.nid_verification_status() from public, anon, authenticated, service_role;
+grant execute on function public.nid_verification_status() to authenticated;
+grant execute on function public.nid_verification_status() to service_role;
 revoke all on function public.normalise_bd_msisdn(p_raw text) from public, anon, authenticated, service_role;
 grant execute on function public.normalise_bd_msisdn(p_raw text) to public;
 grant execute on function public.normalise_bd_msisdn(p_raw text) to anon;
@@ -7848,23 +8919,27 @@ grant execute on function public.notify_recipient_on_new_message() to public;
 grant execute on function public.notify_recipient_on_new_message() to anon;
 grant execute on function public.notify_recipient_on_new_message() to authenticated;
 grant execute on function public.notify_recipient_on_new_message() to service_role;
+revoke all on function public.orphan_face_evidence() from public, anon, authenticated, service_role;
+grant execute on function public.orphan_face_evidence() to service_role;
 revoke all on function public.otp_log_attempts(p_id uuid, p_attempts integer) from public, anon, authenticated, service_role;
 grant execute on function public.otp_log_attempts(p_id uuid, p_attempts integer) to service_role;
 revoke all on function public.otp_log_send(p_phone text, p_otp_hash text, p_expires_at timestamp with time zone) from public, anon, authenticated, service_role;
 grant execute on function public.otp_log_send(p_phone text, p_otp_hash text, p_expires_at timestamp with time zone) to service_role;
 revoke all on function public.otp_log_verified(p_id uuid) from public, anon, authenticated, service_role;
 grant execute on function public.otp_log_verified(p_id uuid) to service_role;
+revoke all on function public.reap_edge_rate_limits() from public, anon, authenticated, service_role;
+grant execute on function public.reap_edge_rate_limits() to service_role;
 revoke all on function public.reap_stale_devices() from public, anon, authenticated, service_role;
 grant execute on function public.reap_stale_devices() to service_role;
 revoke all on function public.record_disbursement(p_user_id uuid, p_payout_method_id uuid, p_amount numeric, p_kind text, p_booking_id uuid, p_reference text, p_note text, p_status text) from public, anon, authenticated, service_role;
 grant execute on function public.record_disbursement(p_user_id uuid, p_payout_method_id uuid, p_amount numeric, p_kind text, p_booking_id uuid, p_reference text, p_note text, p_status text) to authenticated;
 grant execute on function public.record_disbursement(p_user_id uuid, p_payout_method_id uuid, p_amount numeric, p_kind text, p_booking_id uuid, p_reference text, p_note text, p_status text) to service_role;
+revoke all on function public.record_face_evidence_deleted(p_attempt_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.record_face_evidence_deleted(p_attempt_id uuid) to service_role;
 revoke all on function public.record_host_ledger_entry(p_host_id uuid, p_entry_type text, p_amount numeric, p_note text, p_reference text) from public, anon, authenticated, service_role;
 grant execute on function public.record_host_ledger_entry(p_host_id uuid, p_entry_type text, p_amount numeric, p_note text, p_reference text) to authenticated;
 grant execute on function public.record_host_ledger_entry(p_host_id uuid, p_entry_type text, p_amount numeric, p_note text, p_reference text) to service_role;
 revoke all on function public.redeem_coupon(p_coupon_id uuid, p_booking_id uuid, p_discount_amount numeric) from public, anon, authenticated, service_role;
-grant execute on function public.redeem_coupon(p_coupon_id uuid, p_booking_id uuid, p_discount_amount numeric) to public;
-grant execute on function public.redeem_coupon(p_coupon_id uuid, p_booking_id uuid, p_discount_amount numeric) to anon;
 grant execute on function public.redeem_coupon(p_coupon_id uuid, p_booking_id uuid, p_discount_amount numeric) to authenticated;
 grant execute on function public.redeem_coupon(p_coupon_id uuid, p_booking_id uuid, p_discount_amount numeric) to service_role;
 revoke all on function public.register_device(p_device_id text, p_platform text, p_model text, p_os_version text, p_app_version text) from public, anon, authenticated, service_role;
@@ -7873,6 +8948,9 @@ grant execute on function public.register_device(p_device_id text, p_platform te
 revoke all on function public.retire_payout_method(p_id uuid) from public, anon, authenticated, service_role;
 grant execute on function public.retire_payout_method(p_id uuid) to authenticated;
 grant execute on function public.retire_payout_method(p_id uuid) to service_role;
+revoke all on function public.review_face_verification(p_attempt_id uuid, p_evidence_version uuid, p_decision text, p_note text) from public, anon, authenticated, service_role;
+grant execute on function public.review_face_verification(p_attempt_id uuid, p_evidence_version uuid, p_decision text, p_note text) to authenticated;
+grant execute on function public.review_face_verification(p_attempt_id uuid, p_evidence_version uuid, p_decision text, p_note text) to service_role;
 revoke all on function public.revoke_device(p_device_id text) from public, anon, authenticated, service_role;
 grant execute on function public.revoke_device(p_device_id text) to service_role;
 grant execute on function public.revoke_device(p_device_id text) to authenticated;
@@ -7974,9 +9052,21 @@ grant execute on function public.snap_coordinate(p_degrees numeric) to public;
 grant execute on function public.snap_coordinate(p_degrees numeric) to anon;
 grant execute on function public.snap_coordinate(p_degrees numeric) to authenticated;
 grant execute on function public.snap_coordinate(p_degrees numeric) to service_role;
+revoke all on function public.start_face_verification(p_method text) from public, anon, authenticated, service_role;
+grant execute on function public.start_face_verification(p_method text) to authenticated;
+grant execute on function public.start_face_verification(p_method text) to service_role;
 revoke all on function public.submit_address_verification(p_address_line text) from public, anon, authenticated, service_role;
 grant execute on function public.submit_address_verification(p_address_line text) to authenticated;
 grant execute on function public.submit_address_verification(p_address_line text) to service_role;
+revoke all on function public.submit_face_verification(p_attempt_id uuid, p_nonce uuid, p_clip_extension text) from public, anon, authenticated, service_role;
+grant execute on function public.submit_face_verification(p_attempt_id uuid, p_nonce uuid, p_clip_extension text) to authenticated;
+grant execute on function public.submit_face_verification(p_attempt_id uuid, p_nonce uuid, p_clip_extension text) to service_role;
+revoke all on function public.submit_identity_document(p_document_type text, p_front_path text, p_back_path text, p_document_number text) from public, anon, authenticated, service_role;
+grant execute on function public.submit_identity_document(p_document_type text, p_front_path text, p_back_path text, p_document_number text) to authenticated;
+grant execute on function public.submit_identity_document(p_document_type text, p_front_path text, p_back_path text, p_document_number text) to service_role;
+revoke all on function public.submit_nid_verification(p_front_path text, p_back_path text) from public, anon, authenticated, service_role;
+grant execute on function public.submit_nid_verification(p_front_path text, p_back_path text) to authenticated;
+grant execute on function public.submit_nid_verification(p_front_path text, p_back_path text) to service_role;
 revoke all on function public.sweep_sms_campaigns() from public, anon, authenticated, service_role;
 grant execute on function public.sweep_sms_campaigns() to service_role;
 revoke all on function public.sync_listings_host_available() from public, anon, authenticated, service_role;
@@ -8026,11 +9116,6 @@ grant execute on function public.update_listing_location() to public;
 grant execute on function public.update_listing_location() to anon;
 grant execute on function public.update_listing_location() to authenticated;
 grant execute on function public.update_listing_location() to service_role;
-revoke all on function public.update_listing_rating() from public, anon, authenticated, service_role;
-grant execute on function public.update_listing_rating() to public;
-grant execute on function public.update_listing_rating() to anon;
-grant execute on function public.update_listing_rating() to authenticated;
-grant execute on function public.update_listing_rating() to service_role;
 revoke all on function public.update_notifications_updated_at() from public, anon, authenticated, service_role;
 grant execute on function public.update_notifications_updated_at() to public;
 grant execute on function public.update_notifications_updated_at() to anon;
@@ -8054,11 +9139,15 @@ grant execute on function public.validate_coupon(p_code text, p_amount numeric) 
 grant execute on function public.validate_coupon(p_code text, p_amount numeric) to anon;
 grant execute on function public.validate_coupon(p_code text, p_amount numeric) to authenticated;
 grant execute on function public.validate_coupon(p_code text, p_amount numeric) to service_role;
+revoke all on function public.verification_overview() from public, anon, authenticated, service_role;
+grant execute on function public.verification_overview() to authenticated;
+grant execute on function public.verification_overview() to service_role;
 
 -- ===== storage buckets =====
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types) values ('avatars', 'avatars', true, 2097152, '{image/jpeg,image/png,image/webp}'::text[]) on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types) values ('chat-attachments', 'chat-attachments', true, 10485760, null) on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types) values ('chat-attachments', 'chat-attachments', true, 10485760, '{image/jpeg,image/png,image/webp,image/gif,image/heic,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain}'::text[]) on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types) values ('documents', 'documents', false, 10485760, '{image/jpeg,image/png,image/webp,application/pdf}'::text[]) on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types) values ('face-evidence', 'face-evidence', false, 8388608, '{video/webm,video/mp4,image/jpeg}'::text[]) on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types) values ('listing-images', 'listing-images', true, 5242880, '{image/jpeg,image/png,image/webp}'::text[]) on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
 
 -- ===== storage policies =====
@@ -8085,7 +9174,7 @@ create policy "chat_attachments_authenticated_insert" on storage.objects
 drop policy if exists "chat_attachments_owner_delete" on storage.objects;
 create policy "chat_attachments_owner_delete" on storage.objects
   as permissive for delete to authenticated
-  using (((bucket_id = 'chat-attachments'::text) AND (owner = auth.uid())));
+  using (((bucket_id = 'chat-attachments'::text) AND ((owner = auth.uid()) OR (owner_id = (auth.uid())::text) OR is_admin())));
 drop policy if exists "chat_attachments_public_read" on storage.objects;
 create policy "chat_attachments_public_read" on storage.objects
   as permissive for select to public
@@ -8108,6 +9197,16 @@ drop policy if exists "documents_owner_update" on storage.objects;
 create policy "documents_owner_update" on storage.objects
   as permissive for update to authenticated
   using (((bucket_id = 'documents'::text) AND ((storage.foldername(name))[1] = (auth.uid())::text)));
+drop policy if exists "face_evidence_insert" on storage.objects;
+create policy "face_evidence_insert" on storage.objects
+  as permissive for insert to authenticated
+  with check (((bucket_id = 'face-evidence'::text) AND (EXISTS ( SELECT 1
+   FROM face_verification_attempts a
+  WHERE ((a.user_id = auth.uid()) AND (a.status = 'draft'::text) AND (a.expires_at > now()) AND (((objects.name = ((((a.user_id)::text || '/'::text) || (a.id)::text) || '/selfie.jpg'::text)) OR (objects.name = ((((a.user_id)::text || '/'::text) || (a.id)::text) || '/clip.webm'::text))) OR (objects.name = ((((a.user_id)::text || '/'::text) || (a.id)::text) || '/clip.mp4'::text))))))));
+drop policy if exists "face_evidence_read" on storage.objects;
+create policy "face_evidence_read" on storage.objects
+  as permissive for select to authenticated
+  using (((bucket_id = 'face-evidence'::text) AND (is_admin() OR ((storage.foldername(name))[1] = (auth.uid())::text))));
 drop policy if exists "listing_images_owner_delete" on storage.objects;
 create policy "listing_images_owner_delete" on storage.objects
   as permissive for delete to authenticated
@@ -8125,6 +9224,15 @@ drop policy if exists "listing_images_publisher_insert" on storage.objects;
 create policy "listing_images_publisher_insert" on storage.objects
   as permissive for insert to authenticated
   with check (((bucket_id = 'listing-images'::text) AND can_upload_listing_image()));
+drop policy if exists "nid_evidence_no_delete" on storage.objects;
+create policy "nid_evidence_no_delete" on storage.objects
+  as restrictive for delete to authenticated
+  using ((NOT ((bucket_id = 'documents'::text) AND (split_part(name, '/'::text, 2) = 'nid'::text))));
+drop policy if exists "nid_evidence_no_update" on storage.objects;
+create policy "nid_evidence_no_update" on storage.objects
+  as restrictive for update to authenticated
+  using ((NOT ((bucket_id = 'documents'::text) AND (split_part(name, '/'::text, 2) = 'nid'::text))))
+  with check ((NOT ((bucket_id = 'documents'::text) AND (split_part(name, '/'::text, 2) = 'nid'::text))));
 
 -- ===== pg_cron jobs =====
 select cron.unschedule('auto-complete-elapsed-bookings') where exists (select 1 from cron.job where jobname='auto-complete-elapsed-bookings');
@@ -8137,6 +9245,8 @@ select cron.unschedule('expire-stale-bookings') where exists (select 1 from cron
 select cron.schedule('expire-stale-bookings', '*/15 * * * *', 'SELECT public.expire_stale_bookings()');
 select cron.unschedule('expire-stale-payment-attempts') where exists (select 1 from cron.job where jobname='expire-stale-payment-attempts');
 select cron.schedule('expire-stale-payment-attempts', '*/15 * * * *', 'select public.expire_stale_payment_attempts();');
+select cron.unschedule('reap-edge-rate-limits') where exists (select 1 from cron.job where jobname='reap-edge-rate-limits');
+select cron.schedule('reap-edge-rate-limits', '41 3 * * *', 'SELECT public.reap_edge_rate_limits()');
 select cron.unschedule('reap-stale-devices') where exists (select 1 from cron.job where jobname='reap-stale-devices');
 select cron.schedule('reap-stale-devices', '17 3 * * *', 'SELECT public.reap_stale_devices()');
 select cron.unschedule('send-pre-checkin-messages') where exists (select 1 from cron.job where jobname='send-pre-checkin-messages');

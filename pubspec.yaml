@@ -24,6 +24,9 @@ dependencies:
   url_launcher: ^6.2.5
   web: ^1.1.0
   webview_flutter: ^4.7.0
+  # Configure inline, muted camera preview in the shared face-capture WebView.
+  webview_flutter_android: ^4.13.0
+  webview_flutter_wkwebview: ^3.26.0
   crypto: ^3.0.3
   shared_preferences: ^2.2.2
   sms_autofill: ^2.4.0
