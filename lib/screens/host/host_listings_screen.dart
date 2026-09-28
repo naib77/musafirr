@@ -5,12 +5,9 @@ import '../../core/utils/responsive.dart';
 import '../../models/listing.dart';
 import '../../models/rental_plan.dart';
 import '../../repositories/musafir_repository.dart';
-import '../../services/app_settings_service.dart';
-import '../../services/image_upload_service.dart';
-import '../../services/verification/identity_gate.dart';
+import '../../services/verification/publish_gate.dart';
 import '../../state/auth_state.dart';
 import '../../widgets/modern_banner.dart';
-import 'address_proof_screen.dart';
 import 'create_listing_screen.dart';
 import 'edit_listing_screen.dart';
 import 'listing_availability_screen.dart';
@@ -118,46 +115,10 @@ class HostListingsScreen extends StatelessWidget {
   }
 
   Future<void> _createListing(BuildContext context) async {
-    final userId = authState.currentUser?.id;
-
-    // Identity gate: a host must have an admin-approved identity (ID document +
-    // selfie, verified by an admin) before publishing a listing.
-    if (userId != null) {
-      final verified = await IdentityGate.ensure(
-        context,
-        userId,
-        reason: 'to publish a listing',
-      );
-      if (!verified) return;
-    }
-
-    // When configured, a host must have submitted their address — the billed
-    // copy AND the address in writing — before publishing a listing.
-    //
-    // SUBMITTING is the gate, not the verdict: an admin's physical visit takes
-    // days, and a host who has done their part must not sit on an unpublishable
-    // listing waiting for one. The "Address verified" badge is what waits for
-    // the visit. A rejected submission is also allowed through — the host is
-    // told why on the profile screen and can resubmit; blocking them here would
-    // pull a live host's ability to list out from under them over a bad photo.
-    if (!context.mounted) return;
-    if (userId != null &&
-        await AppSettingsService.instance.ensureRequireListingAddressProof()) {
-      final address =
-          await ImageUploadService.instance.addressVerification(userId);
-      if (!address.isSubmitted) {
-        if (!context.mounted) return;
-        final uploaded = await Navigator.push<bool>(
-          context,
-          MaterialPageRoute(
-            builder: (context) => AddressProofScreen(userId: userId),
-          ),
-        );
-        // Host backed out without submitting — don't proceed to the form.
-        if (uploaded != true) return;
-      }
-    }
-
+    // Sign-in, identity and address-proof all live in PublishGate now, so the
+    // dashboard and profile entry points enforce exactly the same thing rather
+    // than nothing at all.
+    if (!await PublishGate.ensure(context, authState)) return;
     if (!context.mounted) return;
     Navigator.push(
       context,

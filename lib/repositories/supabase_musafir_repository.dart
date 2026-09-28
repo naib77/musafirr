@@ -25,12 +25,16 @@ import '../models/listing.dart';
 import '../models/listing_exact_address.dart';
 import '../models/listing_purpose.dart';
 import '../models/listing_type.dart';
+import '../models/turf_details.dart';
 import '../models/owner_registration_draft.dart';
 import '../models/review.dart';
 import '../models/search_filters.dart';
 import '../models/user.dart';
 import '../models/user_role.dart';
 import '../services/app_settings_service.dart';
+import '../services/booking/booking_accept_window.dart';
+import '../services/search/search_date_window.dart';
+import '../services/search/search_party_params.dart';
 import 'musafir_repository.dart';
 
 /// Supabase-backed implementation of [MusafirRepository].
@@ -483,6 +487,9 @@ class SupabaseMusafirRepository extends ChangeNotifier
       // cached getter because startup calls load() unawaited, and the first
       // search can beat it.
       final searchArea = await AppSettingsService.instance.ensureSearchArea();
+      // Null unless the guest actually picked a usable window — see
+      // searchDateWindowFor. Only then does the RPC filter on availability.
+      final dates = searchDateWindowFor(filters);
       final rows = await _client.rpc('search_listings', params: {
         'p_property_types': filters.propertyTypes.isEmpty
             ? null
@@ -522,6 +529,29 @@ class SupabaseMusafirRepository extends ChangeNotifier
         'p_ne_lng': hasBounds ? bounds.neLng : null,
         'p_sw_lat': hasBounds ? bounds.swLat : null,
         'p_sw_lng': hasBounds ? bounds.swLng : null,
+        // Dated search: the RPC drops listings the host has blocked (110) or
+        // that are already booked across this window, so a guest is no longer
+        // shown a listing the Reserve step will refuse. (112)
+        //
+        // Omitted entirely rather than sent as null, which makes the deploy
+        // order between this bundle and migration 112 irrelevant. PostgREST
+        // picks the overload by the KEYS present, so a null p_check_in still
+        // demands the 19-argument function: against a pre-112 database that
+        // resolves to nothing, and searchListingsFromDb's catch would turn
+        // every search on the site into "no results". Absent keys resolve to
+        // the old 17-argument function and simply do not filter by date.
+        if (dates != null) 'p_check_in': dates.startsAtIso,
+        if (dates != null) 'p_check_out': dates.endsAtIso,
+        // Per-category party capacity (118). Omitted-when-default for the same
+        // reason the dates above are: PostgREST resolves the overload by the
+        // KEYS present, so sending these against a pre-118 database would
+        // demand a function that does not exist and the catch below would turn
+        // every search on the site into "no results".
+        //
+        // Extracted and tested rather than written inline: "which keys does
+        // an unnarrowed search send" is exactly the decision that breaks, and
+        // it is unreachable from a widget test.
+        ...searchPartyParams(filters),
       });
 
       final list = (rows as List).cast<Map<String, dynamic>>();
@@ -622,6 +652,22 @@ class SupabaseMusafirRepository extends ChangeNotifier
       bedrooms: json['bedrooms'] as int? ?? 1,
       beds: json['beds'] as int? ?? 1,
       bathrooms: json['bathrooms'] as int? ?? 1,
+      // No `?? 0` anywhere here: null is the meaningful value (the host set
+      // no separate limit), and defaulting it to zero would hide every listing
+      // from every search the moment 118 landed.
+      partyLimits: PartyLimits(
+        adults: json['max_adults'] as int?,
+        children: json['max_children'] as int?,
+        infants: json['max_infants'] as int?,
+        pets: json['max_pets'] as int?,
+      ),
+      // Unknown wire values parse to null rather than throwing, so a database
+      // that grows a sixth sport does not break a build that predates it.
+      turfDetails: TurfDetails(
+        sport: turfSportFromWire(json['turf_sport'] as String?),
+        format: turfFormatFromWire(json['turf_format'] as String?),
+        surface: turfSurfaceFromWire(json['turf_surface'] as String?),
+      ),
       rating: (json['rating'] as num?)?.toDouble(),
       reviewCount: json['review_count'] as int? ?? 0,
       isSuperhost: json['is_superhost'] as bool? ?? false,
@@ -683,6 +729,19 @@ class SupabaseMusafirRepository extends ChangeNotifier
       'bedrooms': listing.bedrooms,
       'beds': listing.beds,
       'bathrooms': listing.bathrooms,
+      // Per-category sub-caps (118). Nullable end to end — sending null is
+      // how a host takes a cap back off, so these must not be omitted when
+      // unset the way an absent RPC key is.
+      'max_adults': listing.partyLimits.adults,
+      'max_children': listing.partyLimits.children,
+      'max_infants': listing.partyLimits.infants,
+      'max_pets': listing.partyLimits.pets,
+      // Always sent, including as nulls: 121 constrains these to be null on
+      // any non-turf listing, so a host switching a listing's type away from
+      // turf must clear them in the same write or the row is refused (23514).
+      'turf_sport': listing.turfDetails.sport?.name,
+      'turf_format': listing.turfDetails.format?.wireName,
+      'turf_surface': listing.turfDetails.surface?.name,
       // Per-plan booking limits.
       'min_hours': listing.bookingLimits.minHours,
       'max_hours': listing.bookingLimits.maxHours,
@@ -826,6 +885,12 @@ class SupabaseMusafirRepository extends ChangeNotifier
       'seat' => ListingType.seat,
       'room' => ListingType.room,
       'fullhouse' || 'full_house' => ListingType.fullHouse,
+      'turf' => ListingType.turf,
+      // Falling back to `room` rather than throwing is deliberate: a build
+      // older than a listing_type migration must keep rendering the rest of
+      // the feed. It does mean a type this app has never heard of shows up
+      // wearing the wrong badge, which is the milder of the two failures --
+      // see 120 on why the write direction is the one that needs ordering.
       _ => ListingType.room,
     };
   }
@@ -949,17 +1014,8 @@ class SupabaseMusafirRepository extends ChangeNotifier
     };
   }
 
-  BookingStatus _bookingStatusFromString(String? value) {
-    return switch (value?.toLowerCase()) {
-      'pending' => BookingStatus.pending,
-      'confirmed' => BookingStatus.confirmed,
-      'rejected' => BookingStatus.rejected,
-      'active' => BookingStatus.active,
-      'completed' => BookingStatus.completed,
-      'cancelled' => BookingStatus.cancelled,
-      _ => BookingStatus.pending,
-    };
-  }
+  BookingStatus _bookingStatusFromString(String? status) =>
+      BookingStatusWire.fromWire(status);
 
   // ============== Reviews ==============
 
@@ -1288,6 +1344,34 @@ class SupabaseMusafirRepository extends ChangeNotifier
   }
 
   @override
+  Future<Listing?> fetchListingById(String id) async {
+    // Serve the cache when it has it — the common case is a tap on a card
+    // that is already on screen, and a shared link opened in a warm tab.
+    final cached = getListingById(id);
+    if (cached != null) return cached;
+
+    try {
+      final row = await _client
+          .from('listings')
+          .select('*, listing_facilities(facility_id, facilities(name))')
+          .eq('id', id)
+          .maybeSingle();
+      if (row == null) return null;
+
+      final listing = _listingFromJson(row);
+      // Cache it, so the detail screen and anything else keyed on the cache
+      // (reviews, the host card) find it the way they would for a listing that
+      // arrived through the feed.
+      _listings.add(listing);
+      notifyListeners();
+      return listing;
+    } catch (e) {
+      debugPrint('Error fetching listing $id: $e');
+      return null;
+    }
+  }
+
+  @override
   List<Listing> searchListings(SearchFilters filters) {
     return _listings.where((listing) {
       if (!listing.available) return false;
@@ -1544,8 +1628,25 @@ class SupabaseMusafirRepository extends ChangeNotifier
 
     try {
       await _client.from('listings').delete().eq('id', listingId);
-    } catch (e) {
+    } on PostgrestException catch (e) {
       // Restore the optimistic removal so the UI reflects reality.
+      _listings.addAll(removed);
+      notifyListeners();
+      debugPrint('Error deleting listing: $e');
+      // 23503 (foreign_key_violation): host_ledger_entries and disbursements
+      // reference this listing's bookings with ON DELETE RESTRICT, so a
+      // listing with any PAID history cannot be deleted — and the host used
+      // to be shown the constraint's own words (QA round 2, scenario 42).
+      // Deleting would also cascade away payments and reviews, which are
+      // financial records; hiding is the right verb for a place that is done.
+      if (e.code == '23503') {
+        throw Exception(
+          'This listing has payment history and can\'t be deleted. '
+          'Hide it instead — guests won\'t see it, and your records stay intact.',
+        );
+      }
+      rethrow;
+    } catch (e) {
       _listings.addAll(removed);
       notifyListeners();
       debugPrint('Error deleting listing: $e');
@@ -1945,7 +2046,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
     // leaving a phantom local booking that the host never received. Roll back
     // the optimistic add on failure.
     try {
-      final result = await _insertMarketplaceBooking(
+      final result = await _insertMarketplaceBookingWithRetry(
         booking,
         couponCode: couponCode,
         discountAmount: discountAmount,
@@ -1974,6 +2075,21 @@ class SupabaseMusafirRepository extends ChangeNotifier
       // a typed BookingConflictException, so the UI shows a specific "slot was
       // just taken" message instead of a generic failure. Without this the
       // server race-loss surfaces as a bare PostgrestException → generic banner.
+      // A race the database resolved by killing this transaction rather than
+      // by naming the conflict. `_insertMarketplaceBookingWithRetry` has
+      // already tried again once; reaching here means the second attempt
+      // failed too, and by far the likeliest reason is that the winner's row
+      // is now committed and in the way. Telling the guest the slot was taken
+      // is both the most probable truth and the only sentence that suggests a
+      // useful next action — a generic banner suggests retrying the booking
+      // that just lost twice.
+      if (e is PostgrestException && isRetryableBookingFailure(e.code)) {
+        throw BookingConflictException(
+          'This time slot was just booked by someone else',
+          conflictType: ConflictType.listing,
+          conflictingBookings: const [],
+        );
+      }
       if (e is PostgrestException && e.code == '23P01') {
         // Which of the two sentences to show is decided by
         // [bookingConflictTypeFrom] — a pure function with its own tests —
@@ -2003,6 +2119,43 @@ class SupabaseMusafirRepository extends ChangeNotifier
         throw BookingRejectedException(e.message, code: e.code);
       }
       rethrow;
+    }
+  }
+
+  /// [_insertMarketplaceBooking] with one retry on a transient database
+  /// failure — a deadlock or a serialization failure.
+  ///
+  /// Once, not a loop with backoff: a guest is waiting on this, the whole
+  /// point of the retry is that the race has already been decided by the time
+  /// the second attempt runs, and a client that keeps hammering a contended
+  /// slot is adding to the contention it is losing to. If the second attempt
+  /// also fails the caller turns it into the conflict message.
+  ///
+  /// See [retryableBookingSqlStates] for why three or more guests competing
+  /// for one slot produces a deadlock rather than a conflict.
+  Future<({String id, double totalPrice, double discountAmount})>
+      _insertMarketplaceBookingWithRetry(
+    Booking booking, {
+    String? couponCode,
+    double discountAmount = 0,
+    String? couponId,
+  }) async {
+    try {
+      return await _insertMarketplaceBooking(
+        booking,
+        couponCode: couponCode,
+        discountAmount: discountAmount,
+        couponId: couponId,
+      );
+    } on PostgrestException catch (e) {
+      if (!isRetryableBookingFailure(e.code)) rethrow;
+      debugPrint('createMarketplaceBooking: ${e.code}, retrying once');
+      return _insertMarketplaceBooking(
+        booking,
+        couponCode: couponCode,
+        discountAmount: discountAmount,
+        couponId: couponId,
+      );
     }
   }
 
@@ -2052,15 +2205,26 @@ class SupabaseMusafirRepository extends ChangeNotifier
   void cancelBooking(String bookingId) async {
     final index = _bookings.indexWhere((b) => b.id == bookingId);
     if (index != -1) {
+      // Say who cancelled. notify_on_booking_lifecycle decides "cancelled by
+      // guest" vs "cancelled by host" from cancelled_by, and this path used to
+      // send the status alone — so a guest cancelling through it notified
+      // nobody (QA round 2, scenario 15). Migration 138 stamps the caller on
+      // the server as well; sending it here keeps the local copy honest.
+      final now = DateTime.now();
+      final me = _client.auth.currentUser?.id;
       _bookings[index] = _bookings[index].copyWith(
         status: BookingStatus.cancelled,
+        cancelledBy: me,
+        cancelledAt: now,
       );
       notifyListeners();
 
       try {
-        await _client
-            .from('bookings')
-            .update({'booking_status': 'cancelled'}).eq('id', bookingId);
+        await _client.from('bookings').update({
+          'booking_status': 'cancelled',
+          if (me != null) 'cancelled_by': me,
+          'cancelled_at': now.toUtc().toIso8601String(),
+        }).eq('id', bookingId);
       } catch (e) {
         debugPrint('Error cancelling booking: $e');
       }
@@ -2095,7 +2259,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
     try {
       final currentUserId = _client.auth.currentUser?.id;
       final updateData = <String, dynamic>{
-        'booking_status': booking.status.name,
+        'booking_status': booking.status.wire,
       };
       debugPrint('[DEBUG-booking] Updating Supabase with: $updateData');
       debugPrint(
@@ -2215,7 +2379,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
 
   @override
   List<Booking> getStaleBookings({Duration? maxAge}) {
-    final threshold = maxAge ?? const Duration(hours: 24);
+    final threshold = maxAge ?? kDefaultBookingAcceptWindow;
     final cutoff = DateTime.now().subtract(threshold);
 
     return _bookings

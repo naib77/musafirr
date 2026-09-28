@@ -33,6 +33,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, jsonResponse } from "../_shared/otp.ts";
+import { enforceRateLimit } from "../_shared/rate_limit.ts";
 
 const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 
@@ -57,7 +58,7 @@ const MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.5-flash-lite";
 
 // The app's enums. Anything outside these lists is dropped rather than passed
 // through, so a hallucinated value can never reach SearchFilters.
-const TYPES = ["seat", "room", "fullHouse"];
+const TYPES = ["seat", "room", "fullHouse", "turf"];
 const PURPOSES = [
   "general",
   "medical",
@@ -80,8 +81,9 @@ Rules:
 - Never invent a place that was not spoken. If no place was named, use null.
 - Never output coordinates.
 - "types": seat = a bed in a shared room, room = a private room,
-  fullHouse = the whole place. Bangla: সিট/seat, রুম/room, বাসা/বাড়ি/basa/bari
-  = fullHouse. Empty array if unstated.
+  fullHouse = the whole place, turf = a sports ground rented by the hour.
+  Bangla: সিট/seat, রুম/room, বাসা/বাড়ি/basa/bari = fullHouse,
+  টার্ফ/মাঠ/turf/math/ground/football/cricket = turf. Empty array if unstated.
 - "guests": integer number of people, or null.
 - "max_price": a BDT ceiling as a number, or null. "5 hajar" = 5000,
   "8k" = 8000.
@@ -133,6 +135,10 @@ serve(async (req: Request) => {
   if (req.method !== "POST") {
     return jsonResponse(405, { error: "Method not allowed" });
   }
+  // Per user when signed in, per IP when not — see _shared/rate_limit.ts for
+  // why the two differ. Fails open if the counter is unreachable.
+  const limited = await enforceRateLimit(req, "voice-parse", { perUser: 20, perIp: 60, windowSeconds: 60 });
+  if (limited) return limited;
   if (!GEMINI_KEY) {
     return jsonResponse(500, { error: "GEMINI_API_KEY not configured" });
   }

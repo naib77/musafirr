@@ -97,10 +97,10 @@ class ShowAllListingsView extends StatelessWidget {
       // Max-extent so the column count grows with width, matching the
       // search-results grid.
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 300,
+        maxCrossAxisExtent: kListingCardMaxExtent,
         mainAxisSpacing: 16,
         crossAxisSpacing: 12,
-        childAspectRatio: 0.72,
+        childAspectRatio: kListingCardAspectRatio,
       ),
       itemBuilder: (context, index) {
         final listing = listings[index];

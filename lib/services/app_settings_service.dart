@@ -1,9 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'booking/booking_accept_window.dart';
 import '../models/payout_method.dart';
 import '../models/search_area_settings.dart';
 import '../models/support_links.dart';
+import 'update/app_update_decision.dart';
 
 /// Reads admin-configurable, app-wide flags from the Supabase `app_settings`
 /// table (key/value). Loaded once at startup and cached.
@@ -44,6 +46,19 @@ class AppSettingsService {
   // instead of a dead menu item.
   SupportLinks _supportLinks = SupportLinks.defaults;
 
+  // How long a host has to answer a booking request. The scheduled job
+  // expire_stale_bookings() is what actually enforces it; this copy only feeds
+  // the countdown the guest watches, so an unreadable table showing the old
+  // 24-hour default is a cosmetic drift, never a wrong cancellation.
+  Duration _bookingAcceptWindow = kDefaultBookingAcceptWindow;
+
+  // The oldest Android build still allowed to talk to this database. Zero —
+  // the default, and what an unreadable table means — forces nobody. Unlike
+  // every other flag here, the fail-open direction is not merely convenient:
+  // this is the only setting that can take the app away from a user, so a
+  // config hiccup has to mean "don't".
+  int _androidMinVersionCode = kNoForcedUpdate;
+
   // Which payout channels a user may add. Defaults to all of them: unlike a
   // payment option, an unreadable settings table here must not silently stop
   // hosts registering somewhere to be paid — and nothing is at risk, because
@@ -74,6 +89,18 @@ class AppSettingsService {
   /// back to its compiled-in default. Prefer [ensureSupportLinks] where the
   /// value is read on a path that could run before [load] has finished.
   SupportLinks get supportLinks => _supportLinks;
+
+  /// How long a host has to accept a booking request before the server
+  /// rejects it. Prefer [ensureBookingAcceptWindow] where this is read on a
+  /// path that could run before [load] has finished.
+  Duration get bookingAcceptWindow => _bookingAcceptWindow;
+
+  /// The oldest Android versionCode still supported. Builds below it are
+  /// pushed through Play's blocking updater at launch; [kNoForcedUpdate] (the
+  /// default) forces nobody. Only ever consulted on Android — see
+  /// `AppUpdateService`, which also checks that Play actually HAS a newer
+  /// build before acting on this number.
+  int get androidMinVersionCode => _androidMinVersionCode;
 
   /// Payout channels currently on offer, in the order the enum declares them
   /// rather than the order an admin happened to type — so the add-a-method
@@ -124,6 +151,14 @@ class AppSettingsService {
             break;
           case 'privacy_url':
             privacyUrl = raw;
+            break;
+          case 'booking_accept_window_hours':
+            // Parsed here rather than stashed for the block below because it
+            // stands alone — one cell, one value, no cross-key sanitising.
+            _bookingAcceptWindow = bookingAcceptWindowFromRaw(value);
+            break;
+          case 'android_min_version_code':
+            _androidMinVersionCode = minSupportedVersionCodeFromRaw(value);
             break;
           case 'payout_channels_enabled':
             final parsed = (value ?? '')
@@ -187,5 +222,19 @@ class AppSettingsService {
   Future<SupportLinks> ensureSupportLinks() async {
     if (!_loaded) await load();
     return _supportLinks;
+  }
+
+  /// Returns the host-response window, loading settings first if needed.
+  Future<Duration> ensureBookingAcceptWindow() async {
+    if (!_loaded) await load();
+    return _bookingAcceptWindow;
+  }
+
+  /// Returns the forced-update floor, loading settings first if needed. The
+  /// update check runs in `initState`, well before the background [load] can
+  /// have finished, so this one is always read through `ensure`.
+  Future<int> ensureAndroidMinVersionCode() async {
+    if (!_loaded) await load();
+    return _androidMinVersionCode;
   }
 }

@@ -9,6 +9,7 @@ import '../../models/booking_status.dart';
 import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../services/app_settings_service.dart';
+import '../../services/booking/booking_accept_window.dart';
 import '../../services/booking/booking_lifecycle_service.dart'
     show InvalidBookingStateException;
 import '../../services/booking/booking_messaging_coordinator.dart';
@@ -1111,18 +1112,17 @@ class _EnhancedBookingCard extends StatelessWidget {
             color: Colors.orange.shade800,
           );
         }
-        final remaining =
-            createdAt.add(BookingRules.expirationDuration).difference(now);
-        final String t;
-        if (remaining.isNegative) {
-          t = 'expired';
-        } else if (remaining.inHours >= 1) {
-          t = '${remaining.inHours}h ${remaining.inMinutes % 60}m left';
-        } else if (remaining.inMinutes >= 1) {
-          t = '${remaining.inMinutes}m left';
-        } else {
-          t = 'expiring soon';
-        }
+        // The window is admin-configurable (migration 119), so the countdown
+        // has to read it rather than a compiled-in 24 hours — otherwise the
+        // app promises time the server has already taken away.
+        final remaining = bookingAcceptRemaining(
+          createdAt: createdAt,
+          window: AppSettingsService.instance.bookingAcceptWindow,
+          now: now,
+        )!;
+        final t = remaining.isNegative
+            ? 'expired'
+            : '${formatBookingAcceptRemaining(remaining)} left';
         return (
           icon: Icons.hourglass_top_rounded,
           text: 'Awaiting host · $t',
@@ -1219,6 +1219,12 @@ class _EnhancedBookingCard extends StatelessWidget {
           text: byGuest ? 'You cancelled this booking' : 'Cancelled by host',
           color: Colors.grey.shade600,
         );
+      case BookingStatus.noShow:
+        return (
+          icon: Icons.person_off_outlined,
+          text: 'The host reported you did not arrive',
+          color: Colors.grey.shade700,
+        );
     }
   }
 
@@ -1291,6 +1297,7 @@ class _StatusChip extends StatelessWidget {
       BookingStatus.active => Colors.teal.shade600,
       BookingStatus.completed => Colors.blue.shade600,
       BookingStatus.cancelled => Colors.grey.shade600,
+      BookingStatus.noShow => Colors.grey.shade700,
     };
 
     return Container(
@@ -1629,17 +1636,21 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
 
     // PENDING
     if (booking.status == BookingStatus.pending) {
-      final createdAt = booking.createdAt;
-      final expiresAt = createdAt?.add(BookingRules.expirationDuration);
-      final remaining =
-          expiresAt != null ? expiresAt.difference(now) : Duration.zero;
+      final remaining = bookingAcceptRemaining(
+            createdAt: booking.createdAt,
+            window: AppSettingsService.instance.bookingAcceptWindow,
+            now: now,
+          ) ??
+          Duration.zero;
 
       return _DetailsBanner(
         icon: Icons.hourglass_top_rounded,
         title: 'Awaiting Host Response',
         subtitle: remaining.isNegative
             ? 'This request has expired'
-            : 'Host has ${remaining.inHours}h ${remaining.inMinutes % 60}m to respond',
+            // Shared formatter: this used to print a bare "${inHours}h ${m}m",
+            // which read as "0h 0m" for the last minute of the window.
+            : 'Host has ${formatBookingAcceptRemaining(remaining)} to respond',
         color: Colors.orange,
       );
     }
@@ -2030,8 +2041,16 @@ class _EnhancedBookingDetailsSheet extends StatelessWidget {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Cancel Booking'),
-        content: const Text(
-          'Are you sure you want to cancel this booking? The host will be notified.',
+        // A guest who has already paid is owed that money back, and nothing
+        // refunds it automatically — an admin arranges it from the console
+        // (migration 138 alerts them). Say so here, or the guest cancels and
+        // is left staring at a "Paid" pill on a cancelled trip.
+        content: Text(
+          booking.isPaid
+              ? 'Are you sure you want to cancel this booking? The host will '
+                  'be notified. You have paid ৳${booking.totalPrice.toStringAsFixed(0)}; '
+                  'our team will arrange your refund and contact you.'
+              : 'Are you sure you want to cancel this booking? The host will be notified.',
         ),
         actions: [
           TextButton(

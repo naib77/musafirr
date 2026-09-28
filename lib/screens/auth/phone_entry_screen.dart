@@ -11,9 +11,18 @@ class PhoneEntryScreen extends StatefulWidget {
   const PhoneEntryScreen({
     super.key,
     required this.otpState,
+    this.prompt,
   });
 
   final OtpStateNotifier otpState;
+
+  /// Why the visitor was asked to log in, e.g. 'to reserve this stay'.
+  ///
+  /// Null when this is the app's own front door, where there is no
+  /// interrupted task to name. Set when the screen was pushed mid-task by
+  /// [AuthFlow.ensureSignedIn], because a login wall that appears out of
+  /// nowhere reads as a dead end.
+  final String? prompt;
 
   @override
   State<PhoneEntryScreen> createState() => _PhoneEntryScreenState();
@@ -72,7 +81,9 @@ class _PhoneEntryScreenState extends State<PhoneEntryScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Log in with your phone number',
+                    widget.prompt == null
+                        ? 'Log in with your phone number'
+                        : 'Log in ${widget.prompt}',
                     style: theme.textTheme.bodyLarge?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),

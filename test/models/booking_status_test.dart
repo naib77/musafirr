@@ -13,7 +13,34 @@ void main() {
             BookingStatus.active,
             BookingStatus.completed,
             BookingStatus.cancelled,
+            BookingStatus.noShow,
           ]));
+    });
+
+    group('wire', () {
+      test('every value round-trips through its database label', () {
+        for (final s in BookingStatus.values) {
+          expect(BookingStatusWire.fromWire(s.wire), s, reason: s.name);
+        }
+      });
+
+      test('noShow is spelled no_show on the wire, not by its Dart name', () {
+        // The repository used to send `.name`; this is the value for which
+        // that would have produced a label the enum does not have.
+        expect(BookingStatus.noShow.wire, 'no_show');
+        expect(BookingStatus.noShow.name, isNot('no_show'));
+      });
+
+      test('an unknown label reads as pending rather than throwing', () {
+        expect(BookingStatusWire.fromWire('something_newer'),
+            BookingStatus.pending);
+        expect(BookingStatusWire.fromWire(null), BookingStatus.pending);
+      });
+
+      test('no two values share a label', () {
+        final labels = BookingStatus.values.map((s) => s.wire).toSet();
+        expect(labels.length, BookingStatus.values.length);
+      });
     });
 
     group('isActive', () {
@@ -45,6 +72,11 @@ void main() {
     group('isPast', () {
       test('completed is past', () {
         expect(BookingStatus.completed.isPast, isTrue);
+      });
+
+      test('no-show is past', () {
+        expect(BookingStatus.noShow.isPast, isTrue);
+        expect(BookingStatus.noShow.isActive, isFalse);
       });
 
       test('cancelled is past', () {

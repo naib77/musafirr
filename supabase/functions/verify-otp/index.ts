@@ -9,7 +9,9 @@
 //      the client exchanges for a session with auth.verifyOTP.
 // No guessable credential is ever produced or transmitted.
 //
-// Input:  { phone, otp }
+// Input:  { phone, otp, deviceId?, devicePlatform? }
+//         The two device fields are optional: a bundle that predates them
+//         still signs in, it simply is not counted against the cap.
 // Output: { success: true, isExistingUser, tokenHash, email }
 //         | { success: false, error, attemptsRemaining? }
 //
@@ -17,7 +19,7 @@
 // Secrets: (shared with send-otp) optional MASTER_OTP + MASTER_OTP_PHONES
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import {
   corsHeaders,
   formatPhoneForDisplay,
@@ -151,13 +153,26 @@ serve(async (req) => {
     let isExistingUser = false;
 
     if (userId) {
-      // Rotate away any old phone-derived password.
-      await admin.updateUserById(userId, { password: randomPassword() });
       const { data: profile } = await supabase
         .from("profiles")
-        .select("signup_completed")
+        .select("signup_completed, suspended_at")
         .eq("id", userId)
         .maybeSingle();
+      // 140: a suspended account does not get a session. Checked BEFORE the
+      // password rotation and the magic link, so nothing about the account is
+      // touched; the code they typed was correct and is consumed, which is
+      // the honest answer — the number is theirs, the account is closed.
+      // admin_suspend_user already deleted their sessions; this is the door
+      // staying shut when they come back.
+      if (profile?.suspended_at) {
+        return jsonResponse(200, {
+          success: false,
+          error: "This account has been suspended. Contact support.",
+          suspended: true,
+        });
+      }
+      // Rotate away any old phone-derived password.
+      await admin.updateUserById(userId, { password: randomPassword() });
       isExistingUser = profile?.signup_completed === true;
     } else {
       const { data: created, error: createError } = await admin.createUser({
@@ -190,11 +205,48 @@ serve(async (req) => {
       });
     }
 
+    // ---- device limit ----------------------------------------------------
+    // Enforced HERE, not in the client, because this is the only place a
+    // session is minted and the only one running as service role. A client
+    // that simply never called `register_device` was never recorded and so
+    // never evicted — the cap applied to cooperating clients and to nothing
+    // else. See docs/DEVICE_SESSIONS.md.
+    //
+    // It cannot record `session_id`: the session does not exist yet, it is
+    // created when the client redeems the token hash below. The client's own
+    // register_device fills that in moments later and coalesces. What matters
+    // is that the eviction has already happened by then.
+    //
+    // Deliberately after generateLink and deliberately non-fatal. A device
+    // bookkeeping failure must never turn "you reached your device limit" into
+    // "you cannot sign in" — the only way back into this app is an SMS, which
+    // is the same reason the cap evicts rather than refuses.
+    let devicesSignedOut = 0;
+    const deviceId = String(body?.deviceId ?? "").trim();
+    const devicePlatform = String(body?.devicePlatform ?? "").trim();
+    if (deviceId.length >= 8 && deviceId.length <= 128 &&
+        ["web", "android", "ios"].includes(devicePlatform)) {
+      const { data: evicted, error: deviceError } = await supabase.rpc(
+        "admin_register_device",
+        {
+          p_user_id: userId,
+          p_device_id: deviceId,
+          p_platform: devicePlatform,
+        },
+      );
+      if (deviceError) {
+        console.error("[verify-otp] admin_register_device failed:", deviceError);
+      } else {
+        devicesSignedOut = Number(evicted ?? 0);
+      }
+    }
+
     return jsonResponse(200, {
       success: true,
       isExistingUser,
       tokenHash: link.properties.hashed_token,
       email,
+      devicesSignedOut,
     });
   } catch (e) {
     console.error("[verify-otp] error:", e);

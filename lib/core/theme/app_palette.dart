@@ -57,6 +57,7 @@ class AppPalette {
     required this.seat,
     required this.room,
     required this.fullHouse,
+    required this.turf,
     required this.accentCycle,
   });
 
@@ -137,6 +138,15 @@ class AppPalette {
   final Color seat;
   final Color room;
   final Color fullHouse;
+
+  /// The turf badge (120/121). Green by convention in every palette -- the one
+  /// listing type whose colour carries a literal meaning -- but a *dark* green:
+  /// `_CategoryBadge` paints white text on this colour, so it is held to 4.5:1
+  /// against white like any other text-bearing token. The existing `green`
+  /// accent (#10B981 in three of the four palettes) is 2.54:1 on white and
+  /// cannot be reused here, which is why this is its own field rather than an
+  /// alias the way `fullHouse` aliases `brand`.
+  final Color turf;
 
   /// Vivid, stable accents for an arbitrary index (list items, chips, badges).
   /// Order is load-bearing — it is indexed by position, so inserting a colour

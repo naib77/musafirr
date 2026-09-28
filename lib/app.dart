@@ -1,32 +1,34 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'core/routing/listing_path.dart';
 import 'core/theme/app_palette.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
+import 'models/listing.dart';
 import 'models/notification.dart';
 import 'repositories/supabase_musafir_repository.dart';
-import 'screens/auth/otp_verification_screen.dart';
-import 'screens/auth/phone_entry_screen.dart';
-import 'screens/auth/profile_completion_screen.dart';
+import 'screens/explore/listing_route.dart';
 import 'screens/main_shell.dart';
 import 'screens/splash/splash_screen.dart';
+import 'services/auth/auth_flow.dart';
 import 'services/booking/booking_lifecycle_service.dart';
 import 'services/booking/booking_messaging_coordinator.dart';
 import 'services/booking/booking_rules.dart';
+import 'services/devices/device_session_watcher.dart';
 import 'repositories/supabase_conversation_repository.dart';
 import 'repositories/supabase_message_template_repository.dart';
 import 'services/messaging/booking_conversation_service.dart';
 import 'services/messaging/supabase_messaging_service.dart';
 import 'services/notifications/fcm_token_service.dart';
 import 'services/pwa/pwa_install_service.dart';
+import 'services/app_update_service.dart';
 import 'services/web_update_service.dart';
 import 'services/notifications/notification_service_factory.dart';
 import 'state/auth_state.dart';
 import 'state/favorites_state.dart';
 import 'state/messaging_state.dart';
 import 'state/notification_state.dart';
-import 'state/otp_state.dart';
 import 'state/search_state.dart';
 import 'widgets/modern_banner.dart';
 
@@ -70,6 +72,22 @@ class _MusafirAppState extends State<MusafirApp> {
     // Web only: offer a refresh when a newer build is deployed while this
     // tab stays open (reloads always get the newest build; idle tabs don't).
     WebUpdateService.instance.start(onUpdateAvailable: _showUpdateBanner);
+
+    // Android only: the same offer, but for an installed build Play has to
+    // replace. Started here rather than in main() so it shares the messenger
+    // key above — and because a forced update has to be able to interrupt a
+    // running app, not just a cold start.
+    AppUpdateService.instance.start(
+      onUpdateAvailable: _showAndroidUpdateBanner,
+      onReadyToInstall: _showRestartToUpdateBanner,
+    );
+
+    // Notices on resume that this device was signed out from elsewhere — the
+    // user's own "Your devices" screen, or a max_devices_per_user eviction.
+    // The real sign-out already happened server-side (the auth.sessions row is
+    // gone); this only stops the app running on a stale access token for the
+    // rest of its hour. See docs/DEVICE_SESSIONS.md.
+    DeviceSessionWatcher.instance.start(onRevoked: _onSignedOutElsewhere);
 
     // Web only: track whether the browser can add Musaafir to the home screen,
     // so the smart sidebar can offer it. Must start early — Chrome fires
@@ -137,6 +155,20 @@ class _MusafirAppState extends State<MusafirApp> {
       // "popup" on web (OS push is stubbed there) and also shows in the
       // foreground on mobile. Fires only on realtime inserts, so no startup spam.
       _showNotificationToast(notification);
+    };
+
+    // A signed-out visitor tapping the wishlist heart gets a login instead of
+    // silence. Wired here, through the app-wide navigator, because the heart
+    // lives in stateless card widgets with no context of their own — the same
+    // reason _showNotificationToast uses this key.
+    favoritesState.onSignInRequired = () async {
+      final context = _navigatorKey.currentContext;
+      if (context == null) return;
+      await AuthFlow.ensureSignedIn(
+        context,
+        authState,
+        reason: 'to save places you like',
+      );
     };
 
     // Initialize search state with listings
@@ -237,13 +269,26 @@ class _MusafirAppState extends State<MusafirApp> {
   }
 
   /// A newer build was deployed while this tab was open — offer a refresh.
+  /// This device was signed out from somewhere else. Ends the local session
+  /// and says why — landing on the login screen with no explanation reads as a
+  /// bug, and the one thing the user needs to know is that it was deliberate.
+  void _onSignedOutElsewhere() {
+    authState.logout();
+    _scaffoldMessengerKey.currentState?.showSnackBar(
+      const SnackBar(
+        content: Text('You were signed out of this device'),
+        duration: Duration(seconds: 6),
+      ),
+    );
+  }
+
   void _showUpdateBanner() {
     final messenger = _scaffoldMessengerKey.currentState;
     if (messenger == null) return;
     messenger.showMaterialBanner(
       MaterialBanner(
         leading: const Icon(Icons.system_update_alt_rounded),
-        content: const Text('A new version of Musafir is available.'),
+        content: const Text('A new version of Musaafir is available.'),
         actions: [
           TextButton(
             onPressed: () => WebUpdateService.instance.reloadForUpdate(),
@@ -258,9 +303,68 @@ class _MusafirAppState extends State<MusafirApp> {
     );
   }
 
+  /// Android: Play has a newer build. An offer, not an interruption — the
+  /// blocking case never reaches here, because Play owns the whole screen for
+  /// an immediate update and there is no banner to show.
+  void _showAndroidUpdateBanner() {
+    final messenger = _scaffoldMessengerKey.currentState;
+    if (messenger == null) return;
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        leading: const Icon(Icons.system_update_alt_rounded),
+        content: const Text('A new version of Musaafir is available.'),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              // Dismiss first: the download runs in the background and can take
+              // a while, and a banner still offering "Update" reads as a button
+              // that did nothing.
+              messenger.hideCurrentMaterialBanner();
+              await AppUpdateService.instance.downloadUpdate();
+            },
+            child: const Text('Update'),
+          ),
+          TextButton(
+            onPressed: messenger.hideCurrentMaterialBanner,
+            child: const Text('Later'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Android: the new build is downloaded and Play is waiting for a restart.
+  ///
+  /// This is not optional politeness — an update downloaded by the flexible
+  /// flow and never completed stays on disk unused, so Play expects the app to
+  /// keep asking. `AppUpdateService` re-fires this on every resume until the
+  /// user takes it.
+  void _showRestartToUpdateBanner() {
+    final messenger = _scaffoldMessengerKey.currentState;
+    if (messenger == null) return;
+    messenger.hideCurrentMaterialBanner();
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        leading: const Icon(Icons.download_done_rounded),
+        content: const Text('Update downloaded. Restart to finish.'),
+        actions: [
+          TextButton(
+            onPressed: AppUpdateService.instance.installUpdate,
+            child: const Text('Restart'),
+          ),
+          TextButton(
+            onPressed: messenger.hideCurrentMaterialBanner,
+            child: const Text('Later'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
     WebUpdateService.instance.stop();
+    AppUpdateService.instance.stop();
     authState.removeListener(_onAuthStateChanged);
     repository.removeListener(_onRepositoryChange);
     authState.dispose();
@@ -310,108 +414,111 @@ class _MusafirAppState extends State<MusafirApp> {
       // nothing to animate; swapping instantly keeps every frame internally
       // consistent. Guarded by theme_controller_test's live-swap test.
       themeAnimationDuration: Duration.zero,
-      home: ListenableBuilder(
-        listenable: authState,
-        builder: (context, _) {
-          // Three-state auth flow: initializing → authenticated | unauthenticated
-          switch (authState.status) {
-            case AuthStatus.initializing:
-              // Show splash screen while determining auth state
-              return const SplashScreen();
-
-            case AuthStatus.authenticated:
-              // User is logged in - show main app
-              return MainShell(
-                repository: repository,
-                authState: authState,
-                favoritesState: favoritesState,
-                searchState: searchState,
-                notificationState: notificationState,
-                messagingState: messagingState,
-                bookingLifecycleService: bookingLifecycleService,
-                bookingMessagingCoordinator: bookingMessagingCoordinator,
-              );
-
-            case AuthStatus.unauthenticated:
-              // No user - show login flow
-              return AuthNavigator(authState: authState);
-          }
-        },
-      ),
+      // Named routes exist for one reason: a listing needs a URL somebody can
+      // send to a friend. Everything else still navigates by pushing a
+      // constructed screen, which is fine — those have no shareable identity.
+      //
+      // There is deliberately NO `home:` here. MaterialApp asserts
+      // `home == null || onGenerateInitialRoutes == null` ("the home argument
+      // will be redundant"), so the shell is produced by both callbacks below
+      // instead — _onGenerateRoute answers '/' with it.
+      onGenerateRoute: _onGenerateRoute,
+      // A cold `/listing/<id>` must open with the shell UNDERNEATH it, so Back
+      // (and the browser's back button) lands on Explore instead of exiting to
+      // a blank page. Flutter's default would split the path into a route per
+      // segment, which for '/listing/abc' means asking for '/listing' too —
+      // a route that does not exist.
+      onGenerateInitialRoutes: (initialRoute) => [
+        _rootRoute(),
+        if (listingIdFromRoute(initialRoute) case final id?)
+          MaterialPageRoute(
+            settings: RouteSettings(name: initialRoute),
+            builder: (_) => _listingRoute(id),
+          ),
+      ],
     );
   }
-}
 
-/// Auth screen type for navigation
-enum AuthScreen {
-  phoneEntry,
-  otpVerification,
-  profileCompletion,
-}
+  MaterialPageRoute<dynamic> _rootRoute() => MaterialPageRoute(
+        settings: const RouteSettings(name: '/'),
+        builder: (_) => _root(),
+      );
 
-/// Handles navigation between login and signup screens
-class AuthNavigator extends StatefulWidget {
-  const AuthNavigator({super.key, required this.authState});
-
-  final AuthStateNotifier authState;
-
-  @override
-  State<AuthNavigator> createState() => _AuthNavigatorState();
-}
-
-class _AuthNavigatorState extends State<AuthNavigator> {
-  AuthScreen _currentScreen = AuthScreen.phoneEntry;
-  final OtpStateNotifier _otpState = OtpStateNotifier();
-
-  @override
-  void initState() {
-    super.initState();
-    // Listen to OTP state changes to handle navigation
-    _otpState.addListener(_onOtpStateChanged);
-  }
-
-  @override
-  void dispose() {
-    _otpState.removeListener(_onOtpStateChanged);
-    _otpState.dispose();
-    super.dispose();
-  }
-
-  void _onOtpStateChanged() {
-    setState(() {
-      switch (_otpState.currentStep) {
-        case OtpFlowStep.phoneEntry:
-          _currentScreen = AuthScreen.phoneEntry;
-          break;
-        case OtpFlowStep.otpVerification:
-          _currentScreen = AuthScreen.otpVerification;
-          break;
-        case OtpFlowStep.profileCompletion:
-          _currentScreen = AuthScreen.profileCompletion;
-          break;
-        case OtpFlowStep.complete:
-          // Auth state will handle navigation to main shell
-          break;
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    switch (_currentScreen) {
-      case AuthScreen.phoneEntry:
-        return PhoneEntryScreen(
-          otpState: _otpState,
+  /// The app itself: shell once auth has resolved, splash until then.
+  Widget _root() {
+    return ListenableBuilder(
+      listenable: authState,
+      builder: (context, _) {
+        // Browsing is public: the shell is the app for a signed-out visitor
+        // too, and login is reached from whatever they tried to do
+        // (AuthFlow.ensureSignedIn) rather than being the front door.
+        //
+        // Returning the SAME widget type from both post-initializing states
+        // is load-bearing, not tidiness. Flutter updates an element in place
+        // when the type and key match, so signing in mid-session keeps
+        // MainShell's State — the selected tab, each tab's scroll offset,
+        // the _LazyIndexedStack's already-built children. Branching to a
+        // different widget here would rebuild all of it, which is exactly
+        // what the old `unauthenticated → AuthNavigator` arm did on every
+        // login.
+        //
+        // MainShell already tolerates a null user throughout: host mode is
+        // unreachable while signed out, and the repository's refresh,
+        // own-listings load and bookings realtime subscription all
+        // early-return without a session.
+        if (authState.status == AuthStatus.initializing) {
+          // Still deciding whether a stored session is valid. Not "signed
+          // out" — showing the shell here would flash a guest feed at a
+          // returning user before their session resolves.
+          return const SplashScreen();
+        }
+        return MainShell(
+          repository: repository,
+          authState: authState,
+          favoritesState: favoritesState,
+          searchState: searchState,
+          notificationState: notificationState,
+          messagingState: messagingState,
+          bookingLifecycleService: bookingLifecycleService,
+          bookingMessagingCoordinator: bookingMessagingCoordinator,
         );
+      },
+    );
+  }
 
-      case AuthScreen.otpVerification:
-        return OtpVerificationScreen(otpState: _otpState);
+  Widget _listingRoute(String id, {Listing? listing}) => ListingRoute(
+        listingId: id,
+        listing: listing,
+        repository: repository,
+        authState: authState,
+        favoritesState: favoritesState,
+        messagingState: messagingState,
+      );
 
-      case AuthScreen.profileCompletion:
-        return ProfileCompletionScreen(
-          otpState: _otpState,
-          authState: widget.authState,
-        );
+  Route<dynamic>? _onGenerateRoute(RouteSettings settings) {
+    final name = settings.name ?? '';
+
+    final id = listingIdFromRoute(name);
+    if (id == null) {
+      // With no `home:`, this is the only thing that can answer '/'. Any other
+      // name gets the shell too rather than null: returning null here leaves
+      // the app with no route at all, and every in-app path ('/trips' as a
+      // cold URL, since the SPA rule serves index.html for it) is a tab inside
+      // the shell, not a route.
+      return _rootRoute();
     }
+
+    return MaterialPageRoute(
+      settings: settings,
+      // A tap on a card passes the Listing through `arguments`, so the screen
+      // renders immediately and the URL still changes; a pasted link has no
+      // arguments and ListingRoute fetches by id.
+      builder: (_) => _listingRoute(
+        id,
+        listing: settings.arguments is Listing
+            ? settings.arguments as Listing
+            : null,
+      ),
+    );
   }
 }

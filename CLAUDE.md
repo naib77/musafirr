@@ -80,6 +80,62 @@ the `Supabase CLI` keychain entry.
 Migrations are not automatically applied by any pipeline. Applying one to the
 live database is a real, outward-facing action — say so and confirm first.
 
+### The migration chain does not apply from scratch; local comes from a live baseline
+
+`supabase start` on an empty database used to fail at **003**: `UNIQUE
+(LEAST(a,b), GREATEST(a,b))` is not valid Postgres and never was. That file is
+repaired (it creates `uniq_conversation_per_pair`, the index live actually
+has), and the chain still does not rebuild the database — **and now we know
+why, rather than suspecting it.** Replaying all 137 files into an empty
+database applied 103 and failed 34, and among the failures are eight
+migrations from 062 onward that need `listings.max_guests`, three that need
+`bookings.listing_title`, plus `listings.city`, `facilities.code` and
+`facilities.icon`. Those columns are on live and **nothing in
+`supabase/migrations` adds them**: pieces of the chain were never committed.
+
+So the decision recorded in `supabase/migrations/README.md` is that **the
+baseline is the build and the chain is history.** Read that file before
+adding a migration; the two things it asks of you are to bump
+`NEWER_MIGRATIONS` in `tool/local_db_from_live.sh` and to regenerate the
+baseline after applying to live.
+
+Live cannot be `pg_dump`ed from here either — the `SUPABASE_DB_URL` "value"
+the secrets API returns is a SHA-256, and there is no DB password on this
+machine. So the local database is a **catalog dump through the Management
+API**:
+
+```sh
+supabase start                      # config.toml has migrations+seed OFF
+python3 tool/dump_live_baseline.py  # -> supabase/baseline/live_baseline.sql
+sh tool/local_db_from_live.sh       # baseline (retried to stable), reference
+                                    # rows, migrations newer than live, QA seed
+supabase functions serve --env-file supabase/functions/.env.local --no-verify-jwt
+```
+
+Where it listens, once started:
+
+| Studio UI | <http://127.0.0.1:54323> |
+| Postgres | `postgresql://postgres:postgres@127.0.0.1:54322/postgres` |
+| API / PostgREST / Auth | <http://127.0.0.1:54321> |
+| anon + service keys | `supabase status` (the standard local demo keys, not secrets) |
+
+`supabase start` on an ALREADY-RUNNING stack only prints status — it will not
+add a service you excluded earlier. To gain Studio you must `supabase stop`
+(which keeps the data volume; only `--no-backup` deletes it) and start again
+with a shorter `-x` list.
+
+Checked 2026-09-18 with the same catalog query on both: identical on tables,
+functions, policies, triggers, views, indexes, RLS, cron, definers and anon
+column grants. Not in the mirror: storage policies, auth config, secret
+values. Seed accounts are `phone.170000000N@musaafir.app`, password
+`qa-password`, and the local master OTP `3969` on those five numbers.
+
+Three traps: the baseline is applied **repeatedly** on purpose (function,
+view and policy order settles by retry; a count that stops shrinking above
+zero is a finding); triggers are create-if-absent because `postgres` can
+create but not drop a trigger on `spatial_ref_sys`; and
+`NEWER_MIGRATIONS` in the loader must be bumped when live moves.
+
 ## Availability rules belong in the database, not the booking form
 
 Migration 070 moved the *price* server-side because the client was deciding it.
@@ -133,6 +189,1003 @@ commits can lose; the cost is one booking to decline by hand, and the
 alternative (blocks as `bookings` rows under a sentinel status) would drag them
 through earnings, commission, payouts and the reservations list.
 
+### Search filters on dates through `is_booking_available`, not its own copy
+
+`search_listings` took no date until 112, so a guest searching 10-15 September
+was shown listings blocked for exactly those days and listings already booked
+solid — then refused at Reserve. `SearchFilters` had carried `checkIn`/`checkOut`
+all along; the client simply never sent them.
+
+A block hides a listing **only from searches whose dates overlap it**. Do not
+"fix" this into hiding the listing outright: one blocked weekend would then cost
+the host every other booking, which is the problem 110 was built to solve, and
+`host_available` (038) plus `is_active` already exist for stepping out entirely.
+An undated search — including the default explore feed, which is
+`searchListingsFromDb(const SearchFilters())` — filters on nothing.
+
+Three things about it that are easy to undo by accident:
+
+- **The predicate lives in the `base` CTE, not the outer `where`.** `chosen`
+  (the smallest radius tier holding a match) reads `base`, so a blocked listing
+  must not be allowed to win a tier and then be filtered out of it — a dated
+  tiered search would answer with an **empty ring**. Verified: moving the
+  predicate outward turns one scenario from two results into zero.
+- **It is a `case`, not an `or` chain.** Postgres does not promise
+  left-to-right `or` evaluation, and a reversed window reaches
+  `tstzrange(lower > upper)`, which aborts the whole search with `22000`.
+  `searchDateWindowFor` drops such a window client-side too, but a public RPC
+  cannot lean on that.
+- **112 grants `is_booking_available` to `anon`** because `search_listings` is
+  `SECURITY INVOKER` and open to `anon`, and 111 had granted it to
+  `authenticated` only. On a *plain* Postgres that grant is load-bearing —
+  without it a not-signed-in dated search dies with `42501` and the client's
+  `catch` renders it as "no results". On **this** database it is not: see the
+  default-privileges note below. Keep it anyway; it stops the repo depending on
+  an accident.
+
+**Do not reason about anon access from the migrations alone.** Supabase's
+`ALTER DEFAULT PRIVILEGES` on schema `public` grants `anon` and `authenticated`
+at CREATE time, and the `revoke all ... from public` this repo writes after a
+`SECURITY DEFINER` function strips only the PUBLIC pseudo-role — it leaves that
+explicit anon grant untouched. Verified on live via `pg_proc.proacl` /
+`pg_class.relacl`: anon already holds EXECUTE on `is_booking_available` and
+`listing_blocked_ranges`, and SELECT on `listing_ratings`, in flat
+contradiction of what 110/111/016 appear to say.
+
+So **an RLS policy is the only one of the two that actually gates `anon`.**
+Default privileges hand out the grant; nothing hands out a policy. That is why
+`facilities` was the single thing broken for signed-out visitors (113) — it was
+a `to authenticated` *policy*, not a missing grant. When you need to know what a
+visitor can read, impersonate one (`begin; set local role anon; …; rollback;`)
+rather than reading the SQL.
+
+### PostGIS lives in `public`, and its tables are not ours to fix
+
+001 runs `create extension if not exists postgis` with no schema, so PostGIS's
+reference tables land in the schema PostgREST exposes, carrying the extension's
+own grants: `anon=arwdDxtm` on `spatial_ref_sys` — INSERT, UPDATE, DELETE **and
+TRUNCATE**, not just read. Verified, not inferred: `DELETE
+/rest/v1/spatial_ref_sys` with the compiled-in anon key answered **204**. An
+emptied table is a full search outage, because geography operations resolve
+their spheroid through it and every one of them then raises `Cannot find SRID
+(4326)` — `search_listings`, the radius tiers, the landmark ring, the geog
+trigger, the default explore feed.
+
+115 closes it, and the shape of that migration is the lesson. Three obvious
+fixes are all refused here — the table is owned by `supabase_admin`, and our
+`postgres` is neither a superuser nor a member of it:
+
+| Attempt | Result |
+| --- | --- |
+| `enable row level security` | `42501: must be owner` — the linter's own advice |
+| `owner to postgres` | `42501: must be owner` |
+| `alter extension postgis set schema` | refused; postgis is `extrelocatable = false` |
+
+**The `revoke` is the dangerous one: it is permitted, reports success, and does
+nothing.** A non-owner may only revoke grants it made itself, and these were
+made by `supabase_admin`, so `relacl` comes back byte-identical. A migration
+built on it applies green and records itself as done with the hole untouched.
+`postgres` holds `t` (TRIGGER) and nothing else useful, so the guard is a
+trigger — **two** of them, because TRUNCATE does not fire row-level triggers
+and a row-only guard loses the table to a one-word statement. Reads stay open
+deliberately: search runs as `anon` and needs them.
+
+So when a Supabase lint names a table you did not create, check who owns it
+before writing the fix — and check `relacl` *after* applying it, because
+"succeeded" is not evidence.
+
+### Party capacity is sub-caps under a total, and pets default to deny
+
+118 gave `listings` four nullable columns — `max_adults`, `max_children`,
+`max_infants`, `max_pets` — and `search_listings` four matching arguments. Three
+things about the model are easy to get wrong later:
+
+- **They sit beneath `max_guests`, they do not replace it.** The total is still
+  the backstop, still what `create_marketplace_booking` enforces, and still the
+  only number a booking carries. They are deliberately **not** constrained to be
+  `<= max_guests` and do not have to sum to it: "up to 4 people, at most 2
+  adults, at most 3 children" is a coherent thing for a host to mean, and every
+  obvious constraint forbids it. `PartyLimits.clampedTo` trims a *counted* cap
+  when the host lowers the total, because a sub-cap above the total can never
+  bind — it does not touch infants or pets, which the total never gated.
+- **`null` means "no separate limit", not zero.** That is what makes the
+  migration invisible to the listings that already existed: a null column drops
+  out of the predicate entirely. Zero is a different, stated rule ("no
+  children"), and the two must never be collapsed — `supabase/tests/118…`
+  rows 02b/06/06b are the pair that pins it. It is also why the host control is
+  a stepper whose floor is **"Any"** rather than an `int` stepper beside a
+  switch: a host has to be able to take a cap back *off*, and `PartyLimits`
+  therefore needs explicit `clear*` flags where `SearchFilters.copyWith` reads
+  null as "unchanged".
+- **Pets are the exception and default to deny.** Unlike the other three they
+  already had a switch — `pets_allowed` (053), `not null default false` — so
+  silence means no, and `max_pets` is only consulted for a host who said yes.
+  Searching with an animal must not surface a place that never agreed to one.
+  Nothing ties the toggle and the number together, so a host switching pets off
+  needs no cleanup: the predicate reads the toggle first and never reaches the
+  number. `partyLimitsSentence` does the same, or a listing page would advertise
+  a pet limit for a place that no longer takes pets.
+
+**The four RPC keys are omitted unless the guest actually narrowed**
+(`searchPartyParams`), for exactly the reason 112 omits `p_check_in`: PostgREST
+picks the overload by the keys *present*, so sending them against a database
+without 118 demands a function that does not exist, and
+`searchListingsFromDb`'s catch turns every search on the site into "no results".
+`build/web` always lags a migration, so that window is real.
+
+The split still stops at search. A stay found as "2 adults, 1 child, 1 infant,
+1 pet" is booked as **3 guests** — bookings carry one number, and carrying the
+breakdown through means a bookings migration plus the booking sheet, the price
+breakdown and the host's reservation list.
+
+### Turf is a listing type, and adding an enum value is a two-file migration
+
+120 added `turf` to `listing_type`; 121 gave it three nullable columns
+(`turf_sport`, `turf_format`, `turf_surface`) and seven amenity rows. A turf is
+a sports ground rented by the hour.
+
+**They are two files because Postgres refuses to let a new enum label be used
+in the transaction that added it** — `55P04: unsafe use of new value "turf"`.
+That has two consequences that bite immediately:
+
+- 121's check constraint names `'turf'`, so running the pair together fails.
+  Apply 120, **commit**, then 121.
+- **The rolled-back-transaction check this repo verifies every migration with
+  does not work here.** A turf fixture needs the label committed, so
+  `supabase/tests/120_121_turf_test.sql` runs *after* both are applied, not
+  around them. Do not assume that safety net is under you for an enum change.
+- And it is **not reversible**: Postgres has no `ALTER TYPE … DROP VALUE`.
+  Removing `turf` means recreating the type and every dependent column.
+
+**Almost nothing else had to change, and that is the point.** Hourly booking
+already existed in full — `pricing_unit` carries `hour`, `listings` carries
+`hourly_rate`/`min_hours`/`max_hours`, `create_marketplace_booking` takes an
+arbitrary range, and `bookings_no_overlap` (078) is a *range* exclusion, so
+16:00–17:00 and 18:00–19:00 on one listing already coexisted. Rows 07–09 of the
+test pin exactly that, including a real overlap still being refused so the
+first two cannot pass for the wrong reason. `search_listings` needed no change
+either: it selects `to_jsonb(listings_row)`, so new columns flow through.
+
+Four things worth keeping:
+
+- **`max_guests` is the capacity column for a turf too.** It is the same
+  question — how many people fit — and a turf just calls the answer "players".
+  That is why 121 added no capacity column, and why the party predicate in
+  `search_listings` needed no second branch. `scopeFieldsToType` deliberately
+  does not touch it.
+- **The deploy-order trap from 112/118 does NOT apply in the read direction.**
+  `search_listings` filters with `l.listing_type::text = any(p_property_types)`
+  — it casts the *column* to text, never the input array to the enum — so a
+  build sending `'turf'` to a database without 120 matches nothing rather than
+  raising `22P02`. Only the write path (a host publishing) needs the migration
+  first, which is the safe direction. Do not "fix" this by omitting the key.
+- **`scopeFieldsToType` is the only place that drops the other type's
+  answers, and it is load-bearing.** A host can choose turf, state the sport,
+  go back and switch to room — the answers are still in form state, and
+  `listings_turf_fields_only_on_turf` refuses the whole write with `23514`. It
+  also zeroes bedrooms/beds/bathrooms for a turf (the model defaults them to 1,
+  and the card would print "1 bedroom" under a football pitch) and forces
+  `petsAllowed` off, because that column gates the entire pet branch of the
+  search predicate. Create and Edit are separate save paths and had two copies
+  of this rule on the first pass; one function now, with tests.
+- **`FacilityCatalog.ownerSelectable` is deduplicated by name, and must stay
+  that way.** The turf amenity set reuses Parking, Drinking Water, First Aid
+  Kit, CCTV Security and Security Guard, and both save paths filter that flat
+  list by the selected *names* — so a plain concatenation yields Parking twice,
+  reaches `listing_facilities` as two identical rows, and is refused by its
+  `(listing_id, facility_id)` unique index with `23505`. The entire save fails
+  because the host ticked a shared amenity. A test pins it, and a second test
+  pins that the two shapes genuinely overlap, or the first proves nothing.
+
+The host wizard is a **list** of steps derived from the type
+(`_WizardStep`), not a fixed count of eight, and `_canProceed` switches on the
+step's *identity* rather than its index — the two shapes put photos at 7 and 6,
+so an index-based rule would have let a turf publish with no photos. Sport,
+format and surface render through the shared
+[`TurfDetailsFields`](lib/widgets/host/turf_details_fields.dart), for the same
+reason `GuestPartyFields` is shared: the wire values are pinned by check
+constraints, and two copies drift into one screen offering a sport the other
+refuses.
+
+Every palette gained a `turf` colour and it is a **new dark green token, not
+the existing `green` accent** — `_CategoryBadge` paints the type's name in
+white on it, so it is held to 4.5:1 like every other text-bearing token, and
+`green` (#10B981) is 2.54:1. The palette test now checks all six pairs for
+distinctness and all four for white-text contrast.
+
+**What is still missing, and it is the thing that makes turf good rather than
+merely possible:** the hourly picker is guess-and-check. A guest picks a date,
+a start time and a duration, and `is_booking_available` answers yes/no for
+exactly that window — nothing shows which slots are already taken. That is
+tolerable for a stay booked hourly now and then and poor for a ground where
+every booking is a slot. There is also no opening-hours concept, so nothing
+stops a 3am booking; that would be a column plus a check inside
+`create_marketplace_booking`, since the form is not enforcement.
+
+### A SECURITY DEFINER function is public unless you say otherwise
+
+Same root cause as the note above, one level down: `ALTER DEFAULT PRIVILEGES`
+grants `anon` and `authenticated` EXECUTE on **every function created in
+`public`**, and PostgREST publishes anything in `public` at
+`/rest/v1/rpc/<name>`. So a `SECURITY DEFINER` function is a public,
+unauthenticated endpoint running as `postgres` from the moment it is created,
+and the only thing standing between it and the internet is a check you wrote
+inside its body.
+
+116 found fourteen with no such check. The worst was **`otp_log_send`**, and it
+was full account takeover:
+
+- it inserts into `otp_attempts` with a **caller-supplied** `otp_hash`,
+- `hashOtp` (`supabase/functions/_shared/otp.ts`) is unsalted, unpeppered
+  SHA-256 of the code, so the hash for `1234` is a public constant,
+- `verify-otp` picks its row with `order by created_at desc limit 1`, so a row
+  inserted just now **outranks the code that was actually texted**.
+
+Three requests with the anon key that ships in the bundle — `otp_log_send`,
+`verify-otp`, redeem the token — and you hold anyone's session, admin included.
+Verified live to step one (HTTP 200 + row id, for a nonexistent phone, row
+deleted immediately); the chain was not completed. This is not the master-OTP
+risk in the QA section — that needs the number allowlisted; this needed nothing.
+
+Two rules follow, and 116 is the worked example:
+
+- **Revoke from `public` AND `anon` AND `authenticated`.** Nearly every one of
+  these carried both a PUBLIC `=X/postgres` and an explicit `anon=X/postgres`.
+  Dropping either alone leaves EXECUTE intact through the other — 115's lesson
+  exactly inverted.
+- **The grant is not the control if the body already guards.** `admin_*`
+  raise `Only service_role can execute this function` and were left alone;
+  functions checking `auth.uid()` likewise. Don't revoke blind: three
+  (`is_admin`, `can_see_listing_address`, `get_listing_owner`) are called from
+  inside RLS policy expressions, where a role lacking EXECUTE gets an **error
+  instead of an empty result**, and `is_conversation_member` is the same for
+  `authenticated`. Check `pg_policy` before touching a grant.
+
+Safe to revoke the OTP four because the live login path never calls them: both
+OTP edge functions build their client with `SUPABASE_SERVICE_ROLE_KEY` and hit
+`otp_attempts` through PostgREST directly. The Dart callers in
+`lib/services/otp_service.dart` sit behind
+`OtpState._useSupabase => SupabaseConfig.isConfigured`, true in every shipped
+build, so that branch is the mock path. Login was **not** driven to test this —
+see the QA section on why automating a login can send a real SMS.
+
+Still open after 116, in rough priority order: **20 `SECURITY DEFINER`
+functions with a mutable `search_path`** (a schema-shadowing escalation vector,
+mechanical to fix with `alter function … set search_path`), and
+`get_unread_count` / `is_conversation_member` never checking that `p_user_id`
+is the caller, so one signed-in user can still read another's counts.
+
+### A SECURITY DEFINER *view* can be written through, as postgres
+
+The three `security_definer_view` advisor ERRORs looked cosmetic and one was a
+full **anon → admin escalation** (117). A view with neither `security_invoker=on`
+nor an owner clause runs as its OWNER — `postgres` — for reads *and writes*, and
+a single-table view is auto-updatable, so PostgREST accepts a PATCH on it and
+the write lands on the base table **as postgres, outside RLS and before any
+guard trigger**. `public_profiles` is `select <safe columns> from profiles`, so:
+
+```
+PATCH /rest/v1/public_profiles?id=eq.<host>  {"role":"admin"}   →  204
+```
+
+with the bundled anon key promoted any account to admin. The definer view launders the actor into `postgres` and slips
+RLS entirely.
+
+**This note used to claim the direct path was safe, and it was wrong.** It
+said an authenticated self-`role` change is stopped by
+`fn_guard_verification_verdicts`. That function guards identity verification,
+address verification, `nid_verified` and the address audit columns, and never
+mentioned `role`; the direct path was assumed safe without being driven.
+Proved otherwise on live 2026-09-18 (rolled back): one PATCH on your own
+profile row set `role` to `admin`. See 133 below. Fix
+was to **revoke INSERT/UPDATE/DELETE on the view**; reads run as postgres either
+way, so nothing broke.
+
+Two rules from it:
+
+- **A definer view over an RLS table is a write hole unless you revoke writes
+  on the view.** Auto-updatability is silent — nothing in the view definition
+  says "writable".
+- **`security_invoker=on` is the lint's fix but not always yours.**
+  `listing_ratings`/`guest_ratings` are aggregates (not updatable), and flipping
+  them to invoker cleared the lint *and* fixed a real leak — as definer they
+  averaged in **unrevealed** reviews (`reviews_select_revealed` is `to public`,
+  so reading as the caller drops them; live count went 37→36). But flipping
+  **`public_profiles`** to invoker would read as the caller: an anon caller sees
+  zero rows and every host name in the app vanishes. Making it work again needs
+  a `to public using(true)` SELECT policy on `profiles`, and anon holds column
+  SELECT on all 31 columns (mobile, nid, email included — only RLS hides them),
+  so that policy would leak PII instantly. **`public_profiles` stays a definer
+  view on purpose; its lint (0010) does not clear**, same category as
+  `spatial_ref_sys`'s 0013 (see 115). 117 also revoked anon's now-purposeless
+  direct grants on `profiles` (it reads through the definer view, never the
+  table) so those PII column grants stop being one careless policy away from a
+  leak.
+
+The rule itself is *not* reimplemented — search calls `is_booking_available`,
+same as the booking form. `searchDateWindowFor`
+(`lib/services/search/search_date_window.dart`) is the only place that decides
+whether a search has a usable window, and it has tests.
+
+The client omits `p_check_in`/`p_check_out` **entirely** when there is no
+window rather than sending nulls, so the deploy order between `build/web` and
+this migration does not matter: PostgREST picks the overload by the keys
+present, so a null key would still demand the 19-argument function and, against
+a pre-112 database, resolve to nothing and empty out every search.
+
+`searchListings` (synchronous, cache-local, `supabase_musafir_repository.dart`)
+has **no callers** and cannot see blocks at all — they are not in the listing
+cache. `search_listings_by_location` is likewise dead in both the app and the
+admin portal. Neither is a live discovery path; do not add one without giving it
+the same date filter.
+
+### Devices are recorded, nothing is capped (123)
+
+`user_devices` records which devices an account signs in from. Phase 0 of
+`docs/DEVICE_SESSIONS.md` — read that before extending this, particularly why
+the device list has to ship before any limit does, and why web cannot share a
+tight cap with phones.
+
+- **It is not `fcm_tokens` (012) and not `auth.sessions`.** The first is keyed
+  on the FCM token, and those rotate, so one phone becomes several rows. The
+  second is GoTrue's, in the `auth` schema — PostgREST does not expose it, none
+  of this repo's RLS applies, and it has no stable device identity.
+- **The device id is a client-generated UUID, never a hardware id.** Android
+  10+ refuses IMEI and serial, iOS's IDFV resets on uninstall, the web has
+  nothing. The bound (8..128 chars) is enforced in both halves — the client
+  should not send what the server will refuse with `22023`, and the server
+  cannot trust the client to have checked.
+- **Neither function takes a user id.** `register_device` and `touch_device`
+  read `auth.uid()`, and `session_id` comes from `auth.jwt() ->> 'session_id'`
+  rather than a parameter. A caller-supplied identity on a `SECURITY DEFINER`
+  function is the hole 116 exists to close; 012's `upsert_fcm_token` takes
+  `p_user_id` and is only safe because a later migration added the guard the
+  repo file still does not show.
+- **The table has no INSERT policy and no DELETE policy**, the shape
+  `listing_availability_blocks` (110) uses. A client that could write rows
+  could invent slots for itself under a cap. `update` is revoked and re-granted
+  **column-wise on `label` alone** — the USING clause by itself would have let
+  the client write `revoked_at`, `last_seen_at` and `session_id`, which are
+  exactly what a cap depends on.
+- **Registration is a client call only because Phase 0 enforces nothing.** The
+  moment a cap exists it moves into `verify-otp`, the only place a session is
+  minted and the only one running as service role. A client that can choose
+  whether to register can choose not to.
+- **`touch_device` answers false for an unknown device.** A device that has
+  never registered is not a revoked one, and answering true would sign out a
+  perfectly good session.
+- `session_id` is nullable because a GoTrue without that claim must not stop a
+  device being recorded — but **Phase 1 cannot ship until it is confirmed
+  present**, or a remote sign-out has no row to delete and is theatre.
+- Model and OS are **not** collected: that needs `device_info_plus`, a
+  dependency and an Android manifest surface Phase 0 does not need. The columns
+  exist so the build that adds it needs no migration, and `register_device`
+  coalesces so a null never erases what an earlier launch knew.
+
+### A device sign-out is a deleted auth.sessions row (124, 125)
+
+`revoke_device` sets `revoked_at` **and deletes the `auth.sessions` row**. Only
+the second half is enforcement: it removes the refresh token, so the device
+dies at its next refresh whatever the client does. `revoked_at` alone is
+bookkeeping a signed-out client could ignore, and a signed-out client is
+precisely the one that will.
+
+That works because `postgres` holds DELETE on `auth.sessions` even though
+`supabase_auth_admin` owns it — **checked by doing it**, not by reading
+`has_table_privilege`, because 115's whole lesson is that a permitted-looking
+write can report success and change nothing. A delete inside a rolled-back
+transaction took the count from 39 to 38.
+
+- **`fn_revoke_device_row` and `fn_enforce_device_limit` take ids and do no
+  ownership check**, because their callers already did. They are revoked from
+  `public`, `anon` AND `authenticated` — PostgREST publishes everything in
+  `public` at `/rest/v1/rpc/<name>`, so a grant left on either of them is a
+  stranger ending your session. A test row asserts they are unreachable.
+- **`revoke_other_devices` identifies the device to keep from the JWT**, never
+  from a parameter. A caller who could name the device to keep could keep one
+  that is not theirs.
+- **The arriving device is protected by id, not by timestamp.** `now()` is
+  transaction time, so two registrations in one transaction share a
+  `last_seen_at` exactly and the tiebreaker decides who survives — the test
+  caught the eviction signing out the device that had just logged in. A user
+  must never be signed out by their own login, so that cannot rest on a
+  comparison.
+- **`max_devices_per_user` evicts, it never refuses.** The only way back into
+  this app is a real SMS, and the master OTP is an unthrottled allowlist entry
+  kept live for the Play reviewer — a device cap must never be what locks that
+  account out mid-review. Seeded 0 = unlimited, the same fail-open as
+  `android_min_version_code` (122), and its arm was added to
+  `fn_validate_app_setting` by recreating that CASE in full.
+- **Web is exempt from the count and from eviction.** A browser loses its id
+  whenever site data is cleared, so it would consume the whole allowance by
+  itself, and evicting one is pointless because the next visit is a new device.
+- **The cap is enforced inside `verify-otp` (127), not in the client.** It was
+  a client call through 125, so a client that never called `register_device`
+  was never counted — the "booking form checks it" class. `admin_register_device`
+  is the service-role twin (`register_device` reads `auth.uid()`, and inside
+  the edge function there is no caller yet) and carries the same
+  `Only service_role can execute this function` guard as every other `admin_*`.
+  It is **non-fatal**: a bookkeeping failure must never turn "you reached your
+  device limit" into "you cannot sign in".
+- **`verify-otp` cannot record `session_id`** — the session is created when the
+  client redeems the token hash, after the function returns. The client's own
+  `register_device` fills it in, along with model and OS, and everything
+  coalesces. So: **verify-otp owns the rule, the client owns the detail.** A
+  device with no `session_id` can still be listed and evicted; it just cannot
+  be remotely signed out until its next launch.
+- **`upsert_fcm_token` gained a fifth parameter and the 4-arg version was
+  DROPPED.** Two overloads where one has a default is ambiguous to PostgREST
+  ("Could not choose the best candidate function"); one function with a default
+  resolves a four-key call cleanly, so a deployed bundle keeps working. A test
+  row pins exactly that.
+- **Revoking a device deactivates its push tokens.** Without it a lost phone
+  keeps showing messages after being signed out, which is most of what the user
+  wanted stopped.
+
+**126 reaps.** A revoked row is deleted after 180 days and an active one
+unseen for 365 — two windows because they are two different problems, and 365
+rather than 90 because a phone left in a drawer over a long trip is still the
+user's phone. Reaping it would silently un-name it and hand back a slot nobody
+asked for. Daily under `pg_cron`; contrast `expire_stale_bookings`, which runs
+every 15 minutes because its window can be set to one hour.
+
+`supabase/tests/123_user_devices_test.sql` is 13 rows,
+`supabase/tests/124_125_device_limit_test.sql` is 20 and
+`supabase/tests/126_reap_stale_devices_test.sql` is 6 and
+`supabase/tests/127_device_limit_at_login_test.sql` is 7, all run rolled back
+against live. Their negative controls are the point: direct insert, `revoked_at` write,
+cross-user read, cross-user touch, cross-user revoke, short id, anon, the
+internal functions being ungranted, and a malformed setting falling back to
+"no limit" rather than to a lockout.
+
+### Bulk SMS is a queue, and the phone column is a gate (128)
+
+The console can send one message to many people. `docs/BULK_SMS.md` is the
+whole design; the parts that will bite you:
+
+- **`profiles.mobile` is not a send key.** 44 profiles, 40 distinct numbers,
+  one row holding the literal string `pending_<uuid>` and one holding an
+  unassigned prefix — **38 are actually reachable**. So
+  `fn_canonical_bd_phone` is a *gate* that returns null for junk, deliberately
+  unlike `normalizePhone` (otp.ts) and `canonicalBdPhone`
+  (phone_number.dart), which are *routers* and must pass junk through so a
+  mistyped login fails cleanly. Do not "keep them in step" by making this one
+  permissive.
+- **The audience prefers the auth identity to `profiles.mobile`.** The identity
+  is the number that actually received an OTP; `mobile` is typed and displayed.
+- **Claim-before-send, on purpose.** `admin_claim_sms_batch` marks rows
+  `sending` and commits *before* GenNet is called, so a crash loses a message
+  rather than repeating one, and such a row is never picked up again. Retry
+  covers `failed` only. Test row 19 is the negative control and goes red the
+  moment retry is made "helpful" enough to include `sending`.
+- **Dedupe is the unique index on (campaign_id, phone)**, not the form. The
+  form's count exists to be honest to the admin; the index exists to be safe.
+- **`sms_bulk_max_recipients` fails CLOSED and 0 means DISABLED** — the
+  opposite of `max_devices_per_user` (125) and `android_min_version_code`
+  (122). Those fail open because they can lock a user out; this one fails
+  closed because it can spend money irreversibly. Over the cap is **refused,
+  never truncated**. Check which way the damage runs before copying the
+  0-means-unlimited idiom again.
+- **Opt-out is `sms_suppressions(phone)`, not a column on `profiles`** — a CSV
+  number has no profile row, and that is the case most likely to need it.
+  `transactional` bypasses the list and is not a marketing loophole.
+- **Bangla is UCS-2: 70 characters per segment against 160.** The segment
+  estimate is conservative (anything non-ASCII counts as Unicode) because
+  over-estimating cost is the safe direction.
+- **The pg_cron sweep must send an `Authorization` bearer AND
+  `x-sms-worker-secret`.** The edge-function gateway 401s a request with no
+  auth header *before* the function's own code runs, so the secret alone is a
+  silent failure every minute — and the anon bearer alone is no authentication
+  at all, since that key ships inside `build/web`. Same pair, same reason, as
+  `send_push_on_notification_insert`. Needs `sms_worker_url`,
+  `sms_worker_secret` and `sms_worker_auth` in `app_secrets`; missing any one
+  makes the sweep a deliberate no-op.
+- The Flutter app needs nothing from this — no client change, no `build/web`
+  rebuild. `supabase/tests/128_sms_campaigns_test.sql` is 30 rows;
+  `../musafir-admin` has `npm run check:sms` for the CSV parser, which is the
+  only piece with no SQL test behind it.
+
+### Bulk notifications are NOT the bulk-SMS design (129)
+
+`docs/BULK_NOTIFICATIONS.md`. Same console, deliberately different machinery,
+because delivery already existed: `on_notification_send_push` fires on every
+insert into `notifications`, so a campaign is one `insert … select` in one
+transaction. **No queue, no worker, no cron sweep, no retry** — there is no
+partway state to recover from, and adding 128's machinery here would be cargo
+cult. `user_id` is the key, so a primary key does the deduplication a canonical
+phone needed a unique index for. Reach is 44 of 44, against SMS's 38.
+
+- **`notification_preferences` is LEFT joined and that is the whole ballgame.**
+  Exactly ONE of 44 accounts has a row; an inner join reduces every campaign to
+  **1 recipient** (measured). Absent row = the app's defaults.
+- **Quiet hours cross midnight.** The default is 22:00–07:00, so
+  `between start and end` is false for the entire window and pushes at 3am. An
+  earlier version of the test used `now ± 1 hour`, which never wraps, and
+  **passed against the broken implementation** — if you touch this, check the
+  test can still fail.
+- **`fn_notification_category` must cover every enum label**, or an unmapped
+  type silently ignores the user's setting. The enums have already drifted:
+  `booking_rejected`, `checked_in` and `review_prompt` exist in the database and
+  not in the Dart enum. Test row 1 walks `enum_range` so the next addition
+  fails loudly.
+- **`data->>'suppress_push'` is a per-recipient flag, not a preferences check
+  inside the trigger.** The key is absent from all 787 existing rows, so every
+  notification the app already raises is untouched. A trigger that consulted
+  preferences for everything would change booking and message delivery as a side
+  effect of a marketing feature.
+- **Known gap, not closed here: nothing outside bulk campaigns honours
+  `notification_preferences` at all.** `shouldDeliver` in Dart is a client-side
+  read and the push goes out regardless — the "the booking form checks it"
+  pattern again.
+- `notification_bulk_max_recipients` seeded 2000, fail-closed, 0 = disabled.
+  `supabase/tests/129_notification_campaigns_test.sql` is 25 rows.
+
+### Settlement columns are written by RPCs, and the trigger knows them by a flag (132, applied 2026-09-18)
+
+Until 132, a guest or a host could `PATCH /rest/v1/bookings?id=eq.<own>`
+with `{"payment_status":"paid"}` and it landed — verified live, rolled back.
+`authenticated` holds column UPDATE, both UPDATE policies admit them, and
+`enforce_booking_update_rules` (051/098) froze price and dates but never
+`payment_status`. The ledger trigger then posts the host an earning for
+money that never moved. Same class as 116 and 117: nothing in the client
+writes the column, so nobody looked at who *could*.
+
+- **The guard is on `payment_status`, `payment_method` and `paid_at`, for
+  anyone with an `auth.uid()` who is not an admin.** The IPN function is
+  service role (uid null) and passes; `mark_cash_payment` and
+  `set_booking_payment_method` are SECURITY DEFINER but run *with* the
+  caller's uid, so they announce themselves with
+  `set_config('musafir.settlement_write','1',true)` around their one update
+  and reset it after. A new writer of these columns must do the same; the
+  test row for it goes red otherwise.
+- **`current_user` cannot do this job, and the first draft tried.** The
+  trigger is itself SECURITY DEFINER, so inside it `current_user` is always
+  `postgres`, whoever is writing. The guard never fired and the rolled-back
+  test still said "update accepted" on all three rows. A transaction-local
+  GUC is the only thing the caller can hand across a definer boundary that a
+  PostgREST client cannot forge (it only materialises `request.*`).
+- **It is a trigger, not a `REVOKE` on the columns**, because the admin
+  console's refund switch writes `payment_status` with the admin's own JWT.
+  That switch matched zero rows until **137** gave `bookings` an admin UPDATE
+  policy — see below. The revoke this note used to propose is now off the
+  table for good: with admins exempt *inside* the trigger, a column revoke
+  would have to exempt them too, and there is no way to write "except admins"
+  in a GRANT.
+- **In a rolled-back impersonation test, clear the claims when you drop
+  the role.** `set_config('role','postgres')` alone leaves `request.jwt.claims`
+  set, `auth.uid()` stays non-null, and the guard correctly refuses even
+  `postgres`. Every block in `supabase/tests/132_*` ends with both.
+- **The Management API's `/database/query` returns `[]` for the repo's
+  standard `select n, case when ok then 'PASS' else 'FAIL' end …` result
+  line.** `select * from t_result order by n` comes back fine. The files keep
+  the standard line (psql is unaffected); when driving a test through the
+  API, swap the last select.
+
+### A profile row is self-service, so every privilege on it needs a guard (133, applied 2026-09-19)
+
+`role` lives on `profiles`, the UPDATE policy is `using (auth.uid() = id)`
+with **no WITH CHECK**, and the only thing between a client and any other
+column on its own row is `fn_guard_verification_verdicts`. Until 133 that
+trigger did not mention `role`, so:
+
+```
+PATCH /rest/v1/profiles?id=eq.<self>   {"role":"admin"}   ->  204
+```
+
+made anyone an admin, and `is_admin()` is what **28 policies** key on: every
+booking, payment, payout method, identity document, exact address, the audit
+log, coupons, the campaigns, plus UPDATE on `app_settings` and on any profile.
+Same class as 116, 117 and 132 — nothing in the client writes the column, so
+nobody asked who *could*.
+
+- **The fix is not a blanket ban, because the app writes `role` itself.**
+  `SupabaseAuthService.becomeHost()` sets `is_host`, `host_since` and
+  `role = 'owner'` in one client-side update. So 133 permits exactly
+  `tenant -> owner` for a non-admin and refuses everything else; `admin` is
+  unreachable from a client in either direction. Test row 3 is that flow and
+  goes red on the obvious over-strict fix.
+- **Measure the effect, not the exception, when testing RLS.** An UPDATE whose
+  rows RLS filters out matches nothing and raises nothing, so "no error" reads
+  as success while the database in fact refused. The first draft of
+  `qa_role_capability_matrix_test.sql` reported four false alarms for exactly
+  this reason; it probes a value before and after now.
+- **Clear `request.jwt.claims` whenever you drop back to `postgres`** in a
+  test. A stale `sub` leaves `auth.uid()` non-null and the guards correctly
+  refuse even `postgres`, which reads as the fix being broken.
+
+Still open after 133: the profiles UPDATE policy has no WITH CHECK at all, so
+the trigger remains the only guard on every other column of your own row.
+
+### `DeviceSessionWatcher` asks before anyone is signed in
+
+`isRevoked()` returns early with no session now. It is called at startup and
+on every resume without asking whether anyone is logged in, so every
+signed-out visitor made a `touch_device` call the database refuses — the
+function is granted to `authenticated` only and carries no `anon` grant. It
+failed open and nothing broke, which is exactly why it went unnoticed for so
+long: it showed up only as a red 401 in the console on every launch, and would
+become one error-tracking event per visitor the moment Sentry is added.
+
+### A bucket name is not an access rule (134, applied 2026-09-19)
+
+`listing-images` granted INSERT, UPDATE and DELETE to **any** authenticated
+user with only `bucket_id = 'listing-images'` as the check — "may this person
+write here" answered by *which bucket it is*. Measured 2026-09-18: a second
+host overwrote another host's image, and a guest who hosts nothing uploaded
+into the bucket. `avatars` next door ties the filename to `auth.uid()` and
+`documents` scopes reads to the owner's folder; this was the odd one out, and
+it is the public one.
+
+134 rewrites all three. Four things in it are worth keeping:
+
+- **Ownership is `storage.objects.owner`, not the path.** The obvious clause —
+  "the first folder must be a listing you own" — refuses every first publish:
+  `CreateListingScreen` uploads photos BEFORE the listing row exists, under a
+  synthetic `listing_<millis>` folder, and only `EditListingScreen` uses the
+  real uuid. On live, 12 of 42 objects sit under a listing uuid. `owner` is
+  stamped by Storage and populated on all 42. `owner_id` (text) is checked
+  too, because which of the two Storage fills depends on its version.
+- **The INSERT gate is deliberately LOOSER than the publish gate.** Publishing
+  is `can_publish_listings()` — verified owner or admin, the predicate the
+  `listings` INSERT policy already used, now called from both so they cannot
+  drift. Uploading is `can_upload_listing_image()`, which is that **or you
+  already own a listing**: live has 4 listings belonging to 2 accounts that
+  predate 114 and could not publish today, and they can still edit those
+  listings, so the strict gate would have let them change everything except
+  the photos.
+- **DELETE cannot be tested through SQL.** Supabase's statement-level
+  `protect_objects_delete` refuses every direct `DELETE` on `storage.objects`,
+  so the Storage API is the only door and the policy is asserted from
+  `pg_policies` instead. That trigger is also the only reason deletion looked
+  safe before 134 — a control we do not own is not a control.
+- Reads stay `to public`. The bucket is public and every listing card on the
+  site loads from it, signed out included.
+
+`supabase/tests/134_137_qa_fixes_test.sql` is 27 rows; three of them go red
+with the old policies put back, which is the negative control.
+
+### The booking RPC is the only booking rule there is (135, applied 2026-09-19)
+
+`create_marketplace_booking` is the single writer of a `bookings` row — 071
+locked direct INSERT — so anything it does not check is not checked. Two
+things it did not:
+
+- **A host could book their own listing.** Measured allowed; live already
+  holds one. The ledger then posts the owner an earning against money that
+  moved between their own two pockets, and a host can black out their own
+  calendar through the booking path instead of `listing_availability_blocks`
+  (110), which is the feature built for it and the only one their own UI can
+  undo.
+- **A booking could be entirely in the past.** A stay starting ten days ago
+  was accepted and returned an id. Past slots are always free, so the
+  availability checks never object, and the auto-complete sweep then walks the
+  row straight to completed — a review prompt and a ledger entry for a stay
+  nobody had.
+
+Both refuse at INSERT time only, the choice 114 made for identity; the live
+rows are left alone. The past-date guard allows **one hour** of slack rather
+than a hard `>= now()`, because booking a turf for *this* hour is the normal
+case for an hourly listing, the client's clock is its own, and `now()` here is
+transaction time. It is there to stop last month, not the last minute.
+
+### Several guests racing for one slot lose in two different ways (N6)
+
+`bookings_no_overlap` (078) is correct and does its job: exactly one booking
+survived every race in QA, at two, three, four and eight concurrent guests,
+across eleven runs. **What the losers are told depended on how many of them
+there were.** With two, the loser gets `23P01` and the sentence written for
+them. With three or more, Postgres frequently raises from inside the exclusion
+check itself:
+
+```
+ERROR:  deadlock detected
+CONTEXT: while checking exclusion constraint on tuple (1,25) in relation "bookings"
+```
+
+The client handled `23P01` only, so under exactly the load this feature exists
+for — a popular slot — most losing guests saw an unexplained failure. Across
+six four-racer runs, two had all three losers deadlock.
+
+`isRetryableBookingFailure` (`40001`, `40P01`) now drives one retry in
+`_insertMarketplaceBookingWithRetry`, and a second failure is rendered as the
+conflict message rather than a generic banner. **Once, not a loop with
+backoff**: the race is already decided by the time the retry runs, and a
+client hammering a contended slot adds to the contention it is losing to.
+
+### A flagged payment is not a settled payment (136, applied 2026-09-19)
+
+**The migration is live and the two edge functions are NOT redeployed yet.**
+That order is the safe one and the reverse is not: the functions write
+`pending_review` and `abandoned`, which the CHECK constraint refused before
+136. Until they are deployed, online payments still send the wrong
+notification type and a risk-flagged payment still settles as paid.
+
+SSLCommerz sets `risk_level` non-zero with a `risk_title` on an otherwise
+VALID transaction when its fraud screen fires, and its own guidance is to hold
+that payment for review before delivering the service. `sslcommerz-ipn` stored
+both fields and marked it paid anyway, which unlocks Service complete and
+posts the host's earning at once.
+
+- Such a payment is now `pending_review`, **and the booking stays unpaid** —
+  that second half is the enforcement; the payment row is bookkeeping. The
+  guest is told their money arrived and is being checked, and every admin gets
+  a `security_alert`.
+- It is resolved from the **Held** tab of the console's Payments screen, which
+  calls `admin_release_payment` / `admin_reject_payment` with the
+  service-role client. Both carry `fn_require_service_role()` like every other
+  `admin_*`: an admin's own JWT is deliberately not enough, because releasing
+  is the one action there that moves money. `admin_release_payment` raises
+  `musafir.settlement_write` around its booking write, exactly as 132 requires
+  of any new writer of those columns.
+- **Attempts are closed now, in two places.** `sslcommerz-init` abandons this
+  booking's earlier `initiated` rows before creating another and refuses after
+  six in an hour; `expire_stale_payment_attempts` sweeps anything `initiated`
+  for over an hour every 15 minutes. Live carried 27 such rows worth ৳52,420
+  from July and August. Neither ever touches `paid` or `pending_review`, and a
+  guest who pays after the sweep still settles — the IPN finds the row by
+  `tran_id`.
+- The window is hardcoded at 60 minutes, unlike `booking_accept_window_hours`
+  (119). That one is a setting because it is visible to guests as a countdown
+  and a host argued about it; this one only decides when a dead row stops
+  being called `initiated`.
+
+### An admin has to be able to write the table the admin screens write (137, applied 2026-09-19)
+
+`bookings` carried five policies and none admitted an admin for UPDATE, so the
+console's "Mark refunded" PATCHed with the admin's JWT, matched nothing, and
+reported *"Only a paid booking can be marked refunded"* however paid the
+booking was — since the screen shipped.
+
+**The failure mode is the lesson, not the policy.** PostgREST does not refuse
+an UPDATE whose rows RLS filtered out: it succeeds, changes nothing, and
+returns `[]`. Nothing errors, nothing logs, and the feature is simply inert.
+The same trap made the first draft of the QA capability matrix report four
+false passes. **Measure the effect, never the exception.**
+
+### The rules that lived only in Dart (138, applied 2026-09-26)
+
+The second QA round (`docs/qa/REPORT_ROUND2_2026-09-19.md`, sixty
+scenarios, twenty-eight failed) found the same class of hole seven more times:
+a rule the client enforced and the database did not. 138 closes them all;
+`supabase/tests/138_qa_round2_test.sql` (57 rows) goes red with it reverted.
+It is on live as of 2026-09-26, so each bullet below describes what the
+database *used* to allow. **The suite cannot verify live**: it impersonates
+`qa_seed` accounts that exist only on the mirror. Live was checked instead
+with a rolled-back probe — a real host was refused `42501` reopening a
+rejected booking, and the rating backfill matched the revealed reviews.
+
+- **A host could rewrite a booking's history.** `enforce_booking_update_rules`
+  returned `new` for the listing owner unconditionally — the state machine
+  was `BookingLifecycleService` (Dart). Measured: cancelled → confirmed,
+  rejected → confirmed, confirmed → completed with no check-in. The
+  accept-after-cancel race ends the same way: two PATCHes, last one wins.
+  The trigger now holds the table the Dart service documents (pending →
+  confirmed | rejected | cancelled; confirmed → active | completed |
+  cancelled; active → completed | cancelled; terminal states immutable).
+  `confirmed → completed` stays allowed because `auto_complete_elapsed_bookings`
+  takes exactly that step. Admins and the service role are still exempt.
+- **A guest could edit anything the RPC decided.** `guest_count`,
+  `unit_count`, `pricing_unit`, the coupon columns, the `listing_*` copies
+  and `tenant_name` are frozen for non-admins now; host-side columns
+  (`host_message`, `confirmed_at`, …) are the host's. `cancelled_by` must be
+  the caller and is stamped when omitted — the repository's bare cancel sent
+  the status alone, `notify_on_booking_lifecycle` keys on `cancelled_by`, so
+  that path notified nobody, and a guest who set it to the HOST's id was told
+  "Cancelled by host".
+- **A paid cancellation told nobody money was owed.** `trg_alert_paid_cancellation`
+  puts "Refund due" in every admin's inbox and tells the guest; the console
+  has a **Refund due** tab (Bookings). There is still no refund policy — this
+  only makes the ৳ visible.
+- **Either participant could swap the other out of a conversation.** The
+  UPDATE policy has no WITH CHECK; a guest replaced the host with a stranger,
+  who then read the host's messages. Participant ids are frozen by trigger.
+- **Blocks were a client-side filter.** `user_blocks` hid threads on the
+  blocker's phone; the blocked person kept messaging, kept raising pushes,
+  and could book the blocker's listing. `fn_users_blocked` is consulted on
+  message insert, `get_or_create_conversation` and
+  `create_marketplace_booking` — both directions, `42501 blocked`. Automated
+  sends (null uid) still deliver: a host who blocks a guest mid-stay still
+  owes them the checkout message. `fn_users_blocked` and `fn_identity_phone`
+  are revoked from every client role; the triggers that call them are
+  SECURITY DEFINER for that reason.
+- **The double-blind reveal never worked for the second reviewer.**
+  `check_and_reveal_reviews` was SECURITY INVOKER; its UPDATE ran as the
+  reviewer, and `reviews_update_own` let them flip only their own row. Both
+  stayed hidden until the 14-day sweep. Definer now. Live has 3 hidden
+  reviews on 3 bookings and no pair yet.
+- **`listings.rating` never changed.** `update_listing_rating()` averaged a
+  column reviews does not have and was attached to nothing; the explore card
+  reads `listings.rating`. `fn_refresh_listing_rating` recomputes from
+  **revealed** `guest_to_host` reviews on every review write (backfilled
+  once), announcing itself with `musafir.rating_write` — 132's flag pattern —
+  so `fn_freeze_listing_reputation` can refuse an owner's own `rating` /
+  `review_count` / `is_superhost` write and zero them on insert. The backfill
+  rounds to two places but **the column is `numeric(2,1)`**, so a computed
+  4.81 is stored as 4.8 — do not read that one-decimal difference as the
+  backfill having missed a review. On apply it set 8 of 20 listings and
+  nulled the other 12, which have no revealed review.
+- **Review reminders reached 1 stay in 24.** A one-hour `completed_at` window
+  inside a once-a-day cron. Day-wide now, deduplicated per booking per day.
+- **Automated message dates were UTC.** A stay from midnight Dhaka on 1 Oct
+  is 18:00 UTC on 30 Sept, so `to_char(starts_at, …)` said September 30.
+  `send_precheckin_for_booking` / `send_checkout_for_booking` render
+  `at time zone 'Asia/Dhaka'`; Bangladesh has one zone and no DST.
+- **A rejected applicant never re-entered the queue.** `set_verification_pending`
+  fired on INSERT only and moved only `none`; a re-scan is an upsert. INSERT
+  or UPDATE of `file_path`, from `none` or `rejected`.
+- **`redeem_coupon` took the discount as a parameter.** One call burnt a
+  limited coupon's single use on a booking that never carried it. It must now
+  match `bookings.coupon_code`, records the booking's own `discount_amount`,
+  and is revoked from `anon`.
+- **The contact card handed over `profiles.mobile`**, which its owner can
+  type anything into. `fn_identity_phone` derives the number from the auth
+  identity (`phone.<n>@musaafir.app`), the same way `admin_sms_audience`
+  does; `mobile` is only the fallback for email-only accounts.
+- **A guest who booked a now-hidden listing could not open it.** The SELECT
+  policy was "active or mine"; `listings_select_booked_guest` adds "or I have
+  a booking on it".
+- **`admin_release_payment` would pay a cancelled booking.** It checked only
+  the payment's status. It refuses unless the booking is confirmed or active;
+  Reject is the only move on a closed booking.
+- **Live's realtime publication does not include `bookings`.** The app
+  subscribes to it; the subscription reports active and never fires. 138
+  adds it, idempotently, plus the four live already has — the local mirror
+  had none, because the catalog dump does not carry publication membership.
+- **`chat-attachments` accepted any file type.** Mime allowlist set (images,
+  PDF, office formats, text); the picker offers the same list
+  (`ImageUploadService.chatAttachmentExtensions`, pinned by a test); the
+  delete policy checks `owner_id` as well as `owner`.
+
+**`sslcommerz-ipn` holds a payment that lands on a closed booking.** A guest
+who starts paying, whose booking is cancelled while the bank page is open,
+and who completes the payment, used to get the cancelled booking marked
+paid and the host an earning. The decision is `_shared/settlement.ts`
+(`decideSettlement`), a pure function with its own Deno tests that CI runs;
+the booking's state is checked BEFORE the fraud flag on purpose, because the
+admin's next step differs (refund, never release). Driven for real on the
+sandbox. **Not yet redeployed.**
+
+Two things about running the SQL suites, learned the expensive way this
+round: **most of them do not roll themselves back.** They were written to be
+pasted into the Management API inside a transaction a human opens. `psql -f`
+commits them; so does `psql -1`. Twelve listings, eight bookings, eleven
+devices and forty-four notifications were left in the local mirror, and the
+seed hosts came out unverified. Use `sh tool/qa/run_sql_tests.sh`, which
+wraps each file. And `tool/qa/http_smoke.sh` is the same round one layer up
+— real logins, real PostgREST — for the things only the API shows (a
+stranger's PATCH answering `200 []`).
+
+### Refunds, no-shows, suspension and a rate limit (139/140, applied 2026-09-26)
+
+The follow-up to the second round closed the four items 138 left open
+(`docs/qa/REPORT_ROUND2_2026-09-19.md` §7). `supabase/tests/139_140_open_items_test.sql`
+(57 rows) goes red with 140 reverted. **139 must be COMMITTED before 140
+runs** — it adds `no_show` to `booking_status`, and a new enum label cannot
+be used in the transaction that added it (55P04, the 120/121 shape). Not
+reversible.
+
+- **The refund policy is two settings and one pure function.**
+  `refund_full_window_hours` (48) and `refund_late_pct` (50);
+  `fn_refund_policy_pct(status, cancelled_by, tenant, starts_at, at)`.
+  Host or admin cancels → 100. Guest cancels ≥ window before check-in → 100;
+  inside it → late pct; after check-in time → 0. No-show → 0. A BEFORE
+  trigger (`trg_stamp_refund_policy`) writes `refund_pct` / `refund_amount`
+  on a PAID booking as it closes; both columns are in the frozen list, so a
+  client cannot pre-fill them. **Trigger order is by name and it matters:**
+  `trg_enforce…` runs before `trg_stamp…`, so the guard sees what the client
+  sent, then the stamp fills it in. Rename either and check that still holds.
+- **The admin alert fires only when money is owed; the guest is always
+  told.** A silent zero reads as a forgotten refund. The alert title carries
+  the amount (`Refund due: ৳500.00`) — a test that matches the old bare
+  title now fails, which is how 138's row 17 was found.
+- **"Mark refunded" reverses the refunded SHARE.** `fn_post_booking_ledger`
+  used to negate the host's whole entry whatever went back to the guest; it
+  is `refund_pct` of it now, null meaning all (rows that closed before 140).
+  A 0% policy posts nothing — the CHECK forbids a zero-amount row anyway.
+- **`no_show` is `confirmed → no_show`, host only, after `starts_at`.**
+  Early is refused with hint `no_show_too_early` (its own hint, because the
+  client wants to say "not yet" rather than "not allowed"). Terminal. Nothing
+  else needed teaching: both exclusion constraints, `is_booking_available`,
+  `can_see_listing_address`, `reviews_insert`, the leaderboard and the
+  auto-complete sweep already filter on `pending|confirmed|active` or on
+  `completed`. The test pins that a no-show frees the slot and opens no
+  review, so a future rewrite of any of those lists fails loudly.
+- **`BookingStatus.noShow` is the first value whose Dart name and label
+  differ.** The repository sent `.name` to PostgREST; it sends `.wire` now
+  and parses with `BookingStatusWire.fromWire`, which reads an unknown label
+  as pending rather than throwing. Three exhaustive switches had to grow an
+  arm (`booking_status.dart`, the host reservations screen twice, the trips
+  screen twice); the analyzer finds them.
+- **Suspension is a deleted session, not a flag.** `admin_suspend_user`
+  (service role only — an admin's own JWT cannot end another person's access
+  from a table write) sets `suspended_at/_reason/_by`, deletes
+  `auth.sessions` for the user, deactivates their push tokens, hides their
+  live listings (`listings.suspended_hidden` remembers which, so
+  `admin_unsuspend_user` restores exactly those), declines pending requests
+  on their listings and withdraws their own. An admin cannot be suspended;
+  change the role first. **The flag alone stops nothing for an hour** — an
+  access token already issued is valid until it expires — so every write
+  path is guarded: `fn_refuse_suspended_writer` on messages, conversations,
+  listings, reviews; `enforce_booking_update_rules`;
+  `create_marketplace_booking` and `get_or_create_conversation` (either
+  party); `sslcommerz-init`; `verify-otp` refuses the next login BEFORE
+  rotating the password; and `touch_device` answers "revoked" so
+  `DeviceSessionWatcher` signs the device out on resume. `fn_is_suspended` is
+  revoked from every client role; the guards are SECURITY DEFINER.
+- **The rate limit is a table, and it fails open.** `fn_rate_limit_hit`
+  (service role only) counts fixed windows in `edge_rate_limits`;
+  `_shared/rate_limit.ts` keys by the JWT `sub` when `role` is
+  `authenticated` and by IP otherwise — the anon key is itself a JWT with no
+  `sub`, so checking for a token would put every signed-out visitor in one
+  bucket. **Per-IP limits are deliberately several times the per-user
+  ones**: Bangladeshi operators put thousands of subscribers behind one
+  CGNAT address. An unreachable counter logs and lets the request through; a
+  limiter that can take search down is the worse outage. 429 carries
+  `Retry-After`. Reaped daily.
+- **The IPN's `?redirect=fail|cancel` may only close an `initiated`
+  attempt.** Those redirects are unsigned browser POSTs; anyone with a
+  tran_id could rename a settled row before. The success path still skips
+  only `paid` and `pending_review`, so a real IPN settles over a spoofed
+  cancel.
+- `validate-discount` is gone from the repo and the console's registry; it
+  is still deployed on live (v20) until someone runs
+  `supabase functions delete validate-discount`.
+
+Running 139_140 also found the local mirror carrying `whenever` and `lots`
+in `booking_accept_window_hours` / `max_devices_per_user` — 119's and 125's
+tests write junk past the validator to prove the fallback, and had once been
+run without a rollback. `run_sql_tests.sh` exists so that cannot recur; if a
+setting on the mirror looks wrong, that is why.
+
+### An edge function is TypeScript nobody was checking
+
+Three of the thirteen did not `deno check` at all. The one that mattered:
+`messenger-webhook` called `.catch()` on a `PostgrestFilterBuilder`, which is
+a thenable with no such method — the "best-effort" analytics guard was a
+runtime `TypeError`. `validate-discount` passed a possibly-null discount into
+a function that could not take one.
+
+- All nine `esm.sh/@supabase/supabase-js@2` imports are **pinned to 2.45.4**.
+  Unpinned, the specifier resolves to whatever is newest on the day, and two
+  files that resolved differently produced `SupabaseClient<any, "public",
+  any>` against `SupabaseClient<unknown, never, GenericSchema>` — not
+  assignable, for no change on our side.
+- **`ReturnType<typeof createClient>` is not the type `createClient(url, key)`
+  returns.** The bare form picks the unparameterised overload. Annotate
+  helpers with `SupabaseClient` (via a local `Db` alias), not with
+  `ReturnType`.
+- CI has an `edge-functions` job now: Deno, `deno check` on every
+  `supabase/functions/*/index.ts`. Its own job rather than a step inside
+  `analyze-test`, because it needs Deno rather than Flutter and a TypeScript
+  failure should be legible apart from a Dart one.
+
+### A Tooltip does not name a control
+
+Served in a browser with assistive technology switched on — Flutter builds the
+semantics tree only when something asks — the app produced 38 semantics nodes
+and **8 labels**. The Search button, the wishlist hearts, the account menu,
+the notification bell and the leaderboard trophy were all `button` with no
+name.
+
+Nearly every one of them already had a `Tooltip`. **`Tooltip` sets
+`SemanticsProperties.tooltip`; `label` stays empty.** Same for
+`PopupMenuButton.tooltip` and `IconButton.tooltip`. Wrap in
+`Semantics(button: true, label: …)` and, where a tooltip already says the
+right thing, pass the same string to both rather than inventing a second one
+to keep in step.
+
+Two consequences, and the second is why this is not only an accessibility
+item: a screen reader user hears "button" with no idea what it does, and the
+end-to-end strategy in `docs/QA_PLAN.md` selects controls **by accessibility
+label**, so an unnamed control cannot be driven by a test either.
+
+`test/widgets/accessibility_labels_test.dart` pins the names.
+**`find.bySemanticsLabel` is not the finder to use here** — it reads the label
+off the render object's own node and comes back empty for a control whose node
+is merged into a parent, which is most of these; it answered 0 for a heart the
+same test can see the label on. Match on the `Semantics` widget's
+`properties.label` instead.
+
 ## Nothing user-tunable belongs in Dart
 
 App-wide knobs live in the `app_settings` table and are edited from the admin
@@ -141,9 +1194,42 @@ them at startup and **fails open** to compiled-in defaults.
 
 Current keys include the proof-of-address requirement, cash payments, the
 search area (`search_radius_tiers_m`, `search_landmark_radius_m`,
-`search_nearest_fallback_limit`), and the colour theme (`active_theme`).
-Migration 097 validates the search keys on write, so a bad value is refused at
-the source rather than silently sanitised.
+`search_nearest_fallback_limit`), the colour theme (`active_theme`), the
+host-response window (`booking_accept_window_hours`) and the forced-update
+floor (`android_min_version_code`). Values are validated on
+write — `fn_validate_app_setting` is a CASE dispatching to one
+`fn_validate_setting_*` per key — so a bad value is refused at the source
+rather than silently sanitised. **Adding a key means adding an arm to that
+dispatcher**, and recreating it in full: it is a CASE, so a patch that drops an
+arm silently stops validating that key.
+
+### The host-response window is a setting, and the database is its only enforcer
+
+A booking request the host never answers is auto-rejected. That window was 24
+hours written into `expire_stale_bookings()` (018) — as an interval *and* as
+the number spelled out in three notification strings — plus a fourth copy in
+`BookingRules.expirationDuration`. It is `booking_accept_window_hours` now
+(119), 1–168, seeded at 24 so nothing changed on apply.
+
+- **Only the cron job cancels anything.** Nothing in Dart expires a real
+  booking. The Dart copy of the window (`booking_accept_window.dart`) feeds the
+  guest's countdown, and fails open to 24h when settings cannot be read — a
+  stale client shows a slightly wrong clock, which is cosmetic, where a client
+  that could expire bookings would be a second enforcer of a rule the database
+  owns. `BookingRules.isExpired` is a *read*, not an enforcement.
+- **The sweep runs every 15 minutes, not hourly.** Hourly was invisible at 24
+  hours and is not at 2 — a 2-hour window swept hourly expires somewhere
+  between 2 and 3. The window is still a floor rather than a promise: expiry
+  happens at the first tick *after* it elapses, so the guest's countdown
+  reaches zero while the row is briefly still `pending`. That is the honest way
+  round; do not "fix" it by having the client reject.
+- **`booking_accept_window_hours()` re-guards the value** with the same regex
+  the validator uses, and falls back to 24. Not redundant: rows predate guards,
+  and a function that can raise inside a cron job is a job that silently stops
+  running for *every* booking. The test writes a junk value past the trigger to
+  prove it.
+- The prose keeps today's exact wording at 24 (`fn_humanise_hours` only says
+  "days" at 48+), so the default configuration changed no visible text.
 
 `active_theme` names one of the palettes in `lib/core/theme/app_palettes.dart`.
 The app can only wear a palette it was compiled with, so **adding one means
@@ -154,6 +1240,29 @@ a theme no admin can select. That test also holds every palette to WCAG: 4.5:1
 for tokens that carry text, 3:1 for ones that only ever tint an icon. There are
 no exemptions and the tiers are not advisory — a new palette that fails is a
 failing build, so pick colours against a background, not in isolation.
+
+It holds one more axis, added after selection turned out to be invisible: **a
+selected chip has to clear 3:1 against an unselected one**, and its label 4.5:1
+against its own fill. `chipTheme` used to tint the brand at 14% alpha over
+`surfaceMuted`, which works for a colourful brand and not at all for
+`coral_ink`, whose brand is #222222 — the tint flattened to #E0E0E0 beside a
+#EBEBEB chip, 1.11:1, with `side: BorderSide.none` leaving no second cue. Seven
+of the nine selectable chips in the app take their colours from that theme
+alone, so all seven read as permanently unselected. Selection is a solid
+`brand` fill now, label and checkmark in `surface`; that pairing needs no new
+guarantee because brand-on-surface at 4.5:1 *is* surface-on-brand at 4.5:1.
+
+Two traps if you touch it. **Flatten alpha before measuring** — Flutter's
+`computeLuminance()` reads only r/g/b, so contrast against a translucent fill
+reports the ratio of the tint's source colour, a healthy 13:1 for something
+invisible; the test composites with `Color.alphaBlend` first, and without that
+line it passes on the bug it exists for. And **`RawChip` resolves only the
+label's `color` against widget states**, not the rest of the TextStyle
+(`chip.dart` calls `resolveAs<Color?>` on `effectiveLabelStyle.color` alone), so
+a `WidgetStateColor` is the single hook a theme has for a selected label and a
+`WidgetStateTextStyle` would be read as a plain style. A call site may add its
+own size or weight — `merge` only overrides non-null fields — but a `color:` of
+its own defeats that hook and paints an ink label on the dark fill.
 
 ### The boot chain is brand rose, not the palette
 
@@ -245,15 +1354,91 @@ redundant. It is not.
 `CAMERA` is the opposite case: `camera_android_camerax` declares it and the
 merger folds it in, so it needs no entry of its own.
 
+### Play updates silently; the app only covers the gap
+
+Play replaces an installed app on its own, over Wi-Fi, with no prompt — so
+nothing in `AppUpdateService` *delivers* an update. It covers the hours-to-days
+gap before Play gets round to it, and that gap matters here in a way it never
+does on web.
+
+**Web cannot have this problem; Android can.** `build/web` and the database are
+deployed by the same hands, so a visitor's bundle always matches. An APK is on
+a phone. And the client picks its PostgREST overload by the **keys it sends**
+(see 112 and 118 above), so a build predating a migration can ask for a
+signature that no longer exists — which `searchListingsFromDb`'s catch renders
+as *"no results"*, not as an error. The user sees an empty, working-looking app.
+
+`android_min_version_code` (122) is the lever: set it to the first versionCode
+that speaks the current schema and older builds are pushed through Play's
+blocking updater at launch, with no release needed to make it happen.
+
+- **Play's answer is checked before the admin's number, and that ordering is
+  the whole safety argument.** `appUpdateActionFor` returns `none` whenever
+  Play reports no available update, whatever the floor says. An immediate
+  update asks Play to install something newer; with nothing newer to install
+  the flow cannot complete and the app is bricked for everyone at once, from a
+  text box, and the fix would be a release the locked-out users could not
+  reach. A floor typed above any published release is therefore one forced
+  update to the newest build, then silence. There is a negative-control test
+  for exactly this; do not reorder those two checks.
+- **Zero forces nobody**, and it is the seed, the fail-open value, and what
+  anything malformed parses to. This is the one setting that can take the app
+  away from a user, so fail-open has to mean *don't*.
+- **Nothing server-side enforces it, deliberately.** Refusing an old client's
+  RPCs would be a second enforcer of a rule with no way to explain itself — the
+  old build would render the refusal as an empty screen, which is the failure
+  this exists to prevent.
+- **A routine update is an offer, never a block.** The `immediateAllowed`
+  fallback exists only on the forced path; seizing the screen for a release
+  nobody declared required is hostile, and Play's own updater will get there.
+- **A flexible download that is never completed sits on disk forever.** Play
+  does not re-announce it, so the service re-offers "Restart to finish" on
+  every resume, and re-checks `InstallStatus.downloaded` before looking for
+  anything newer.
+- `checkForUpdate()` **throws for any install Play does not own** — debug
+  builds, sideloaded APKs, emulators without Play services, no network. All are
+  silent and retried on the next resume. So this cannot be tested by running
+  the app; it needs a Play-installed build, which is why the policy is a pure
+  function (`lib/services/update/app_update_decision.dart`) with its own tests
+  and the service holds no decisions at all.
+- **`package_info_plus` is pinned to 9.x on purpose.** `AppUpdateInfo` reports
+  what Play *has*, never what is installed, so the floor needs
+  `PackageInfo.buildNumber`. 10.1.0+ moved to `win32 ^6`, which `share_plus`
+  10.1.4 refuses — taking it means taking `share_plus` 11, whose API is a
+  rewrite at every call site. `buildNumber` is identical in both majors.
+- An unreadable `buildNumber` is **0 = unknown, and never forces**. Not
+  theoretical: it is an empty string on web.
+
+`WebUpdateService` is the other half of this and the two are shaped alike on
+purpose — same singleton, same `start(onUpdateAvailable:)`, same banner. They
+solve different problems: that one only has to notice a long-lived tab, because
+a reload always gets the newest build.
+
 ## QA
 
-**The master OTP is OFF as of 2026-08-26.** `MASTER_OTP` and `MASTER_OTP_PHONES`
-were unset from the live project on the owner's explicit instruction, while
-preparing the Play submission (`docs/PLAY_STORE_RELEASE.md` §6.4). There is no
-login bypass any more; every login needs a real SMS code.
+**The master OTP is ON as of 2026-09-03, scoped to one number.**
+`MASTER_OTP_PHONES` is the single entry `01673293542` — an explicit allowlist,
+never `*` — because a Play reviewer cannot receive a Bangladeshi SMS and the
+Console's *Sign in details* declaration needs credentials that work. That number
+is the existing `naib1` account (verified host, real listings and bookings), so
+the reviewer sees a populated app; `verify-otp` resolves it to the **legacy**
+identity `phone.1673293542@musaafir.app`, not a fresh empty account.  otp = 3969
 
-It had been `1234` against `MASTER_OTP_PHONES='*'` — the wildcard, so it really
-did log into **any** phone number, not an allowlist. `README.md` still shows the
+It had been OFF since 2026-08-26, when the secrets were unset on the owner's
+instruction. Both functions read secrets at runtime, so neither the re-enable nor
+a future unset needs a redeploy.
+
+**The master path is not rate-limited, and cannot be given a longer code.** A
+wrong guess makes `isMasterOtp` return false and falls through to the normal
+path, which finds no `otp_attempts` row and answers "No active code" *without
+incrementing anything* — so `OTP_MAX_ATTEMPTS` never applies. `OTP_LENGTH` is 4
+and `OtpInputField` renders exactly 4 auto-submitting boxes, so the keyspace is
+10,000 and a five-digit code could not be typed. Anyone who guesses that this
+number is allowlisted can brute-force it unthrottled and take the account. Unset
+the two secrets once a review passes, and re-set them for the next one.
+
+Before the 2026-08-26 shutdown it was `1234` against `MASTER_OTP_PHONES='*'` —
+the wildcard, so it really did log into **any** phone number, not an allowlist. `README.md` still shows the
 command that set it to a single number; that is stale, and the live value was
 confirmed by hashing candidates against the Management API's SHA-256 of the
 secret. The secret is server-side: `OtpConfig.masterOtpEnabled` defaults to
@@ -313,6 +1498,580 @@ For the same reason `otpLookupPhones` makes `verify-otp` accept an `otp_attempts
 row stored under **either** spelling. `send-otp` writes that row and `verify-otp`
 reads it, but they are separate deploys — without this, the minutes between them
 fail every bare-form login with "No active code".
+
+## Browsing is public; acting is not
+
+The whole app used to sit behind one `switch` arm — `unauthenticated →
+AuthNavigator` in `app.dart` — so nothing rendered without a session. It now
+renders `MainShell` for a visitor too, and login is reached from whatever they
+tried to do.
+
+**Return the same widget type from both post-`initializing` arms.** Flutter
+updates an element in place when the type and key match, so signing in
+mid-session keeps `MainShell`'s state: the selected tab, each tab's scroll
+offset, the `_LazyIndexedStack`'s already-built children. Branching to a
+different widget would rebuild all of it, which is what the old arm did on
+every login.
+
+**Login is a pushed route, and that IS the "return them to what they were
+doing" mechanism.** `AuthFlow.ensureSignedIn` pushes and awaits; the listing
+detail screen with its dates chosen stays mounted underneath, so the caller
+just carries on. There is no pending-intent store to keep in sync — do not add
+one. It works because `MainShell` has **no Navigator of its own** (it is a
+`_LazyIndexedStack`), so pushes land on the root navigator as siblings of
+`home:`, where an auth-driven rebuild of `home:` cannot touch them.
+
+Three gates, all shaped alike — `false` means stop, and the gate has already
+said why:
+
+| Gate | Question |
+| --- | --- |
+| `AuthFlow.ensureSignedIn` | is there a session? |
+| `IdentityGate.ensure` | is the identity admin-approved? |
+| `PublishGate.ensure` | may this person publish? (composes the other two + address proof) |
+
+`PublishGate` exists because `CreateListingScreen` is pushed from **three**
+places and two of them — the host dashboard and the profile screen — were bare
+`Navigator.push` calls with no checks at all. Duplicating the guard would have
+left the same trap for the fourth caller. Never push that screen directly.
+
+**`if (userId != null)` is not a gate, it is a bypass.** Both identity checks
+were written that way, which was safe only while the app was unreachable
+without a login: a null user took the `else` branch and got the whole booking
+sheet — dates, guests, coupon, Confirm — before a dead-end "Please log in to
+book". Require the login; do not tolerate its absence.
+
+`_goToGuestTab` refuses any tab but Explore while signed out, centrally, so a
+new shortcut cannot reintroduce that hole. The signed-out nav bar is a
+*separate* two-item bar rather than a filter over the five-item list, because
+`_guestTabIndex` is a logical id that `_buildGuestContent`,
+`_goToGuestTab(0..4)` and `ShellNavState.openGuestTrips()` all index with —
+renumbering the destinations would silently repoint every one of them.
+
+### Desktop wears a top header, not a rail
+
+Above `Responsive.wide` (1000px) the shell renders [`DesktopTopNav`
+](lib/widgets/desktop_top_nav.dart) — brand, centred destinations, account
+menu, plus a Where/When/Who search pill on Explore. It replaced an extended
+`NavigationRail`, which spent ~220px of every viewport on five fixed labels and
+left the search field buried inside a scrolling tab.
+
+Below that breakpoint **nothing changes** — the bottom bar and Explore's own
+in-page search row are untouched. There is deliberately no drawer fallback in
+that file; the hamburger is the account affordance, not a responsive collapse.
+
+Three things there that are easy to break:
+
+- **The header owns no state.** Destinations, actions and menu items all come
+  from `MainShell`, and every selection goes back through `_goToGuestTab` so it
+  keeps that gate. A header that tracked its own index is a second navigation
+  model, which is exactly what the shared `_guestTabIndex` above exists to
+  prevent.
+- **`selectedIndex: -1` is a real state, not a bug.** Profile is logical tab 4
+  and lives in the account menu rather than the strip, so while it is showing,
+  no destination is current — `accountHighlighted` rings the account button
+  instead. Do not "fix" it by adding Profile as a fifth destination; the
+  indices are shared with the bottom bar (see above).
+- **`ExploreScreen.searchInShell` is passed, not re-derived.** The header
+  carries the search pill, the leaderboard trophy and the notification bell, so
+  Explore hides its whole in-page header row on desktop. The shell decides when
+  it draws a header; a second copy of `Responsive.isWide` inside Explore would
+  be a second thing to keep in step. The pill drives Explore's *existing*
+  search through three public methods on its state — there is one search
+  implementation and the header is a remote for it.
+
+`searchPillSummaryFor` (`lib/services/search/search_summary.dart`) is the only
+place that renders a whole `SearchFilters` into one line, and it has tests. It
+shows nothing for `guestCount == 1`, matching `hasActiveFilters` — otherwise
+every untouched pill would look like it was already narrowing the feed. The ✕,
+though, keys off `hasActiveFilters` rather than the summary, because a property
+type or an amenity is an active search the pill has no segment for.
+
+### The search bar is four panels over one draft
+
+`lib/widgets/search/` is the desktop search: Where / When / Who each open their
+own popover anchored under that segment, plus a Filters button for type and
+purpose. **`_SearchSheet` in `explore_screen.dart` is still the whole of
+mobile**, but it is no longer a parallel implementation of everything: the
+guest rows and the calendar are now the same widgets the desktop panels use,
+and only the Where field is still written twice. The cure the earlier note
+described — rebuilding the sheet as a stack of these panels — has been paid for
+piece by piece as each duplicate actually cost something.
+
+### The mobile sheet folds; the desktop bar does not
+
+`_SearchSheet` is an accordion of three [`SearchSection`
+](lib/widgets/search/search_section.dart) cards — Where / When / Who, exactly
+one open, the closed ones showing what that step currently holds. Before that
+it was every control at once: a text field, a suggestion list, a mode toggle,
+two date cards, two time cards and four guest steppers down one scroll.
+
+Three things worth keeping:
+
+- **The sheet owns which section is open, not the cards.** Two open sections
+  would put the month grid and the guest steppers on screen together and undo
+  the point; a card that tracked its own expansion could not prevent that. Same
+  reasoning as `MainShell` owning the selected tab.
+- **The collapsed summaries come from `searchPillSummaryFor`** — the desktop
+  pill's function, so the two surfaces cannot describe one search differently.
+  Only the `SearchFilters` handed to it is built locally (`_summaryFilters`),
+  and that is deliberately **not** `_applySearch`'s projection: that one layers
+  over the live filters with clear flags because it is about to be committed.
+- **The date dialogs are gone.** `showDateRangePicker` / `showDatePicker` are
+  full-screen modals on a phone, launched from inside a bottom sheet — two
+  layers of chrome for one decision, with the sheet invisible behind. The
+  inline `DateCalendar` is simply there instead. The two clock times keep their
+  native picker: a two-thumb time control is its own build, and a dialog is a
+  fair answer for a value with no spatial meaning.
+
+Type and purpose are **not** two more folds, and they are not together:
+
+- **Property type sits above the three cards.** Seat / room / whole house is
+  the widest cut the sheet makes — it changes what the other questions even
+  mean — so it is answered first and stays visible while they are worked
+  through. The reference puts its own equivalent in the same place.
+- **Purpose lives inside Where.** Choosing one is a way of answering *where*:
+  picking "Medical" opens the landmark picker, and the hospital that comes back
+  becomes the Where text, the search's centre point and the summary that card
+  shows. It was only ever a separate row because it arrived from the Explore
+  page as one.
+
+Neither is folded away. They are one control each, and burying a control behind
+a tap is how the type chips stopped being noticed the last time.
+
+[`PurposePicker`](lib/widgets/purpose_picker.dart) (was `PurposeScroll`) is a
+`Wrap` now, not a horizontal `ListView`. Both of its call sites sit inside a
+padded card, and a horizontal scroller clips at the **padding**, not the card
+edge — the last pill came out sliced mid-word with a clear gap after it, which
+reads as broken rather than as "scroll me". Two traps if you touch it: a `Wrap`
+hands each child the **full line width**, so the pill's `Row` needs
+`mainAxisSize: MainAxisSize.min` or every pill becomes its own full-width bar
+(that shipped, and the screenshot caught it, not the test — the test now
+measures the pill's `Material`, because under that bug the label's own rect is
+unchanged); and the pill must not carry a trailing margin of its own, or it
+doubles the `Wrap`'s spacing.
+
+`DateCalendar` grew two things for this. **`DateCalendarMode.singleDay`**,
+because hourly search is one date and driving it as a range meant the second
+tap silently did nothing visible (it produced `range(5, 8)` and the caller kept
+`.start`). And a **width-adaptive cell**: the grid was a hard 7 × 40px, which
+overflows a 320px phone once the sheet's padding and the card's are taken out.
+The measurement lives in `DateCalendar.build`, **not** in `_MonthGrid` — the
+grid sits in a `Row`, and a `Row` lays out a non-flexible child with unbounded
+width, so a `LayoutBuilder` down there is handed infinity and learns nothing.
+The first attempt did exactly that and still overflowed by 40px.
+
+The guest counter is the first control that drift actually cost, and it is now
+the worked example of the cure. Mobile's version was a lone 1..16 number, so
+when Who grew to adults / children / infants / pets there was nowhere on the
+phone to say three of the four. The rows moved into
+[`GuestPartyFields`](lib/widgets/search/guest_party_fields.dart), stateless over
+a `GuestParty` value and a callback — the one shape a `SearchDraft` and a plain
+`setState` can both hold — and both surfaces render it. Neither knows how many
+rows there are or what the caps are. **Do not add a fifth category to one of
+them.**
+
+Two things in that widget are load-bearing and have negative-controlled tests:
+adults and children share **one** budget (their sum is `guestCount`, so both
+`+` buttons must stop together, or the party can be walked past the cap one row
+at a time), while infants and pets have their own ceilings because the database
+counts them separately. Each row's `max` is its own value plus the remaining
+headroom rather than a bare limit, so a party restored from a wider cap can
+still be brought down instead of being stranded above a `max` below its value.
+
+- **Every `SearchStateNotifier` mutator runs a search immediately.** So the
+  panels write to a `SearchDraft` and exactly **one** `updateFilters` fires,
+  from the Search button. Three panels committing on close would be three
+  `search_listings` round trips for one search. `search_pill_test.dart` asserts
+  the commit count, not just the result — keep it that way.
+- **`filtersFromDraft` is pure and wipes before it sets.** The two date modes
+  store their shapes side by side, and passing `null` for the inactive one does
+  *not* clear it (`copyWith` reads null as "unchanged"), so a range picked after
+  an hourly window used to leave a stale `singleDate` keeping
+  `hasActiveFilters` true. It clears both modes' fields first, then writes back
+  only the active one. Three tests go red if that is undone.
+- **`OverlayPortalController.show()` must never be called from build.** It
+  asserts on it, and an assertion thrown inside the overlay child paints a
+  **full-screen dark red `ErrorWidget`** — that child covers the window, which
+  is what "the whole screen goes red" was. `_setOpen` is the only writer of
+  which segment is open and the only caller of `show`/`hide`, and every caller
+  of it is an event handler.
+- **Nothing reads layout during build.** The scrim used to be positioned from a
+  `localToGlobal` inside `build`. `SearchPill` now measures the bar and each
+  segment in a post-frame callback and holds the rectangles in state (guarded
+  on `attached` as well as `hasSize`, since it runs a frame late). The panel is
+  an `AnimatedPositioned` over those numbers.
+- **The lifted white segment is ONE card that travels, not a colour on each
+  segment.** It was the latter: every `_Segment` cross-faded its own
+  background, so Where→When was Where going grey while When went white — two
+  dissolves that line up, which the eye reads as "selected", not "moved". The
+  card is an `AnimatedPositioned` layered under the segments in
+  `SearchPillBar`, moved between their measured slots (a frame late, against
+  the Stack, not the bar — the 1px border is `Container` padding), and an
+  active segment paints `alpha: 0` of its own. Opening from closed snaps
+  (`Duration.zero`) rather than sliding in from wherever the bar was last
+  open. The motion test's first version compared the card to the *label*,
+  which sits 22px inside the slot, and passed against a snapping card; it
+  reads the slot now, and the negative control is `duration: Duration.zero`.
+- **The Search button is `Brand.rose`, not the palette's `brand`, and it
+  grows a label while any panel is open.** It is the one call to action on
+  the page and has to read the same under every palette — under `coral_ink`
+  the palette brand is #222222 and it was a black disc like every other icon.
+  `Brand.roseDeep` is the gradient's far end; `brand_test.dart` holds white
+  on both ends to 4.5:1. The label is the editing-state cue (Airbnb's), and
+  **the room it takes comes out of Who's slot only**: the mic, ✕ and button
+  live *inside* Who's `Expanded` (flex 4:3:5), because beside the three
+  segments their growth squeezed all three — Where and When slid 25px and
+  19px as the button opened and the lifted card, measured a frame late,
+  chased them. The card for Who covers that whole outer slot (`_whoSlot`), so
+  an open Who is a white card with the Search button inside it, which is
+  also what Airbnb draws. A motion test pins Where, When and Who's label
+  still on every frame of the expansion.
+- **Every panel is the same width, and that is load-bearing.** They differed
+  per segment and the card animated between them — but the cross-fade lays
+  *both* panels out during the transition, so the calendar got laid out at the
+  Who panel's width and its fixed 40px month grid overflowed by 45 pixels. Any
+  width one panel cannot survive is a width neither can use.
+- **Switching segments is a slide and a cross-fade, not a swap.** Position,
+  width and contents all changing in one frame is what "it flicks" described.
+  `search_pill_motion_test.dart` asserts on the frames *between* states; four
+  of its five tests go red if the durations are zeroed.
+- **`CallbackShortcuts` needs something focused inside it.** The panel's
+  `FocusScope` is `autofocus: true` or Escape does nothing in a panel with no
+  text field (Who, Filters).
+- **Focusing a text field notifies its controller with unchanged text.** The
+  Where panel's listener therefore treats an empty query as "show the default
+  destinations", not "show nothing" — the earlier version emptied the list the
+  instant the panel opened.
+- **Outside-click dismissal is a `TapRegion` group, not the scrim.** The scrim
+  starts 16px below the bar on purpose (the header stays bright), so it cannot
+  see a click beside or above the bar — the logo, the destinations, the account
+  menu, the empty header space — and the panel sat open through all of them.
+  The bar, the Filters button and the panel card share `groupId: this` on
+  `SearchPill`; a tap landing in none of them closes. `TapRegion` does not
+  swallow the tap, so the account menu still opens. **The handler checks
+  `ModalRoute.isCurrent` first**: the hourly time pickers are dialogs *above*
+  this route, and every tap inside one is "outside" the bar — without the
+  guard, picking a time closed the panel under the dialog. The negative
+  control is removing `onTapOutside`; one test goes red.
+- The landmark picker is a route-level modal sheet, so `SearchPill` closes the
+  popover, awaits the pick and reopens it. A bottom sheet over a dropdown reads
+  as two competing surfaces.
+- **Never animate to or from `Colors.transparent`.** It is transparent
+  *black*, and `Color.lerp` walks r/g/b and alpha independently — so fading a
+  segment from it to any light colour spends the middle of the animation
+  painting a half-opaque near-black. That was the hover flicker: filmed in
+  Chrome at 1440px with the cursor parked, a segment went 244 → **179** → 225
+  in luminance, a dark pill that flashed and then lightened into the real grey.
+  The same lerp ran on every tap, since the lifted card fades in to white, so
+  one bug produced both "it flickers on hover" and "it flicks when I switch
+  tab". The resting colour is the **bar's own colour at zero alpha** now, and
+  the dimmed hover is flattened with `Color.alphaBlend` rather than left
+  translucent. `desktop_top_nav.dart` had it twice as well. Two tests in
+  `search_pill_motion_test.dart` sample the painted colour every 20ms and fail
+  on anything darker than the colour the fade ends on — a settled assertion
+  cannot see this by construction, and neither can a screenshot.
+- **The contents slide, because the card barely moves.** Where to When is 89px
+  at 1440px and When to Who was **24px** — so the `AnimatedPositioned` travel
+  the earlier note describes is real but invisible, and a plain cross-fade was
+  the whole of what a switch looked like. The outgoing panel now leaves by one
+  side and the incoming arrives from the other, 16% of the panel's width, keyed
+  on which way along the bar the tap moved (`_travel`). Two things about it:
+  `AnimatedSwitcher` hands the **same** builder to both children, so which one
+  is incoming has to be read off the key or they move as a block; and the two
+  curves are deliberately different (`easeOutCubic` in, `easeInCubic` out)
+  because the outgoing child's animation runs *backwards* — with the same curve
+  on both, the incoming panel had travelled 72% before the outgoing had moved a
+  tenth, which is a dissolve with a slide underneath. Who also anchors its
+  panel to the **bar's** right edge rather than its own segment's, since the
+  mic and the Search button sit between them; that is both what Airbnb does and
+  what gives the card somewhere to travel to.
+- **The panel fades in and out; only the travel between segments used to
+  animate.** Opening mounted the card whole and dismissing dropped it, so the
+  same interaction was smooth in the middle and a cut at both ends. A
+  `CurvedAnimation` drives opacity and a 3% drop, and the portal is taken down
+  from a **status listener** when the fade reaches zero — not from the tap,
+  because `OverlayPortalController.hide()` during a build asserts. The segment
+  being closed is held in `_closing` for exactly that long, or the overlay
+  child reads a null `_open` and renders nothing in the frame the fade starts.
+  The fading card is wrapped in `IgnorePointer` so it cannot eat the click that
+  is dismissing it.
+
+`SearchFilters` gained `adults`/`children`/`infants`. `guestCount` is still the
+only one that reaches the RPC, derived through `guestCountFor` (infants never
+count, floor 1, cap `maxSearchGuests`). **The split is search-only** — bookings,
+the price breakdown and the host's reservation list all still carry one number,
+so a stay found as "2 adults, 1 child, 1 infant" is booked as 3 guests.
+
+### One card size, and the text block sizes itself
+
+`ListingCardModern` is rendered by four surfaces — the search grid, the "See
+all" grid, the curated rows and Wishlists — and the first three carried their
+own copy of `300` / `0.72`. The rows had drifted to 336px tall against the
+grid's 378, so the same listing changed shape depending on which one you were
+looking at. `kListingCardMaxExtent` / `kListingCardAspectRatio` are the one
+size now; the rows derive their height from the ratio rather than typing it.
+
+**The card's height used to be tied to its width by the flex split, and that
+is what made it hard to shrink.** The photo was `flex: 5` against the text's
+`flex: 2`, so the text slot was 2/7 of the cell whatever the text needed — at
+1440px that is **108 pixels for about 43** (title 15.6 + gap 3 + rate row 16 +
+8 of padding). Worse, the fat was load-bearing: narrowing the card narrowed the
+text's headroom with it, so any real size reduction walked into an overflow at
+a raised text scale.
+
+The text block is its own intrinsic height now and the photo takes the
+remainder. Three consequences worth keeping:
+
+- **The inner `Column` must be `MainAxisSize.min`.** The parent `Column` hands
+  a non-flex child unbounded height, so the default `max` asks for infinity.
+- **The ratio and the flex are no longer the same fact.** Height ≈ width + ~43,
+  and 0.82 is that relationship at the widths these grids actually produce —
+  which is what keeps the photo roughly square, the shape the card is drawn
+  for. Change the text block's contents and the ratio needs re-deriving.
+- **Wishlists is deliberately not on the shared constants.** It is a fixed
+  two-column grid, so its cell is much narrower and needs a taller ratio to
+  reach the same photo; its `0.74` exists to hold the photo where `0.65` put it
+  under the old flex.
+
+Two tests in `listing_card_modern_test.dart` pin it by measuring the text
+block's height in cells of two different heights. Under the old flex they read
+78.3 and 120 — 2/7 of each — and both go red.
+
+### Turf is one tap in Where, and it cannot be combined with a purpose
+
+Turf reached the app as a `ListingType`, which correctly put it in the Filters
+panel beside Seat and Room — and made finding a ground four steps on **desktop**
+(open Filters, tick Turf, close, type the area) against Medical's one visible
+tap. A ground is not an overflow refinement of a stay search; it is a different
+search. [`SearchScopePicker`](lib/widgets/search/search_scope_picker.dart) is
+an Anything / Turf pair under the Where field, and it writes a `ListingType`
+like the Filters chips do.
+
+**It is desktop-only, and that asymmetry is the point.** The mobile sheet
+already carries a type chip row above its three cards (see above — it is
+deliberately not folded away), so Turf was always one tap there. Adding the
+pills to the sheet as well put two selected "Turf" controls one above the
+other describing one piece of state, which is what shipped for one build. The
+sheet's `_togglePropertyType` carries the exclusion rule instead.
+
+Nothing in the search stack needed changing for it. Verified against live by
+inserting a turf in Uttara inside a rolled-back transaction and calling
+`search_listings` the way the client does: turf + centre + radius tiers, turf +
+`p_location`, turf + dates, turf + 20 players all returned it, and `room` at
+the same centre returned the three real rooms. The map needed nothing either —
+`mappableListings` filters on coordinates alone, and `isStay` is used only in
+the host wizard.
+
+**The rule that makes this more than a shortcut: turf and purpose are mutually
+exclusive.** `search_listings` ANDs its predicates and `purpose_tags` is a
+column on stays — a turf carries none — so "turf near a hospital" matches
+nothing. It does not raise: it returns zero rows, which
+`searchListingsFromDb` renders as a plain "no listings found", and the guest
+cannot tell that apart from "there are no turfs in this area". So
+[`search_scope.dart`](lib/services/search/search_scope.dart) owns both
+directions — picking Turf drops the purpose and its landmark, picking a purpose
+drops Turf — and the purpose section is *hidden* while the scope is turf rather
+than shown and ignored.
+
+Three things worth keeping:
+
+- **It is a pure function over values, not a method on the draft.** The desktop
+  panel holds a `SearchDraft` and the mobile sheet holds plain `setState`; a
+  rule written into either one is a rule the other can contradict. Same reason
+  `GuestPartyFields` is stateless over a value.
+- **`scopeOf` lights up Turf only when turf is the *only* type.** "Rooms and
+  turfs" is a real search the Filters panel can express and is neither scope —
+  showing Turf as selected for it would make the next tap silently drop the
+  room.
+- **Anything removes turf and nothing else.** A guest who narrowed to Room and
+  then tapped Anything is saying "not just turf", not "forget what I picked".
+
+Turf did **not** become a `ListingPurpose`, and should not. Purpose is what a
+*stay* is for; the type/purpose split is the thing that lets "a room near a
+hospital" and "a turf in Uttara" both be expressible.
+
+**The dropdown offers the listings themselves, above the places.** It used to
+answer a typed query with places only — "Uttara", "Uttara North Metro Rail
+Station", "Uttara University" — which is the right question while the guest has
+not said what they want, and the wrong one the moment they pick Turf: a place
+row commits them to a round trip before they see a single ground.
+`listingSuggestionsFrom` matches title, address and city together (a guest
+typing "uttara" means the area, one typing the ground's name means the ground,
+and the field cannot tell which), narrowed to the search's types, capped at
+four so the place predictions stay reachable. The heading names what it is
+offering — "Matching turfs", not "Matching stays" — and the predictions below
+are headed "Places" rather than "Search results", which claimed the answer
+while sitting under the real one.
+
+Tapping a row **opens that listing and commits no search**. Two consequences:
+the bar closes first, because the panel is an overlay and a pushed screen
+underneath it is the mistake the landmark picker already avoids; and the shell
+routes it through `ExploreScreen.openListingFromShell` rather than pushing
+itself, so it uses the one path that passes the `Listing` through `arguments`
+and stops the detail screen refetching. **`_exploreScreenKey` is a
+`GlobalKey<dynamic>`**, so nothing checks that method exists until it is
+called — renaming it fails at runtime, silently, in one dropdown.
+
+**The destination rows count within the scope, not across the catalogue.**
+`citySuggestionsFrom` used to count every listing, so a turf-scoped search
+offered "Dhaka — 9 stays" where the nine are rooms and seats: tapping the row
+and pressing Search returned nothing, and the list had promised otherwise.
+It takes the search's types now and names what it counted ("1 turf"), and the
+noun falls back to the generic one for two types, because "3 rooms and turfs"
+is not a noun. `CitySuggestFn` gained the types parameter for this — the panel
+reads them off the draft, so the shell does not have to know.
+
+That makes the list go **empty** for a type the app has none of, and
+`citySuggestionsFrom`'s own doc says an empty list reads as broken. So the
+panel says "No turfs listed yet — try Anything" rather than showing nothing.
+
+**There are no turf listings on live** (11 seats, 7 rooms, 2 full houses, as of
+2026-09-16), so every one of these searches correctly returns nothing until a
+host publishes one. Do not read that as the feature being broken — it was the
+first thing this investigation had to rule out.
+
+### The rate line is a hierarchy, not a string
+
+`_buildRates` draws up to two rates under the photo, and it used to draw them
+as one flat `fontSize: 12, w700` string joined with `·`. With the rating beside
+it that is six numerals and two slashes at one weight, with nothing leading —
+the guest has to read all of it to find the number they wanted.
+
+It is a single `Text.rich` now (one `Text`, for the same reason the type badge
+is one: with separate children only the last can shrink, so a narrow card
+ellipsizes the wrong half). **The concatenated string is unchanged** — the
+spans only carry weight, size and colour:
+
+| Part | |
+| --- | --- |
+| Lead rate | 12.5, w700, `ink` |
+| Its unit | 10, w600, `inkMuted` — it repeats on every card, so it carries almost no information per card |
+| `·` | 10, w400, `inkMuted` |
+| Second rate | 11, w600, `inkMuted` |
+| Its unit | 9.5, w500, `inkMuted` |
+
+The rating that follows is 10.5 with 8px of air before the star, up from 6 —
+the phrase now ends on a muted unit, and without the extra gap the star reads
+as part of it.
+
+**A screenshot cannot catch this being flattened back**, because the string is
+identical either way, so a test reads the spans off the `RichText` and asserts
+the lead outweighs the second on all three axes at once. Restoring the flat
+style turns it red.
+
+Which rate leads is `offeredPlans` order, not a design choice — for a room
+that means the *hourly* rate headlines over the daily. If that ever reads
+wrong, it is `headlinePlans` to change, not this function.
+
+### The curated rows are a rhythm, and the gap is a separator
+
+Explore's browse state is a stack of `_CategorySection`s. The gap **between**
+groups used to be each section's own top padding, which made it do two jobs: it
+also sat above the very first row, under the header, where there is nothing to
+separate. That kept it small — 22px against a 251px card — and five groups read
+as one dense block.
+
+It is the `ListView.separated` separator now (48px wide, 30 on a phone), so the
+between-groups gap and the leading inset are separate numbers. The section's
+own padding is only the gap down to its cards (16 / 12), which is what gives
+the heading something to belong to: the rule is that the gap above a title must
+clearly exceed the gap below it, or the title reads as attached to the row
+above.
+
+The heading is set explicitly rather than taken from `titleLarge` /
+`titleMedium`, because at 26px the theme's default zero tracking reads as
+stretched — it carries `letterSpacing: -0.6` and `height: 1.15`. Its colour is
+**`AppColors.ink`, not `colorScheme.onSurface`**: every palette defines `ink`
+as its own near-black at 18:1, so the heading follows `active_theme` instead of
+being a hardcoded black that fights whichever palette an admin selects.
+
+### What the database had to change, and what it did not
+
+Almost nothing: `listings`, `listing_facilities`, `reviews` (revealed),
+`app_settings`, `landmarks`, `public_profiles` and the `listing-images` bucket
+were already `to public`. Search, voice search and the Supabase client needed no
+changes at all — the compiled-in key is already the `anon` role.
+
+**113** fixed the one real gap: `facilities` had a `to authenticated` policy, so
+a visitor saw **no amenity chips anywhere and got zero results from any search
+with an amenity ticked** — silently, because the inner join just collapsed. See
+the default-privileges note under Supabase for why a *policy* was the only
+thing that could have been broken.
+
+**114** moved the identity gate into the database. Before it, live had 8
+bookings from guests with `verification_status = 'none'` and 3 listings owned by
+a `role='tenant'` account with no verification — the client gate leaked, and the
+live listings INSERT policy checked only `owner_id` (001's version, with the
+role clause, never ran here). It is INSERT-time only, so existing rows are
+untouched; two owners must finish verification before publishing again.
+
+Both are verified by `supabase/tests/113_114_public_browse_and_identity_test.sql`
+— a rolled-back impersonation matrix, 16 rows, run against live. Six of them go
+red without the migrations; keep it that way.
+
+### Shareable listing URLs
+
+`/listing/<uuid>` is the only named route; everything else still navigates by
+pushing a constructed screen, which is fine — those have no shareable identity.
+A card tap passes the `Listing` through `arguments` so nothing re-fetches;
+`ListingRoute` fetches by id only when the id came from a pasted link.
+
+`listingIdFromRoute` (`lib/core/routing/listing_path.dart`) is deliberately
+strict about the uuid shape, because `not_found_handling:
+"single-page-application"` means Cloudflare answers **every** unknown path with
+`index.html` — so that function is handed whatever a crawler or a probe asked
+for, and a loose pattern would turn `/wp-admin` into a PostgREST query
+comparing a uuid column against junk. It has tests; they include the junk.
+
+### The site is now a Worker, for link previews only
+
+`worker/index.js` rewrites the Open Graph tags on `/listing/<uuid>` so a stay
+shared to WhatsApp previews as itself. This *has* to happen at the edge: a
+crawler reads the HTML and never runs the Dart, so the app cannot set a `<meta>`
+in time.
+
+Nothing else changed cost. With both `main` and `assets` set, Cloudflare serves
+any request matching a file straight from the asset store **without invoking the
+Worker** — `/`, the bundle and every image are exactly as before. Only paths
+with no file behind them reach it, and everything but a listing URL is handed
+back to `env.ASSETS.fetch` immediately.
+
+Four things in there that are not obvious, and one of them is a security
+property:
+
+- **`setAttribute`, never string concatenation.** A listing title is
+  host-supplied and lands inside `content="…"`. `HTMLRewriter` escapes it;
+  a template string would have injected into every crawler and chat client
+  that renders the card. Proven, not assumed — the verify script feeds it a
+  `"><script>` title through a stub and a control that swaps in `el.replace`
+  goes red.
+- **Fetch the shell as `/`, not `/index.html`.** The asset server answers
+  `/index.html` with a **307 to `/`**, and returning that redirect verbatim
+  sends the crawler to the un-rewritten home page — which looks exactly like
+  the Worker never running.
+- **A handler object must not have a `text` field.** `HTMLRewriter` reads
+  `element`/`text`/`comments` off whatever it is given, so a class with
+  `this.text` is silently taken to be declaring a text handler and the whole
+  transform dies with *"the provided value is not of type 'function'"*. Hence
+  plain handlers.
+- **Cache the lookup, never the rewritten HTML.** Caching the page at the edge
+  would pin the `main.<hash>.dart.js` reference inside it, and the next deploy
+  would hand visitors a shell pointing at a bundle that no longer exists.
+
+It reads `listings.address`, which is the **area** label — 093 moved exact
+addresses behind a booking check. Never widen that select to a door number: this
+string goes on a public card.
+
+`SUPABASE_URL`/`SUPABASE_ANON_KEY` are `vars` in `wrangler.jsonc` for the same
+reason `SupabaseConfig` takes them as `--dart-define`: the two deploy branches
+go to different Cloudflare accounts and may point at different projects. Point a
+build elsewhere and these need pointing too, or previews describe the wrong
+database.
+
+**`sh tool/verify_link_previews.sh`** is the loop — real listing from live, then
+the hostile-title stub. Like `verify_phone_parity.sh` it is not in CI, which has
+no node step.
 
 ## Conventions
 

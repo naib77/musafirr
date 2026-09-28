@@ -537,6 +537,10 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
     // Shared rule (not a re-derivation): true only within the actual stay
     // window — on/after the check-in day AND before checkout has passed.
     final canCheckIn = BookingRules().canCheckIn(booking, now: now);
+    // Offered only once check-in time has passed — the database refuses an
+    // earlier report (no_show_too_early, migration 140), so the button is not
+    // shown while the tap would fail.
+    final canMarkNoShow = BookingRules().canMarkNoShow(booking, now: now);
 
     // A pending request whose stay window has already elapsed can no longer be
     // accepted (accepting would immediately auto-complete a stay that never
@@ -615,6 +619,17 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
                 ),
               ),
             if (canCheckIn) const SizedBox(height: 12),
+            if (canMarkNoShow) ...[
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _markNoShow(context, booking),
+                  icon: const Icon(Icons.person_off_outlined),
+                  label: const Text('Guest Didn\'t Arrive'),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             Row(
               children: [
                 Expanded(
@@ -1040,6 +1055,60 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
     }
   }
 
+  void _markNoShow(BuildContext context, Booking booking) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Guest Didn\'t Arrive?'),
+        content: Text(
+          booking.isPaid
+              ? 'This marks the booking with ${booking.tenantName} as a no-show and frees the dates. The guest is notified. Under the cancellation policy a no-show is not refunded, so the payment stays with you.'
+              : 'This marks the booking with ${booking.tenantName} as a no-show and frees the dates. The guest is notified.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Keep Waiting'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              Navigator.pop(context);
+              _performNoShow(booking);
+            },
+            child: const Text('Mark No-show'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The database holds the same rule (a no-show needs check-in time to have
+  /// passed) and runs the refund policy in the same statement, so the error
+  /// path here is real: a refused write surfaces as a banner, not a silent
+  /// local flip.
+  Future<void> _performNoShow(Booking booking) async {
+    final coordinator = widget.bookingMessagingCoordinator;
+    try {
+      if (coordinator != null) {
+        await coordinator.markNoShow(bookingId: booking.id);
+      } else {
+        await widget.repository
+            .updateBooking(booking.copyWith(status: BookingStatus.noShow));
+      }
+      if (mounted) {
+        _showSuccessBanner('Marked as a no-show. The guest has been told.');
+        goToTab(2); // past reservations
+      }
+    } on InvalidBookingStateException catch (e) {
+      if (mounted) _showErrorBanner(e.message);
+    } catch (_) {
+      if (mounted) {
+        _showErrorBanner('Could not mark the no-show. Please try again.');
+      }
+    }
+  }
+
   void _cancelBooking(BuildContext context, Booking booking) {
     showDialog(
       context: context,
@@ -1239,6 +1308,7 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
       BookingStatus.active => Colors.teal,
       BookingStatus.completed => Colors.blue,
       BookingStatus.cancelled => Colors.red,
+      BookingStatus.noShow => Colors.grey.shade700,
     };
   }
 
@@ -1457,6 +1527,7 @@ class _ReservationCard extends StatelessWidget {
       BookingStatus.active => Colors.teal,
       BookingStatus.completed => Colors.blue,
       BookingStatus.cancelled => Colors.red,
+      BookingStatus.noShow => Colors.grey.shade700,
     };
   }
 

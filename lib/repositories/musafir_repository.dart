@@ -115,6 +115,16 @@ abstract class MusafirRepository implements Listenable, BookingStore {
 
   // Listing methods
   Listing? getListingById(String id);
+
+  /// One listing fetched from the database, whether or not it is cached.
+  ///
+  /// [getListingById] only ever reads the in-memory cache, which holds the
+  /// newest page of the feed plus the signed-in user's own listings — so it
+  /// answers null for a listing opened from a shared `/listing/<id>` link in a
+  /// cold tab. Null here means genuinely not found or not visible: the SELECT
+  /// policy shows only `is_active` listings to anyone but the owner.
+  Future<Listing?> fetchListingById(String id);
+
   List<Listing> searchListings(SearchFilters filters);
 
   /// Full-catalog listing search via the server-side `search_listings` RPC.

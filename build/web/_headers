@@ -74,3 +74,10 @@
 
 /social-card.png
   Cache-Control: no-cache, must-revalidate
+
+# Face capture files are versioned with the app; never pin stale challenge code.
+/face/*
+  Cache-Control: no-cache, must-revalidate
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff
+  Permissions-Policy: camera=(self), microphone=()

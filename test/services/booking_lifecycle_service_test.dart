@@ -232,6 +232,77 @@ void main() {
     });
   });
 
+  group('BookingLifecycleService.markNoShow', () {
+    test('transitions a confirmed booking to noShow after check-in time',
+        () async {
+      final booking = createBooking(
+        status: BookingStatus.confirmed,
+        startAt: DateTime(2026, 10, 1, 14),
+        endAt: DateTime(2026, 10, 2, 11),
+      );
+      store.add(booking);
+
+      final result = await service.markNoShow(
+        booking.id,
+        now: DateTime(2026, 10, 1, 16),
+      );
+
+      expect(result.status, BookingStatus.noShow);
+      expect(store.get(booking.id)?.status, BookingStatus.noShow);
+    });
+
+    test('throws before check-in time and leaves the booking confirmed',
+        () async {
+      final booking = createBooking(
+        status: BookingStatus.confirmed,
+        startAt: DateTime(2026, 10, 1, 14),
+        endAt: DateTime(2026, 10, 2, 11),
+      );
+      store.add(booking);
+
+      await expectLater(
+        service.markNoShow(booking.id, now: DateTime(2026, 10, 1, 9)),
+        throwsA(isA<InvalidBookingStateException>()),
+      );
+      expect(store.get(booking.id)?.status, BookingStatus.confirmed);
+    });
+
+    test('throws when the booking is not confirmed', () async {
+      final booking = createBooking(
+        status: BookingStatus.active,
+        startAt: DateTime(2026, 10, 1, 14),
+      );
+      store.add(booking);
+
+      await expectLater(
+        service.markNoShow(booking.id, now: DateTime(2026, 10, 1, 16)),
+        throwsA(isA<InvalidBookingStateException>()),
+      );
+    });
+
+    test('awaits the store persist before returning', () async {
+      final gate = Completer<void>();
+      final gatedStore = GatedBookingStore(gate.future);
+      final gatedService =
+          BookingLifecycleService(store: gatedStore, rules: rules);
+      gatedStore.add(createBooking(
+        status: BookingStatus.confirmed,
+        startAt: DateTime(2026, 10, 1, 14),
+      ));
+
+      var returned = false;
+      final future = gatedService
+          .markNoShow('booking_1', now: DateTime(2026, 10, 1, 16))
+          .then((_) => returned = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(returned, isFalse);
+
+      gate.complete();
+      await future;
+      expect(returned, isTrue);
+    });
+  });
+
   group('BookingLifecycleService.completeService', () {
     test('transitions active booking to completed', () {
       final booking = createBooking(

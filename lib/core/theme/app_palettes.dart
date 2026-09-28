@@ -81,6 +81,7 @@ class AppPalettes {
     seat: Color(0xFF2563EB),
     room: Color(0xFF7C3AED),
     fullHouse: Color(0xFF0B7285),
+    turf: Color(0xFF15803D),
     accentCycle: [
       Color(0xFFF04F4F),
       Color(0xFFF59E0B),
@@ -160,6 +161,7 @@ class AppPalettes {
     seat: Color(0xFF0369A1),
     room: Color(0xFF4F46E5),
     fullHouse: Color(0xFFD31843),
+    turf: Color(0xFF15803D),
     accentCycle: [
       Color(0xFFD31843),
       Color(0xFF1D4ED8),
@@ -241,6 +243,7 @@ class AppPalettes {
     seat: Color(0xFF0369A1),
     room: Color(0xFF7C3AED),
     fullHouse: Color(0xFFBE123C),
+    turf: Color(0xFF15803D),
     // Led by the brand, then deliberately away from red — a list of seven reds
     // would defeat the point of an accent cycle.
     accentCycle: [
@@ -349,6 +352,7 @@ class AppPalettes {
     seat: Color(0xFF007A87),
     room: Color(0xFFA8420F),
     fullHouse: Color(0xFFE00B41),
+    turf: Color(0xFF166534),
     accentCycle: [
       Color(0xFFE00B41),
       Color(0xFF007A87),

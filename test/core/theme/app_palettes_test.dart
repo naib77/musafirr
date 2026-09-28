@@ -375,18 +375,106 @@ void main() {
         }
       });
 
-      test('${p.id}: the three listing types read apart', () {
-        // seat/room/fullHouse appear side by side as chips, so they only carry
-        // meaning if they are mutually distinguishable.
-        final pairs = [
-          ['seat', p.seat, 'room', p.room],
-          ['room', p.room, 'fullHouse', p.fullHouse],
-          ['seat', p.seat, 'fullHouse', p.fullHouse],
-        ];
-        for (final pair in pairs) {
-          expect(pair[1], isNot(pair[3]),
-              reason: '${p.id}: ${pair[0]} and ${pair[2]} are the same colour');
+      test('${p.id}: the four listing types read apart', () {
+        // seat/room/fullHouse/turf appear side by side as chips, so they only
+        // carry meaning if they are mutually distinguishable. Every pair, not
+        // just adjacent ones -- adding `turf` in 120 tripled the number of
+        // ways two of them could collide.
+        final named = <String, Color>{
+          'seat': p.seat,
+          'room': p.room,
+          'fullHouse': p.fullHouse,
+          'turf': p.turf,
+        };
+        final keys = named.keys.toList();
+        for (var i = 0; i < keys.length; i++) {
+          for (var j = i + 1; j < keys.length; j++) {
+            expect(named[keys[i]], isNot(named[keys[j]]),
+                reason: '${p.id}: ${keys[i]} and ${keys[j]} are the same '
+                    'colour');
+          }
         }
+      });
+
+      // _CategoryBadge paints the type's NAME in white on this colour, so
+      // every one of the four is a text-bearing token and clears 4.5:1 -- not
+      // the 3:1 a colour that only ever tints an icon would get.
+      //
+      // This is the tier that rules out the obvious `turf` choice: the palette
+      // already has a `green` accent, and reusing it would have been 2.54:1 in
+      // three of the four palettes. Hence a separate, darker token.
+      test('${p.id}: every listing-type badge carries white text', () {
+        final named = <String, Color>{
+          'seat': p.seat,
+          'room': p.room,
+          'fullHouse': p.fullHouse,
+          'turf': p.turf,
+        };
+        named.forEach((name, colour) {
+          expect(contrast(Colors.white, colour),
+              greaterThanOrEqualTo(kMinTextContrast),
+              reason: '${p.id}: white on $name badge ($colour)');
+        });
+      });
+
+      // A chip whose selected state is invisible is a control that does not
+      // answer. Held per palette because the failure is palette-dependent:
+      // `coral_ink`'s brand is #222222, so `brand` at 14% alpha over white
+      // flattened to #E0E0E0 — eleven values from the #EBEBEB unselected fill —
+      // and `side: BorderSide.none` left no second cue. Every selectable chip
+      // that does not override the theme (7 of the 9 sites) read as
+      // permanently unselected, which is what "select all/seat/room/full house
+      // is not working" was.
+      test('${p.id}: a selected chip is distinguishable from an unselected one',
+          () {
+        final chip = AppTheme.chipThemeFor(p);
+        // Flatten the alpha FIRST. `computeLuminance()` reads only r/g/b, so
+        // comparing a translucent `selectedColor` straight against the
+        // background reports the ratio of the tint's *source* colour — a
+        // healthy 13:1 for a fill that is invisible on screen. Composite it
+        // over the surface it is actually painted on and the ratio tells the
+        // truth. Without this line the test passes on the bug it exists for.
+        final selected = Color.alphaBlend(chip.selectedColor!, p.surface);
+        final unselected = Color.alphaBlend(chip.backgroundColor!, p.surface);
+        expect(
+          contrast(selected, unselected),
+          greaterThanOrEqualTo(kMinGraphicalContrast),
+          reason: '${p.id}: a selected chip fill reads '
+              '${contrast(selected, unselected).toStringAsFixed(2)}:1 against '
+              'an unselected one — a state change has to clear '
+              '$kMinGraphicalContrast:1 (WCAG 1.4.11)',
+        );
+      });
+
+      test('${p.id}: a selected chip keeps its label and checkmark', () {
+        final chip = AppTheme.chipThemeFor(p);
+        final fill = Color.alphaBlend(chip.selectedColor!, p.surface);
+        // RawChip resolves only the label's *colour* against widget states —
+        // not the whole TextStyle — so a WidgetStateColor here is the one hook
+        // the theme has for restyling a selected label. Resolve it the same way
+        // the framework does rather than reading the field raw.
+        final label = WidgetStateProperty.resolveAs<Color?>(
+          chip.labelStyle?.color,
+          <WidgetState>{WidgetState.selected},
+        );
+        expect(label, isNotNull,
+            reason: '${p.id}: the chip theme sets no label colour, so a '
+                'selected chip inherits whatever the surface gave it');
+        expect(
+          contrast(label!, fill),
+          greaterThanOrEqualTo(kMinTextContrast),
+          reason: '${p.id}: a selected chip label reads '
+              '${contrast(label, fill).toStringAsFixed(2)}:1 on its own fill',
+        );
+        // FilterChip draws a checkmark unless the call site opts out, and only
+        // the two search sites do.
+        expect(
+          contrast(chip.checkmarkColor!, fill),
+          greaterThanOrEqualTo(kMinGraphicalContrast),
+          reason: '${p.id}: a selected chip checkmark reads '
+              '${contrast(chip.checkmarkColor!, fill).toStringAsFixed(2)}:1 '
+              'on its own fill',
+        );
       });
     }
   });

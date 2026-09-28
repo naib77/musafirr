@@ -64,6 +64,87 @@ void main() {
     );
   }
 
+  Widget wrapSized(Listing listing, Size size, {double textScale = 1.0}) {
+    return MaterialApp(
+      home: MediaQuery(
+        data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
+        child: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: size.width,
+              height: size.height,
+              child: ListingCardModern(
+                listing: listing,
+                isFavorite: false,
+                onTap: () {},
+                onFavoriteTap: () {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The card's height used to be split `flex: 5` photo / `flex: 2` text, so
+  /// the text slot was 2/7 of the cell whatever the text actually needed — 108
+  /// pixels for ~43 at 1440px — and shrinking the card shrank the text's
+  /// headroom with it. The text block is its own intrinsic height now and the
+  /// photo takes the remainder, which is what lets the Explore grid and the
+  /// curated rows use a card this size at all.
+  group('the text block sizes itself, the photo takes the rest', () {
+    Rect textBlockOf(WidgetTester tester) => tester.getRect(
+          find
+              .ancestor(
+                of: find.text('A place'),
+                matching: find.byType(Padding),
+              )
+              .first,
+        );
+
+    testWidgets('does not grow with the cell', (tester) async {
+      final listing = listingOf(ListingType.room, hourly: 300);
+
+      await tester.pumpWidget(wrapSized(listing, const Size(225, 274)));
+      final short = textBlockOf(tester).height;
+
+      await tester.pumpWidget(wrapSized(listing, const Size(225, 420)));
+      final tall = textBlockOf(tester).height;
+
+      // Under the old flex it was 2/7 of the cell: 78 against 120.
+      expect(tall, short);
+    });
+
+    testWidgets('grows with the text scale instead, without overflowing',
+        (tester) async {
+      final listing = listingOf(ListingType.room, hourly: 300);
+
+      await tester.pumpWidget(wrapSized(listing, const Size(225, 274)));
+      final plain = textBlockOf(tester).height;
+
+      await tester.pumpWidget(
+        wrapSized(listing, const Size(225, 274), textScale: 2.0),
+      );
+      expect(textBlockOf(tester).height, greaterThan(plain));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the smallest card any surface asks for still fits',
+        (tester) async {
+      // The curated row on a phone, which is the narrowest cell in the app.
+      const width = 162.0;
+      await tester.pumpWidget(
+        wrapSized(
+          listingOf(ListingType.room,
+              hourly: 300, rating: 4.9, reviewCount: 20),
+          const Size(width, width / kListingCardAspectRatio),
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+    });
+  });
+
   group('photo badge', () {
     testWidgets('names the listing type', (tester) async {
       await tester.pumpWidget(wrap(listingOf(ListingType.room, hourly: 300)));
@@ -131,7 +212,8 @@ void main() {
         listingOf(ListingType.room, hourly: 300, daily: 1500, monthly: 35000),
       ));
 
-      expect(find.text('৳300/hr · ৳1.5K/day'), findsOneWidget);
+      expect(
+          find.text('৳300/hr · ৳1.5K/day', findRichText: true), findsOneWidget);
       expect(find.textContaining('35K'), findsNothing);
     });
 
@@ -140,7 +222,8 @@ void main() {
         listingOf(ListingType.room, hourly: 300, monthly: 35000),
       ));
 
-      expect(find.text('৳300/hr · ৳35K/mo'), findsOneWidget);
+      expect(
+          find.text('৳300/hr · ৳35K/mo', findRichText: true), findsOneWidget);
     });
 
     testWidgets('no hourly → daily and monthly', (tester) async {
@@ -148,7 +231,8 @@ void main() {
         listingOf(ListingType.room, daily: 1500, monthly: 35000),
       ));
 
-      expect(find.text('৳1.5K/day · ৳35K/mo'), findsOneWidget);
+      expect(
+          find.text('৳1.5K/day · ৳35K/mo', findRichText: true), findsOneWidget);
     });
 
     testWidgets('a single offered rate shows alone', (tester) async {
@@ -156,7 +240,7 @@ void main() {
         wrap(listingOf(ListingType.fullHouse, daily: 1500)),
       );
 
-      expect(find.text('৳1.5K/day'), findsOneWidget);
+      expect(find.text('৳1.5K/day', findRichText: true), findsOneWidget);
     });
 
     testWidgets('rates sit right beside the rating', (tester) async {
@@ -168,13 +252,50 @@ void main() {
         reviewCount: 30,
       )));
 
-      final rates = tester.getRect(find.text('৳500/hr · ৳3K/day'));
+      final rates =
+          tester.getRect(find.text('৳500/hr · ৳3K/day', findRichText: true));
       final star = tester.getRect(find.byIcon(Icons.star_rounded));
       final rating = tester.getRect(find.text('4.8'));
 
       expect((rates.center.dy - rating.center.dy).abs(), lessThan(4));
       expect(star.left - rates.right, lessThan(10));
       expect(rating.left - star.right, lessThan(6));
+    });
+
+    /// The phrase used to be one flat `fontSize: 12, w700` string, so two
+    /// rates and a rating were six numerals and two slashes with nothing
+    /// leading. A settled screenshot cannot catch that coming back — the
+    /// string is identical either way — so the span styles are asserted.
+    testWidgets('the lead rate carries the weight, the rest is demoted',
+        (tester) async {
+      await tester.pumpWidget(wrap(
+        listingOf(ListingType.room, hourly: 300, daily: 1500),
+      ));
+
+      final spans = <TextSpan>[];
+      (tester
+              .widget<RichText>(find.descendant(
+                of: find.byType(ListingCardModern),
+                matching: find.byWidgetPredicate((w) =>
+                    w is RichText && w.text.toPlainText().contains('1.5K')),
+              ))
+              .text as TextSpan)
+          .visitChildren((span) {
+        if (span is TextSpan) spans.add(span);
+        return true;
+      });
+
+      final lead = spans.firstWhere((s) => s.text == '৳300');
+      final leadUnit = spans.firstWhere((s) => s.text == '/hr');
+      final second = spans.firstWhere((s) => s.text == '৳1.5K');
+
+      // The lead outweighs everything beside it, on all three axes.
+      expect(lead.style!.fontWeight!.value,
+          greaterThan(second.style!.fontWeight!.value));
+      expect(lead.style!.fontSize!, greaterThan(second.style!.fontSize!));
+      expect(lead.style!.fontSize!, greaterThan(leadUnit.style!.fontSize!));
+      expect(lead.style!.color, isNot(second.style!.color));
+      expect(lead.style!.color, isNot(leadUnit.style!.color));
     });
 
     testWidgets('a proximity search trades the second rate for the distance',
@@ -187,7 +308,7 @@ void main() {
       )));
 
       // One rate only, so rate + distance + rating still fit one line.
-      expect(find.text('৳300/hr'), findsOneWidget);
+      expect(find.text('৳300/hr', findRichText: true), findsOneWidget);
       expect(find.textContaining('1.5K'), findsNothing);
       expect(find.byIcon(Icons.near_me_rounded), findsOneWidget);
       expect(tester.takeException(), isNull);

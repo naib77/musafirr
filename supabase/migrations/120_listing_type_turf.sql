@@ -1,0 +1,53 @@
+-- Migration 120: add 'turf' to the listing_type enum.
+--
+-- This migration does ONE thing, and the reason it is alone in its own file is
+-- a Postgres rule rather than tidiness:
+--
+--   55P04: unsafe use of new value "turf" of enum type listing_type
+--   HINT:  New enum values must be committed before they can be used.
+--
+-- A new enum label cannot be USED in the transaction that adds it -- not cast
+-- to, not inserted, not compared against. So anything that references 'turf'
+-- (the columns in 121, a seed row, a function body mentioning it) has to run
+-- afterwards, in a separate transaction. Verified live on PG 17.6 before this
+-- was written; `begin; alter type ... add value; select 'turf'::listing_type;`
+-- raises, while the same pair split across two statements does not.
+--
+-- Two follow-on consequences worth knowing before applying anything here:
+--
+--   * The rolled-back-transaction check this repo uses to verify a migration
+--     against live -- begin; fixtures; assertions; rollback -- CANNOT cover a
+--     turf fixture from inside the same transaction that adds the label. The
+--     order is: apply this file, commit, THEN run the fixture test.
+--   * `if not exists` makes it re-runnable, which matters more than usual
+--     here: a failed multi-statement apply cannot be rolled back into a clean
+--     "nothing happened" state the way the rest of this directory can.
+--
+-- ── Why turf is a listing_type and not a separate table ────────────────────
+--
+-- A turf is rented by the hour in slots, and that is machinery this schema
+-- already has in full: pricing_unit carries 'hour', listings carries
+-- hourly_rate / min_hours / max_hours, create_marketplace_booking takes an
+-- arbitrary tstzrange with a pricing unit, and bookings_no_overlap (078) is a
+-- range exclusion -- so 16:00-17:00 and 18:00-19:00 on one listing already
+-- coexist correctly without a single change. A turf is a listing that happens
+-- to be booked in short windows, not a new kind of thing to book.
+--
+-- What genuinely differs is what the HOST describes (no bedrooms, no beds, no
+-- check-in time) and what a guest is shown. That is 121 and the app, not here.
+--
+-- ── Deploy order: writes need this first, reads do not ─────────────────────
+--
+-- Unlike 112 and 118 -- where the client had to omit new RPC keys entirely or
+-- PostgREST would resolve to a function that did not exist -- there is no
+-- read-side ordering hazard here. search_listings filters with
+--
+--     l.listing_type::text = any(p_property_types)
+--
+-- casting the COLUMN to text, never the input array to the enum. A build that
+-- sends 'turf' to a database without this migration matches zero rows; it does
+-- not raise 22P02 and does not empty out unrelated searches. Only the write
+-- path (a host publishing a turf) requires this to have landed first, which is
+-- the safe direction: the app can ship before or after.
+
+alter type public.listing_type add value if not exists 'turf';

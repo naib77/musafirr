@@ -1,0 +1,10 @@
+# Generated artifacts and local caches are not application source.
+build/
+.preview/
+.dart_tool/
+.wrangler/
+coverage/
+graphify-out/
+**/Pods/
+**/.symlinks/
+**/.gradle/

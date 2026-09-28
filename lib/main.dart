@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:image_picker_android/image_picker_android.dart';
 import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -26,6 +27,16 @@ const Duration _firebaseInitTimeout = Duration(seconds: 8);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Web: real paths, so a shared listing link reads `/listing/<id>` rather
+  // than `/#/listing/<id>`. A fragment is never sent to the server, which
+  // rules out ever giving these links per-listing link previews or letting a
+  // crawler see them. Safe because wrangler.jsonc already serves index.html
+  // for unknown paths (`not_found_handling: single-page-application`), so a
+  // cold deep link boots the app instead of 404ing.
+  //
+  // No-op off the web, so it needs no kIsWeb guard.
+  usePathUrlStrategy();
 
   _useAndroidPhotoPicker();
 

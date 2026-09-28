@@ -45,11 +45,27 @@ class FavoritesStateNotifier extends ChangeNotifier with SafeNotifier {
     }
   }
 
+  /// Asks for a login when a signed-out visitor taps the heart.
+  ///
+  /// Wired once in `app.dart` rather than at the five heart tap sites (two on
+  /// Explore, the category rail, the detail overlay, Wishlists) — several of
+  /// them live in stateless card widgets that are handed a listing and a
+  /// callback and have no business knowing about auth. Set to null in tests.
+  Future<void> Function()? onSignInRequired;
+
   /// Toggle favorite status for a listing
   Future<void> toggleFavorite(String listingId) async {
     if (_userId == null) {
-      debugPrint('Cannot toggle favorite: user not logged in');
-      return;
+      // Used to be a debugPrint and nothing else, which made the heart a dead
+      // pixel for a signed-out visitor: no fill, no message, no way to find
+      // out why. Unreachable while the app was behind a login wall; the first
+      // thing anyone taps now that it isn't.
+      await onSignInRequired?.call();
+      // Set by app.dart's auth listener calling initializeForUser as soon as
+      // the session lands, so a visitor who signs in here gets the tap they
+      // originally made rather than having to tap again. Still null means they
+      // backed out.
+      if (_userId == null) return;
     }
 
     // Drop rapid repeat taps while a request for this listing is in flight —

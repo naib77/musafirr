@@ -16,12 +16,15 @@ import '../../models/booking_conflict_exception.dart';
 import '../../models/booking_rejected_exception.dart';
 import '../../models/host_verifications.dart';
 import '../../models/listing.dart';
+import '../../services/listing/party_limits_summary.dart';
 import '../../models/listing_exact_address.dart';
 import '../../models/listing_purpose.dart';
 import '../../models/listing_type.dart';
+import '../../models/turf_details.dart';
 import '../../models/rental_plan.dart';
 import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
+import '../../services/auth/auth_flow.dart';
 import '../../services/discount/coupon_service.dart';
 import '../../services/verification/identity_gate.dart';
 import '../../state/auth_state.dart';
@@ -148,10 +151,16 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     final hostId = widget.listing.hostId;
     if (messagingState == null || hostId == null || hostId.isEmpty) return;
 
-    if (!widget.authState.isLoggedIn) {
-      ModernBanner.showInfo(context, 'Please log in to message the host.');
+    // Was a banner saying "Please log in to message the host." — true, and
+    // useless, because nothing on this screen could take them there.
+    if (!await AuthFlow.ensureSignedIn(
+      context,
+      widget.authState,
+      reason: 'to message the host',
+    )) {
       return;
     }
+    if (!mounted) return;
     // Guard against a second tap while the first is in flight: without it, an
     // impatient guest gets two conversations opened on top of each other.
     if (_openingChat) return;
@@ -205,6 +214,31 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     super.dispose();
   }
 
+  /// Reporting writes a row keyed to the reporter, so it needs a session.
+  ///
+  /// `submitReport` returns false without one (`repository:280`), and the sheet
+  /// gave no sign of that — a signed-out visitor filled in a report, submitted
+  /// it, and nothing happened. Asking first is both honest and less work than
+  /// letting them type it out.
+  Future<void> _reportListing(Listing listing) async {
+    if (!await AuthFlow.ensureSignedIn(
+      context,
+      widget.authState,
+      reason: 'to report this listing',
+    )) {
+      return;
+    }
+    if (!mounted) return;
+    showReportSheet(
+      context,
+      repository: widget.repository,
+      listingId: listing.id,
+      reportedUserId: listing.hostId,
+      subjectLabel: listing.title,
+      offerBlock: true,
+    );
+  }
+
   Future<void> _openBookingSheet() async {
     // Block booking when the host has marked themselves unavailable.
     final hostId = widget.listing.hostId;
@@ -220,17 +254,34 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       }
     }
 
-    // Identity gate before booking: the guest must have an admin-approved
-    // identity (ID document + selfie, verified by an admin) to proceed.
-    final userId = widget.authState.currentUser?.id;
-    if (userId != null) {
-      if (!mounted) return;
-      final verified = await IdentityGate.ensure(
-        context,
-        userId,
-        reason: 'to confirm your booking',
-      );
-      if (!verified) return;
+    // Two gates, in this order, and BOTH before the sheet opens.
+    //
+    // This used to be `if (userId != null) { ...IdentityGate... }`, which was
+    // safe only for as long as the app was unreachable without a login. With
+    // browsing public, a null user took the else branch — no login, no identity
+    // check — and got the whole sheet: dates, guests, coupon, Confirm, and only
+    // then a "Please log in to book" banner with nowhere to go. Requiring the
+    // login here rather than tolerating its absence is the fix; migration 114
+    // enforces the same two rules server-side, because this form is skippable
+    // and create_marketplace_booking is a public endpoint.
+    if (!mounted) return;
+    if (!await AuthFlow.ensureSignedIn(
+      context,
+      widget.authState,
+      reason: 'to reserve this stay',
+    )) {
+      return;
+    }
+
+    // Non-null now: ensureSignedIn returning true means a session exists.
+    final userId = widget.authState.currentUser!.id;
+    if (!mounted) return;
+    if (!await IdentityGate.ensure(
+      context,
+      userId,
+      reason: 'to confirm your booking',
+    )) {
+      return;
     }
 
     if (!mounted) return;
@@ -443,14 +494,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                           if (!_isOwnListing)
                             Center(
                               child: TextButton.icon(
-                                onPressed: () => showReportSheet(
-                                  context,
-                                  repository: widget.repository,
-                                  listingId: listing.id,
-                                  reportedUserId: listing.hostId,
-                                  subjectLabel: listing.title,
-                                  offerBlock: true,
-                                ),
+                                onPressed: () => _reportListing(listing),
                                 icon: const Icon(Icons.flag_outlined, size: 18),
                                 label: const Text('Report this listing'),
                                 style: TextButton.styleFrom(
@@ -761,11 +805,13 @@ class _CategoryBadge extends StatelessWidget {
       ListingType.seat => AppColors.seat,
       ListingType.room => AppColors.room,
       ListingType.fullHouse => AppColors.fullHouse,
+      ListingType.turf => AppColors.turf,
     };
     final icon = switch (type) {
       ListingType.seat => Icons.event_seat_rounded,
       ListingType.room => Icons.meeting_room_rounded,
       ListingType.fullHouse => Icons.house_rounded,
+      ListingType.turf => Icons.sports_soccer_rounded,
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
@@ -1372,24 +1418,78 @@ class _PropertyDetails extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = <(IconData, String, String, Color)>[
-      (
-        Icons.people_alt_rounded,
-        '${listing.maxGuests}',
-        'Guests',
-        AppColors.blue
-      ),
-      (
-        Icons.meeting_room_rounded,
-        '${listing.bedrooms}',
-        'Bedrooms',
-        AppColors.violet
-      ),
-      (Icons.king_bed_rounded, '${listing.beds}', 'Beds', AppColors.brand),
-      (Icons.bathtub_rounded, '${listing.bathrooms}', 'Baths', AppColors.amber),
-    ];
+    final isStay = listing.type.isStay;
+    final turf = listing.turfDetails;
 
-    return Row(
+    // A turf writes 0 into bedrooms/beds/bathrooms (121 + the host form), so
+    // the stay tiles would read "0 Bedrooms · 0 Beds · 0 Baths". It answers a
+    // different set of questions, and only the ones it actually stated: a
+    // host who skipped `surface` gets three tiles, not one saying "Unknown".
+    final items = isStay
+        ? <(IconData, String, String, Color)>[
+            (
+              Icons.people_alt_rounded,
+              '${listing.maxGuests}',
+              'Guests',
+              AppColors.blue
+            ),
+            (
+              Icons.meeting_room_rounded,
+              '${listing.bedrooms}',
+              'Bedrooms',
+              AppColors.violet
+            ),
+            (
+              Icons.king_bed_rounded,
+              '${listing.beds}',
+              'Beds',
+              AppColors.brand
+            ),
+            (
+              Icons.bathtub_rounded,
+              '${listing.bathrooms}',
+              'Baths',
+              AppColors.amber
+            ),
+          ]
+        : <(IconData, String, String, Color)>[
+            (
+              Icons.groups_2_rounded,
+              '${listing.maxGuests}',
+              'Players',
+              AppColors.blue
+            ),
+            if (turf.sport != null)
+              (turf.sport!.icon, turf.sport!.label, 'Sport', AppColors.turf),
+            if (turf.format != null)
+              (
+                Icons.straighten_rounded,
+                turf.format!.label,
+                'Format',
+                AppColors.violet
+              ),
+            if (turf.surface != null)
+              (
+                Icons.grass_rounded,
+                turf.surface!.label,
+                'Surface',
+                AppColors.amber
+              ),
+          ];
+
+    // Per-category caps (118) as one line rather than four more cards: they
+    // are the exception, not the shape of every listing, and a row of "Any"
+    // tiles would drown the four numbers that always apply. Never shown for a
+    // turf: the sub-caps are cleared on save, so the sentence would be absent
+    // anyway, but saying so here keeps the two facts next to each other.
+    final limits = isStay
+        ? partyLimitsSentence(
+            listing.partyLimits,
+            petsAllowed: listing.houseRules.petsAllowed,
+          )
+        : null;
+
+    final stats = Row(
       children: [
         for (var i = 0; i < items.length; i++) ...[
           if (i > 0) const SizedBox(width: 12),
@@ -1402,6 +1502,27 @@ class _PropertyDetails extends StatelessWidget {
             ),
           ),
         ],
+      ],
+    );
+
+    if (limits == null) return stats;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        stats,
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Icon(Icons.groups_2_outlined, size: 16, color: AppColors.inkMuted),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                limits,
+                style: TextStyle(fontSize: 13, color: AppColors.inkMuted),
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }

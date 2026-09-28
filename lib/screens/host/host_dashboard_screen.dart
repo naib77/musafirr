@@ -10,6 +10,7 @@ import '../../models/booking_categorizer.dart';
 import '../../models/booking_status.dart';
 import '../../models/leaderboard_entry.dart';
 import '../../repositories/musafir_repository.dart';
+import '../../services/verification/publish_gate.dart';
 import '../../state/auth_state.dart';
 import '../../state/messaging_state.dart';
 import '../../widgets/modern_banner.dart';
@@ -362,7 +363,12 @@ class HostDashboardScreen extends StatelessWidget {
     );
   }
 
-  void _navigateToCreateListing(BuildContext context) {
+  // Was a bare push, i.e. no sign-in, identity or address-proof check at all —
+  // one of the two routes by which an unverified account reached the publish
+  // form. PublishGate is the single answer to "may this person list?".
+  Future<void> _navigateToCreateListing(BuildContext context) async {
+    if (!await PublishGate.ensure(context, authState)) return;
+    if (!context.mounted) return;
     Navigator.push(
       context,
       MaterialPageRoute(

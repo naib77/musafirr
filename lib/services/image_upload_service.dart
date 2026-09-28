@@ -163,6 +163,31 @@ class ImageUploadService {
     return pickFile(allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf']);
   }
 
+  /// What the chat's paperclip offers. Mirrors the `chat-attachments`
+  /// bucket's mime allowlist (migration 138): the bucket refuses anything
+  /// else, so offering it here would only produce "Could not send the file".
+  /// The picker used to be `FileType.any` — an .apk or .exe went up fine and
+  /// was handed to the other party as a download (QA round 2, scenario 45).
+  static const List<String> chatAttachmentExtensions = [
+    'jpg',
+    'jpeg',
+    'png',
+    'webp',
+    'gif',
+    'heic',
+    'pdf',
+    'doc',
+    'docx',
+    'xls',
+    'xlsx',
+    'txt',
+  ];
+
+  /// Pick a file to send in a chat.
+  Future<PlatformFile?> pickChatAttachment() async {
+    return pickFile(allowedExtensions: chatAttachmentExtensions);
+  }
+
   // ============== Upload to Supabase ==============
 
   /// Upload an XFile to a bucket.

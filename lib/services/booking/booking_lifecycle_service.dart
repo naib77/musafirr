@@ -167,6 +167,33 @@ class BookingLifecycleService {
     return updated;
   }
 
+  /// Report that the guest never arrived.
+  /// Transitions: confirmed → noShow, host only, after check-in time.
+  ///
+  /// Throws [BookingNotFoundException] if booking doesn't exist.
+  /// Throws [InvalidBookingStateException] if the booking is not confirmed
+  /// or check-in time has not passed yet.
+  Future<Booking> markNoShow(String bookingId, {DateTime? now}) async {
+    final booking = _getBookingOrThrow(bookingId);
+
+    if (!rules.canMarkNoShow(booking, now: now)) {
+      throw InvalidBookingStateException(
+        booking.status == BookingStatus.confirmed
+            ? 'A no-show can only be reported after check-in time'
+            : 'Cannot report a no-show for a booking in ${booking.status.title} state',
+        booking: booking,
+      );
+    }
+
+    final updated = booking.copyWith(status: BookingStatus.noShow);
+
+    // Awaited: the database has its own copy of this rule and the refund
+    // policy runs in the same statement, so the caller must see the refusal
+    // (or the stamped outcome) before it announces anything.
+    await store.updateBooking(updated);
+    return updated;
+  }
+
   /// Cancel a booking.
   /// Transitions: pending/confirmed → cancelled (guest)
   /// Transitions: confirmed → cancelled (host)
@@ -209,7 +236,11 @@ class BookingLifecycleService {
   }
 
   /// Expire stale pending bookings that haven't been responded to.
-  /// Transitions: pending → rejected (for bookings older than 24 hours)
+  /// Transitions: pending → rejected, past `rules.acceptWindow`.
+  ///
+  /// This is the local-store path. The real one is the scheduled
+  /// `expire_stale_bookings()` job, which reads the admin-configured window
+  /// from `app_settings` — see `booking_accept_window.dart`.
   ///
   /// Returns list of bookings that were expired.
   List<Booking> expireStaleBookings(List<Booking> bookings, {DateTime? now}) {
@@ -220,7 +251,7 @@ class BookingLifecycleService {
       if (rules.isExpired(booking, now: currentTime)) {
         final updated = booking.copyWith(
           status: BookingStatus.rejected,
-          rejectionReason: 'Expired - host did not respond within 24 hours',
+          rejectionReason: 'Expired — the host did not respond in time',
         );
         store.updateBooking(updated);
         expired.add(updated);

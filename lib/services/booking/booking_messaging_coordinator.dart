@@ -130,6 +130,16 @@ class BookingMessagingCoordinator {
     return booking;
   }
 
+  /// Report a no-show. No conversation message is sent: the database raises
+  /// the guest's notification (and, when the booking was paid, the refund
+  /// policy's verdict) in the same statement, and a host who wants to say more
+  /// has the thread.
+  Future<Booking> markNoShow({
+    required String bookingId,
+    DateTime? now,
+  }) =>
+      _lifecycleService.markNoShow(bookingId, now: now);
+
   /// Cancel a booking and notify the other party.
   Future<Booking> cancelBookingWithNotification({
     required String bookingId,

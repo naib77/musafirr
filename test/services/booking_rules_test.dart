@@ -209,6 +209,74 @@ void main() {
     });
   });
 
+  group('BookingRules.canMarkNoShow', () {
+    test('returns true for a confirmed booking once check-in time has passed',
+        () {
+      final now = DateTime(2026, 10, 1, 15);
+      final booking = createBooking(
+        status: BookingStatus.confirmed,
+        startAt: DateTime(2026, 10, 1, 14),
+        endAt: DateTime(2026, 10, 2, 11),
+      );
+      expect(rules.canMarkNoShow(booking, now: now), isTrue);
+    });
+
+    test('returns true at exactly check-in time', () {
+      final start = DateTime(2026, 10, 1, 14);
+      final booking = createBooking(
+        status: BookingStatus.confirmed,
+        startAt: start,
+        endAt: DateTime(2026, 10, 2, 11),
+      );
+      expect(rules.canMarkNoShow(booking, now: start), isTrue);
+    });
+
+    test('returns false before check-in time — the guest is not late yet', () {
+      final booking = createBooking(
+        status: BookingStatus.confirmed,
+        startAt: DateTime(2026, 10, 1, 14),
+        endAt: DateTime(2026, 10, 2, 11),
+      );
+      expect(
+        rules.canMarkNoShow(booking, now: DateTime(2026, 10, 1, 13, 59)),
+        isFalse,
+      );
+    });
+
+    test('returns false for a pending booking', () {
+      final booking = createBooking(
+        status: BookingStatus.pending,
+        startAt: DateTime(2026, 10, 1, 14),
+      );
+      expect(
+        rules.canMarkNoShow(booking, now: DateTime(2026, 10, 1, 15)),
+        isFalse,
+      );
+    });
+
+    test('returns false once the guest has checked in', () {
+      final booking = createBooking(
+        status: BookingStatus.active,
+        startAt: DateTime(2026, 10, 1, 14),
+      );
+      expect(
+        rules.canMarkNoShow(booking, now: DateTime(2026, 10, 1, 15)),
+        isFalse,
+      );
+    });
+
+    test('returns false for a no-show already reported', () {
+      final booking = createBooking(
+        status: BookingStatus.noShow,
+        startAt: DateTime(2026, 10, 1, 14),
+      );
+      expect(
+        rules.canMarkNoShow(booking, now: DateTime(2026, 10, 1, 15)),
+        isFalse,
+      );
+    });
+  });
+
   group('BookingRules.canGuestCancel', () {
     test('returns true for pending booking', () {
       final booking = createBooking(status: BookingStatus.pending);
@@ -407,6 +475,62 @@ void main() {
         expect(rules.shouldAutoComplete(booking, now: now), isFalse,
             reason: '${status.name} must not auto-complete');
       }
+    });
+  });
+
+  // The window is admin-configurable (migration 119), so isExpired has to read
+  // the instance's window rather than a compiled-in 24 hours. A rule that
+  // ignored it would tell a guest their request was alive after the server had
+  // already rejected it.
+  group('isExpired honours the configured accept window', () {
+    final created = DateTime(2026, 9, 10, 9);
+
+    Booking pendingBooking() => Booking(
+          id: 'b-window',
+          listingId: 'listing_1',
+          tenantName: 'Test User',
+          startAt: DateTime(2026, 10, 1),
+          endAt: DateTime(2026, 10, 2),
+          totalPrice: 100.0,
+          unitLabel: 'night',
+          userId: 'user_1',
+          status: BookingStatus.pending,
+          createdAt: created,
+        );
+
+    test('defaults to 24 hours when nothing is configured', () {
+      const rules = BookingRules();
+      expect(rules.acceptWindow, const Duration(hours: 24));
+      expect(
+        rules.isExpired(pendingBooking(), now: DateTime(2026, 9, 10, 20)),
+        isFalse,
+      );
+      expect(
+        rules.isExpired(pendingBooking(), now: DateTime(2026, 9, 11, 10)),
+        isTrue,
+      );
+    });
+
+    test('a shorter window expires the same booking sooner', () {
+      const rules = BookingRules(acceptWindow: Duration(hours: 6));
+      expect(
+        rules.isExpired(pendingBooking(), now: DateTime(2026, 9, 10, 14)),
+        isFalse,
+        reason: 'five hours in, still inside a six-hour window',
+      );
+      expect(
+        rules.isExpired(pendingBooking(), now: DateTime(2026, 9, 10, 20)),
+        isTrue,
+        reason: 'eleven hours in, and the default would still say no',
+      );
+    });
+
+    test('a longer window keeps it alive past a day', () {
+      const rules = BookingRules(acceptWindow: Duration(hours: 72));
+      expect(
+        rules.isExpired(pendingBooking(), now: DateTime(2026, 9, 11, 10)),
+        isFalse,
+      );
     });
   });
 }

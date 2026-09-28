@@ -4,11 +4,37 @@
 {
   "name": "musafirr",
   "compatibility_date": "2026-08-01",
+  // Rewrites the Open Graph tags on /listing/<uuid> so a shared stay previews
+  // as itself rather than as the generic site card. A crawler never runs the
+  // Dart, so this cannot be done from the app.
+  //
+  // Requests that match a file in ./build/web are still served straight from
+  // the asset store WITHOUT invoking this — so `/`, the bundle and every
+  // image keep exactly the cost and caching they had before.
+  "main": "worker/index.js",
   "assets": {
     // The deployable static site (already committed to the repo).
     "directory": "./build/web",
     // Flutter web is a single-page app: unknown routes serve index.html
     // so deep links resolve instead of 404-ing.
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    // Lets the Worker read the built files, which is how it gets the
+    // index.html it rewrites.
+    "binding": "ASSETS"
+  },
+  "vars": {
+    // The listing lookup runs as `anon`, so it reads exactly what a
+    // signed-out visitor can and nothing more. Both values are public — the
+    // same pair is compiled into the shipped bundle, and RLS is what protects
+    // the data (see lib/config/supabase_config.dart).
+    //
+    // They are vars rather than literals in the Worker for the reason
+    // SupabaseConfig takes them as --dart-define: `stage-deploy` and
+    // `production` deploy to two DIFFERENT Cloudflare accounts and may point
+    // at different Supabase projects. If you point a build at another project,
+    // override these too — otherwise the previews would describe listings from
+    // the wrong database.
+    "SUPABASE_URL": "https://bojkmonskqlhuakxhzcb.supabase.co",
+    "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJvamttb25za3FsaHVha3hoemNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMjI1ODUsImV4cCI6MjA5NDc5ODU4NX0.CPPAG0gh7vj5QSRMAVbcEP9FsPMjouFVIxfVJE-La7o"
   }
 }
