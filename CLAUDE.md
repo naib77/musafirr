@@ -109,6 +109,15 @@ changing that area; it records what was measured and why.
 - Adding an enum value is two migrations (55P04), committed between, and is
   not reversible.
 - A lost booking race can deadlock (`40P01`); the client retries once.
+- A listing is a set of `listing_units`; `bookings.unit_id` is not null and
+  the RPC assigns it (guests never pick). Availability is
+  `listing_rooms_left(...) > 0`; a unit can only be moved under
+  `musafir.unit_reassign = 'on'`.
+- Hourly rules are two layers: `app_settings.hourly_policy` (per type) over
+  the host's `min_hours`/`max_hours`/`hourly_slots`/window. The host narrows,
+  never widens. `hourly_booking_check` refuses in a fixed order (disabled,
+  floor, max, slot, window) with `hourly_*` hints; the Dart `HourlyRule`
+  mirrors that order and shares the SQL suite's fixture table.
 
 **Database — security**
 ([database-security.md](docs/notes/database-security.md))

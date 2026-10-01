@@ -12,8 +12,10 @@ them at startup and **fails open** to compiled-in defaults.
 Current keys include the proof-of-address requirement, cash payments, the
 search area (`search_radius_tiers_m`, `search_landmark_radius_m`,
 `search_nearest_fallback_limit`), the colour theme (`active_theme`), the
-host-response window (`booking_accept_window_hours`) and the forced-update
-floor (`android_min_version_code`). Values are validated on
+host-response window (`booking_accept_window_hours`), the forced-update
+floor (`android_min_version_code`) and the hourly-stay policy
+(`hourly_policy`, a JSON document per listing type — the one structured key;
+see the 148 section of `database-booking-and-search.md`). Values are validated on
 write — `fn_validate_app_setting` is a CASE dispatching to one
 `fn_validate_setting_*` per key — so a bad value is refused at the source
 rather than silently sanitised. **Adding a key means adding an arm to that
