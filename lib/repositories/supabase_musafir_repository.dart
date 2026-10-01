@@ -681,6 +681,12 @@ class SupabaseMusafirRepository extends ChangeNotifier
         maxNights: json['max_nights'] as int?,
         minMonths: json['min_months'] as int?,
         maxMonths: json['max_months'] as int?,
+        hourlySlots: (json['hourly_slots'] as List?)
+            ?.map((e) => (e as num).toInt())
+            .toList(),
+        // A Postgres `time` arrives as "09:00:00"; the model keeps "HH:MM".
+        hourlyWindowStart: _clockFromWire(json['hourly_window_start']),
+        hourlyWindowEnd: _clockFromWire(json['hourly_window_end']),
       ),
       houseRules: HouseRules(
         checkInTime: json['check_in_time'] as String?,
@@ -745,6 +751,13 @@ class SupabaseMusafirRepository extends ChangeNotifier
       // Per-plan booking limits.
       'min_hours': listing.bookingLimits.minHours,
       'max_hours': listing.bookingLimits.maxHours,
+      // The host's half of the hourly policy (148). Sent as nulls when unset:
+      // null is how a host hands the slot list back to the platform default
+      // and clears a window, and the window columns are constrained to be
+      // null together.
+      'hourly_slots': listing.bookingLimits.hourlySlots,
+      'hourly_window_start': listing.bookingLimits.hourlyWindowStart,
+      'hourly_window_end': listing.bookingLimits.hourlyWindowEnd,
       'min_nights': listing.bookingLimits.minNights,
       'max_nights': listing.bookingLimits.maxNights,
       'min_months': listing.bookingLimits.minMonths,
@@ -880,6 +893,14 @@ class SupabaseMusafirRepository extends ChangeNotifier
     });
   }
 
+  /// `"09:00:00"` (how PostgREST renders a `time`) → `"09:00"`; null stays
+  /// null. Seconds are never set by the app, so dropping them loses nothing.
+  static String? _clockFromWire(Object? v) {
+    if (v == null) return null;
+    final s = v.toString();
+    return s.length >= 5 ? s.substring(0, 5) : s;
+  }
+
   ListingType _listingTypeFromString(String? value) {
     return switch (value?.toLowerCase()) {
       'seat' => ListingType.seat,
@@ -898,11 +919,14 @@ class SupabaseMusafirRepository extends ChangeNotifier
   Facility _facilityFromName(String name) {
     return switch (name.toLowerCase()) {
       'wi-fi' || 'wifi' => FacilityCatalog.wifi,
-      'ac' => FacilityCatalog.ac,
       'attached bath' || 'bath' => FacilityCatalog.bath,
-      'kitchen' => FacilityCatalog.kitchen,
-      'parking' => FacilityCatalog.parking,
-      _ => Facility(name: name, icon: Icons.check),
+      // Pre-146 rows a stay may still carry; not in ownerSelectable.
+      'kitchen' => FacilityCatalog.legacyKitchen,
+      'workspace' => FacilityCatalog.legacyWorkspace,
+      final lower => FacilityCatalog.ownerSelectable
+              .where((f) => f.name.toLowerCase() == lower)
+              .firstOrNull ??
+          Facility(name: name, icon: Icons.check),
     };
   }
 

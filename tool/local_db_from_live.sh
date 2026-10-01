@@ -45,6 +45,7 @@ apply supabase/baseline/live_seed.sql
 # applied to live and the baseline has been regenerated.
 # Last cleared 2026-10-01, after 144 went live (face review required only
 # while face_review_enabled is on; one admin decision covers identity + face).
+NEWER_MIGRATIONS="${NEWER_MIGRATIONS:-146 147 148}"
 echo "== migrations newer than live"
 for m in ${NEWER_MIGRATIONS:-}; do
   f=$(ls supabase/migrations/${m}_*.sql | head -1)

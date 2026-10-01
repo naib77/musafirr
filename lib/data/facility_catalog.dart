@@ -19,26 +19,36 @@ class FacilityCatalog {
     name: 'Attached Bath',
     icon: Icons.bathtub_outlined,
   );
-  static const kitchen = Facility(
-    name: 'Kitchen',
-    icon: Icons.soup_kitchen_outlined,
-  );
+  // Kitchen and Workspace are split by who shares them (migration 146). The
+  // plain rows still exist -- see [legacyKitchen] and [upgradeLegacy].
+  static const sharedKitchen =
+      Facility(name: 'Shared Kitchen', icon: Icons.soup_kitchen_outlined);
+  static const privateKitchen =
+      Facility(name: 'Private Kitchen', icon: Icons.soup_kitchen_outlined);
   static const hotWater = Facility(name: 'Hot Water', icon: Icons.hot_tub);
   static const drinkingWater =
       Facility(name: 'Drinking Water', icon: Icons.local_drink_outlined);
 
   // Features
-  static const parking = Facility(
-    name: 'Parking',
-    icon: Icons.local_parking_outlined,
-  );
+  static const carParking =
+      Facility(name: 'Car Parking', icon: Icons.local_parking_outlined);
+  static const bikeParking =
+      Facility(name: 'Bike Parking', icon: Icons.two_wheeler_outlined);
   static const refrigerator =
       Facility(name: 'Refrigerator', icon: Icons.kitchen_outlined);
+  // A separate appliance from the fridge, not a synonym: a deep freezer is
+  // its own purchase here, and the product sheet lists it on its own.
+  static const freezer =
+      Facility(name: 'Freezer', icon: Icons.kitchen_outlined);
   static const washingMachine = Facility(
       name: 'Washing Machine', icon: Icons.local_laundry_service_outlined);
+  static const laundryService = Facility(
+      name: 'Laundry Service', icon: Icons.local_laundry_service_outlined);
   static const tv = Facility(name: 'TV', icon: Icons.tv_outlined);
-  static const workspace =
-      Facility(name: 'Workspace', icon: Icons.desk_outlined);
+  static const sharedWorkspace =
+      Facility(name: 'Shared Workspace', icon: Icons.desk_outlined);
+  static const privateWorkspace =
+      Facility(name: 'Private Workspace', icon: Icons.desk_outlined);
   static const balcony =
       Facility(name: 'Balcony', icon: Icons.balcony_outlined);
   static const elevator =
@@ -47,6 +57,22 @@ class FacilityCatalog {
       Facility(name: 'Wardrobe', icon: Icons.checkroom_outlined);
   static const prayerSpace =
       Facility(name: 'Prayer Space', icon: Icons.mosque_outlined);
+  static const swimmingPool =
+      Facility(name: 'Swimming Pool', icon: Icons.pool_outlined);
+
+  // The pre-146 generic rows. Still in `facilities`: a turf offers plain
+  // Parking, and a stale pre-146 bundle keeps writing all three. A stay is
+  // never offered them; [upgradeLegacy] converts them when the host edits.
+  static const parking = Facility(
+    name: 'Parking',
+    icon: Icons.local_parking_outlined,
+  );
+  static const legacyKitchen = Facility(
+    name: 'Kitchen',
+    icon: Icons.soup_kitchen_outlined,
+  );
+  static const legacyWorkspace =
+      Facility(name: 'Workspace', icon: Icons.desk_outlined);
 
   // Power (Bangladesh context — load-shedding matters to guests)
   static const generator =
@@ -89,20 +115,33 @@ class FacilityCatalog {
   static const groups = <FacilityGroup>[
     FacilityGroup(
       title: 'Essentials',
-      facilities: [wifi, ac, bath, kitchen, hotWater, drinkingWater],
+      facilities: [
+        wifi,
+        ac,
+        bath,
+        sharedKitchen,
+        privateKitchen,
+        hotWater,
+        drinkingWater,
+      ],
     ),
     FacilityGroup(
       title: 'Features',
       facilities: [
-        parking,
+        carParking,
+        bikeParking,
         refrigerator,
+        freezer,
         washingMachine,
+        laundryService,
         tv,
-        workspace,
+        sharedWorkspace,
+        privateWorkspace,
         balcony,
         elevator,
         wardrobe,
         prayerSpace,
+        swimmingPool,
       ],
     ),
     FacilityGroup(
@@ -167,4 +206,32 @@ class FacilityCatalog {
     for (final group in turfGroups)
       for (final f in group.facilities) f.name: f,
   }.values.toList(growable: false);
+
+  /// Replaces the pre-146 generic names in a stay's amenity set with the
+  /// split ones, by the same rule migration 146 backfilled with: a full house
+  /// is the guest's alone, so its kitchen/workspace is private; a room or
+  /// seat shares them. Plain Parking on a stay is Car Parking.
+  ///
+  /// Without this, editing a listing a stale bundle saved would silently drop
+  /// Kitchen: the picker no longer shows it, and the save path keeps only
+  /// names in [ownerSelectable] -- which still holds Parking (via the turf
+  /// list) but not Kitchen or Workspace. A turf's set is returned unchanged.
+  static Set<String> upgradeLegacy(
+    Iterable<String> names, {
+    required bool isStay,
+    required bool isFullHouse,
+  }) {
+    final out = names.toSet();
+    if (!isStay) return out;
+    void swap(String legacy, String replacement) {
+      if (out.remove(legacy)) out.add(replacement);
+    }
+
+    swap(legacyKitchen.name,
+        isFullHouse ? privateKitchen.name : sharedKitchen.name);
+    swap(legacyWorkspace.name,
+        isFullHouse ? privateWorkspace.name : sharedWorkspace.name);
+    swap(parking.name, carParking.name);
+    return out;
+  }
 }

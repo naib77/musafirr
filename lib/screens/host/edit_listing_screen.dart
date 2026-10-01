@@ -8,6 +8,8 @@ import '../../models/listing_purpose.dart';
 import '../../models/listing_type.dart';
 import '../../models/turf_details.dart';
 import '../../repositories/musafir_repository.dart';
+import '../../services/app_settings_service.dart';
+import '../../services/booking/hourly_policy.dart';
 import '../../services/image_upload_service.dart';
 import '../../widgets/app_text_field.dart';
 import '../../widgets/host/party_limits_fields.dart';
@@ -86,6 +88,11 @@ class _EditListingScreenState extends State<EditListingScreen> {
   late final TextEditingController _minMonthsController;
   late final TextEditingController _maxMonthsController;
 
+  // Hourly shape beyond min/max: fixed block lengths and a day-use window.
+  late final TextEditingController _hourlySlotsController;
+  late final TextEditingController _hourlyWindowStartController;
+  late final TextEditingController _hourlyWindowEndController;
+
   // House rules
   late final TextEditingController _checkInTimeController;
   late final TextEditingController _checkOutTimeController;
@@ -161,7 +168,13 @@ class _EditListingScreenState extends State<EditListingScreen> {
     _bedrooms = l.bedrooms;
     _beds = l.beds;
     _bathrooms = l.bathrooms;
-    _selectedAmenities = l.amenityNames.toSet();
+    // Upgraded here so the picker shows a pre-146 Kitchen as the split chip
+    // it will be saved as, and again at save in case the type changed.
+    _selectedAmenities = FacilityCatalog.upgradeLegacy(
+      l.amenityNames,
+      isStay: l.type.isStay,
+      isFullHouse: l.type == ListingType.fullHouse,
+    );
 
     _hourlyEnabled = l.hourlyRate != null;
     _dailyEnabled = l.dailyRate != null;
@@ -181,6 +194,12 @@ class _EditListingScreenState extends State<EditListingScreen> {
         TextEditingController(text: limitText(limits.minMonths));
     _maxMonthsController =
         TextEditingController(text: limitText(limits.maxMonths));
+    _hourlySlotsController =
+        TextEditingController(text: limits.hourlySlots?.join(', ') ?? '');
+    _hourlyWindowStartController =
+        TextEditingController(text: limits.hourlyWindowStart ?? '');
+    _hourlyWindowEndController =
+        TextEditingController(text: limits.hourlyWindowEnd ?? '');
 
     final rules = l.houseRules;
     _checkInTimeController =
@@ -232,6 +251,9 @@ class _EditListingScreenState extends State<EditListingScreen> {
       _maxNightsController,
       _minMonthsController,
       _maxMonthsController,
+      _hourlySlotsController,
+      _hourlyWindowStartController,
+      _hourlyWindowEndController,
       _checkInTimeController,
       _checkOutTimeController,
       _quietHoursController,
@@ -261,6 +283,9 @@ class _EditListingScreenState extends State<EditListingScreen> {
     _monthlyPriceController.dispose();
     _minHoursController.dispose();
     _maxHoursController.dispose();
+    _hourlySlotsController.dispose();
+    _hourlyWindowStartController.dispose();
+    _hourlyWindowEndController.dispose();
     _minNightsController.dispose();
     _maxNightsController.dispose();
     _minMonthsController.dispose();
@@ -334,13 +359,21 @@ class _EditListingScreenState extends State<EditListingScreen> {
     return trimmed.isEmpty ? null : trimmed;
   }
 
-  String? _pricingError() => validatePlanRates(
+  String? _pricingError() =>
+      validatePlanRates(
         hourlyEnabled: _hourlyEnabled,
         dailyEnabled: _dailyEnabled,
         monthlyEnabled: _monthlyEnabled,
         hourlyText: _hourlyPriceController.text,
         dailyText: _dailyPriceController.text,
         monthlyText: _monthlyPriceController.text,
+      ) ??
+      hourlyHostFieldsError(
+        hourlyEnabled: _hourlyEnabled,
+        windowStartText: _hourlyWindowStartController.text,
+        windowEndText: _hourlyWindowEndController.text,
+        slotsText: _hourlySlotsController.text,
+        maxHoursText: _maxHoursController.text,
       );
 
   String? _formError() {
@@ -471,20 +504,42 @@ class _EditListingScreenState extends State<EditListingScreen> {
         bedrooms: scoped.bedrooms,
         beds: scoped.beds,
         bathrooms: scoped.bathrooms,
-        facilities: FacilityCatalog.ownerSelectable
-            .where((f) => _selectedAmenities.contains(f.name))
-            .toList(),
+        facilities: () {
+          final names = FacilityCatalog.upgradeLegacy(
+            _selectedAmenities,
+            isStay: _isStay,
+            isFullHouse: _propertyType == ListingType.fullHouse,
+          );
+          return FacilityCatalog.ownerSelectable
+              .where((f) => names.contains(f.name))
+              .toList();
+        }(),
         rating: l.rating,
         reviewCount: l.reviewCount,
         isSuperhost: l.isSuperhost,
         currency: l.currency,
         available: l.available,
         bookingLimits: BookingLimits(
+          // A minimum under the platform floor is saved as the floor, so the
+          // host sees the number guests are actually held to.
           minHours: hourlyRate != null
-              ? int.tryParse(_minHoursController.text)
+              ? clampHostMinHours(
+                  int.tryParse(_minHoursController.text),
+                  AppSettingsService.instance.hourlyPolicy
+                      .forType(_propertyType),
+                )
               : null,
           maxHours: hourlyRate != null
               ? int.tryParse(_maxHoursController.text)
+              : null,
+          hourlySlots: hourlyRate != null
+              ? parseHourlySlotsText(_hourlySlotsController.text)
+              : null,
+          hourlyWindowStart: hourlyRate != null
+              ? normalizeClockText(_hourlyWindowStartController.text)
+              : null,
+          hourlyWindowEnd: hourlyRate != null
+              ? normalizeClockText(_hourlyWindowEndController.text)
               : null,
           minNights: dailyRate != null
               ? int.tryParse(_minNightsController.text)
@@ -844,13 +899,22 @@ class _EditListingScreenState extends State<EditListingScreen> {
                 label: 'Hourly rate',
                 icon: Icons.schedule,
                 hint: '150',
-                helperText: 'For short stays (1-12 hours)',
+                helperText: hourlyPolicyHelperText(
+                  _propertyType,
+                  AppSettingsService.instance.hourlyPolicy,
+                ),
                 enabled: _hourlyEnabled,
                 onToggled: (v) => setState(() => _hourlyEnabled = v),
                 onChanged: () => setState(() {}),
                 minController: _minHoursController,
                 maxController: _maxHoursController,
                 unitLabel: 'hours',
+                extra: HourlyScheduleFields(
+                  slotsController: _hourlySlotsController,
+                  windowStartController: _hourlyWindowStartController,
+                  windowEndController: _hourlyWindowEndController,
+                  onChanged: () => setState(() {}),
+                ),
               ),
               const SizedBox(height: 20),
               PlanPriceRow(

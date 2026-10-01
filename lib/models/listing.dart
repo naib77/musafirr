@@ -408,6 +408,13 @@ class Listing {
 /// Per-plan minimum/maximum booking duration. Units are hours (hourly plan),
 /// nights (daily plan), and months (monthly plan). A null minimum means 1;
 /// a null maximum means no cap.
+///
+/// The hourly plan carries three more host settings (148): the slot list and
+/// the day-use window. They are the host's half of the hourly policy; the
+/// platform's half is `app_settings.hourly_policy`, and `resolveHourlyRule`
+/// in lib/services/booking/hourly_policy.dart combines the two. [minHours]
+/// alone is NOT the floor a guest sees — the platform's minimum can be
+/// higher — so read the rule, not this field, anywhere a guest picks hours.
 class BookingLimits {
   const BookingLimits({
     this.minHours,
@@ -416,6 +423,9 @@ class BookingLimits {
     this.maxNights,
     this.minMonths,
     this.maxMonths,
+    this.hourlySlots,
+    this.hourlyWindowStart,
+    this.hourlyWindowEnd,
   });
 
   final int? minHours;
@@ -424,6 +434,17 @@ class BookingLimits {
   final int? maxNights;
   final int? minMonths;
   final int? maxMonths;
+
+  /// The only hourly durations this host sells, ascending — e.g. `[6, 12]` —
+  /// or null to inherit the platform's list for the type (which may itself
+  /// be "any whole hours").
+  final List<int>? hourlySlots;
+
+  /// Day-use window as `HH:MM` wall-clock (Postgres `time`), both set or
+  /// both null; `24:00` is a valid end. Outside it no hourly stay may start
+  /// or end, and none may cross midnight.
+  final String? hourlyWindowStart;
+  final String? hourlyWindowEnd;
 
   /// Minimum units for [plan] (defaults to 1 when unset).
   int minFor(DurationType plan) => switch (plan) {
@@ -446,6 +467,9 @@ class BookingLimits {
     int? maxNights,
     int? minMonths,
     int? maxMonths,
+    List<int>? hourlySlots,
+    String? hourlyWindowStart,
+    String? hourlyWindowEnd,
   }) {
     return BookingLimits(
       minHours: minHours ?? this.minHours,
@@ -454,6 +478,9 @@ class BookingLimits {
       maxNights: maxNights ?? this.maxNights,
       minMonths: minMonths ?? this.minMonths,
       maxMonths: maxMonths ?? this.maxMonths,
+      hourlySlots: hourlySlots ?? this.hourlySlots,
+      hourlyWindowStart: hourlyWindowStart ?? this.hourlyWindowStart,
+      hourlyWindowEnd: hourlyWindowEnd ?? this.hourlyWindowEnd,
     );
   }
 }

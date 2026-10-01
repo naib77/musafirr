@@ -8,6 +8,8 @@ import '../../models/listing_purpose.dart';
 import '../../models/listing_type.dart';
 import '../../models/turf_details.dart';
 import '../../repositories/musafir_repository.dart';
+import '../../services/app_settings_service.dart';
+import '../../services/booking/hourly_policy.dart';
 import '../../services/image_upload_service.dart';
 import '../../state/auth_state.dart';
 import '../../widgets/app_text_field.dart';
@@ -142,6 +144,12 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   final _minMonthsController = TextEditingController(text: '1');
   final _maxMonthsController = TextEditingController();
 
+  // Hourly shape beyond min/max: fixed block lengths and a day-use window.
+  // Blank means "whatever the platform's hourly_policy allows for this type".
+  final _hourlySlotsController = TextEditingController();
+  final _hourlyWindowStartController = TextEditingController();
+  final _hourlyWindowEndController = TextEditingController();
+
   // House rules
   final _checkInTimeController = TextEditingController(text: '2:00 PM');
   final _checkOutTimeController = TextEditingController(text: '11:00 AM');
@@ -184,6 +192,9 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
     _monthlyPriceController.dispose();
     _minHoursController.dispose();
     _maxHoursController.dispose();
+    _hourlySlotsController.dispose();
+    _hourlyWindowStartController.dispose();
+    _hourlyWindowEndController.dispose();
     _minNightsController.dispose();
     _maxNightsController.dispose();
     _minMonthsController.dispose();
@@ -321,6 +332,13 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
           maxNightsController: _maxNightsController,
           minMonthsController: _minMonthsController,
           maxMonthsController: _maxMonthsController,
+          hourlySlotsController: _hourlySlotsController,
+          hourlyWindowStartController: _hourlyWindowStartController,
+          hourlyWindowEndController: _hourlyWindowEndController,
+          hourlyHelperText: hourlyPolicyHelperText(
+            _propertyType,
+            AppSettingsService.instance.hourlyPolicy,
+          ),
         ),
       _WizardStep.rules => _HouseRulesStep(
           isStay: _propertyType.isStay,
@@ -397,13 +415,20 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   /// the enabled plans.
   String? _pricingError() {
     return validatePlanRates(
-      hourlyEnabled: _hourlyEnabled,
-      dailyEnabled: _dailyEnabled,
-      monthlyEnabled: _monthlyEnabled,
-      hourlyText: _hourlyPriceController.text,
-      dailyText: _dailyPriceController.text,
-      monthlyText: _monthlyPriceController.text,
-    );
+          hourlyEnabled: _hourlyEnabled,
+          dailyEnabled: _dailyEnabled,
+          monthlyEnabled: _monthlyEnabled,
+          hourlyText: _hourlyPriceController.text,
+          dailyText: _dailyPriceController.text,
+          monthlyText: _monthlyPriceController.text,
+        ) ??
+        hourlyHostFieldsError(
+          hourlyEnabled: _hourlyEnabled,
+          windowStartText: _hourlyWindowStartController.text,
+          windowEndText: _hourlyWindowEndController.text,
+          slotsText: _hourlySlotsController.text,
+          maxHoursText: _maxHoursController.text,
+        );
   }
 
   Future<void> _submitListing() async {
@@ -544,10 +569,26 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         isSuperhost: false,
         available: true,
         bookingLimits: BookingLimits(
-          minHours:
-              _hourlyEnabled ? int.tryParse(_minHoursController.text) : null,
+          // A minimum under the platform floor is saved as the floor, so the
+          // host sees the number guests are actually held to.
+          minHours: _hourlyEnabled
+              ? clampHostMinHours(
+                  int.tryParse(_minHoursController.text),
+                  AppSettingsService.instance.hourlyPolicy
+                      .forType(_propertyType),
+                )
+              : null,
           maxHours:
               _hourlyEnabled ? int.tryParse(_maxHoursController.text) : null,
+          hourlySlots: _hourlyEnabled
+              ? parseHourlySlotsText(_hourlySlotsController.text)
+              : null,
+          hourlyWindowStart: _hourlyEnabled
+              ? normalizeClockText(_hourlyWindowStartController.text)
+              : null,
+          hourlyWindowEnd: _hourlyEnabled
+              ? normalizeClockText(_hourlyWindowEndController.text)
+              : null,
           minNights:
               _dailyEnabled ? int.tryParse(_minNightsController.text) : null,
           maxNights:
@@ -1383,6 +1424,10 @@ class _PricingStep extends StatelessWidget {
     required this.maxNightsController,
     required this.minMonthsController,
     required this.maxMonthsController,
+    required this.hourlySlotsController,
+    required this.hourlyWindowStartController,
+    required this.hourlyWindowEndController,
+    required this.hourlyHelperText,
   });
 
   final TextEditingController hourlyPriceController;
@@ -1402,6 +1447,13 @@ class _PricingStep extends StatelessWidget {
   final TextEditingController maxNightsController;
   final TextEditingController minMonthsController;
   final TextEditingController maxMonthsController;
+  final TextEditingController hourlySlotsController;
+  final TextEditingController hourlyWindowStartController;
+  final TextEditingController hourlyWindowEndController;
+
+  /// The platform's hourly rule for this type, spelled out so the host knows
+  /// the floor their own minimum will be clamped to.
+  final String hourlyHelperText;
 
   @override
   Widget build(BuildContext context) {
@@ -1434,13 +1486,19 @@ class _PricingStep extends StatelessWidget {
             label: 'Hourly rate',
             icon: Icons.schedule,
             hint: '150',
-            helperText: 'For short stays (1-12 hours)',
+            helperText: hourlyHelperText,
             enabled: hourlyEnabled,
             onToggled: onHourlyToggled,
             onChanged: onChanged,
             minController: minHoursController,
             maxController: maxHoursController,
             unitLabel: 'hours',
+            extra: HourlyScheduleFields(
+              slotsController: hourlySlotsController,
+              windowStartController: hourlyWindowStartController,
+              windowEndController: hourlyWindowEndController,
+              onChanged: onChanged,
+            ),
           ),
           const SizedBox(height: 20),
 

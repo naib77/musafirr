@@ -24,7 +24,9 @@ import '../../models/turf_details.dart';
 import '../../models/rental_plan.dart';
 import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
+import '../../services/app_settings_service.dart';
 import '../../services/auth/auth_flow.dart';
+import '../../services/booking/hourly_policy.dart';
 import '../../services/discount/coupon_service.dart';
 import '../../services/verification/identity_gate.dart';
 import '../../state/auth_state.dart';
@@ -1926,12 +1928,40 @@ class _BookingSheetState extends State<_BookingSheet> {
   bool get _hasUserConflict => _userConflictingBookings.isNotEmpty;
   bool get _hasConflict => _hasListingConflict || _hasUserConflict;
 
+  /// The hourly rule for this listing: platform policy (loaded at boot) and
+  /// the host's limits combined. The server enforces the same rule inside the
+  /// booking RPC; this copy shapes the picker so it never offers an hour the
+  /// server refuses. Resolved once — the policy does not change while the
+  /// sheet is open.
+  late final HourlyRule _hourlyRule = resolveHourlyRule(
+    type: widget.listing.type,
+    policy: AppSettingsService.instance.hourlyPolicy,
+    limits: widget.listing.bookingLimits,
+  );
+
+  /// The listing's plans minus an hourly plan the policy makes unbookable
+  /// (type switched off, or every slot above the host's own max). A rate
+  /// alone is not an offer.
+  List<DurationType> get _offeredPlans => [
+        for (final plan in widget.listing.offeredPlans)
+          if (plan != DurationType.hourly || _hourlyRule.bookable) plan,
+      ];
+
   @override
   void initState() {
     super.initState();
     // Default to the cheapest offered plan so the price matches the
-    // "from ৳X" teaser the guest tapped on the explore card.
-    _durationType = widget.listing.cheapestPlan ?? DurationType.daily;
+    // "from ৳X" teaser the guest tapped on the explore card — unless that
+    // plan is the hourly one and the policy has taken it off the table.
+    final cheapest = widget.listing.cheapestPlan;
+    final offered = _offeredPlans;
+    _durationType = cheapest != null && offered.contains(cheapest)
+        ? cheapest
+        : (offered.isNotEmpty ? offered.first : DurationType.daily);
+    // Start the hourly picker on the first allowed duration, which is the
+    // floor for free hours and the shortest slot for a slotted type.
+    final options = _hourlyRule.options;
+    if (options.isNotEmpty) _hours = options.first;
 
     // Pre-fill the selection with sensible "now" defaults so the guest starts
     // from a ready-to-book state instead of an empty form; they can change any
@@ -2279,6 +2309,18 @@ class _BookingSheetState extends State<_BookingSheet> {
       return;
     }
 
+    // Hourly selections are judged by the full rule — platform floor, slots,
+    // day-use window — in the server's order, with the server's sentences.
+    // The picker already keeps the guest inside it, so this fires only when
+    // the start time puts the stay outside the window.
+    if (_durationType == DurationType.hourly) {
+      final refusal = _hourlyRule.check(_hours, start: _checkIn);
+      if (refusal != null) {
+        _showWarningBanner(refusal);
+        return;
+      }
+    }
+
     // Enforce the host's per-plan min/max booking duration.
     final limits = widget.listing.bookingLimits;
     final unit = switch (_durationType) {
@@ -2521,11 +2563,11 @@ class _BookingSheetState extends State<_BookingSheet> {
                     children: [
                       // Duration type selector — only the plans this listing
                       // offers. Hidden when a single plan is offered (no choice).
-                      if (widget.listing.offeredPlans.length > 1) ...[
+                      if (_offeredPlans.length > 1) ...[
                         const _SectionTitle('Choose a plan'),
                         const SizedBox(height: 10),
                         _PlanSegments(
-                          plans: widget.listing.offeredPlans,
+                          plans: _offeredPlans,
                           selected: _durationType,
                           iconFor: _planIcon,
                           onChanged: (plan) {
@@ -2820,24 +2862,48 @@ class _BookingSheetState extends State<_BookingSheet> {
         onTap: _selectStartTime,
       ),
       const SizedBox(height: 12),
-      _StepperBox(
-        icon: Icons.hourglass_bottom_rounded,
-        label: 'Duration',
-        value: '$_hours hour${_hours > 1 ? 's' : ''}',
-        color: AppColors.amber,
-        onDecrement: _hours > 1
-            ? () {
-                setState(() => _hours--);
-                _checkAvailability();
-              }
-            : null,
-        onIncrement: _hours < 12
-            ? () {
-                setState(() => _hours++);
-                _checkAvailability();
-              }
-            : null,
-      ),
+      // Slotted types (a hotel's 6 h / 12 h day-use) get chips — a stepper
+      // that skips from 6 to 12 reads as broken. Free-hours types keep the
+      // stepper, bounded by the resolved rule rather than a hard-coded 1..12,
+      // so the platform floor and the host's cap are what the guest feels.
+      if (_hourlyRule.slots != null)
+        _SlotChips(
+          options: _hourlyRule.options,
+          selected: _hours,
+          color: AppColors.amber,
+          onSelected: (h) {
+            setState(() => _hours = h);
+            _checkAvailability();
+          },
+        )
+      else
+        _StepperBox(
+          icon: Icons.hourglass_bottom_rounded,
+          label: 'Duration',
+          value: '$_hours hour${_hours > 1 ? 's' : ''}',
+          color: AppColors.amber,
+          onDecrement: _hours > _hourlyRule.options.first
+              ? () {
+                  setState(() => _hours--);
+                  _checkAvailability();
+                }
+              : null,
+          onIncrement: _hours < _hourlyRule.options.last
+              ? () {
+                  setState(() => _hours++);
+                  _checkAvailability();
+                }
+              : null,
+        ),
+      if (_hourlyRule.hasWindow) ...[
+        const SizedBox(height: 12),
+        _PreviewPill(
+          icon: Icons.wb_sunny_outlined,
+          text: 'Day-use between '
+              '${formatClockMinutes(_hourlyRule.windowStartMinutes!)} and '
+              '${formatClockMinutes(_hourlyRule.windowEndMinutes!)}',
+        ),
+      ],
 
       // End time preview
       if (_hourlyDate != null && _startTime != null) ...[
@@ -3480,6 +3546,76 @@ class _StepBtn extends StatelessWidget {
 }
 
 /// Subtle centered info pill (e.g. "Ends at 5:00 PM" / booking period).
+/// The hourly duration picker for a slotted listing: one chip per offered
+/// block, in the card style the stepper uses so the two read as the same
+/// control in different shapes.
+class _SlotChips extends StatelessWidget {
+  const _SlotChips({
+    required this.options,
+    required this.selected,
+    required this.color,
+    required this.onSelected,
+  });
+
+  final List<int> options;
+  final int selected;
+  final Color color;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceMuted,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.hourglass_bottom_rounded, size: 19, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Duration',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final h in options)
+                      ChoiceChip(
+                        label: Text('$h hours'),
+                        selected: h == selected,
+                        onSelected: (_) => onSelected(h),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PreviewPill extends StatelessWidget {
   const _PreviewPill({required this.icon, required this.text});
 

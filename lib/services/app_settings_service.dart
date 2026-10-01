@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'booking/booking_accept_window.dart';
+import 'booking/hourly_policy.dart';
 import '../models/payout_method.dart';
 import '../models/search_area_settings.dart';
 import '../models/support_links.dart';
@@ -52,6 +53,13 @@ class AppSettingsService {
   // 24-hour default is a cosmetic drift, never a wrong cancellation.
   Duration _bookingAcceptWindow = kDefaultBookingAcceptWindow;
 
+  // What may be booked by the hour, per listing type: the floor, the slot
+  // list, on/off. The database enforces it inside the booking RPC; this copy
+  // only shapes the picker, so the defaults — a verbatim copy of the server's
+  // — are the right fail-open: the worst a stale read does is offer an hour
+  // the server then refuses with a sentence the guest can act on.
+  HourlyPolicy _hourlyPolicy = HourlyPolicy.defaults;
+
   // The oldest Android build still allowed to talk to this database. Zero —
   // the default, and what an unreadable table means — forces nobody. Unlike
   // every other flag here, the fail-open direction is not merely convenient:
@@ -79,6 +87,12 @@ class AppSettingsService {
   /// unawaited at startup, so a very early search could otherwise read the
   /// defaults instead of the configured values.
   SearchAreaSettings get searchArea => _searchArea;
+
+  /// The platform's hourly policy, loaded at boot; [HourlyPolicy.defaults]
+  /// until then or when the row is unreadable. Prefer [ensureHourlyPolicy]
+  /// where a screen can await — the listing sheet opens long after boot, so
+  /// the synchronous getter is what it reads.
+  HourlyPolicy get hourlyPolicy => _hourlyPolicy;
 
   /// The `active_theme` slug an admin selected, or null when the row is absent.
   /// Resolved to a palette by `ThemeController` — an id this build does not know
@@ -160,6 +174,12 @@ class AppSettingsService {
           case 'android_min_version_code':
             _androidMinVersionCode = minSupportedVersionCodeFromRaw(value);
             break;
+          case 'hourly_policy':
+            // `raw`, not `value`: the JSON keys are listing_type labels and
+            // one of them is `fullHouse`. Lowercased it matches nothing and
+            // every full house would silently fall back to the default floor.
+            _hourlyPolicy = HourlyPolicy.fromRaw(raw);
+            break;
           case 'payout_channels_enabled':
             final parsed = (value ?? '')
                 .split(',')
@@ -213,6 +233,12 @@ class AppSettingsService {
   }
 
   /// Returns the search-area config, loading settings first if needed.
+  /// The hourly policy, loading settings first if they have not been fetched.
+  Future<HourlyPolicy> ensureHourlyPolicy() async {
+    if (!_loaded) await load();
+    return _hourlyPolicy;
+  }
+
   Future<SearchAreaSettings> ensureSearchArea() async {
     if (!_loaded) await load();
     return _searchArea;

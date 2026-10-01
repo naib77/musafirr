@@ -149,8 +149,9 @@ void main() {
 
     // Every name here must exist as a row in public.facilities or the amenity
     // silently fails to persist (_saveListingFacilities skips unknown names).
-    // Migration 121 inserts exactly these seven.
-    test('the turf-only amenities are the seven 121 inserts', () {
+    // Migration 121 inserts exactly these seven; plain Parking predates it
+    // and became turf-only when 146 split it into Car/Bike Parking for stays.
+    test('the turf-only amenities are the seven 121 inserts + Parking', () {
       final stay = {
         for (final g in FacilityCatalog.groups)
           for (final f in g.facilities) f.name
@@ -168,7 +169,66 @@ void main() {
         'Equipment Rental',
         'Covered Turf',
         'Spectator Seating',
+        'Parking',
       });
+    });
+
+    // Same contract for the stay names 146 inserts: a name here that is not
+    // in the migration never persists, and nothing errors.
+    test('the stay amenities 146 adds are all offered', () {
+      final stay = {
+        for (final g in FacilityCatalog.groups)
+          for (final f in g.facilities) f.name
+      };
+      expect(
+        stay,
+        containsAll(<String>[
+          'Freezer',
+          'Laundry Service',
+          'Swimming Pool',
+          'Car Parking',
+          'Bike Parking',
+          'Shared Kitchen',
+          'Private Kitchen',
+          'Shared Workspace',
+          'Private Workspace',
+        ]),
+      );
+      // The generic rows must not come back to the stay picker, or a host
+      // could tick both Kitchen and Private Kitchen.
+      expect(stay, isNot(contains('Kitchen')));
+      expect(stay, isNot(contains('Workspace')));
+      expect(stay, isNot(contains('Parking')));
+    });
+  });
+
+  // Mirrors the backfill rule in migration 146 -- keep the two in step.
+  group('FacilityCatalog.upgradeLegacy', () {
+    Set<String> up(List<String> names, {bool stay = true, bool full = false}) =>
+        FacilityCatalog.upgradeLegacy(names, isStay: stay, isFullHouse: full);
+
+    test('a full house gets the private kitchen and workspace', () {
+      expect(up(['Kitchen', 'Workspace', 'Wi-Fi'], full: true),
+          {'Private Kitchen', 'Private Workspace', 'Wi-Fi'});
+    });
+
+    test('a room or seat gets the shared ones', () {
+      expect(
+          up(['Kitchen', 'Workspace']), {'Shared Kitchen', 'Shared Workspace'});
+    });
+
+    test('plain Parking on a stay is Car Parking', () {
+      expect(up(['Parking']), {'Car Parking'});
+    });
+
+    test('a turf keeps plain Parking', () {
+      expect(up(['Parking', 'Floodlights'], stay: false),
+          {'Parking', 'Floodlights'});
+    });
+
+    test('already-split names pass through without duplicating', () {
+      expect(up(['Kitchen', 'Shared Kitchen', 'Bike Parking']),
+          {'Shared Kitchen', 'Bike Parking'});
     });
   });
 }
