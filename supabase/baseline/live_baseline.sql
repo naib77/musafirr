@@ -102,10 +102,11 @@ create table if not exists public.bookings (
   payment_method text,
   rejected_at timestamp with time zone,
   refund_pct integer,
-  refund_amount numeric
+  refund_amount numeric,
+  unit_id uuid not null
 );
 do $c$ begin if not exists (select 1 from pg_constraint where conname='bookings_no_overlap' and conrelid='public.bookings'::regclass) then
-  alter table public.bookings add constraint bookings_no_overlap EXCLUDE USING gist (listing_id WITH =, tstzrange(starts_at, ends_at, '[)'::text) WITH &&) WHERE ((booking_status = ANY (ARRAY['pending'::booking_status, 'confirmed'::booking_status, 'active'::booking_status]))); end if; end $c$;
+  alter table public.bookings add constraint bookings_no_overlap EXCLUDE USING gist (unit_id WITH =, tstzrange(starts_at, ends_at, '[)'::text) WITH &&) WHERE ((booking_status = ANY (ARRAY['pending'::booking_status, 'confirmed'::booking_status, 'active'::booking_status]))); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='bookings_no_tenant_overlap' and conrelid='public.bookings'::regclass) then
   alter table public.bookings add constraint bookings_no_tenant_overlap EXCLUDE USING gist (tenant_id WITH =, tstzrange(starts_at, ends_at, '[)'::text) WITH &&) WHERE ((booking_status = ANY (ARRAY['pending'::booking_status, 'confirmed'::booking_status, 'active'::booking_status]))); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='bookings_pkey' and conrelid='public.bookings'::regclass) then
@@ -374,10 +375,11 @@ create table if not exists public.listing_availability_blocks (
   ends_at timestamp with time zone not null,
   note text,
   created_by uuid,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  unit_id uuid
 );
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_blocks_no_overlap' and conrelid='public.listing_availability_blocks'::regclass) then
-  alter table public.listing_availability_blocks add constraint listing_blocks_no_overlap EXCLUDE USING gist (listing_id WITH =, tstzrange(starts_at, ends_at, '[)'::text) WITH &&); end if; end $c$;
+  alter table public.listing_availability_blocks add constraint listing_blocks_no_overlap EXCLUDE USING gist (listing_id WITH =, COALESCE(unit_id, '00000000-0000-0000-0000-000000000000'::uuid) WITH =, tstzrange(starts_at, ends_at, '[)'::text) WITH &&); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_availability_blocks_pkey' and conrelid='public.listing_availability_blocks'::regclass) then
   alter table public.listing_availability_blocks add constraint listing_availability_blocks_pkey PRIMARY KEY (id); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='block_note_len' and conrelid='public.listing_availability_blocks'::regclass) then
@@ -403,6 +405,19 @@ do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_f
   alter table public.listing_facilities add constraint listing_facilities_listing_id_facility_id_key UNIQUE (listing_id, facility_id); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_facilities_pkey' and conrelid='public.listing_facilities'::regclass) then
   alter table public.listing_facilities add constraint listing_facilities_pkey PRIMARY KEY (id); end if; end $c$;
+create table if not exists public.listing_units (
+  id uuid default gen_random_uuid() not null,
+  listing_id uuid not null,
+  label text,
+  is_active boolean default true not null,
+  created_at timestamp with time zone default now() not null
+);
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_units_label_unique' and conrelid='public.listing_units'::regclass) then
+  alter table public.listing_units add constraint listing_units_label_unique UNIQUE (listing_id, label); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_units_pkey' and conrelid='public.listing_units'::regclass) then
+  alter table public.listing_units add constraint listing_units_pkey PRIMARY KEY (id); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_units_label_len' and conrelid='public.listing_units'::regclass) then
+  alter table public.listing_units add constraint listing_units_label_len CHECK (((label IS NULL) OR ((char_length(label) >= 1) AND (char_length(label) <= 40)))); end if; end $c$;
 create table if not exists public.listings (
   id uuid default uuid_generate_v4() not null,
   owner_id uuid,
@@ -457,10 +472,17 @@ create table if not exists public.listings (
   turf_sport text,
   turf_format text,
   turf_surface text,
-  suspended_hidden boolean default false not null
+  suspended_hidden boolean default false not null,
+  hourly_slots integer[],
+  hourly_window_start time without time zone,
+  hourly_window_end time without time zone
 );
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_pkey' and conrelid='public.listings'::regclass) then
   alter table public.listings add constraint listings_pkey PRIMARY KEY (id); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_hourly_slots_sane' and conrelid='public.listings'::regclass) then
+  alter table public.listings add constraint listings_hourly_slots_sane CHECK (((hourly_slots IS NULL) OR (((cardinality(hourly_slots) >= 1) AND (cardinality(hourly_slots) <= 12)) AND (1 <= ALL (hourly_slots)) AND (168 >= ALL (hourly_slots))))); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_hourly_window_pair' and conrelid='public.listings'::regclass) then
+  alter table public.listings add constraint listings_hourly_window_pair CHECK ((((hourly_window_start IS NULL) = (hourly_window_end IS NULL)) AND ((hourly_window_start IS NULL) OR (hourly_window_start < hourly_window_end)))); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_max_adults_positive' and conrelid='public.listings'::regclass) then
   alter table public.listings add constraint listings_max_adults_positive CHECK (((max_adults IS NULL) OR (max_adults >= 1))); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_max_children_nonneg' and conrelid='public.listings'::regclass) then
@@ -908,6 +930,8 @@ do $c$ begin if not exists (select 1 from pg_constraint where conname='bookings_
   alter table public.bookings add constraint bookings_listing_id_fkey FOREIGN KEY (listing_id) REFERENCES listings(id) ON DELETE CASCADE; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='bookings_tenant_id_fkey' and conrelid='public.bookings'::regclass) then
   alter table public.bookings add constraint bookings_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES profiles(id) ON DELETE SET NULL; end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='bookings_unit_id_fkey' and conrelid='public.bookings'::regclass) then
+  alter table public.bookings add constraint bookings_unit_id_fkey FOREIGN KEY (unit_id) REFERENCES listing_units(id); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='conversation_participants_conversation_id_fkey' and conrelid='public.conversation_participants'::regclass) then
   alter table public.conversation_participants add constraint conversation_participants_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='conversation_participants_user_id_fkey' and conrelid='public.conversation_participants'::regclass) then
@@ -958,12 +982,16 @@ do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_a
   alter table public.listing_availability_blocks add constraint listing_availability_blocks_created_by_fkey FOREIGN KEY (created_by) REFERENCES profiles(id) ON DELETE SET NULL; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_availability_blocks_listing_id_fkey' and conrelid='public.listing_availability_blocks'::regclass) then
   alter table public.listing_availability_blocks add constraint listing_availability_blocks_listing_id_fkey FOREIGN KEY (listing_id) REFERENCES listings(id) ON DELETE CASCADE; end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_availability_blocks_unit_id_fkey' and conrelid='public.listing_availability_blocks'::regclass) then
+  alter table public.listing_availability_blocks add constraint listing_availability_blocks_unit_id_fkey FOREIGN KEY (unit_id) REFERENCES listing_units(id) ON DELETE CASCADE; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_checkin_details_listing_id_fkey' and conrelid='public.listing_checkin_details'::regclass) then
   alter table public.listing_checkin_details add constraint listing_checkin_details_listing_id_fkey FOREIGN KEY (listing_id) REFERENCES listings(id) ON DELETE CASCADE; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_facilities_facility_id_fkey' and conrelid='public.listing_facilities'::regclass) then
   alter table public.listing_facilities add constraint listing_facilities_facility_id_fkey FOREIGN KEY (facility_id) REFERENCES facilities(id) ON DELETE CASCADE; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_facilities_listing_id_fkey' and conrelid='public.listing_facilities'::regclass) then
   alter table public.listing_facilities add constraint listing_facilities_listing_id_fkey FOREIGN KEY (listing_id) REFERENCES listings(id) ON DELETE CASCADE; end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_units_listing_id_fkey' and conrelid='public.listing_units'::regclass) then
+  alter table public.listing_units add constraint listing_units_listing_id_fkey FOREIGN KEY (listing_id) REFERENCES listings(id) ON DELETE CASCADE; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_owner_id_fkey' and conrelid='public.listings'::regclass) then
   alter table public.listings add constraint listings_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES profiles(id) ON DELETE SET NULL; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='message_templates_host_id_fkey' and conrelid='public.message_templates'::regclass) then
@@ -1606,7 +1634,8 @@ CREATE OR REPLACE FUNCTION public.admin_reject_verification(p_user_id uuid, p_re
  SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-declare p public.profiles; reason text:=btrim(coalesce(p_reason,'')); identity_done boolean:=false; face_done boolean:=false;
+declare p public.profiles; reason text:=btrim(coalesce(p_reason,'')); identity_done boolean:=false;
+  face_done boolean:=false; approved_faces int:=0;
 begin
   if auth.uid() is null or not public.is_admin() or auth.uid()=p_user_id then
     raise exception 'Another admin must review this verification' using errcode='42501'; end if;
@@ -1615,7 +1644,7 @@ begin
   select * into p from public.profiles where id=p_user_id for update;
   if not found then raise exception 'Account not found'; end if;
 
-  if p.verification_status='pending' then
+  if p.verification_status in ('pending','verified') then
     update public.owner_documents set verified_at=null,verified_by=null,rejection_reason=reason
       where user_id=p_user_id and document_type in ('nid_front','nid_back');
     update public.profiles set verification_status='rejected',nid_verified=false where id=p_user_id;
@@ -1629,8 +1658,14 @@ begin
     face_done:=true;
   end if;
 
+  update public.face_verification_attempts set status='rejected', reviewed_by=auth.uid(),
+    reviewed_at=now(), review_note=reason
+    where user_id=p_user_id and status='approved';
+  get diagnostics approved_faces = row_count;
+  face_done := face_done or approved_faces > 0;
+
   if not identity_done and not face_done then
-    raise exception 'Nothing is waiting for review. Refresh the queue'; end if;
+    raise exception 'Nothing to reject. Refresh the queue'; end if;
   return jsonb_build_object('identity_rejected',identity_done,'face_rejected',face_done);
 end;
 $function$;
@@ -2504,6 +2539,8 @@ declare
   v_total      numeric;
   v_res        jsonb;
   v_booking    public.bookings%rowtype;
+  v_unit       uuid;
+  v_units      int;
 begin
   if v_uid is null then
     raise exception 'You must be signed in to book' using errcode = '42501';
@@ -2635,6 +2672,15 @@ begin
     raise exception 'This listing is not available for % bookings', p_pricing_unit
       using errcode = '22023';
   end if;
+
+  -- The hourly policy (148): the platform floor per listing type, the offered
+  -- slot durations and the host's day-use window. One function holds the rule
+  -- for the server and HourlyPolicy.resolve mirrors it in Dart; it is checked
+  -- here, before the generic min/max, because its floor can be HIGHER than
+  -- the host's own min_hours and its message says which.
+  if p_pricing_unit = 'hour' then
+    perform public.hourly_booking_check(p_listing_id, p_starts_at, p_ends_at);
+  end if;
   if v_qty is null or v_qty < 1 then
     raise exception 'Booking must be at least one %', p_pricing_unit using errcode = '22023';
   end if;
@@ -2656,25 +2702,29 @@ begin
 
   v_gross := round(v_rate * v_qty, 2);
 
-  -- Conflict checks (authoritative backstop for the client's pre-flight checks;
-  -- also catches races). Blocking statuses match BookingStatus.isActive. The
-  -- `hint` is what the Dart layer reads to choose between the two guest-facing
-  -- sentences; it used to grep this message for the words 'already have a
-  -- booking', which meant rewording the line below silently changed the UI.
+  -- Host-declared blocked dates (110), the listing-wide kind. Checked before
+  -- the unit selection so a hotel the host closed for renovation says so,
+  -- rather than "fully booked". A block is not a bookings row, so no single
+  -- exclusion constraint can cover both tables; a host blocking dates in the
+  -- same millisecond a guest commits can lose this check. That window is
+  -- accepted deliberately — the cost is one booking the host declines by hand,
+  -- and the alternative (storing blocks AS bookings rows under a sentinel
+  -- status) would drag them through earnings, commission, payouts and the host
+  -- reservations list.
   if exists (
-    select 1 from public.bookings b
-    where b.listing_id = p_listing_id
-      and b.booking_status in ('pending', 'confirmed', 'active')
-      and p_starts_at < b.ends_at
-      and b.starts_at < p_ends_at
+    select 1 from public.listing_availability_blocks blk
+    where blk.listing_id = p_listing_id
+      and blk.unit_id is null
+      and tstzrange(blk.starts_at, blk.ends_at, '[)')
+          && tstzrange(p_starts_at, p_ends_at, '[)')
   ) then
-    raise exception 'This time slot is already booked'
-      using errcode = '23P01', hint = 'listing_overlap';
+    raise exception 'The host has blocked these dates' using errcode = '22023';
   end if;
 
-  -- Same user can't hold two overlapping bookings. Now backed by
+  -- Same user can't hold two overlapping bookings. Backed by
   -- bookings_no_tenant_overlap, so losing the race here fails at COMMIT rather
-  -- than slipping through.
+  -- than slipping through. Before the unit selection so the guest's own
+  -- double-booking is named as such rather than consuming a room first.
   if exists (
     select 1 from public.bookings b
     where b.tenant_id = v_uid
@@ -2686,20 +2736,40 @@ begin
       using errcode = '23P01', hint = 'tenant_overlap';
   end if;
 
-  -- Host-declared blocked dates (110). A block is not a bookings row, so no
-  -- single exclusion constraint can cover both tables; a host blocking dates in
-  -- the same millisecond a guest commits can lose this check. That window is
-  -- accepted deliberately — the cost is one booking the host declines by hand,
-  -- and the alternative (storing blocks AS bookings rows under a sentinel
-  -- status) would drag them through earnings, commission, payouts and the host
-  -- reservations list.
-  if exists (
-    select 1 from public.listing_availability_blocks blk
-    where blk.listing_id = p_listing_id
-      and tstzrange(blk.starts_at, blk.ends_at, '[)')
-          && tstzrange(p_starts_at, p_ends_at, '[)')
-  ) then
-    raise exception 'The host has blocked these dates' using errcode = '22023';
+  -- 147: pick a unit. Any active one with no live booking and no per-unit
+  -- block over the interval, lowest label first so a hotel fills "101, 102,
+  -- …" in order and a single-unit listing has exactly one candidate.
+  -- `for update skip locked` is the race rule: a unit another transaction is
+  -- in the middle of booking is invisible here, so two guests never pick the
+  -- same row, and the loser of the last-room race is refused at once instead
+  -- of waiting on a lock it would lose anyway. The `hint` is what the Dart
+  -- layer reads to choose the guest-facing sentence (111).
+  select u.id into v_unit
+    from public.listing_units u
+   where u.listing_id = p_listing_id
+     and u.is_active
+     and not exists (
+       select 1 from public.bookings b
+       where b.unit_id = u.id
+         and b.booking_status in ('pending', 'confirmed', 'active')
+         and tstzrange(b.starts_at, b.ends_at, '[)')
+             && tstzrange(p_starts_at, p_ends_at, '[)'))
+     and not exists (
+       select 1 from public.listing_availability_blocks blk
+       where blk.unit_id = u.id
+         and tstzrange(blk.starts_at, blk.ends_at, '[)')
+             && tstzrange(p_starts_at, p_ends_at, '[)'))
+   order by u.label nulls last, u.created_at
+   for update of u skip locked
+   limit 1;
+
+  if v_unit is null then
+    select count(*) into v_units from public.listing_units
+     where listing_id = p_listing_id and is_active;
+    raise exception '%',
+      case when v_units > 1 then 'Every room is taken for these dates'
+           else 'This time slot is already booked' end
+      using errcode = '23P01', hint = 'listing_overlap';
   end if;
 
   -- Coupon (optional). Reuse the authoritative validator against the SERVER
@@ -2717,13 +2787,13 @@ begin
   v_total := greatest(v_gross - v_discount, 0);
 
   insert into public.bookings (
-    listing_id, tenant_id, tenant_name,
+    listing_id, unit_id, tenant_id, tenant_name,
     starts_at, ends_at, pricing_unit, unit_count,
     total_price, guest_count, booking_status,
     listing_title, listing_image_url, listing_city,
     coupon_code, discount_amount
   ) values (
-    p_listing_id, v_uid, coalesce(p_tenant_name, ''),
+    p_listing_id, v_unit, v_uid, coalesce(p_tenant_name, ''),
     p_starts_at, p_ends_at, p_pricing_unit::pricing_unit, v_qty,
     v_total, p_guest_count, 'pending',
     v_listing.title, p_listing_image_url, v_listing.city,
@@ -3222,6 +3292,61 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.fn_block_unit_consistent()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if new.unit_id is not null and not exists (
+    select 1 from public.listing_units u where u.id = new.unit_id and u.listing_id = new.listing_id
+  ) then
+    raise exception 'The unit does not belong to this listing'
+      using errcode = '22023', hint = 'unit_mismatch';
+  end if;
+  return new;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.fn_booking_unit_consistent()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_listing uuid; v_n int;
+begin
+  if tg_op = 'UPDATE' then
+    if new.unit_id is distinct from old.unit_id
+       and coalesce(current_setting('musafir.unit_reassign', true), '') <> 'on' then
+      raise exception 'A booking cannot be moved to another unit here'
+        using errcode = '42501', hint = 'booking_columns_protected';
+    end if;
+    if new.unit_id is not distinct from old.unit_id
+       and new.listing_id is not distinct from old.listing_id then
+      return new;
+    end if;
+  end if;
+
+  if new.unit_id is null then
+    -- (array_agg)[1], not min(): there is no min(uuid) in core Postgres.
+    select count(*), (array_agg(id))[1] into v_n, new.unit_id
+      from public.listing_units where listing_id = new.listing_id;
+    if v_n <> 1 then
+      raise exception 'This listing has % units; a booking must name one', v_n
+        using errcode = '22023', hint = 'unit_required';
+    end if;
+    return new;
+  end if;
+
+  select listing_id into v_listing from public.listing_units where id = new.unit_id;
+  if v_listing is distinct from new.listing_id then
+    raise exception 'The unit does not belong to this listing'
+      using errcode = '22023', hint = 'unit_mismatch';
+  end if;
+  return new;
+end $function$;
+
 CREATE OR REPLACE FUNCTION public.fn_caller_booked_listing(p_listing_id uuid)
  RETURNS boolean
  LANGUAGE sql
@@ -3570,6 +3695,17 @@ AS $function$
     select 1 from public.profiles p where p.id = p_user_id and p.suspended_at is not null
   );
 $function$;
+
+CREATE OR REPLACE FUNCTION public.fn_listing_default_unit()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  insert into public.listing_units (listing_id) values (new.id);
+  return new;
+end $function$;
 
 CREATE OR REPLACE FUNCTION public.fn_messages_block_guard()
  RETURNS trigger
@@ -4110,6 +4246,8 @@ begin
       perform public.fn_validate_setting_refund_window_hours(new.value);
     when 'refund_late_pct' then
       perform public.fn_validate_setting_refund_late_pct(new.value);
+    when 'hourly_policy' then
+      perform public.fn_validate_setting_hourly_policy(new.value);
     else
       null;
   end case;
@@ -4226,6 +4364,87 @@ begin
     raise exception 'platform_commission_pct: % is outside 0–100', btrim(p_value)
       using errcode = '22023';
   end if;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_validate_setting_hourly_policy(p_value text)
+ RETURNS void
+ LANGUAGE plpgsql
+ IMMUTABLE
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_doc    jsonb;
+  v_key    text;
+  v_entry  jsonb;
+  v_min    integer;
+  v_slot   jsonb;
+  v_prev   integer;
+  v_n      integer;
+begin
+  begin
+    v_doc := p_value::jsonb;
+  exception when others then
+    raise exception 'hourly_policy must be a JSON object' using errcode = '22023';
+  end;
+  if jsonb_typeof(v_doc) <> 'object' then
+    raise exception 'hourly_policy must be a JSON object' using errcode = '22023';
+  end if;
+
+  for v_key, v_entry in select * from jsonb_each(v_doc) loop
+    -- The enum plus 'hotel', which 149 adds; until then the literal keeps the
+    -- default row storable. IMMUTABLE forbids enum_range here, so the list is
+    -- spelled out -- a new listing type must be added to it.
+    if v_key not in ('seat', 'room', 'fullHouse', 'turf', 'hotel') then
+      raise exception 'hourly_policy: "%" is not a listing type', v_key
+        using errcode = '22023';
+    end if;
+    if jsonb_typeof(v_entry) <> 'object' then
+      raise exception 'hourly_policy: % must be an object', v_key using errcode = '22023';
+    end if;
+    if jsonb_typeof(v_entry -> 'enabled') is distinct from 'boolean' then
+      raise exception 'hourly_policy: %.enabled must be true or false', v_key
+        using errcode = '22023';
+    end if;
+    if jsonb_typeof(v_entry -> 'min_hours') is distinct from 'number'
+       or (v_entry ->> 'min_hours') !~ '^[0-9]+$' then
+      raise exception 'hourly_policy: %.min_hours must be a whole number of hours', v_key
+        using errcode = '22023';
+    end if;
+    v_min := (v_entry ->> 'min_hours')::integer;
+    if v_min < 1 or v_min > 168 then
+      raise exception 'hourly_policy: %.min_hours is % — must be 1 to 168', v_key, v_min
+        using errcode = '22023';
+    end if;
+    if v_entry ? 'slots' and jsonb_typeof(v_entry -> 'slots') <> 'null' then
+      if jsonb_typeof(v_entry -> 'slots') <> 'array'
+         or jsonb_array_length(v_entry -> 'slots') = 0 then
+        raise exception 'hourly_policy: %.slots must be null or a list of hours', v_key
+          using errcode = '22023';
+      end if;
+      v_prev := null;
+      for v_slot in select * from jsonb_array_elements(v_entry -> 'slots') loop
+        if jsonb_typeof(v_slot) <> 'number' or (v_slot #>> '{}') !~ '^[0-9]+$' then
+          raise exception 'hourly_policy: %.slots holds "%", not a whole number of hours',
+            v_key, v_slot #>> '{}' using errcode = '22023';
+        end if;
+        v_n := (v_slot #>> '{}')::integer;
+        -- A slot below the floor could never be booked; one above a week is a
+        -- nightly stay wearing the wrong hat.
+        if v_n < v_min or v_n > 168 then
+          raise exception 'hourly_policy: %.slots: % h is outside %–168 h', v_key, v_n, v_min
+            using errcode = '22023';
+        end if;
+        -- Ascending and distinct, so the guest's chips read in order and no
+        -- duration is offered twice.
+        if v_prev is not null and v_n <= v_prev then
+          raise exception 'hourly_policy: %.slots must ascend (% came after %)', v_key, v_n, v_prev
+            using errcode = '22023';
+        end if;
+        v_prev := v_n;
+      end loop;
+    end if;
+  end loop;
 end;
 $function$;
 
@@ -4775,6 +4994,125 @@ AS $function$
     ON snap.host_id = r.host_id AND snap.period = params.prev_period;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.hourly_booking_check(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone)
+ RETURNS void
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_l       public.listings%rowtype;
+  v_policy  jsonb;
+  v_hours   integer;
+  v_floor   integer;
+  v_slots   integer[];
+  v_start_l timestamp;
+  v_end_l   timestamp;
+  v_end_t   time;
+begin
+  select * into v_l from public.listings where id = p_listing_id;
+  if not found then
+    raise exception 'Listing not found' using errcode = 'P0002';
+  end if;
+  v_policy := public.hourly_policy_for(v_l.listing_type::text);
+
+  if not coalesce((v_policy ->> 'enabled')::boolean, true) then
+    raise exception 'Hourly bookings are not offered for this kind of listing'
+      using errcode = '22023', hint = 'hourly_disabled';
+  end if;
+
+  -- Same derivation as the RPC: whole hours from the interval, rounded, so a
+  -- client cannot send 5h59m and call it 5.
+  v_hours := round(extract(epoch from (p_ends_at - p_starts_at)) / 3600.0);
+
+  v_floor := greatest(coalesce((v_policy ->> 'min_hours')::integer, 1),
+                      coalesce(v_l.min_hours, 1));
+  if v_hours < v_floor then
+    raise exception 'Minimum booking is % hour%', v_floor, case when v_floor = 1 then '' else 's' end
+      using errcode = '22023', hint = 'hourly_min';
+  end if;
+  if v_l.max_hours is not null and v_hours > v_l.max_hours then
+    raise exception 'Maximum booking is % hour%', v_l.max_hours, case when v_l.max_hours = 1 then '' else 's' end
+      using errcode = '22023', hint = 'hourly_max';
+  end if;
+
+  -- The host's list wins outright when set; otherwise the platform's. Not
+  -- intersected: a host narrowing [6,12] to [6] is the common case and an
+  -- intersection would make a host offering [4] on a slotted type silently
+  -- offer nothing.
+  if v_l.hourly_slots is not null then
+    v_slots := v_l.hourly_slots;
+  elsif jsonb_typeof(v_policy -> 'slots') = 'array' then
+    select array_agg(x::integer order by x::integer) into v_slots
+      from jsonb_array_elements_text(v_policy -> 'slots') as x;
+  end if;
+  if v_slots is not null and not (v_hours = any(v_slots)) then
+    raise exception 'Choose one of the offered durations: % hours',
+      array_to_string(v_slots, ', ')
+      using errcode = '22023', hint = 'hourly_slot';
+  end if;
+
+  -- Day-use window, on one Asia/Dhaka calendar day. A stay ending exactly at
+  -- midnight is "24:00" of the day it started, which `time` can hold.
+  if v_l.hourly_window_start is not null then
+    v_start_l := p_starts_at at time zone 'Asia/Dhaka';
+    v_end_l   := p_ends_at   at time zone 'Asia/Dhaka';
+    v_end_t   := case when v_end_l::time = time '00:00' and v_end_l::date = v_start_l::date + 1
+                      then time '24:00' else v_end_l::time end;
+    if (v_end_l::date <> v_start_l::date and v_end_t <> time '24:00')
+       or v_start_l::time < v_l.hourly_window_start
+       or v_end_t > v_l.hourly_window_end then
+      raise exception 'Hourly stays here run between % and %',
+        to_char(v_l.hourly_window_start, 'HH24:MI'), to_char(v_l.hourly_window_end, 'HH24:MI')
+        using errcode = '22023', hint = 'hourly_window';
+    end if;
+  end if;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.hourly_policy_defaults()
+ RETURNS jsonb
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  select '{
+    "seat":      {"enabled": true, "min_hours": 1, "slots": null},
+    "room":      {"enabled": true, "min_hours": 1, "slots": null},
+    "fullHouse": {"enabled": true, "min_hours": 3, "slots": null},
+    "turf":      {"enabled": true, "min_hours": 1, "slots": null},
+    "hotel":     {"enabled": true, "min_hours": 6, "slots": [6, 12]}
+  }'::jsonb
+$function$;
+
+CREATE OR REPLACE FUNCTION public.hourly_policy_for(p_type text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_raw   text;
+  v_doc   jsonb;
+  v_entry jsonb;
+begin
+  select value into v_raw from public.app_settings where key = 'hourly_policy';
+  if v_raw is not null then
+    begin
+      v_doc := v_raw::jsonb;
+    exception when others then
+      v_doc := null;
+    end;
+  end if;
+  v_entry := case when jsonb_typeof(v_doc) = 'object' then v_doc -> p_type end;
+  if v_entry is null or jsonb_typeof(v_entry) <> 'object' then
+    v_entry := public.hourly_policy_defaults() -> p_type;
+  end if;
+  -- An unknown type (should not happen -- listing_type is an enum) gets the
+  -- loosest sane policy rather than an error.
+  return coalesce(v_entry, '{"enabled": true, "min_hours": 1, "slots": null}'::jsonb);
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.is_admin(p_uid uuid DEFAULT auth.uid())
  RETURNS boolean
  LANGUAGE sql
@@ -4792,21 +5130,7 @@ CREATE OR REPLACE FUNCTION public.is_booking_available(p_listing_id uuid, p_star
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-  select not exists (
-    select 1
-    from public.bookings b
-    where b.listing_id = p_listing_id
-      and b.booking_status in ('pending', 'confirmed', 'active')
-      and tstzrange(b.starts_at, b.ends_at, '[)')
-          && tstzrange(p_starts_at, p_ends_at, '[)')
-  )
-  and not exists (
-    select 1
-    from public.listing_availability_blocks blk
-    where blk.listing_id = p_listing_id
-      and tstzrange(blk.starts_at, blk.ends_at, '[)')
-          && tstzrange(p_starts_at, p_ends_at, '[)')
-  );
+  select public.listing_rooms_left(p_listing_id, p_starts_at, p_ends_at) > 0;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.is_conversation_member(p_conversation_id uuid, p_user_id uuid)
@@ -4851,6 +5175,33 @@ AS $function$
   where blk.listing_id = p_listing_id
     and blk.ends_at > timezone('utc', now())
   order by blk.starts_at;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.listing_rooms_left(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone)
+ RETURNS integer
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select case
+    when exists (
+      select 1 from public.listing_availability_blocks blk
+      where blk.listing_id = p_listing_id and blk.unit_id is null
+        and tstzrange(blk.starts_at, blk.ends_at, '[)') && tstzrange(p_starts_at, p_ends_at, '[)'))
+    then 0
+    else (
+      select count(*)::int from public.listing_units u
+      where u.listing_id = p_listing_id and u.is_active
+        and not exists (
+          select 1 from public.bookings b
+          where b.unit_id = u.id
+            and b.booking_status in ('pending', 'confirmed', 'active')
+            and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(p_starts_at, p_ends_at, '[)'))
+        and not exists (
+          select 1 from public.listing_availability_blocks blk
+          where blk.unit_id = u.id
+            and tstzrange(blk.starts_at, blk.ends_at, '[)') && tstzrange(p_starts_at, p_ends_at, '[)')))
+  end;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.mark_all_notifications_read(p_user_id uuid)
@@ -7709,6 +8060,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_occurred ON public.audit_log USING btre
 CREATE INDEX IF NOT EXISTS idx_audit_log_table_record ON public.audit_log USING btree (table_name, record_id);
 CREATE INDEX IF NOT EXISTS bookings_overlap_idx ON public.bookings USING gist (listing_id, tstzrange(starts_at, ends_at, '[)'::text)) WHERE (booking_status = ANY (ARRAY['pending'::booking_status, 'confirmed'::booking_status]));
 CREATE INDEX IF NOT EXISTS bookings_tenant_listing_status_idx ON public.bookings USING btree (tenant_id, listing_id, booking_status, ends_at);
+CREATE INDEX IF NOT EXISTS bookings_unit_idx ON public.bookings USING btree (unit_id, starts_at);
 CREATE INDEX IF NOT EXISTS idx_conv_participants_active ON public.conversation_participants USING btree (is_active) WHERE (is_active = true);
 CREATE INDEX IF NOT EXISTS idx_conv_participants_conversation ON public.conversation_participants USING btree (conversation_id);
 CREATE INDEX IF NOT EXISTS idx_conv_participants_user ON public.conversation_participants USING btree (user_id);
@@ -7736,6 +8088,7 @@ CREATE INDEX IF NOT EXISTS host_ledger_type_idx ON public.host_ledger_entries US
 CREATE INDEX IF NOT EXISTS idx_landmarks_geog ON public.landmarks USING gist (geog);
 CREATE INDEX IF NOT EXISTS idx_landmarks_type ON public.landmarks USING btree (type) WHERE is_active;
 CREATE INDEX IF NOT EXISTS listing_availability_blocks_listing_idx ON public.listing_availability_blocks USING btree (listing_id, starts_at);
+CREATE INDEX IF NOT EXISTS listing_units_listing_active_idx ON public.listing_units USING btree (listing_id) WHERE is_active;
 CREATE INDEX IF NOT EXISTS idx_listings_geog ON public.listings USING gist (geog);
 CREATE INDEX IF NOT EXISTS idx_listings_purpose_tags ON public.listings USING gin (purpose_tags);
 CREATE INDEX IF NOT EXISTS listings_location_idx ON public.listings USING gist (location);
@@ -7803,6 +8156,7 @@ alter table public.listing_addresses enable row level security;
 alter table public.listing_availability_blocks enable row level security;
 alter table public.listing_checkin_details enable row level security;
 alter table public.listing_facilities enable row level security;
+alter table public.listing_units enable row level security;
 alter table public.listings enable row level security;
 alter table public.message_templates enable row level security;
 alter table public.messages enable row level security;
@@ -8038,6 +8392,15 @@ create policy "listing_facilities_admin_all" on public.listing_facilities
   as permissive for all to public
   using (is_admin())
   with check (is_admin());
+drop policy if exists "listing_units_owner_all" on public.listing_units;
+create policy "listing_units_owner_all" on public.listing_units
+  as permissive for all to authenticated
+  using (((EXISTS ( SELECT 1
+   FROM listings l
+  WHERE ((l.id = listing_units.listing_id) AND (l.owner_id = auth.uid())))) OR is_admin()))
+  with check (((EXISTS ( SELECT 1
+   FROM listings l
+  WHERE ((l.id = listing_units.listing_id) AND (l.owner_id = auth.uid())))) OR is_admin()));
 drop policy if exists "Anyone can view active listings" on public.listings;
 create policy "Anyone can view active listings" on public.listings
   as permissive for select to public
@@ -8303,6 +8666,7 @@ do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_audit_immutable' and c.relname='audit_log' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_audit_immutable BEFORE DELETE OR UPDATE ON public.audit_log FOR EACH ROW EXECUTE FUNCTION fn_audit_immutable() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='booking_lifecycle_notifications' and c.relname='bookings' and n.nspname='public') then execute $q$ CREATE TRIGGER booking_lifecycle_notifications AFTER INSERT OR UPDATE OF booking_status, cancelled_by ON public.bookings FOR EACH ROW EXECUTE FUNCTION notify_on_booking_lifecycle() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='bookings_touch_updated_at' and c.relname='bookings' and n.nspname='public') then execute $q$ CREATE TRIGGER bookings_touch_updated_at BEFORE UPDATE ON public.bookings FOR EACH ROW EXECUTE FUNCTION touch_updated_at() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_a_booking_unit_consistent' and c.relname='bookings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_a_booking_unit_consistent BEFORE INSERT OR UPDATE ON public.bookings FOR EACH ROW EXECUTE FUNCTION fn_booking_unit_consistent() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_alert_paid_cancellation' and c.relname='bookings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_alert_paid_cancellation AFTER UPDATE OF booking_status ON public.bookings FOR EACH ROW EXECUTE FUNCTION fn_alert_paid_cancellation() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_audit_bookings_ins' and c.relname='bookings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_audit_bookings_ins AFTER INSERT ON public.bookings FOR EACH ROW EXECUTE FUNCTION fn_audit('financial') $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_audit_bookings_upd' and c.relname='bookings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_audit_bookings_upd AFTER UPDATE ON public.bookings FOR EACH ROW WHEN (((old.payment_status IS DISTINCT FROM new.payment_status) OR (old.payment_method IS DISTINCT FROM new.payment_method) OR (old.booking_status IS DISTINCT FROM new.booking_status) OR (old.total_price IS DISTINCT FROM new.total_price))) EXECUTE FUNCTION fn_audit('financial') $q$; end if; end $t$;
@@ -8328,9 +8692,11 @@ do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_host_ledger_immutable' and c.relname='host_ledger_entries' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_host_ledger_immutable BEFORE DELETE OR UPDATE ON public.host_ledger_entries FOR EACH ROW EXECUTE FUNCTION fn_host_ledger_immutable() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_set_landmark_geog' and c.relname='landmarks' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_set_landmark_geog BEFORE INSERT OR UPDATE OF latitude, longitude ON public.landmarks FOR EACH ROW EXECUTE FUNCTION set_landmark_geog() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_touch_listing_address' and c.relname='listing_addresses' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_touch_listing_address BEFORE UPDATE ON public.listing_addresses FOR EACH ROW EXECUTE FUNCTION touch_listing_address() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_block_unit_consistent' and c.relname='listing_availability_blocks' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_block_unit_consistent BEFORE INSERT OR UPDATE ON public.listing_availability_blocks FOR EACH ROW EXECUTE FUNCTION fn_block_unit_consistent() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='enforce_listing_public_location' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER enforce_listing_public_location BEFORE INSERT OR UPDATE ON public.listings FOR EACH ROW EXECUTE FUNCTION enforce_listing_public_location() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='listing_location_trigger' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER listing_location_trigger BEFORE INSERT OR UPDATE ON public.listings FOR EACH ROW EXECUTE FUNCTION update_listing_location() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_freeze_listing_reputation' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_freeze_listing_reputation BEFORE INSERT OR UPDATE ON public.listings FOR EACH ROW EXECUTE FUNCTION fn_freeze_listing_reputation() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_listing_default_unit' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_listing_default_unit AFTER INSERT ON public.listings FOR EACH ROW EXECUTE FUNCTION fn_listing_default_unit() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_refuse_suspended_writer' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_refuse_suspended_writer BEFORE INSERT OR UPDATE ON public.listings FOR EACH ROW EXECUTE FUNCTION fn_refuse_suspended_writer() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_set_listing_geog' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_set_listing_geog BEFORE INSERT OR UPDATE OF latitude, longitude ON public.listings FOR EACH ROW EXECUTE FUNCTION set_listing_geog() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_set_listing_host_available' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_set_listing_host_available BEFORE INSERT ON public.listings FOR EACH ROW EXECUTE FUNCTION set_listing_host_available() $q$; end if; end $t$;
@@ -8455,6 +8821,9 @@ revoke all on table public.listing_facilities from public, anon, authenticated, 
 grant delete, insert, references, select, trigger, truncate, update on table public.listing_facilities to anon;
 grant delete, insert, references, select, trigger, truncate, update on table public.listing_facilities to authenticated;
 grant delete, insert, references, select, trigger, truncate, update on table public.listing_facilities to service_role;
+revoke all on table public.listing_units from public, anon, authenticated, service_role;
+grant delete, insert, references, select, trigger, truncate, update on table public.listing_units to authenticated;
+grant delete, insert, references, select, trigger, truncate, update on table public.listing_units to service_role;
 revoke all on table public.listings from public, anon, authenticated, service_role;
 grant delete, insert, references, select, trigger, truncate, update on table public.listings to anon;
 grant delete, insert, references, select, trigger, truncate, update on table public.listings to authenticated;
@@ -8710,6 +9079,16 @@ grant execute on function public.fn_audit_immutable() to public;
 grant execute on function public.fn_audit_immutable() to anon;
 grant execute on function public.fn_audit_immutable() to authenticated;
 grant execute on function public.fn_audit_immutable() to service_role;
+revoke all on function public.fn_block_unit_consistent() from public, anon, authenticated, service_role;
+grant execute on function public.fn_block_unit_consistent() to public;
+grant execute on function public.fn_block_unit_consistent() to anon;
+grant execute on function public.fn_block_unit_consistent() to authenticated;
+grant execute on function public.fn_block_unit_consistent() to service_role;
+revoke all on function public.fn_booking_unit_consistent() from public, anon, authenticated, service_role;
+grant execute on function public.fn_booking_unit_consistent() to public;
+grant execute on function public.fn_booking_unit_consistent() to anon;
+grant execute on function public.fn_booking_unit_consistent() to authenticated;
+grant execute on function public.fn_booking_unit_consistent() to service_role;
 revoke all on function public.fn_caller_booked_listing(p_listing_id uuid) from public, anon, authenticated, service_role;
 grant execute on function public.fn_caller_booked_listing(p_listing_id uuid) to authenticated;
 grant execute on function public.fn_caller_booked_listing(p_listing_id uuid) to service_role;
@@ -8760,6 +9139,11 @@ revoke all on function public.fn_identity_phone(p_user_id uuid) from public, ano
 grant execute on function public.fn_identity_phone(p_user_id uuid) to service_role;
 revoke all on function public.fn_is_suspended(p_user_id uuid) from public, anon, authenticated, service_role;
 grant execute on function public.fn_is_suspended(p_user_id uuid) to service_role;
+revoke all on function public.fn_listing_default_unit() from public, anon, authenticated, service_role;
+grant execute on function public.fn_listing_default_unit() to public;
+grant execute on function public.fn_listing_default_unit() to anon;
+grant execute on function public.fn_listing_default_unit() to authenticated;
+grant execute on function public.fn_listing_default_unit() to service_role;
 revoke all on function public.fn_messages_block_guard() from public, anon, authenticated, service_role;
 grant execute on function public.fn_messages_block_guard() to service_role;
 revoke all on function public.fn_msisdn(p_canonical text) from public, anon, authenticated, service_role;
@@ -8857,6 +9241,11 @@ grant execute on function public.fn_validate_setting_commission_pct(p_value text
 grant execute on function public.fn_validate_setting_commission_pct(p_value text) to anon;
 grant execute on function public.fn_validate_setting_commission_pct(p_value text) to authenticated;
 grant execute on function public.fn_validate_setting_commission_pct(p_value text) to service_role;
+revoke all on function public.fn_validate_setting_hourly_policy(p_value text) from public, anon, authenticated, service_role;
+grant execute on function public.fn_validate_setting_hourly_policy(p_value text) to public;
+grant execute on function public.fn_validate_setting_hourly_policy(p_value text) to anon;
+grant execute on function public.fn_validate_setting_hourly_policy(p_value text) to authenticated;
+grant execute on function public.fn_validate_setting_hourly_policy(p_value text) to service_role;
 revoke all on function public.fn_validate_setting_max_devices(p_value text) from public, anon, authenticated, service_role;
 grant execute on function public.fn_validate_setting_max_devices(p_value text) to public;
 grant execute on function public.fn_validate_setting_max_devices(p_value text) to anon;
@@ -8949,6 +9338,21 @@ grant execute on function public.host_leaderboard_ranked(p_period text) to publi
 grant execute on function public.host_leaderboard_ranked(p_period text) to anon;
 grant execute on function public.host_leaderboard_ranked(p_period text) to authenticated;
 grant execute on function public.host_leaderboard_ranked(p_period text) to service_role;
+revoke all on function public.hourly_booking_check(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone) from public, anon, authenticated, service_role;
+grant execute on function public.hourly_booking_check(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone) to public;
+grant execute on function public.hourly_booking_check(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone) to anon;
+grant execute on function public.hourly_booking_check(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone) to authenticated;
+grant execute on function public.hourly_booking_check(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone) to service_role;
+revoke all on function public.hourly_policy_defaults() from public, anon, authenticated, service_role;
+grant execute on function public.hourly_policy_defaults() to public;
+grant execute on function public.hourly_policy_defaults() to anon;
+grant execute on function public.hourly_policy_defaults() to authenticated;
+grant execute on function public.hourly_policy_defaults() to service_role;
+revoke all on function public.hourly_policy_for(p_type text) from public, anon, authenticated, service_role;
+grant execute on function public.hourly_policy_for(p_type text) to public;
+grant execute on function public.hourly_policy_for(p_type text) to anon;
+grant execute on function public.hourly_policy_for(p_type text) to authenticated;
+grant execute on function public.hourly_policy_for(p_type text) to service_role;
 revoke all on function public.is_admin(p_uid uuid) from public, anon, authenticated, service_role;
 grant execute on function public.is_admin(p_uid uuid) to anon;
 grant execute on function public.is_admin(p_uid uuid) to authenticated;
@@ -8969,6 +9373,10 @@ revoke all on function public.listing_blocked_ranges(p_listing_id uuid) from pub
 grant execute on function public.listing_blocked_ranges(p_listing_id uuid) to anon;
 grant execute on function public.listing_blocked_ranges(p_listing_id uuid) to authenticated;
 grant execute on function public.listing_blocked_ranges(p_listing_id uuid) to service_role;
+revoke all on function public.listing_rooms_left(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone) from public, anon, authenticated, service_role;
+grant execute on function public.listing_rooms_left(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone) to anon;
+grant execute on function public.listing_rooms_left(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone) to authenticated;
+grant execute on function public.listing_rooms_left(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone) to service_role;
 revoke all on function public.mark_all_notifications_read(p_user_id uuid) from public, anon, authenticated, service_role;
 grant execute on function public.mark_all_notifications_read(p_user_id uuid) to public;
 grant execute on function public.mark_all_notifications_read(p_user_id uuid) to anon;
