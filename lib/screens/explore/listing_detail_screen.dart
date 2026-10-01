@@ -15,6 +15,7 @@ import '../../models/booking.dart';
 import '../../models/booking_conflict_exception.dart';
 import '../../models/booking_rejected_exception.dart';
 import '../../models/host_verifications.dart';
+import '../../models/hotel_details.dart';
 import '../../models/listing.dart';
 import '../../services/listing/party_limits_summary.dart';
 import '../../models/listing_exact_address.dart';
@@ -808,12 +809,14 @@ class _CategoryBadge extends StatelessWidget {
       ListingType.room => AppColors.room,
       ListingType.fullHouse => AppColors.fullHouse,
       ListingType.turf => AppColors.turf,
+      ListingType.hotel => AppColors.hotel,
     };
     final icon = switch (type) {
       ListingType.seat => Icons.event_seat_rounded,
       ListingType.room => Icons.meeting_room_rounded,
       ListingType.fullHouse => Icons.house_rounded,
       ListingType.turf => Icons.sports_soccer_rounded,
+      ListingType.hotel => Icons.hotel_rounded,
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
@@ -1422,6 +1425,8 @@ class _PropertyDetails extends StatelessWidget {
   Widget build(BuildContext context) {
     final isStay = listing.type.isStay;
     final turf = listing.turfDetails;
+    final hotel = listing.hotelDetails;
+    final room = listing.roomFacts;
 
     // A turf writes 0 into bedrooms/beds/bathrooms (121 + the host form), so
     // the stay tiles would read "0 Bedrooms · 0 Beds · 0 Baths". It answers a
@@ -1453,6 +1458,41 @@ class _PropertyDetails extends StatelessWidget {
               'Baths',
               AppColors.amber
             ),
+            // The 150 facts, each only when stated -- same rule as the turf
+            // tiles below. Stars first among them: it is the one a hotel
+            // guest filters on.
+            if (hotel.starRating != null)
+              (
+                Icons.star_rounded,
+                '${hotel.starRating}★',
+                'Hotel class',
+                AppColors.hotel
+              ),
+            if (room.sizeSqft != null)
+              (
+                Icons.square_foot_rounded,
+                '${room.sizeSqft}',
+                'Sq ft',
+                AppColors.violet
+              ),
+            if (room.bathroom != null)
+              (
+                Icons.shower_rounded,
+                room.bathroom!.label,
+                'Bathroom',
+                AppColors.blue
+              ),
+            if (room.toilet != null)
+              (Icons.wc_rounded, room.toilet!.label, 'Toilet', AppColors.amber),
+            if (hotel.frontDesk24h == true)
+              (
+                Icons.support_agent_rounded,
+                '24h',
+                'Front desk',
+                AppColors.brand
+              ),
+            if (hotel.idRequired == true)
+              (Icons.badge_rounded, 'ID', 'At check-in', AppColors.violet),
           ]
         : <(IconData, String, String, Color)>[
             (
@@ -1491,17 +1531,31 @@ class _PropertyDetails extends StatelessWidget {
           )
         : null;
 
-    final stats = Row(
+    // Rows of four: a hotel can state up to ten facts, and ten Expanded
+    // tiles in one Row would FittedBox themselves into unreadable type on a
+    // phone. A short last row is padded with empty slots so every tile keeps
+    // the width of the four above it.
+    const perRow = 4;
+    final stats = Column(
       children: [
-        for (var i = 0; i < items.length; i++) ...[
-          if (i > 0) const SizedBox(width: 12),
-          Expanded(
-            child: _StatCard(
-              icon: items[i].$1,
-              value: items[i].$2,
-              label: items[i].$3,
-              color: items[i].$4,
-            ),
+        for (var start = 0; start < items.length; start += perRow) ...[
+          if (start > 0) const SizedBox(height: 12),
+          Row(
+            children: [
+              for (var i = start; i < start + perRow; i++) ...[
+                if (i > start) const SizedBox(width: 12),
+                Expanded(
+                  child: i < items.length
+                      ? _StatCard(
+                          icon: items[i].$1,
+                          value: items[i].$2,
+                          label: items[i].$3,
+                          color: items[i].$4,
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            ],
           ),
         ],
       ],

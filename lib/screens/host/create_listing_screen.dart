@@ -6,6 +6,7 @@ import '../../data/facility_catalog.dart';
 import '../../models/listing.dart';
 import '../../models/listing_purpose.dart';
 import '../../models/listing_type.dart';
+import '../../models/hotel_details.dart';
 import '../../models/turf_details.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../services/app_settings_service.dart';
@@ -17,6 +18,7 @@ import '../../widgets/image_picker_grid.dart';
 import '../../widgets/location_picker.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/purpose_selector.dart';
+import '../../widgets/host/hotel_details_fields.dart';
 import '../../widgets/host/party_limits_fields.dart';
 import '../../widgets/host/turf_details_fields.dart';
 import '../../services/listing/listing_type_scope.dart';
@@ -57,6 +59,11 @@ enum _WizardStep {
 
   /// Turf only: players, sport, format, surface, amenities.
   turf,
+
+  /// Hotel only, before [details]: how many rooms of this kind, stars, front
+  /// desk, ID. The details page that follows then describes ONE of those
+  /// rooms, which is what the units model (147) means by a listing.
+  hotel,
   pricing,
   rules,
 
@@ -77,32 +84,50 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   /// wrong page. Safe to recompute because page 0 is common to both shapes --
   /// switching type can only ever shorten or lengthen what comes *after* the
   /// page the host is standing on.
-  List<_WizardStep> get _steps => _propertyType.isStay
+  List<_WizardStep> get _steps => _propertyType == ListingType.hotel
       ? const [
           _WizardStep.type,
           _WizardStep.basics,
           _WizardStep.location,
+          _WizardStep.hotel,
           _WizardStep.details,
           _WizardStep.pricing,
           _WizardStep.rules,
           _WizardStep.access,
           _WizardStep.photos,
         ]
-      : const [
-          _WizardStep.type,
-          _WizardStep.basics,
-          _WizardStep.location,
-          _WizardStep.turf,
-          _WizardStep.pricing,
-          _WizardStep.rules,
-          _WizardStep.photos,
-        ];
+      : _propertyType.isStay
+          ? const [
+              _WizardStep.type,
+              _WizardStep.basics,
+              _WizardStep.location,
+              _WizardStep.details,
+              _WizardStep.pricing,
+              _WizardStep.rules,
+              _WizardStep.access,
+              _WizardStep.photos,
+            ]
+          : const [
+              _WizardStep.type,
+              _WizardStep.basics,
+              _WizardStep.location,
+              _WizardStep.turf,
+              _WizardStep.pricing,
+              _WizardStep.rules,
+              _WizardStep.photos,
+            ];
 
   int get _totalSteps => _steps.length;
 
   // Form data
   ListingType _propertyType = ListingType.room;
   TurfDetails _turfDetails = const TurfDetails();
+  HotelDetails _hotelDetails = const HotelDetails();
+  RoomFacts _roomFacts = const RoomFacts();
+
+  /// Rooms of this kind the hotel sells. Only the hotel step shows it; every
+  /// other type submits 1, which is what the insert trigger already creates.
+  int _unitCount = 1;
   final Set<ListingPurpose> _selectedPurposes = {ListingPurpose.general};
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -277,7 +302,16 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
           },
           onChanged: () => setState(() {}),
         ),
+      _WizardStep.hotel => _HotelStep(
+          unitCount: _unitCount,
+          onUnitCountChanged: (v) => setState(() => _unitCount = v),
+          details: _hotelDetails,
+          onDetailsChanged: (v) => setState(() => _hotelDetails = v),
+        ),
       _WizardStep.details => _DetailsStep(
+          type: _propertyType,
+          roomFacts: _roomFacts,
+          onRoomFactsChanged: (v) => setState(() => _roomFacts = v),
           maxGuests: _maxGuests,
           partyLimits: _partyLimits,
           onPartyLimitsChanged: (v) => setState(() => _partyLimits = v),
@@ -401,6 +435,9 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
       // sport, format and surface are all nullable in 121 because a host who
       // skips them has still described a bookable ground.
       _WizardStep.turf => _maxGuests > 0,
+      // Stars, desk and ID are all nullable (150); the room count has a
+      // floor the counter already enforces.
+      _WizardStep.hotel => _unitCount >= 1,
       _WizardStep.pricing => _pricingError() == null,
       // Optional in both shapes.
       _WizardStep.rules || _WizardStep.access => true,
@@ -514,6 +551,8 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
       final scoped = scopeFieldsToType(
         type: _propertyType,
         turfDetails: _turfDetails,
+        hotelDetails: _hotelDetails,
+        roomFacts: _roomFacts,
         partyLimits: _partyLimits,
         bedrooms: _bedrooms,
         beds: _beds,
@@ -558,6 +597,8 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         maxGuests: _maxGuests,
         partyLimits: scoped.partyLimits,
         turfDetails: scoped.turfDetails,
+        hotelDetails: scoped.hotelDetails,
+        roomFacts: scoped.roomFacts,
         bedrooms: scoped.bedrooms,
         beds: scoped.beds,
         bathrooms: scoped.bathrooms,
@@ -623,7 +664,10 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
 
       // Add to repository — await so a failed insert surfaces below instead
       // of showing a success banner for a listing that was never created.
-      await widget.repository.addListing(listing);
+      // A host who picked hotel, set 12 rooms, then switched back to a room
+      // must not create a 12-unit flat.
+      await widget.repository.addListing(listing,
+          unitCount: _propertyType == ListingType.hotel ? _unitCount : 1);
 
       if (mounted) {
         Navigator.pop(context);
@@ -832,6 +876,7 @@ class _PropertyTypeCard extends StatelessWidget {
         ListingType.room => Icons.bed,
         ListingType.fullHouse => Icons.home,
         ListingType.turf => Icons.sports_soccer,
+        ListingType.hotel => Icons.hotel,
       };
 
   String get _description => switch (type) {
@@ -844,6 +889,9 @@ class _PropertyTypeCard extends StatelessWidget {
         ListingType.turf =>
           'A sports ground rented by the hour — football, cricket, badminton '
               'and the like.',
+        ListingType.hotel =>
+          'A hotel or guest house with several rooms of the same kind, '
+              'booked by the night or for a day-use block.',
       };
 
   @override
@@ -1116,6 +1164,9 @@ class _LocationStep extends StatelessWidget {
 // Step 4: Details
 class _DetailsStep extends StatelessWidget {
   const _DetailsStep({
+    required this.type,
+    required this.roomFacts,
+    required this.onRoomFactsChanged,
     required this.maxGuests,
     required this.partyLimits,
     required this.onPartyLimitsChanged,
@@ -1130,6 +1181,9 @@ class _DetailsStep extends StatelessWidget {
     required this.onAmenityToggled,
   });
 
+  final ListingType type;
+  final RoomFacts roomFacts;
+  final ValueChanged<RoomFacts> onRoomFactsChanged;
   final int maxGuests;
   final PartyLimits partyLimits;
   final ValueChanged<PartyLimits> onPartyLimitsChanged;
@@ -1205,6 +1259,9 @@ class _DetailsStep extends StatelessWidget {
             min: 1,
             max: 10,
           ),
+          const Divider(),
+          const SizedBox(height: 8),
+          RoomFactsFields(facts: roomFacts, onChanged: onRoomFactsChanged),
           const SizedBox(height: 24),
           Text(
             'Amenities',
@@ -1221,7 +1278,7 @@ class _DetailsStep extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           // Amenities grouped by category (Essentials / Features / Power / Safety).
-          for (final group in FacilityCatalog.groups) ...[
+          for (final group in FacilityCatalog.groupsFor(type)) ...[
             const SizedBox(height: 12),
             Text(
               group.title,
@@ -1258,6 +1315,62 @@ class _DetailsStep extends StatelessWidget {
 /// no bedrooms, beds, bathrooms or party sub-caps, and gains sport, format and
 /// surface. A single widget carrying both sets behind `if (isStay)` would be
 /// two forms in a trenchcoat, and the amenity list underneath differs too.
+/// The hotel page: how many rooms, then what the hotel says about itself.
+class _HotelStep extends StatelessWidget {
+  const _HotelStep({
+    required this.unitCount,
+    required this.onUnitCountChanged,
+    required this.details,
+    required this.onDetailsChanged,
+  });
+
+  final int unitCount;
+  final ValueChanged<int> onUnitCountChanged;
+  final HotelDetails details;
+  final ValueChanged<HotelDetails> onDetailsChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'About your hotel',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'List one kind of room at a time — a Deluxe Double, say. Guests '
+            'book a room of this kind; we pick which one.',
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 32),
+          // 500 is set_listing_unit_count's ceiling; the counter is capped
+          // well below it because a tap-per-room counter is not how anyone
+          // enters 300. A larger hotel splits into room kinds anyway.
+          _CounterRow(
+            label: 'Rooms of this kind',
+            value: unitCount,
+            onChanged: onUnitCountChanged,
+            min: 1,
+            max: 100,
+          ),
+          const Divider(),
+          const SizedBox(height: 16),
+          HotelDetailsFields(details: details, onChanged: onDetailsChanged),
+        ],
+      ),
+    );
+  }
+}
+
 class _TurfStep extends StatelessWidget {
   const _TurfStep({
     required this.maxPlayers,

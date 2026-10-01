@@ -1,9 +1,17 @@
 # Hotels on Musafir — implementation plan
 
-Status: in progress. Phase 1 (147, units) and Phase 2 (148, hourly policy)
-are built and green on the local mirror as of 2026-10-02 — SQL suites, Dart
-tests, guest picker, host fields and the admin editor — and **not yet applied
-to live**. Phases 3–4 are not started. Decisions D1–D5 at the end are taken.
+Status: in progress (2026-10-02). Phases 1–2 (147 units, 148 hourly policy)
+and 149 (the `hotel` enum label) are **live**. 150 (hotel columns, Room Matrix
+facts, amenities, `set_listing_unit_count`) and the Dart hotel type (wizard
+hotel step, room count, room facts, hotel amenities, detail tiles) are built
+and green locally but **150 is not yet applied to live** — and the web build
+must not ship before it is: the save path now writes 150's columns, and
+PostgREST refuses unknown columns (PGRST204) for every listing type. Phase 4
+(151) is not started. Decisions D1–D5 at the end are taken.
+
+Not yet done from Phase 3: the listing-card badge, and the trade-licence
+requirement in the verification queue. A host who switches a hotel to another
+type keeps its units (the edit form only resizes hotels).
 
 Scope: a hotel host lists a **room category** ("Deluxe Double", 12 rooms), a
 guest books it by the night **or by the hour (minimum 6 hours)**, the database

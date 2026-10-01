@@ -143,8 +143,21 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   });
   List<Listing> getFeaturedListings({int limit = 10});
   List<Listing> getListingsByHost(String hostId);
-  Future<void> addListing(Listing listing);
+
+  /// [unitCount] is how many identical rooms the listing sells (150); the
+  /// insert trigger gives every new listing one unit, so only a count other
+  /// than 1 costs an extra call.
+  Future<void> addListing(Listing listing, {int unitCount = 1});
   Future<void> updateListing(Listing listing);
+
+  /// Active units on one of the host's own listings (`listing_unit_count`).
+  Future<int> listingUnitCount(String listingId);
+
+  /// Resizes a listing to [count] units and returns the count afterwards.
+  /// Throws a `PostgrestException` with hint `units_in_use` when shrinking
+  /// would retire a room that still has an upcoming booking -- all-or-nothing,
+  /// so the count is unchanged when it throws.
+  Future<int> setListingUnitCount(String listingId, int count);
   Future<void> deleteListing(String listingId);
 
   /// Flips only a listing's visibility (`is_active`). Unlike [updateListing]

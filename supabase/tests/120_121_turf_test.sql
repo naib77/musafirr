@@ -236,7 +236,9 @@ where name in ('Floodlights', 'Changing Room', 'Showers', 'Washroom',
 -- ── Report ───────────────────────────────────────────────────────────────
 select
   case
-    when name = '01_enum_has_turf'        and value = 'seat,room,fullHouse,turf'  then 'PASS'
+    -- A prefix, not the whole list: 149 appended 'hotel', and every later
+    -- label would break an exact match without saying anything about turf.
+    when name = '01_enum_has_turf'        and value like 'seat,room,fullHouse,turf%'  then 'PASS'
     when name = '02_columns_exist'        and value = 'turf_format,turf_sport,turf_surface' then 'PASS'
     when name = '03_turf_roundtrip'       and value = 'football|7-a-side|artificial' then 'PASS'
     when name = '04_bare_turf_is_null'    and value = 'ALL NULL'        then 'PASS'

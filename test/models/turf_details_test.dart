@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:musafir/data/facility_catalog.dart';
 import 'package:musafir/models/turf_details.dart';
+import 'package:musafir/models/listing_type.dart';
 
 void main() {
   group('wire values match the check constraints in migration 121', () {
@@ -143,8 +144,12 @@ void main() {
     });
 
     test('groupsFor picks the right list', () {
-      expect(FacilityCatalog.groupsFor(true), FacilityCatalog.groups);
-      expect(FacilityCatalog.groupsFor(false), FacilityCatalog.turfGroups);
+      expect(
+          FacilityCatalog.groupsFor(ListingType.room), FacilityCatalog.groups);
+      expect(FacilityCatalog.groupsFor(ListingType.turf),
+          FacilityCatalog.turfGroups);
+      expect(FacilityCatalog.groupsFor(ListingType.hotel),
+          FacilityCatalog.hotelGroups);
     });
 
     // Every name here must exist as a row in public.facilities or the amenity

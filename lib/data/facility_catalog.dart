@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/facility.dart';
+import '../models/listing_type.dart';
 
 /// A named group of amenities, for the grouped picker on the create/edit
 /// listing screens.
@@ -109,6 +110,27 @@ class FacilityCatalog {
   static const spectatorSeating =
       Facility(name: 'Spectator Seating', icon: Icons.event_seat_outlined);
 
+  // Hotel (migration 150). Names must match the rows 150 inserts.
+  static const frontDesk24h =
+      Facility(name: '24h Front Desk', icon: Icons.support_agent_outlined);
+  static const roomService =
+      Facility(name: 'Room Service', icon: Icons.room_service_outlined);
+  static const restaurant =
+      Facility(name: 'Restaurant', icon: Icons.restaurant_outlined);
+  static const breakfastIncluded =
+      Facility(name: 'Breakfast Included', icon: Icons.free_breakfast_outlined);
+  static const housekeeping =
+      Facility(name: 'Housekeeping', icon: Icons.cleaning_services_outlined);
+  static const gym = Facility(name: 'Gym', icon: Icons.fitness_center_outlined);
+  static const airportPickup =
+      Facility(name: 'Airport Pickup', icon: Icons.airport_shuttle_outlined);
+  static const luggageStorage =
+      Facility(name: 'Luggage Storage', icon: Icons.luggage_outlined);
+  static const inRoomSafe =
+      Facility(name: 'In-room Safe', icon: Icons.lock_outline);
+  static const keycardAccess =
+      Facility(name: 'Keycard Access', icon: Icons.key_outlined);
+
   /// Amenities grouped for the picker UI. The `name` of each must match a row
   /// in the `facilities` table (see migrations 001 + 053 + 121) or it silently
   /// won't persist.
@@ -184,9 +206,68 @@ class FacilityCatalog {
     ),
   ];
 
+  /// What a hotel host is offered. The room essentials are the stay ones; the
+  /// kitchen, freezer and washing machine are dropped (a hotel room has none,
+  /// and a host ticking "Shared Kitchen" for the restaurant downstairs is
+  /// the confusion this avoids), and a services group carries what a guest
+  /// actually compares hotels on.
+  static const hotelGroups = <FacilityGroup>[
+    FacilityGroup(
+      title: 'In the room',
+      facilities: [
+        wifi,
+        ac,
+        bath,
+        hotWater,
+        drinkingWater,
+        tv,
+        refrigerator,
+        wardrobe,
+        inRoomSafe,
+        keycardAccess,
+      ],
+    ),
+    FacilityGroup(
+      title: 'Hotel services',
+      facilities: [
+        frontDesk24h,
+        roomService,
+        restaurant,
+        breakfastIncluded,
+        housekeeping,
+        laundryService,
+        luggageStorage,
+        airportPickup,
+      ],
+    ),
+    FacilityGroup(
+      title: 'The building',
+      facilities: [
+        carParking,
+        bikeParking,
+        elevator,
+        gym,
+        swimmingPool,
+        prayerSpace,
+        sharedWorkspace,
+      ],
+    ),
+    FacilityGroup(
+      title: 'Power',
+      facilities: [generator, powerBackup],
+    ),
+    FacilityGroup(
+      title: 'Safety',
+      facilities: [smokeAlarm, fireExtinguisher, firstAid, cctv, securityGuard],
+    ),
+  ];
+
   /// The groups a given listing type should offer.
-  static List<FacilityGroup> groupsFor(bool isStay) =>
-      isStay ? groups : turfGroups;
+  static List<FacilityGroup> groupsFor(ListingType type) => switch (type) {
+        ListingType.turf => turfGroups,
+        ListingType.hotel => hotelGroups,
+        _ => groups,
+      };
 
   /// Flat list of every host-selectable amenity (all groups, both shapes).
   ///
@@ -204,6 +285,8 @@ class FacilityCatalog {
     for (final group in groups)
       for (final f in group.facilities) f.name: f,
     for (final group in turfGroups)
+      for (final f in group.facilities) f.name: f,
+    for (final group in hotelGroups)
       for (final f in group.facilities) f.name: f,
   }.values.toList(growable: false);
 

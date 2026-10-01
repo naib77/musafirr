@@ -4,6 +4,7 @@ import 'facility.dart';
 import 'listing_purpose.dart';
 import 'listing_type.dart';
 import 'rental_plan.dart';
+import 'hotel_details.dart';
 import 'turf_details.dart';
 
 class Listing {
@@ -42,6 +43,8 @@ class Listing {
     this.bathrooms = 1,
     this.partyLimits = const PartyLimits(),
     this.turfDetails = const TurfDetails(),
+    this.hotelDetails = const HotelDetails(),
+    this.roomFacts = const RoomFacts(),
     this.rating,
     this.reviewCount = 0,
     this.isSuperhost = false,
@@ -116,6 +119,13 @@ class Listing {
   /// Turf-only description (121). Empty for every other listing type, which
   /// the database enforces rather than merely expecting.
   final TurfDetails turfDetails;
+
+  /// Hotel-only description (150). Empty for every other type -- enforced by
+  /// `listings_hotel_fields_only_on_hotel`, like [turfDetails].
+  final HotelDetails hotelDetails;
+
+  /// Size, bathroom and toilet (150). Any stay type; empty on a turf.
+  final RoomFacts roomFacts;
   final double? rating;
   final int reviewCount;
   final bool isSuperhost;
@@ -295,6 +305,8 @@ class Listing {
     int? bathrooms,
     PartyLimits? partyLimits,
     TurfDetails? turfDetails,
+    HotelDetails? hotelDetails,
+    RoomFacts? roomFacts,
     double? rating,
     int? reviewCount,
     bool? isSuperhost,
@@ -338,6 +350,8 @@ class Listing {
       bathrooms: bathrooms ?? this.bathrooms,
       partyLimits: partyLimits ?? this.partyLimits,
       turfDetails: turfDetails ?? this.turfDetails,
+      hotelDetails: hotelDetails ?? this.hotelDetails,
+      roomFacts: roomFacts ?? this.roomFacts,
       rating: rating ?? this.rating,
       reviewCount: reviewCount ?? this.reviewCount,
       isSuperhost: isSuperhost ?? this.isSuperhost,
@@ -393,6 +407,8 @@ class Listing {
       bathrooms: bathrooms,
       partyLimits: partyLimits,
       turfDetails: turfDetails,
+      hotelDetails: hotelDetails,
+      roomFacts: roomFacts,
       rating: rating,
       reviewCount: reviewCount,
       isSuperhost: isSuperhost,

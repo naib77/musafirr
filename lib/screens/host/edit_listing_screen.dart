@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import '../../core/utils/responsive.dart';
 import '../../data/facility_catalog.dart';
+import '../../models/hotel_details.dart';
 import '../../models/listing.dart';
 import '../../models/listing_purpose.dart';
 import '../../models/listing_type.dart';
@@ -12,6 +14,7 @@ import '../../services/app_settings_service.dart';
 import '../../services/booking/hourly_policy.dart';
 import '../../services/image_upload_service.dart';
 import '../../widgets/app_text_field.dart';
+import '../../widgets/host/hotel_details_fields.dart';
 import '../../widgets/host/party_limits_fields.dart';
 import '../../services/listing/listing_type_scope.dart';
 import '../../widgets/host/turf_details_fields.dart';
@@ -64,6 +67,15 @@ class _EditListingScreenState extends State<EditListingScreen> {
   // listing, so a host who set none keeps none.
   late PartyLimits _partyLimits;
   late TurfDetails _turfDetails;
+  late HotelDetails _hotelDetails;
+  late RoomFacts _roomFacts;
+
+  /// The room count as the database has it, and as the host has set it.
+  /// Null until `listing_unit_count` answers: the counter is hidden until
+  /// then, because showing a default of 1 and saving it would retire every
+  /// other room of a hotel the host never meant to touch.
+  int? _savedUnitCount;
+  int? _unitCount;
 
   /// Whether the type currently selected on this form describes a place
   /// someone stays in. Read from `_propertyType`, NOT from the listing passed
@@ -128,6 +140,20 @@ class _EditListingScreenState extends State<EditListingScreen> {
     super.setState(fn);
   }
 
+  Future<void> _loadUnitCount() async {
+    try {
+      final n = await widget.repository.listingUnitCount(widget.listing.id);
+      if (!mounted) return;
+      // Seeding, not a user edit — don't let it flip the dirty flag.
+      _trackChanges = false;
+      setState(() => _savedUnitCount = _unitCount = n);
+      _trackChanges = true;
+    } catch (e) {
+      // Leaves the counter hidden; everything else on the form still saves.
+      debugPrint('listing_unit_count failed: $e');
+    }
+  }
+
   void _markDirty() {
     if (_trackChanges) _dirty = true;
   }
@@ -165,6 +191,9 @@ class _EditListingScreenState extends State<EditListingScreen> {
     _maxGuests = l.maxGuests;
     _partyLimits = l.partyLimits;
     _turfDetails = l.turfDetails;
+    _hotelDetails = l.hotelDetails;
+    _roomFacts = l.roomFacts;
+    _loadUnitCount();
     _bedrooms = l.bedrooms;
     _beds = l.beds;
     _bathrooms = l.bathrooms;
@@ -453,6 +482,8 @@ class _EditListingScreenState extends State<EditListingScreen> {
       final scoped = scopeFieldsToType(
         type: _propertyType,
         turfDetails: _turfDetails,
+        hotelDetails: _hotelDetails,
+        roomFacts: _roomFacts,
         partyLimits: _partyLimits,
         bedrooms: _bedrooms,
         beds: _beds,
@@ -573,6 +604,18 @@ class _EditListingScreenState extends State<EditListingScreen> {
         ),
       );
 
+      // Before the row update, so a refused shrink fails the save with
+      // nothing written. Only for a hotel: a host switching a hotel to a room
+      // keeps its units (the type change is the decision; retiring rooms
+      // that may hold bookings is not one this form should make silently).
+      final unitCount = _unitCount;
+      if (_propertyType == ListingType.hotel &&
+          unitCount != null &&
+          unitCount != _savedUnitCount) {
+        _savedUnitCount =
+            await widget.repository.setListingUnitCount(l.id, unitCount);
+      }
+
       await widget.repository.updateListing(updated);
 
       // Delete photos the host removed (originally uploaded, now gone).
@@ -592,6 +635,16 @@ class _EditListingScreenState extends State<EditListingScreen> {
         _dirty = false;
         Navigator.pop(context);
         ModernBanner.showSuccess(context, 'Listing updated');
+      }
+    } on PostgrestException catch (e) {
+      if (mounted) {
+        // By hint, never by message (the message carries counts).
+        ModernBanner.showError(
+            context,
+            e.hint == 'units_in_use'
+                ? 'Some of the rooms you are removing have upcoming '
+                    'bookings. Lower the count after those stays end.'
+                : 'Failed to update listing: ${e.message}');
       }
     } catch (e) {
       if (mounted) {
@@ -839,6 +892,29 @@ class _EditListingScreenState extends State<EditListingScreen> {
                   max: 10,
                   onChanged: (v) => setState(() => _bathrooms = v),
                 ),
+                const Divider(),
+                const SizedBox(height: 8),
+                RoomFactsFields(
+                  facts: _roomFacts,
+                  onChanged: (v) => setState(() => _roomFacts = v),
+                ),
+                if (_propertyType == ListingType.hotel) ...[
+                  const SizedBox(height: 20),
+                  const Divider(),
+                  if (_unitCount != null)
+                    _CounterRow(
+                      label: 'Rooms of this kind',
+                      value: _unitCount!,
+                      min: 1,
+                      max: 100,
+                      onChanged: (v) => setState(() => _unitCount = v),
+                    ),
+                  const SizedBox(height: 12),
+                  HotelDetailsFields(
+                    details: _hotelDetails,
+                    onChanged: (v) => setState(() => _hotelDetails = v),
+                  ),
+                ],
               ] else ...[
                 const SizedBox(height: 20),
                 TurfDetailsFields(
@@ -852,7 +928,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
                 style: theme.textTheme.titleMedium
                     ?.copyWith(fontWeight: FontWeight.bold),
               ),
-              for (final group in FacilityCatalog.groupsFor(_isStay)) ...[
+              for (final group in FacilityCatalog.groupsFor(_propertyType)) ...[
                 const SizedBox(height: 12),
                 Text(
                   group.title,

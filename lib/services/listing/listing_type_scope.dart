@@ -1,3 +1,4 @@
+import '../../models/hotel_details.dart';
 import '../../models/listing.dart';
 import '../../models/listing_type.dart';
 import '../../models/turf_details.dart';
@@ -7,6 +8,8 @@ import '../../models/turf_details.dart';
 class TypeScopedFields {
   const TypeScopedFields({
     required this.turfDetails,
+    required this.hotelDetails,
+    required this.roomFacts,
     required this.partyLimits,
     required this.bedrooms,
     required this.beds,
@@ -16,6 +19,8 @@ class TypeScopedFields {
   });
 
   final TurfDetails turfDetails;
+  final HotelDetails hotelDetails;
+  final RoomFacts roomFacts;
   final PartyLimits partyLimits;
   final int bedrooms;
   final int beds;
@@ -56,12 +61,22 @@ class TypeScopedFields {
 ///   in `search_listings` (118), so a turf carrying a stale `true` would be
 ///   offered to someone searching for somewhere that takes their dog.
 ///
+/// * **Publishing anything but a hotel** clears the hotel trio (150). Same
+///   reason as turf: `listings_hotel_fields_only_on_hotel` refuses the row.
+///   A hotel → room switch is the likely one — a guest house re-filed as
+///   rooms — and the star rating it would otherwise carry is fatal.
+/// * **Publishing a turf** clears the Room Matrix facts (150). The database
+///   allows them on any type, but "attached bathroom, 180 sq ft" on a pitch
+///   is the same lie as "1 bedroom". Every stay keeps them.
+///
 /// `maxGuests` is deliberately **not** scoped. It is the same column and the
 /// same question for both — how many people fit — and a turf simply calls the
 /// answer "players". That is why 121 added no capacity column of its own.
 TypeScopedFields scopeFieldsToType({
   required ListingType type,
   required TurfDetails turfDetails,
+  required HotelDetails hotelDetails,
+  required RoomFacts roomFacts,
   required PartyLimits partyLimits,
   required int bedrooms,
   required int beds,
@@ -72,6 +87,9 @@ TypeScopedFields scopeFieldsToType({
   final isStay = type.isStay;
   return TypeScopedFields(
     turfDetails: isStay ? const TurfDetails() : turfDetails,
+    hotelDetails:
+        type == ListingType.hotel ? hotelDetails : const HotelDetails(),
+    roomFacts: isStay ? roomFacts : const RoomFacts(),
     partyLimits: isStay ? partyLimits : const PartyLimits(),
     bedrooms: isStay ? bedrooms : 0,
     beds: isStay ? beds : 0,

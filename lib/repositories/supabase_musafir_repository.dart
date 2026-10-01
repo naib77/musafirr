@@ -25,6 +25,7 @@ import '../models/listing.dart';
 import '../models/listing_exact_address.dart';
 import '../models/listing_purpose.dart';
 import '../models/listing_type.dart';
+import '../models/hotel_details.dart';
 import '../models/turf_details.dart';
 import '../models/owner_registration_draft.dart';
 import '../models/review.dart';
@@ -668,6 +669,11 @@ class SupabaseMusafirRepository extends ChangeNotifier
         format: turfFormatFromWire(json['turf_format'] as String?),
         surface: turfSurfaceFromWire(json['turf_surface'] as String?),
       ),
+      // Same tolerance (150): an out-of-range or unknown value reads as
+      // unstated. A row from a database without 150 has none of these keys
+      // and reads as empty.
+      hotelDetails: HotelDetails.fromJson(json),
+      roomFacts: RoomFacts.fromJson(json),
       rating: (json['rating'] as num?)?.toDouble(),
       reviewCount: json['review_count'] as int? ?? 0,
       isSuperhost: json['is_superhost'] as bool? ?? false,
@@ -748,6 +754,13 @@ class SupabaseMusafirRepository extends ChangeNotifier
       'turf_sport': listing.turfDetails.sport?.name,
       'turf_format': listing.turfDetails.format?.wireName,
       'turf_surface': listing.turfDetails.surface?.name,
+      // Same rule for the hotel trio (150), and the Room Matrix facts beside
+      // them. DEPLOY ORDER: PostgREST refuses a write naming a column it does
+      // not have (PGRST204), so a build carrying these keys must not reach
+      // users before 150 is live -- unlike the read side, this direction
+      // breaks every listing save, not just hotels.
+      ...listing.hotelDetails.toJson(),
+      ...listing.roomFacts.toJson(),
       // Per-plan booking limits.
       'min_hours': listing.bookingLimits.minHours,
       'max_hours': listing.bookingLimits.maxHours,
@@ -907,6 +920,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
       'room' => ListingType.room,
       'fullhouse' || 'full_house' => ListingType.fullHouse,
       'turf' => ListingType.turf,
+      'hotel' => ListingType.hotel,
       // Falling back to `room` rather than throwing is deliberate: a build
       // older than a listing_type migration must keep rendering the rest of
       // the feed. It does mean a type this app has never heard of shows up
@@ -1502,7 +1516,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
   }
 
   @override
-  Future<void> addListing(Listing listing) async {
+  Future<void> addListing(Listing listing, {int unitCount = 1}) async {
     // Optimistic add for instant UI feedback (carries the client temp id).
     _listings.add(listing);
     notifyListeners();
@@ -1521,6 +1535,11 @@ class SupabaseMusafirRepository extends ChangeNotifier
       await _saveListingFacilities(realId, listing.facilities);
       await _saveCheckInDetails(realId, listing.checkInDetails);
       await _saveListingExactAddress(realId, listing);
+      // After the insert, not in it: units are a separate table the insert
+      // trigger seeds with one row (147). A failure here leaves a listing
+      // with one room, which the host can fix from the edit screen -- better
+      // than rolling back a listing whose photos are already uploaded.
+      if (unitCount != 1) await setListingUnitCount(realId, unitCount);
 
       // Drop the temp-id copy; _refreshListings brings in the canonical row.
       _listings.removeWhere((l) => l.id == listing.id);
@@ -1532,6 +1551,20 @@ class SupabaseMusafirRepository extends ChangeNotifier
       debugPrint('Error adding listing: $e');
       rethrow;
     }
+  }
+
+  @override
+  Future<int> listingUnitCount(String listingId) async {
+    final n = await _client
+        .rpc('listing_unit_count', params: {'p_listing_id': listingId});
+    return (n as num).toInt();
+  }
+
+  @override
+  Future<int> setListingUnitCount(String listingId, int count) async {
+    final n = await _client.rpc('set_listing_unit_count',
+        params: {'p_listing_id': listingId, 'p_count': count});
+    return (n as num).toInt();
   }
 
   @override
