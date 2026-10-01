@@ -110,7 +110,7 @@ void main() {
 
   /// Opened steps are appended to [opened], so a test can assert on taps.
   Future<void> pumpOverview(WidgetTester t, Map<String, dynamic> status,
-      {double width = 1000, List<String>? opened}) async {
+      {double width = 1000, List<String>? opened, bool? nidResult}) async {
     t.view.physicalSize = Size(width, 900);
     t.view.devicePixelRatio = 1;
     addTearDown(t.view.resetPhysicalSize);
@@ -124,7 +124,10 @@ void main() {
         home: VerificationOverviewScreen(
             userId: 'u',
             loadStatus: () async => status,
-            openNid: () async => opened?.add('nid'),
+            openNid: () async {
+              opened?.add('nid');
+              return nidResult;
+            },
             openFace: () async => opened?.add('face'))));
     await t.pumpAndSettle();
   }
@@ -152,7 +155,7 @@ void main() {
     });
   }
 
-  testWidgets('face required: face step stays locked until a document is sent',
+  testWidgets('face required: face step is hidden until a document is sent',
       (t) async {
     await pumpOverview(t, {
       'status': 'none',
@@ -160,13 +163,43 @@ void main() {
       'face_status': 'none',
       'face_required': true,
     });
-    expect(find.text('Submit your identity document first'), findsOneWidget);
-    final face = t.widget<OutlinedButton>(
-        find.widgetWithText(OutlinedButton, 'Open face review'));
-    expect(face.onPressed, isNull);
+    expect(find.text('Open face review'), findsNothing);
+    expect(find.textContaining('opens after you submit your document'),
+        findsOneWidget);
     final nid = t.widget<OutlinedButton>(
         find.widgetWithText(OutlinedButton, 'Open document review'));
     expect(nid.onPressed, isNotNull);
+  });
+
+  testWidgets('face required: "Next" from the document goes to the face step',
+      (t) async {
+    final opened = <String>[];
+    await pumpOverview(
+        t,
+        {
+          'status': 'none',
+          'nid_status': 'none',
+          'face_status': 'none',
+          'face_required': true,
+        },
+        opened: opened,
+        nidResult: true);
+    await tap(t, find.text('Open document review'));
+    expect(opened, ['nid', 'face']);
+  });
+
+  testWidgets('submitted document offers "Next" only when a face step follows',
+      (t) async {
+    for (final faceNext in [true, false]) {
+      await t.pumpWidget(MaterialApp(
+          key: ValueKey(faceNext),
+          home: NidVerificationScreen(
+              repository: FakeNidRepository()..state = 'pending',
+              faceNext: faceNext)));
+      await t.pumpAndSettle();
+      expect(find.text('Next: live face check'),
+          faceNext ? findsOneWidget : findsNothing);
+    }
   });
 
   testWidgets('face not required: only the document step is shown', (t) async {
