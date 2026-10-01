@@ -1242,6 +1242,43 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.admin_approve_verification(p_user_id uuid, p_document_type text, p_front_path text, p_back_path text DEFAULT NULL::text, p_face_attempt_id uuid DEFAULT NULL::uuid, p_face_evidence_version uuid DEFAULT NULL::uuid, p_note text DEFAULT ''::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare p public.profiles; identity_done boolean:=false; face_done boolean:=false;
+begin
+  if auth.uid() is null or not public.is_admin() or auth.uid()=p_user_id then
+    raise exception 'Another admin must approve this verification' using errcode='42501'; end if;
+  select * into p from public.profiles where id=p_user_id for update;
+  if not found then raise exception 'Account not found'; end if;
+
+  if p.verification_status='pending' then
+    perform public.approve_identity_document(p_user_id,p_document_type,p_front_path,p_back_path);
+    identity_done:=true;
+  elsif not (p.verification_status='verified' and coalesce(p.nid_verified,false)) then
+    raise exception 'No identity document is waiting for review. Refresh the queue';
+  end if;
+
+  if p_face_attempt_id is not null then
+    if (select user_id from public.face_verification_attempts where id=p_face_attempt_id) is distinct from p_user_id then
+      raise exception 'Face submission belongs to another account' using errcode='42501'; end if;
+    perform public.review_face_verification(p_face_attempt_id,p_face_evidence_version,'approved',coalesce(p_note,''));
+    face_done:=true;
+  elsif public.face_review_required() and not coalesce((select status='approved'
+      from public.face_verification_attempts where user_id=p_user_id
+      order by created_at desc,id desc limit 1),false) then
+    raise exception 'Face verification is required and this person has not submitted one yet';
+  end if;
+
+  if not identity_done and not face_done then
+    raise exception 'Nothing is waiting for review. Refresh the queue'; end if;
+  return jsonb_build_object('identity_approved',identity_done,'face_approved',face_done);
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.admin_auto_complete_bookings()
  RETURNS integer
  LANGUAGE plpgsql
@@ -1560,6 +1597,41 @@ begin
    where id = p_payment_id;
 
   return jsonb_build_object('payment_id', p_payment_id, 'status', 'failed');
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.admin_reject_verification(p_user_id uuid, p_reason text, p_face_attempt_id uuid DEFAULT NULL::uuid, p_face_evidence_version uuid DEFAULT NULL::uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare p public.profiles; reason text:=btrim(coalesce(p_reason,'')); identity_done boolean:=false; face_done boolean:=false;
+begin
+  if auth.uid() is null or not public.is_admin() or auth.uid()=p_user_id then
+    raise exception 'Another admin must review this verification' using errcode='42501'; end if;
+  if reason='' then raise exception 'A rejection reason is required'; end if;
+  if length(reason)>500 then raise exception 'Keep the reason under 500 characters'; end if;
+  select * into p from public.profiles where id=p_user_id for update;
+  if not found then raise exception 'Account not found'; end if;
+
+  if p.verification_status='pending' then
+    update public.owner_documents set verified_at=null,verified_by=null,rejection_reason=reason
+      where user_id=p_user_id and document_type in ('nid_front','nid_back');
+    update public.profiles set verification_status='rejected',nid_verified=false where id=p_user_id;
+    identity_done:=true;
+  end if;
+
+  if p_face_attempt_id is not null then
+    if (select user_id from public.face_verification_attempts where id=p_face_attempt_id) is distinct from p_user_id then
+      raise exception 'Face submission belongs to another account' using errcode='42501'; end if;
+    perform public.review_face_verification(p_face_attempt_id,p_face_evidence_version,'rejected',reason);
+    face_done:=true;
+  end if;
+
+  if not identity_done and not face_done then
+    raise exception 'Nothing is waiting for review. Refresh the queue'; end if;
+  return jsonb_build_object('identity_rejected',identity_done,'face_rejected',face_done);
 end;
 $function$;
 
@@ -2970,6 +3042,17 @@ begin
   get diagnostics v_count = row_count;
   return v_count;
 end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.face_review_required()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  -- Exact 'true' check, the same one start_face_verification makes, so the
+  -- switch can never read as "required" while captures are refused.
+  select coalesce((select value='true' from public.app_settings where key='face_review_enabled'),false);
 $function$;
 
 CREATE OR REPLACE FUNCTION public.face_verification_status()
@@ -4603,11 +4686,12 @@ CREATE OR REPLACE FUNCTION public.has_approved_face_or_identity(p_user_id uuid)
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-  -- Retain the function signature used by booking and publishing callers.
+  -- Signature kept: create_marketplace_booking and can_publish_listings call it.
   select exists(select 1 from public.profiles where id=p_user_id
     and verification_status='verified' and nid_verified)
-    and coalesce((select status='approved' from public.face_verification_attempts
-      where user_id=p_user_id order by created_at desc,id desc limit 1),false);
+    and (not public.face_review_required()
+      or coalesce((select status='approved' from public.face_verification_attempts
+        where user_id=p_user_id order by created_at desc,id desc limit 1),false));
 $function$;
 
 CREATE OR REPLACE FUNCTION public.host_leaderboard_ranked(p_period text)
@@ -7513,13 +7597,20 @@ CREATE OR REPLACE FUNCTION public.verification_overview()
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-declare n jsonb; f jsonb; state text;
+declare n jsonb; f jsonb; state text; required boolean:=public.face_review_required();
 begin
   n:=public.nid_verification_status(); f:=public.face_verification_status();
-  state:=case when n->>'status'='verified' and f->>'status'='verified' then 'verified'
-    when n->>'status' in ('pending','verified') and f->>'status' in ('pending','verified') then 'pending'
-    else 'none' end;
-  return jsonb_build_object('status',state,'nid_status',n->>'status','face_status',f->>'status','face_enabled',f->'enabled');
+  if not required then
+    state:=case when n->>'status'='verified' then 'verified'
+      when n->>'status'='pending' then 'pending' else 'none' end;
+  else
+    state:=case when n->>'status'='verified' and f->>'status'='verified' then 'verified'
+      when n->>'status' in ('pending','verified') and f->>'status' in ('pending','verified') then 'pending'
+      else 'none' end;
+  end if;
+  -- face_enabled is kept for builds that predate face_required.
+  return jsonb_build_object('status',state,'nid_status',n->>'status','face_status',f->>'status',
+    'face_enabled',required,'face_required',required);
 end;
 $function$;
 
@@ -8488,6 +8579,9 @@ grant execute on function public.add_payout_method(p_channel text, p_account_nam
 grant execute on function public.add_payout_method(p_channel text, p_account_name text, p_account_number text, p_bank_name text, p_branch_name text, p_routing_number text) to service_role;
 revoke all on function public.admin_add_sms_recipients(p_campaign_id uuid, p_rows jsonb) from public, anon, authenticated, service_role;
 grant execute on function public.admin_add_sms_recipients(p_campaign_id uuid, p_rows jsonb) to service_role;
+revoke all on function public.admin_approve_verification(p_user_id uuid, p_document_type text, p_front_path text, p_back_path text, p_face_attempt_id uuid, p_face_evidence_version uuid, p_note text) from public, anon, authenticated, service_role;
+grant execute on function public.admin_approve_verification(p_user_id uuid, p_document_type text, p_front_path text, p_back_path text, p_face_attempt_id uuid, p_face_evidence_version uuid, p_note text) to service_role;
+grant execute on function public.admin_approve_verification(p_user_id uuid, p_document_type text, p_front_path text, p_back_path text, p_face_attempt_id uuid, p_face_evidence_version uuid, p_note text) to authenticated;
 revoke all on function public.admin_auto_complete_bookings() from public, anon, authenticated, service_role;
 grant execute on function public.admin_auto_complete_bookings() to public;
 grant execute on function public.admin_auto_complete_bookings() to anon;
@@ -8512,6 +8606,9 @@ revoke all on function public.admin_register_device(p_user_id uuid, p_device_id 
 grant execute on function public.admin_register_device(p_user_id uuid, p_device_id text, p_platform text) to service_role;
 revoke all on function public.admin_reject_payment(p_payment_id uuid, p_reason text) from public, anon, authenticated, service_role;
 grant execute on function public.admin_reject_payment(p_payment_id uuid, p_reason text) to service_role;
+revoke all on function public.admin_reject_verification(p_user_id uuid, p_reason text, p_face_attempt_id uuid, p_face_evidence_version uuid) from public, anon, authenticated, service_role;
+grant execute on function public.admin_reject_verification(p_user_id uuid, p_reason text, p_face_attempt_id uuid, p_face_evidence_version uuid) to service_role;
+grant execute on function public.admin_reject_verification(p_user_id uuid, p_reason text, p_face_attempt_id uuid, p_face_evidence_version uuid) to authenticated;
 revoke all on function public.admin_release_payment(p_payment_id uuid) from public, anon, authenticated, service_role;
 grant execute on function public.admin_release_payment(p_payment_id uuid) to service_role;
 revoke all on function public.admin_retry_sms_failures(p_campaign_id uuid) from public, anon, authenticated, service_role;
@@ -8595,6 +8692,9 @@ revoke all on function public.expire_stale_bookings() from public, anon, authent
 grant execute on function public.expire_stale_bookings() to service_role;
 revoke all on function public.expire_stale_payment_attempts() from public, anon, authenticated, service_role;
 grant execute on function public.expire_stale_payment_attempts() to service_role;
+revoke all on function public.face_review_required() from public, anon, authenticated, service_role;
+grant execute on function public.face_review_required() to service_role;
+grant execute on function public.face_review_required() to authenticated;
 revoke all on function public.face_verification_status() from public, anon, authenticated, service_role;
 grant execute on function public.face_verification_status() to authenticated;
 grant execute on function public.face_verification_status() to service_role;
