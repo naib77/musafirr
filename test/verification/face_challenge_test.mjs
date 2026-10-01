@@ -70,3 +70,17 @@ test('a detected head turn tolerates small threshold jitter while held',()=>{
   assert.equal(d.challenge.phase,'return');
   d.frames(); assert.equal(d.challenge.index,1);
 });
+test('a natural blink that peaks near 0.5 completes the blink step',()=>{
+  const d=driver(); d.frames(); d.frames({blink:.5},1); d.frames();
+  assert.equal(d.challenge.index,1);
+});
+test('eyes that rest narrow can start, blink, and reopen',()=>{
+  const d=driver(); d.frames({blink:.38},6); assert.equal(d.challenge.phase,'action');
+  d.frames({blink:.5},1); assert.equal(d.challenge.phase,'action');
+  d.frames({blink:.75},1); d.frames({blink:.38},6);
+  assert.equal(d.challenge.index,1);
+});
+test('a squint below the blink threshold does not count',()=>{
+  const d=driver(); d.frames({blink:.05},6); d.frames({blink:.28},5);
+  assert.equal(d.challenge.index,0); assert.equal(d.challenge.phase,'action');
+});
