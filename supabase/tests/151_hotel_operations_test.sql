@@ -68,8 +68,9 @@ select pg_temp.check_true((select booking_status::text='confirmed' and confirmed
 select pg_temp.check_true((select count(*)=1 from public.notifications n join public.bookings b on (n.data->>'booking_id')::uuid=b.id
   where b.listing_id=:HL and n.user_id=:H and n.title='New Instant Booking'),'the host is notified of the instant booking');
 
-select pg_temp.check_true(pg_temp.book(:GV,:PL,date_trunc('hour',now())+interval '50 days',date_trunc('hour',now())+interval '50 days 6 hours')='OK','request listing: the guest books');
-select pg_temp.check_true((select booking_status::text='pending' and confirmed_at is null from public.bookings where listing_id=:PL and tenant_id=:GV),
+-- R2, not GV: bookings_no_tenant_overlap refuses one guest two stays at once.
+select pg_temp.check_true(pg_temp.book(:R2,:PL,date_trunc('hour',now())+interval '50 days',date_trunc('hour',now())+interval '50 days 6 hours')='OK','request listing: the guest books');
+select pg_temp.check_true((select booking_status::text='pending' and confirmed_at is null from public.bookings where listing_id=:PL and tenant_id=:R2),
   'an ordinary listing still waits for the host');
 
 ----------------------------------------------------------------------------
