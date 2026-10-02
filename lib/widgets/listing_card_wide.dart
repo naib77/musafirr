@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 
 import '../core/utils/distance_format.dart';
+import '../models/hotel_details.dart';
 import '../models/listing.dart';
 import '../models/listing_type.dart';
 import '../models/turf_details.dart';
@@ -271,6 +272,18 @@ class _ListingCardWideState extends State<ListingCardWide> {
         if (turf.format != null) turf.format!.label,
         if (turf.sport != null) turf.sport!.label,
         _plural(listing.maxGuests, 'player'),
+      ].join(' · ');
+    }
+    if (listing.type == ListingType.hotel) {
+      // A hotel room's bedroom count is always one and says nothing; its
+      // class and bathroom are what a guest compares hotels on (150). Each
+      // only when the host stated it.
+      final hotel = listing.hotelDetails;
+      final bath = listing.roomFacts.bathroom;
+      return [
+        hotel.starRating != null ? '${hotel.starRating}★ hotel' : 'Hotel',
+        if (bath != null) '${bath.label} bath',
+        _plural(listing.maxGuests, 'guest'),
       ].join(' · ');
     }
     return [

@@ -394,3 +394,37 @@ layer above the host's and one check that reads both.
 - Nightly and monthly are untouched: the check is not called for them and
   `minFor`/`maxFor` still apply.
 
+
+### A hotel is a listing with many units, and only the RPC resizes it (150, applied 2026-10-02)
+
+147 gave every listing one unit and no way to add another. 150 adds
+`set_listing_unit_count(listing, n)`, the only way a host changes how many
+rooms a listing sells.
+
+- **Shrinking deactivates, never deletes.** `bookings.unit_id` references the
+  unit, and history must keep pointing somewhere. Growing reactivates the
+  oldest inactive units first, so 10 → 8 → 10 gives back the same rooms.
+- **All-or-nothing, by hint.** If fewer free units exist than the shrink
+  needs (free = no pending/confirmed/active booking ending after now()), it
+  raises 22023 with hint `units_in_use` and changes nothing. The edit screen
+  maps that hint, never the message (the message carries counts).
+- **The race.** The booking RPC picks a unit `for update of u skip locked`.
+  The resize locks every active unit `for update` (waiting) *before* checking
+  bookings, so a booking already holding a unit is seen, and one that starts
+  later skips the unit being retired.
+- **Definer, so it guards itself.** It must see every guest's booking, not
+  what the host's RLS shows, and it does its own owner/admin check (42501
+  `not_listing_owner`). `listing_unit_count` is invoker and RLS-gated.
+- **The edit form only resizes hotels**, and only after the count has
+  loaded. A default of 1 saved before the load answered would retire every
+  other room.
+
+The hotel trio (`hotel_star_rating`, `hotel_front_desk_24h`,
+`hotel_id_required`) is guarded like turf's (`listings_hotel_fields_only_on_hotel`),
+so `scopeFieldsToType` clears it whenever the type is not hotel. The Room
+Matrix facts (`size_sqft`, `bathroom_kind`, `toilet_kind`) describe any stay
+and carry no type guard; they are cleared only for a turf.
+
+**Deploy order:** the save path writes all six columns on every listing, and
+PostgREST refuses an unknown column (PGRST204). A build carrying them breaks
+*every* listing save on a database without 150. Live first, then build.

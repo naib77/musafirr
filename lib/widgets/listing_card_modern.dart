@@ -344,7 +344,11 @@ class _ListingCardModernState extends State<ListingCardModern>
               ),
             ),
           TextSpan(
-            text: listing.type.title,
+            // "3★ Hotel" when the host stated a class (150): on the grid card
+            // this badge is the only place a guest sees it before tapping.
+            text: listing.hotelDetails.starRating != null
+                ? '${listing.hotelDetails.starRating}★ ${listing.type.title}'
+                : listing.type.title,
             style: const TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w700,

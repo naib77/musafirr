@@ -118,6 +118,10 @@ changing that area; it records what was measured and why.
   never widens. `hourly_booking_check` refuses in a fixed order (disabled,
   floor, max, slot, window) with `hourly_*` hints; the Dart `HourlyRule`
   mirrors that order and shares the SQL suite's fixture table.
+- A hotel's room count changes only through `set_listing_unit_count`:
+  shrink deactivates, is all-or-nothing (hint `units_in_use`), and locks the
+  units before checking bookings. Saves write 150's columns on every type, so
+  150 must be live before a build that sends them (PGRST204).
 
 **Database — security**
 ([database-security.md](docs/notes/database-security.md))
