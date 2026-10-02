@@ -10,6 +10,7 @@ import '../../models/room_labels.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../services/verification/publish_gate.dart';
 import '../../state/auth_state.dart';
+import '../../widgets/app_network_image.dart';
 import '../../widgets/app_text_field.dart';
 import '../../widgets/host/trade_licence_card.dart';
 import '../../widgets/modern_banner.dart';
@@ -19,7 +20,8 @@ import 'property_form_screen.dart';
 
 /// One hotel and its room types (plan §8): the hotel's facts, each room
 /// type with its rooms by name, and the actions a host takes on them later
-/// -- add rooms, retire one, move one to another type, duplicate a type.
+/// -- add rooms, retire one, move one to another type, duplicate or delete a
+/// type, delete the whole hotel.
 ///
 /// Rooms are written only through 153's RPCs, so every refusal here comes
 /// back as a hint and is worded by [propertyRefusalMessage].
@@ -258,6 +260,74 @@ class _PropertyDashboardScreenState extends State<PropertyDashboardScreen> {
     );
   }
 
+  /// Asks before a delete; the body says what goes with it.
+  Future<bool> _confirmDelete(String title, String body) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
+  Future<void> _deleteType(Listing type) async {
+    final ok = await _confirmDelete(
+      'Delete ${type.title}?',
+      'Its rooms, photos and rates go with it. This cannot be undone. A room '
+          'type with upcoming bookings cannot be deleted -- hide it instead '
+          'from Edit.',
+    );
+    if (!ok) return;
+    // Refusals (live bookings, paid history) come back as 156's hints.
+    await _roomWrite(
+      () => widget.repository.deleteRoomType(type.id),
+      '${type.title} deleted',
+    );
+  }
+
+  Future<void> _deleteHotel() async {
+    final n = _types.length;
+    final ok = await _confirmDelete(
+      'Delete ${_property.name}?',
+      'The hotel${n == 0 ? '' : ' and its $n room ${n == 1 ? 'type' : 'types'}'} '
+          'will be removed for good. A hotel with upcoming bookings cannot be '
+          'deleted.',
+    );
+    if (!ok) return;
+    try {
+      await widget.repository.deleteProperty(_property.id);
+      if (!mounted) return;
+      ModernBanner.showSuccess(context, '${_property.name} deleted');
+      // Nothing left to show here; the hotel list refreshes off the
+      // repository's notify.
+      Navigator.pop(context);
+    } on PostgrestException catch (e) {
+      if (mounted) {
+        ModernBanner.showError(context, propertyRefusalMessage(e.hint));
+      }
+    } catch (_) {
+      if (mounted) {
+        ModernBanner.showError(context, propertyRefusalMessage(null));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -273,6 +343,15 @@ class _PropertyDashboardScreenState extends State<PropertyDashboardScreen> {
             tooltip: 'Edit hotel',
             icon: const Icon(Icons.edit_outlined),
             onPressed: _editHotel,
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'More hotel actions',
+            onSelected: (v) {
+              if (v == 'delete') _deleteHotel();
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'delete', child: Text('Delete hotel')),
+            ],
           ),
         ],
       ),
@@ -322,6 +401,7 @@ class _PropertyDashboardScreenState extends State<PropertyDashboardScreen> {
                     canMove: _types.length > 1,
                     onEdit: () => _editType(t),
                     onDuplicate: () => _addRoomType(duplicateFrom: t),
+                    onDelete: () => _deleteType(t),
                     onAddRooms: () => _addRooms(t),
                     onRename: (u) => _renameRoom(u, _active(t.id)),
                     onMove: (u) => _moveRoom(u, t),
@@ -383,6 +463,7 @@ class _RoomTypeCard extends StatelessWidget {
     required this.canMove,
     required this.onEdit,
     required this.onDuplicate,
+    required this.onDelete,
     required this.onAddRooms,
     required this.onRename,
     required this.onMove,
@@ -394,6 +475,7 @@ class _RoomTypeCard extends StatelessWidget {
   final bool canMove;
   final VoidCallback onEdit;
   final VoidCallback onDuplicate;
+  final VoidCallback onDelete;
   final VoidCallback onAddRooms;
   final ValueChanged<ListingUnit> onRename;
   final ValueChanged<ListingUnit> onMove;
@@ -412,6 +494,29 @@ class _RoomTypeCard extends StatelessWidget {
           children: [
             Row(
               children: [
+                // Each type has its own photos (Edit → Photos); the
+                // thumbnail is what tells the host which is which.
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: type.primaryImage == null
+                      ? Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(Icons.bed_outlined,
+                              color: theme.colorScheme.onSurfaceVariant),
+                        )
+                      : AppNetworkImage(
+                          url: type.primaryImage!,
+                          width: 56,
+                          height: 56,
+                          decodeWidth: 168,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                ),
                 Expanded(
                   child: Text(
                     type.title,
@@ -429,11 +534,14 @@ class _RoomTypeCard extends StatelessWidget {
                   onSelected: (v) => switch (v) {
                     'edit' => onEdit(),
                     'duplicate' => onDuplicate(),
+                    'delete' => onDelete(),
                     _ => null,
                   },
                   itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'edit', child: Text('Edit')),
+                    PopupMenuItem(
+                        value: 'edit', child: Text('Edit details & photos')),
                     PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
+                    PopupMenuItem(value: 'delete', child: Text('Delete')),
                   ],
                 ),
               ],

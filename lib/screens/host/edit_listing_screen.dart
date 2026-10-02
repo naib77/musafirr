@@ -13,6 +13,7 @@ import '../../repositories/musafir_repository.dart';
 import '../../services/app_settings_service.dart';
 import '../../services/booking/hourly_policy.dart';
 import '../../services/image_upload_service.dart';
+import '../../services/storage/storage_url.dart';
 import '../../widgets/app_text_field.dart';
 import '../../widgets/host/hotel_details_fields.dart';
 import '../../widgets/host/trade_licence_card.dart';
@@ -335,12 +336,9 @@ class _EditListingScreenState extends State<EditListingScreen> {
 
   /// Derives the storage path ("{listingId}/{file}") from a public image URL,
   /// needed to delete the file when a host removes a photo.
-  String? _storagePathFromUrl(String url) {
-    const marker = '/${StorageBuckets.listingImages}/';
-    final i = url.indexOf(marker);
-    if (i == -1) return null;
-    return url.substring(i + marker.length);
-  }
+  /// The shared resolver (one copy for this form and the other listing form).
+  String? _storagePathFromUrl(String url) =>
+      storagePathFromUrl(url, bucket: StorageBuckets.listingImages);
 
   /// Pulls the host's own street address out of the gated table. `public.listings`
   /// only carries the area-level form, so without this the edit form would show a
