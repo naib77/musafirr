@@ -12,8 +12,10 @@ them at startup and **fails open** to compiled-in defaults.
 Current keys include the proof-of-address requirement, cash payments, the
 search area (`search_radius_tiers_m`, `search_landmark_radius_m`,
 `search_nearest_fallback_limit`), the colour theme (`active_theme`), the
-host-response window (`booking_accept_window_hours`) and the forced-update
-floor (`android_min_version_code`). Values are validated on
+host-response window (`booking_accept_window_hours`), the forced-update
+floor (`android_min_version_code`) and the hourly-stay policy
+(`hourly_policy`, a JSON document per listing type — the one structured key;
+see the 148 section of `database-booking-and-search.md`). Values are validated on
 write — `fn_validate_app_setting` is a CASE dispatching to one
 `fn_validate_setting_*` per key — so a bad value is refused at the source
 rather than silently sanitised. **Adding a key means adding an arm to that
@@ -88,7 +90,7 @@ the OS or the browser paints them before any Dart runs: `values/colors.xml`,
 `values-v31/styles.xml`, `LaunchScreen.storyboard`, `web/manifest.json`, the
 `web/index.html` boot splash, `tool/gen_brand_assets.py`, and — by choice, to
 end the chain in the same colour — `SplashScreen` via
-[`Brand.rose`](lib/core/theme/brand.dart). That file lists all seven; if the
+[`Brand.rose`](../../lib/core/theme/brand.dart). That file lists all seven; if the
 brand colour changes they all change together, and nothing can automate it.
 
 `SplashScreen` used to paint `colorScheme.primary`. With the default

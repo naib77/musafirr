@@ -1,7 +1,7 @@
 -- =============================================
 -- 126 — reaping device rows that stopped meaning anything
 --
--- Completes docs/DEVICE_SESSIONS.md's fifth principle: "a device is not a
+-- Completes docs/features/device-sessions.md's fifth principle: "a device is not a
 -- session — reinstalling must not burn a slot forever". 123-125 gave every row
 -- a `last_seen_at` and nothing ever read it for this purpose, so the table grew
 -- without bound and a phone sold two years ago stayed in the list forever.

@@ -5,7 +5,7 @@ The short rule for each section is still in `CLAUDE.md`; the reasoning is here.
 
 ### Bulk SMS is a queue, and the phone column is a gate (128)
 
-The console can send one message to many people. `docs/BULK_SMS.md` is the
+The console can send one message to many people. `docs/features/bulk-sms.md` is the
 whole design; the parts that will bite you:
 
 - **`profiles.mobile` is not a send key.** 44 profiles, 40 distinct numbers,
@@ -52,7 +52,7 @@ whole design; the parts that will bite you:
 
 ### Bulk notifications are NOT the bulk-SMS design (129)
 
-`docs/BULK_NOTIFICATIONS.md`. Same console, deliberately different machinery,
+`docs/features/bulk-notifications.md`. Same console, deliberately different machinery,
 because delivery already existed: `on_notification_send_push` fires on every
 insert into `notifications`, so a campaign is one `insert … select` in one
 transaction. **No queue, no worker, no cron sweep, no retry** — there is no

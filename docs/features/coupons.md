@@ -2,7 +2,7 @@
 
 Simple coupon-code discounts. **Admins create codes; guests redeem them at
 checkout.** Two discount kinds: `percentage` and `flat`. Defined in migration
-[`supabase/migrations/069_coupons.sql`](../supabase/migrations/069_coupons.sql)
+[`supabase/migrations/069_coupons.sql`](../../supabase/migrations/069_coupons.sql)
 (already applied to the live DB `bojkmonskqlhuakxhzcb`).
 
 ## Tables

@@ -86,7 +86,7 @@ class _MusafirAppState extends State<MusafirApp> {
     // user's own "Your devices" screen, or a max_devices_per_user eviction.
     // The real sign-out already happened server-side (the auth.sessions row is
     // gone); this only stops the app running on a stale access token for the
-    // rest of its hour. See docs/DEVICE_SESSIONS.md.
+    // rest of its hour. See docs/features/device-sessions.md.
     DeviceSessionWatcher.instance.start(onRevoked: _onSignedOutElsewhere);
 
     // Web only: track whether the browser can add Musaafir to the home screen,

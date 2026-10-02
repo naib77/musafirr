@@ -169,9 +169,9 @@ if trg:
 
 dest = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                     "..", "..", "..", "..", "..", "..")
-# write to repo docs/
+# write to repo docs/schema/
 repo = "/Users/naib/workspaces/personal/projects/musafirr"
-path = os.path.join(repo, "docs", "live_schema.sql")
+path = os.path.join(repo, "docs", "schema", "live_schema.sql")
 with open(path, "w") as fh:
     fh.write("\n".join(out) + "\n")
 

@@ -17,7 +17,7 @@ piece by piece as each duplicate actually cost something.
 ### The mobile sheet folds; the desktop bar does not
 
 `_SearchSheet` is an accordion of three [`SearchSection`
-](lib/widgets/search/search_section.dart) cards — Where / When / Who, exactly
+](../../lib/widgets/search/search_section.dart) cards — Where / When / Who, exactly
 one open, the closed ones showing what that step currently holds. Before that
 it was every control at once: a text field, a suggestion list, a mode toggle,
 two date cards, two time cards and four guest steppers down one scroll.
@@ -55,7 +55,7 @@ Type and purpose are **not** two more folds, and they are not together:
 Neither is folded away. They are one control each, and burying a control behind
 a tap is how the type chips stopped being noticed the last time.
 
-[`PurposePicker`](lib/widgets/purpose_picker.dart) (was `PurposeScroll`) is a
+[`PurposePicker`](../../lib/widgets/purpose_picker.dart) (was `PurposeScroll`) is a
 `Wrap` now, not a horizontal `ListView`. Both of its call sites sit inside a
 padded card, and a horizontal scroller clips at the **padding**, not the card
 edge — the last pill came out sliced mid-word with a clear gap after it, which
@@ -81,7 +81,7 @@ The guest counter is the first control that drift actually cost, and it is now
 the worked example of the cure. Mobile's version was a lone 1..16 number, so
 when Who grew to adults / children / infants / pets there was nowhere on the
 phone to say three of the four. The rows moved into
-[`GuestPartyFields`](lib/widgets/search/guest_party_fields.dart), stateless over
+[`GuestPartyFields`](../../lib/widgets/search/guest_party_fields.dart), stateless over
 a `GuestParty` value and a callback — the one shape a `SearchDraft` and a plain
 `setState` can both hold — and both surfaces render it. Neither knows how many
 rows there are or what the caps are. **Do not add a fifth category to one of
@@ -225,7 +225,7 @@ Turf reached the app as a `ListingType`, which correctly put it in the Filters
 panel beside Seat and Room — and made finding a ground four steps on **desktop**
 (open Filters, tick Turf, close, type the area) against Medical's one visible
 tap. A ground is not an overflow refinement of a stay search; it is a different
-search. [`SearchScopePicker`](lib/widgets/search/search_scope_picker.dart) is
+search. [`SearchScopePicker`](../../lib/widgets/search/search_scope_picker.dart) is
 an Anything / Turf pair under the Where field, and it writes a `ListingType`
 like the Filters chips do.
 
@@ -250,7 +250,7 @@ column on stays — a turf carries none — so "turf near a hospital" matches
 nothing. It does not raise: it returns zero rows, which
 `searchListingsFromDb` renders as a plain "no listings found", and the guest
 cannot tell that apart from "there are no turfs in this area". So
-[`search_scope.dart`](lib/services/search/search_scope.dart) owns both
+[`search_scope.dart`](../../lib/services/search/search_scope.dart) owns both
 directions — picking Turf drops the purpose and its landmark, picking a purpose
 drops Turf — and the purpose section is *hidden* while the scope is turf rather
 than shown and ignored.

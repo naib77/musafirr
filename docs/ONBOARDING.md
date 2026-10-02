@@ -11,9 +11,9 @@ feature, add a data field, add a backend function.
 
 > **Read these too — this guide complements them, it does not replace them:**
 > - [README.md](../README.md) — install, run, configuration, OTP/auth setup, master-OTP warning.
-> - [architecture.md](architecture.md) — deep architecture, core user flows (auth, booking, host onboarding) as sequence diagrams.
-> - [backend_schema.md](backend_schema.md) / [live_schema.sql](live_schema.sql) — the database tables.
-> - [WEB_DEPLOYMENT.md](WEB_DEPLOYMENT.md) — building and deploying the web app.
+> - [architecture.md](architecture/architecture.md) — deep architecture, core user flows (auth, booking, host onboarding) as sequence diagrams.
+> - [backend-schema.md](schema/backend-schema.md) / [live_schema.sql](schema/live_schema.sql) — the database tables.
+> - [web-deployment.md](release/web-deployment.md) — building and deploying the web app.
 
 ---
 
@@ -472,7 +472,7 @@ graph LR
    system you must reuse.
 7. `supabase/functions/send-otp/index.ts` — what a real backend function looks
    like.
-8. Then skim [architecture.md](architecture.md) for the full user-flow sequence
+8. Then skim [architecture.md](architecture/architecture.md) for the full user-flow sequence
    diagrams.
 
 **Your first task idea:** find a small screen, add a harmless field or a bit of

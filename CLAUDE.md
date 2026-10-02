@@ -29,7 +29,7 @@ bundle for immutable caching, copies `web/_headers` (Flutter skips
 underscore-prefixed files), strips `.symbols`, writes `build_stamp.json`, and
 runs the registrant guard below.
 
-`docs/WEB_DEPLOYMENT.md` predates the script and still says to run
+`docs/release/web-deployment.md` predates the script and still says to run
 `flutter build web --release`. Follow this file instead.
 
 ## The stale plugin registrant trap
@@ -73,7 +73,7 @@ reports GREEN is a client cache, not a failed deploy.
 
 Migrations in `supabase/migrations/`, applied in order. The **live database has
 drifted from the repo** in the past, so verify against it rather than assuming;
-`docs/live_schema.sql` is a snapshot, not the truth. Live SQL can be run through
+`docs/schema/live_schema.sql` is a snapshot, not the truth. Live SQL can be run through
 the Management API (`POST /v1/projects/{ref}/database/query`) with the token in
 the `Supabase CLI` keychain entry.
 
@@ -109,6 +109,19 @@ changing that area; it records what was measured and why.
 - Adding an enum value is two migrations (55P04), committed between, and is
   not reversible.
 - A lost booking race can deadlock (`40P01`); the client retries once.
+- A listing is a set of `listing_units`; `bookings.unit_id` is not null and
+  the RPC assigns it (guests never pick). Availability is
+  `listing_rooms_left(...) > 0`; a unit can only be moved under
+  `musafir.unit_reassign = 'on'`.
+- Hourly rules are two layers: `app_settings.hourly_policy` (per type) over
+  the host's `min_hours`/`max_hours`/`hourly_slots`/window. The host narrows,
+  never widens. `hourly_booking_check` refuses in a fixed order (disabled,
+  floor, max, slot, window) with `hourly_*` hints; the Dart `HourlyRule`
+  mirrors that order and shares the SQL suite's fixture table.
+- A hotel's room count changes only through `set_listing_unit_count`:
+  shrink deactivates, is all-or-nothing (hint `units_in_use`), and locks the
+  units before checking bookings. Saves write 150's columns on every type, so
+  150 must be live before a build that sends them (PGRST204).
 
 **Database — security**
 ([database-security.md](docs/notes/database-security.md))

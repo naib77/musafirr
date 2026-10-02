@@ -2,7 +2,7 @@
 
 Shared vocabulary for the Musafir marketplace. Glossary only: no
 implementation detail, no decisions, no plans. Those live in `docs/` (see
-`docs/GUEST_SEARCH_FLOW.md`, `docs/architecture.md`).
+`docs/architecture/guest-search-flow.md`, `docs/architecture/architecture.md`).
 
 ## Roles
 

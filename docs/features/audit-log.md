@@ -1,8 +1,8 @@
 # Audit Log — Plan
 
 Status: **Phase 1 + Phase 2 applied to live** (2026-08-08).
-- [089_audit_log.sql](../supabase/migrations/089_audit_log.sql) — table, RLS, immutability guard, `fn_audit`, triggers on payments/bookings/app_settings/owner_documents/profiles, `financial_audit` view. Applied + recorded; verified live (trigger fires, rolled-back smoke test).
-- [090_audit_log_phase2.sql](../supabase/migrations/090_audit_log_phase2.sql) — triggers on coupons / coupon_redemptions / reports. Applied + recorded.
+- [089_audit_log.sql](../../supabase/migrations/089_audit_log.sql) — table, RLS, immutability guard, `fn_audit`, triggers on payments/bookings/app_settings/owner_documents/profiles, `financial_audit` view. Applied + recorded; verified live (trigger fires, rolled-back smoke test).
+- [090_audit_log_phase2.sql](../../supabase/migrations/090_audit_log_phase2.sql) — triggers on coupons / coupon_redemptions / reports. Applied + recorded.
 - Admin portal **Audit** page (`/audit`, read-only, category filter) + nav link. tsc/eslint clean; **not yet built/deployed**.
 - **Not committed to git yet** (awaiting permission). Phase 3 (retention/purge, partitioning, broader coverage) still pending.
 

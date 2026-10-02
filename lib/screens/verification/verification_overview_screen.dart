@@ -8,6 +8,11 @@ import 'nid_verification_screen.dart';
 /// Identity document first, then — only while the admin requires it — a live
 /// face check.
 ///
+/// The steps are strictly sequential: the face card is not shown until a
+/// document has been submitted, and submitting one offers a "Next" button
+/// that goes straight to the face check. Two cards side by side read as
+/// "pick either", and guests did start with the face.
+///
 /// `face_required` comes from `verification_overview` (migration 144) and
 /// mirrors the admin's `face_review_enabled` switch. When it is off the face
 /// step is not shown at all: an approved document is the whole of
@@ -25,7 +30,11 @@ class VerificationOverviewScreen extends StatefulWidget {
   final String userId;
   final String? reason;
   final Future<Map<String, dynamic>> Function()? loadStatus;
-  final Future<void> Function()? openNid, openFace;
+
+  /// [openNid] completes with `true` when the guest asked to go on to the
+  /// face check from the document screen.
+  final Future<bool?> Function()? openNid;
+  final Future<void> Function()? openFace;
   @override
   State<VerificationOverviewScreen> createState() =>
       _VerificationOverviewScreenState();
@@ -91,17 +100,29 @@ class _VerificationOverviewScreenState
         _ => 'Status unavailable',
       };
   Future<void> _open(bool nid) async {
-    final callback = nid ? widget.openNid : widget.openFace;
-    if (callback != null) {
-      await callback();
+    if (nid) {
+      final next = widget.openNid != null
+          ? await widget.openNid!()
+          : await Navigator.of(context).push<bool>(MaterialPageRoute(
+              builder: (_) => NidVerificationScreen(faceNext: _faceRequired)));
+      if (!mounted) return;
+      // Go on to the face step; [_load] runs when that screen closes.
+      if (next == true && _faceRequired) return _open(false);
+    } else if (widget.openFace != null) {
+      await widget.openFace!();
     } else {
       await Navigator.of(context).push(MaterialPageRoute<void>(
-          builder: (_) => nid
-              ? const NidVerificationScreen()
-              : IdentityVerificationScreen(userId: widget.userId)));
+          builder: (_) => IdentityVerificationScreen(userId: widget.userId)));
     }
     if (mounted) await _load();
   }
+
+  /// Until a document is sent, step 2 is a line of text, not a card with a
+  /// button — there is nothing the guest can do there yet.
+  Widget _faceLater() => Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Text('2. Live face check — opens after you submit your document.',
+          style: TextStyle(color: Theme.of(context).hintColor)));
 
   Widget _step(bool nid) {
     final locked = !nid && !_loading && !_faceUnlocked;
@@ -170,7 +191,10 @@ class _VerificationOverviewScreenState
                   const SizedBox(height: 24),
                   if (!_faceRequired)
                     _step(true)
-                  else
+                  else if (!_loading && !_faceUnlocked) ...[
+                    _step(true),
+                    _faceLater(),
+                  ] else
                     LayoutBuilder(
                         builder: (_, c) => c.maxWidth >= 720
                             ? Row(

@@ -22,11 +22,14 @@ import '../models/host_verifications.dart';
 import '../models/landmark.dart';
 import '../models/leaderboard_entry.dart';
 import '../models/listing.dart';
+import '../models/listing_unit.dart';
 import '../models/listing_exact_address.dart';
 import '../models/listing_purpose.dart';
 import '../models/listing_type.dart';
+import '../models/hotel_details.dart';
 import '../models/turf_details.dart';
 import '../models/owner_registration_draft.dart';
+import '../models/property.dart';
 import '../models/review.dart';
 import '../models/search_filters.dart';
 import '../models/user.dart';
@@ -668,12 +671,22 @@ class SupabaseMusafirRepository extends ChangeNotifier
         format: turfFormatFromWire(json['turf_format'] as String?),
         surface: turfSurfaceFromWire(json['turf_surface'] as String?),
       ),
+      // Same tolerance (150): an out-of-range or unknown value reads as
+      // unstated. A row from a database without 150 has none of these keys
+      // and reads as empty.
+      hotelDetails: HotelDetails.fromJson(json),
+      roomFacts: RoomFacts.fromJson(json),
+      instantBook: json['instant_book'] as bool? ?? false,
       rating: (json['rating'] as num?)?.toDouble(),
       reviewCount: json['review_count'] as int? ?? 0,
       isSuperhost: json['is_superhost'] as bool? ?? false,
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? ''),
       purposeTags: listingPurposesFromWire(json['purpose_tags']),
       distanceMeters: (json['distance_m'] as num?)?.toDouble(),
+      propertyId: json['property_id'] as String?,
+      // Present only on search_listings rows (154).
+      propertyName: json['property_name'] as String?,
+      roomTypesMatching: (json['room_types_matching'] as num?)?.toInt(),
       bookingLimits: BookingLimits(
         minHours: json['min_hours'] as int?,
         maxHours: json['max_hours'] as int?,
@@ -681,6 +694,12 @@ class SupabaseMusafirRepository extends ChangeNotifier
         maxNights: json['max_nights'] as int?,
         minMonths: json['min_months'] as int?,
         maxMonths: json['max_months'] as int?,
+        hourlySlots: (json['hourly_slots'] as List?)
+            ?.map((e) => (e as num).toInt())
+            .toList(),
+        // A Postgres `time` arrives as "09:00:00"; the model keeps "HH:MM".
+        hourlyWindowStart: _clockFromWire(json['hourly_window_start']),
+        hourlyWindowEnd: _clockFromWire(json['hourly_window_end']),
       ),
       houseRules: HouseRules(
         checkInTime: json['check_in_time'] as String?,
@@ -742,9 +761,26 @@ class SupabaseMusafirRepository extends ChangeNotifier
       'turf_sport': listing.turfDetails.sport?.name,
       'turf_format': listing.turfDetails.format?.wireName,
       'turf_surface': listing.turfDetails.surface?.name,
+      // Same rule for the hotel trio (150), and the Room Matrix facts beside
+      // them. DEPLOY ORDER: PostgREST refuses a write naming a column it does
+      // not have (PGRST204), so a build carrying these keys must not reach
+      // users before 150 is live -- unlike the read side, this direction
+      // breaks every listing save, not just hotels.
+      ...listing.hotelDetails.toJson(),
+      ...listing.roomFacts.toJson(),
+      // 151, same DEPLOY ORDER as above: sent always (false is how a host
+      // switches it back off), so this build needs 151 live first.
+      'instant_book': listing.instantBook,
       // Per-plan booking limits.
       'min_hours': listing.bookingLimits.minHours,
       'max_hours': listing.bookingLimits.maxHours,
+      // The host's half of the hourly policy (148). Sent as nulls when unset:
+      // null is how a host hands the slot list back to the platform default
+      // and clears a window, and the window columns are constrained to be
+      // null together.
+      'hourly_slots': listing.bookingLimits.hourlySlots,
+      'hourly_window_start': listing.bookingLimits.hourlyWindowStart,
+      'hourly_window_end': listing.bookingLimits.hourlyWindowEnd,
       'min_nights': listing.bookingLimits.minNights,
       'max_nights': listing.bookingLimits.maxNights,
       'min_months': listing.bookingLimits.minMonths,
@@ -757,6 +793,11 @@ class SupabaseMusafirRepository extends ChangeNotifier
       'parties_allowed': listing.houseRules.partiesAllowed,
       'quiet_hours': listing.houseRules.quietHours,
       'additional_rules': listing.houseRules.additionalRules,
+      // 153. Only when set, unlike the hotel keys above: an ordinary listing
+      // must keep saving against a database without the column (PGRST204),
+      // and the trigger refuses any change once set, so re-sending the same
+      // id on an edit is the only other write it ever sees.
+      if (listing.propertyId != null) 'property_id': listing.propertyId,
     };
   }
 
@@ -880,12 +921,21 @@ class SupabaseMusafirRepository extends ChangeNotifier
     });
   }
 
+  /// `"09:00:00"` (how PostgREST renders a `time`) → `"09:00"`; null stays
+  /// null. Seconds are never set by the app, so dropping them loses nothing.
+  static String? _clockFromWire(Object? v) {
+    if (v == null) return null;
+    final s = v.toString();
+    return s.length >= 5 ? s.substring(0, 5) : s;
+  }
+
   ListingType _listingTypeFromString(String? value) {
     return switch (value?.toLowerCase()) {
       'seat' => ListingType.seat,
       'room' => ListingType.room,
       'fullhouse' || 'full_house' => ListingType.fullHouse,
       'turf' => ListingType.turf,
+      'hotel' => ListingType.hotel,
       // Falling back to `room` rather than throwing is deliberate: a build
       // older than a listing_type migration must keep rendering the rest of
       // the feed. It does mean a type this app has never heard of shows up
@@ -898,11 +948,14 @@ class SupabaseMusafirRepository extends ChangeNotifier
   Facility _facilityFromName(String name) {
     return switch (name.toLowerCase()) {
       'wi-fi' || 'wifi' => FacilityCatalog.wifi,
-      'ac' => FacilityCatalog.ac,
       'attached bath' || 'bath' => FacilityCatalog.bath,
-      'kitchen' => FacilityCatalog.kitchen,
-      'parking' => FacilityCatalog.parking,
-      _ => Facility(name: name, icon: Icons.check),
+      // Pre-146 rows a stay may still carry; not in ownerSelectable.
+      'kitchen' => FacilityCatalog.legacyKitchen,
+      'workspace' => FacilityCatalog.legacyWorkspace,
+      final lower => FacilityCatalog.ownerSelectable
+              .where((f) => f.name.toLowerCase() == lower)
+              .firstOrNull ??
+          Facility(name: name, icon: Icons.check),
     };
   }
 
@@ -980,6 +1033,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
           ? DateTime.parse(json['paid_at'] as String)
           : null,
       paymentMethod: json['payment_method'] as String?,
+      roomUnitId: json['unit_id'] as String?,
     );
   }
 
@@ -1478,7 +1532,8 @@ class SupabaseMusafirRepository extends ChangeNotifier
   }
 
   @override
-  Future<void> addListing(Listing listing) async {
+  Future<void> addListing(Listing listing,
+      {int unitCount = 1, List<String> roomLabels = const []}) async {
     // Optimistic add for instant UI feedback (carries the client temp id).
     _listings.add(listing);
     notifyListeners();
@@ -1496,11 +1551,40 @@ class SupabaseMusafirRepository extends ChangeNotifier
 
       await _saveListingFacilities(realId, listing.facilities);
       await _saveCheckInDetails(realId, listing.checkInDetails);
-      await _saveListingExactAddress(realId, listing);
+      // A hotel's room type gets its exact address from the hotel (153's
+      // copy trigger); writing the form's snapped copy over it would lose
+      // the door-level line the guest is shown after booking.
+      if (listing.propertyId == null) {
+        await _saveListingExactAddress(realId, listing);
+      }
+      // After the insert, not in it: units are a separate table the insert
+      // trigger seeds with one row (147). A failure here leaves a listing
+      // with one room, which the host can fix from the edit screen -- better
+      // than rolling back a listing whose photos are already uploaded.
+      //
+      // Caught on its own for that reason: rethrown as RoomsNotSavedException
+      // AFTER the cache holds the real row, so the caller can say "created,
+      // fix the rooms" instead of "failed" -- which invites a retry that
+      // makes a second copy of the listing.
+      Object? roomsError;
+      try {
+        if (roomLabels.isNotEmpty) {
+          await addListingUnits(realId, roomLabels, nameUnnamed: true);
+        } else if (unitCount != 1) {
+          await setListingUnitCount(realId, unitCount);
+        }
+      } catch (e) {
+        roomsError = e;
+      }
 
       // Drop the temp-id copy; _refreshListings brings in the canonical row.
       _listings.removeWhere((l) => l.id == listing.id);
       await _refreshListings();
+      if (roomsError != null) {
+        throw RoomsNotSavedException(realId, roomsError);
+      }
+    } on RoomsNotSavedException {
+      rethrow;
     } catch (e) {
       // Roll back the optimistic add so a failed create doesn't leave a ghost.
       _listings.removeWhere((l) => l.id == listing.id);
@@ -1508,6 +1592,225 @@ class SupabaseMusafirRepository extends ChangeNotifier
       debugPrint('Error adding listing: $e');
       rethrow;
     }
+  }
+
+  @override
+  Future<int> listingUnitCount(String listingId) async {
+    final n = await _client
+        .rpc('listing_unit_count', params: {'p_listing_id': listingId});
+    return (n as num).toInt();
+  }
+
+  @override
+  Future<int> setListingUnitCount(String listingId, int count) async {
+    final n = await _client.rpc('set_listing_unit_count',
+        params: {'p_listing_id': listingId, 'p_count': count});
+    return (n as num).toInt();
+  }
+
+  @override
+  Future<List<ListingUnit>> listingUnits(String listingId) async {
+    final rows = await _client
+        .from('listing_units')
+        .select('id, listing_id, label, is_active')
+        .eq('listing_id', listingId)
+        .order('is_active', ascending: false)
+        .order('created_at')
+        .order('id');
+    return (rows as List)
+        .map((r) => ListingUnit.fromJson(r as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<void> renameListingUnit(String unitId, String? label) async {
+    // `.select` so the result says whether a row changed: an RLS-filtered
+    // UPDATE returns [] and raises nothing (database-security.md).
+    final rows = await _client
+        .from('listing_units')
+        .update({'label': label})
+        .eq('id', unitId)
+        .select('id');
+    if ((rows as List).isEmpty) {
+      throw StateError('Room not found');
+    }
+  }
+
+  static const _propertySelect =
+      '*, property_facilities(facility_id, facilities(name))';
+
+  Property _propertyFromJson(Map<String, dynamic> json) {
+    final rows = json['property_facilities'] as List? ?? const [];
+    return Property.fromJson(json, facilities: [
+      for (final f in rows)
+        _facilityFromName(f['facilities']?['name'] as String? ?? ''),
+    ]);
+  }
+
+  @override
+  Future<List<Property>> myProperties() async {
+    final me = _client.auth.currentUser?.id;
+    if (me == null) return const [];
+    final rows = await _client
+        .from('properties')
+        .select(_propertySelect)
+        .eq('owner_id', me)
+        .order('created_at', ascending: false);
+    return (rows as List)
+        .map((r) => _propertyFromJson(r as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<Property?> fetchProperty(String propertyId) async {
+    final row = await _client
+        .from('properties')
+        .select(_propertySelect)
+        .eq('id', propertyId)
+        .maybeSingle();
+    return row == null ? null : _propertyFromJson(row);
+  }
+
+  /// Brings the hotel's amenity rows to [facilities] by difference, not by
+  /// delete-all like [_saveListingFacilities]: every row removed here is
+  /// removed from every room type too (155's push-down), so a rewrite would
+  /// strip and re-add the gym on all of them for no reason.
+  Future<void> _savePropertyFacilities(
+      String propertyId, List<Facility> facilities) async {
+    final catalog = await _client.from('facilities').select('id, name') as List;
+    final idByName = <String, String>{
+      for (final row in catalog)
+        (row['name'] as String).toLowerCase(): row['id'] as String,
+    };
+    final wanted = {
+      for (final f in facilities)
+        if (idByName[f.name.toLowerCase()] case final id?) id,
+    };
+    final current = {
+      for (final r in await _client
+          .from('property_facilities')
+          .select('facility_id')
+          .eq('property_id', propertyId) as List)
+        r['facility_id'] as String,
+    };
+    final removed = current.difference(wanted);
+    final added = wanted.difference(current);
+    if (removed.isNotEmpty) {
+      await _client
+          .from('property_facilities')
+          .delete()
+          .eq('property_id', propertyId)
+          .inFilter('facility_id', removed.toList());
+    }
+    if (added.isNotEmpty) {
+      await _client.from('property_facilities').insert([
+        for (final id in added) {'property_id': propertyId, 'facility_id': id},
+      ]);
+    }
+  }
+
+  @override
+  Future<PropertyAddress?> fetchPropertyAddress(String propertyId) async {
+    final row = await _client
+        .from('property_addresses')
+        .select()
+        .eq('property_id', propertyId)
+        .maybeSingle();
+    return row == null ? null : PropertyAddress.fromJson(row);
+  }
+
+  @override
+  Future<String> createProperty(
+      Property property, PropertyAddress address) async {
+    final row = await _client
+        .from('properties')
+        .insert(property.toJson(includeOwner: true))
+        .select('id')
+        .single();
+    final id = row['id'] as String;
+    // Second write, not fatal to the first: a hotel without its door-level
+    // line is still a hotel, and the form saves it again on the next edit.
+    try {
+      await _client.from('property_addresses').upsert(address.toJson(id));
+    } catch (e) {
+      debugPrint('Error saving property address: $e');
+    }
+    // Same reasoning: a new hotel has no room types yet, so nothing else
+    // depends on this, and the next save retries it.
+    try {
+      await _savePropertyFacilities(id, property.facilities);
+    } catch (e) {
+      debugPrint('Error saving property amenities: $e');
+    }
+    // Nothing in the listing cache changed, but the host's hotel list did;
+    // HostListingsScreen's hotel section listens here.
+    notifyListeners();
+    return id;
+  }
+
+  @override
+  Future<void> updateProperty(
+      Property property, PropertyAddress address) async {
+    // `.select` so an RLS-filtered no-op is visible (database-security.md).
+    final rows = await _client
+        .from('properties')
+        .update(property.toJson())
+        .eq('id', property.id)
+        .select('id');
+    if ((rows as List).isEmpty) throw StateError('Hotel not found');
+    await _client
+        .from('property_addresses')
+        .upsert(address.toJson(property.id));
+    await _savePropertyFacilities(property.id, property.facilities);
+    // The push-down triggers (the hotel's facts and its amenities) rewrote the room types; refresh the cache so the
+    // host's listing cards show the new location, times and amenities.
+    await _refreshListings();
+  }
+
+  @override
+  Future<List<Listing>> propertyRoomTypes(String propertyId) async {
+    final rows = await _client
+        .from('listings')
+        .select('*, listing_facilities(facility_id, facilities(name))')
+        .eq('property_id', propertyId)
+        .order('created_at');
+    return (rows as List)
+        .map((r) => _listingFromJson(r as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<int> addListingUnits(String listingId, List<String> labels,
+      {bool nameUnnamed = false}) async {
+    final n = await _client.rpc('add_listing_units', params: {
+      'p_listing_id': listingId,
+      'p_labels': labels,
+      'p_name_unnamed': nameUnnamed,
+    });
+    return (n as num).toInt();
+  }
+
+  @override
+  Future<int> deactivateListingUnit(String unitId) async {
+    final n = await _client
+        .rpc('deactivate_listing_unit', params: {'p_unit_id': unitId});
+    return (n as num).toInt();
+  }
+
+  @override
+  Future<String> moveListingUnit(String unitId, String toListingId) async {
+    final id = await _client.rpc('move_listing_unit',
+        params: {'p_unit_id': unitId, 'p_to_listing_id': toListingId});
+    return id as String;
+  }
+
+  @override
+  Future<void> reassignBookingUnit(String bookingId, String unitId) async {
+    // Through the RPC: 147's trigger refuses any direct unit_id write unless
+    // musafir.unit_reassign is on, and only this function sets it.
+    await _client.rpc('reassign_booking_unit',
+        params: {'p_booking_id': bookingId, 'p_unit_id': unitId});
+    await _refreshBookings();
   }
 
   @override
@@ -1526,7 +1829,9 @@ class SupabaseMusafirRepository extends ChangeNotifier
           .eq('id', listing.id);
       await _saveListingFacilities(listing.id, listing.facilities);
       await _saveCheckInDetails(listing.id, listing.checkInDetails);
-      await _saveListingExactAddress(listing.id, listing);
+      if (listing.propertyId == null) {
+        await _saveListingExactAddress(listing.id, listing);
+      }
     } catch (e) {
       // Roll back to the previous value on failure.
       final i = _listings.indexWhere((l) => l.id == listing.id);
@@ -1584,6 +1889,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
     required DateTime startsAt,
     required DateTime endsAt,
     String? note,
+    String? unitId,
   }) async {
     // Through the RPC, not a direct insert: the table has no INSERT policy, and
     // the "are these dates already booked?" check lives inside the function so
@@ -1593,6 +1899,9 @@ class SupabaseMusafirRepository extends ChangeNotifier
       'p_starts_at': startsAt.toUtc().toIso8601String(),
       'p_ends_at': endsAt.toUtc().toIso8601String(),
       'p_note': note,
+      // Only when set: a listing-wide block keeps sending the pre-151 keys.
+      // There is one overload (p_unit_id defaulted), so either shape resolves.
+      if (unitId != null) 'p_unit_id': unitId,
     });
     return AvailabilityBlock.fromJson(row as Map<String, dynamic>);
   }
@@ -1890,6 +2199,19 @@ class SupabaseMusafirRepository extends ChangeNotifier
       // Fail CLOSED, unlike availability above: a lookup error must not paint
       // badges the database never granted.
       return HostVerifications.none;
+    }
+  }
+
+  @override
+  Future<bool> listingLicenceVerified(String listingId) async {
+    // A boolean RPC, open to anon: guests never read the licence row itself.
+    try {
+      final v = await _client
+          .rpc('listing_licence_verified', params: {'p_listing_id': listingId});
+      return v == true;
+    } catch (e) {
+      debugPrint('listing_licence_verified failed: $e');
+      return false;
     }
   }
 

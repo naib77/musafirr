@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import '../../core/utils/responsive.dart';
 import '../../data/facility_catalog.dart';
 import '../../models/listing.dart';
 import '../../models/listing_purpose.dart';
 import '../../models/listing_type.dart';
+import '../../models/hotel_details.dart';
+import '../../models/property.dart';
+import '../../models/room_labels.dart';
 import '../../models/turf_details.dart';
 import '../../repositories/musafir_repository.dart';
+import '../../services/app_settings_service.dart';
+import '../../services/booking/hourly_policy.dart';
 import '../../services/image_upload_service.dart';
 import '../../state/auth_state.dart';
 import '../../widgets/app_text_field.dart';
@@ -15,20 +21,35 @@ import '../../widgets/image_picker_grid.dart';
 import '../../widgets/location_picker.dart';
 import '../../widgets/modern_banner.dart';
 import '../../widgets/purpose_selector.dart';
+import '../../widgets/host/hotel_details_fields.dart';
 import '../../widgets/host/party_limits_fields.dart';
 import '../../widgets/host/turf_details_fields.dart';
 import '../../services/listing/listing_type_scope.dart';
 import 'listing_pricing_fields.dart';
+import 'property_form_screen.dart';
 
 class CreateListingScreen extends StatefulWidget {
   const CreateListingScreen({
     super.key,
     required this.repository,
     required this.authState,
+    this.property,
+    this.duplicateFrom,
   });
 
   final MusafirRepository repository;
   final AuthStateNotifier authState;
+
+  /// Adds a room type to this hotel (153) instead of creating a standalone
+  /// listing: the type and location pages are skipped and the hotel's
+  /// facts are used, since the database copies them over anyway.
+  final Property? property;
+
+  /// Prefills the form from another room type of the same hotel -- the
+  /// "Duplicate" of plan §8 step 2. Photos and rooms are not copied: a
+  /// Deluxe Triple's photos are not the Deluxe Double's, and room names are
+  /// unique across the hotel.
+  final Listing? duplicateFrom;
 
   @override
   State<CreateListingScreen> createState() => _CreateListingScreenState();
@@ -55,6 +76,12 @@ enum _WizardStep {
 
   /// Turf only: players, sport, format, surface, amenities.
   turf,
+
+  /// A hotel's room type only (153), before [details]: which rooms are of
+  /// this type, by name or count. The details page that follows then
+  /// describes ONE of those rooms, which is what the units model (147)
+  /// means by a listing. Stars, desk and ID are the hotel's, not asked.
+  hotel,
   pricing,
   rules,
 
@@ -75,32 +102,59 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   /// wrong page. Safe to recompute because page 0 is common to both shapes --
   /// switching type can only ever shorten or lengthen what comes *after* the
   /// page the host is standing on.
-  List<_WizardStep> get _steps => _propertyType.isStay
+  List<_WizardStep> get _steps => _inHotel
       ? const [
-          _WizardStep.type,
           _WizardStep.basics,
-          _WizardStep.location,
+          _WizardStep.hotel,
           _WizardStep.details,
           _WizardStep.pricing,
           _WizardStep.rules,
           _WizardStep.access,
           _WizardStep.photos,
         ]
-      : const [
-          _WizardStep.type,
-          _WizardStep.basics,
-          _WizardStep.location,
-          _WizardStep.turf,
-          _WizardStep.pricing,
-          _WizardStep.rules,
-          _WizardStep.photos,
-        ];
+      // A hotel is set up as the hotel first (153), then its room types, so
+      // page 0 is all a standalone create asks before handing off to
+      // PropertyFormScreen.
+      : _propertyType == ListingType.hotel
+          ? const [_WizardStep.type]
+          : _propertyType.isStay
+              ? const [
+                  _WizardStep.type,
+                  _WizardStep.basics,
+                  _WizardStep.location,
+                  _WizardStep.details,
+                  _WizardStep.pricing,
+                  _WizardStep.rules,
+                  _WizardStep.access,
+                  _WizardStep.photos,
+                ]
+              : const [
+                  _WizardStep.type,
+                  _WizardStep.basics,
+                  _WizardStep.location,
+                  _WizardStep.turf,
+                  _WizardStep.pricing,
+                  _WizardStep.rules,
+                  _WizardStep.photos,
+                ];
+
+  bool get _inHotel => widget.property != null;
 
   int get _totalSteps => _steps.length;
 
   // Form data
   ListingType _propertyType = ListingType.room;
   TurfDetails _turfDetails = const TurfDetails();
+  HotelDetails _hotelDetails = const HotelDetails();
+  RoomFacts _roomFacts = const RoomFacts();
+
+  /// Rooms of this kind the hotel sells. Only the hotel step shows it; every
+  /// other type submits 1, which is what the insert trigger already creates.
+  int _unitCount = 1;
+
+  /// Room names for a hotel's room type ("101-105, 201"). Blank means the
+  /// host gave a count instead and the rooms show as "Room N".
+  final _roomNamesController = TextEditingController();
   final Set<ListingPurpose> _selectedPurposes = {ListingPurpose.general};
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -142,6 +196,12 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   final _minMonthsController = TextEditingController(text: '1');
   final _maxMonthsController = TextEditingController();
 
+  // Hourly shape beyond min/max: fixed block lengths and a day-use window.
+  // Blank means "whatever the platform's hourly_policy allows for this type".
+  final _hourlySlotsController = TextEditingController();
+  final _hourlyWindowStartController = TextEditingController();
+  final _hourlyWindowEndController = TextEditingController();
+
   // House rules
   final _checkInTimeController = TextEditingController(text: '2:00 PM');
   final _checkOutTimeController = TextEditingController(text: '11:00 AM');
@@ -151,6 +211,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   // the default and means the host stated no separate limit.
   PartyLimits _partyLimits = const PartyLimits();
   bool _partiesAllowed = false;
+  bool _instantBook = false;
   final _quietHoursController = TextEditingController();
   final _additionalRulesController = TextEditingController();
 
@@ -168,7 +229,98 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   bool _isSubmitting = false;
 
   @override
+  void initState() {
+    super.initState();
+    final p = widget.property;
+    if (p != null) {
+      _propertyType = ListingType.hotel;
+      _hotelDetails = p.hotelDetails;
+      _latitude = p.latitude ?? _latitude;
+      _longitude = p.longitude ?? _longitude;
+      _pinConfirmed = true;
+      if (p.checkInTime != null) _checkInTimeController.text = p.checkInTime!;
+      if (p.checkOutTime != null) {
+        _checkOutTimeController.text = p.checkOutTime!;
+      }
+    }
+    final d = widget.duplicateFrom;
+    if (d != null) _prefillFrom(d);
+  }
+
+  void _prefillFrom(Listing d) {
+    _titleController.text = '${d.title} (copy)';
+    _descriptionController.text = d.description ?? '';
+    _selectedPurposes
+      ..clear()
+      ..addAll(
+          d.purposeTags.isEmpty ? {ListingPurpose.general} : d.purposeTags);
+    _maxGuests = d.maxGuests;
+    _partyLimits = d.partyLimits;
+    _bedrooms = d.bedrooms;
+    _beds = d.beds;
+    _bathrooms = d.bathrooms;
+    _roomFacts = d.roomFacts;
+    _selectedAmenities
+      ..clear()
+      ..addAll(d.facilities.map((f) => f.name));
+    _hourlyEnabled = d.hourlyRate != null;
+    _dailyEnabled = d.dailyRate != null;
+    _monthlyEnabled = d.monthlyRate != null;
+    String fmt(double? v) => v == null ? '' : v.toStringAsFixed(0);
+    if (d.hourlyRate != null) _hourlyPriceController.text = fmt(d.hourlyRate);
+    if (d.dailyRate != null) _dailyPriceController.text = fmt(d.dailyRate);
+    if (d.monthlyRate != null) {
+      _monthlyPriceController.text = fmt(d.monthlyRate);
+    }
+    final b = d.bookingLimits;
+    String n(int? v) => v?.toString() ?? '';
+    _minHoursController.text = n(b.minHours ?? 1);
+    _maxHoursController.text = n(b.maxHours);
+    _minNightsController.text = n(b.minNights ?? 1);
+    _maxNightsController.text = n(b.maxNights);
+    _minMonthsController.text = n(b.minMonths ?? 1);
+    _maxMonthsController.text = n(b.maxMonths);
+    _hourlySlotsController.text = b.hourlySlots?.join(', ') ?? '';
+    _hourlyWindowStartController.text = b.hourlyWindowStart ?? '';
+    _hourlyWindowEndController.text = b.hourlyWindowEnd ?? '';
+    final r = d.houseRules;
+    _smokingAllowed = r.smokingAllowed;
+    _petsAllowed = r.petsAllowed;
+    _partiesAllowed = r.partiesAllowed;
+    _quietHoursController.text = r.quietHours ?? '';
+    _additionalRulesController.text = r.additionalRules ?? '';
+    _instantBook = d.instantBook;
+    final c = d.checkInDetails;
+    if (c != null) {
+      _directionsController.text = c.directions ?? '';
+      _wifiNameController.text = c.wifiName ?? '';
+      _wifiPasswordController.text = c.wifiPassword ?? '';
+      _accessCodeController.text = c.accessCode ?? '';
+    }
+  }
+
+  /// Picking Hotel on page 0 of a standalone create: a hotel is entered as
+  /// the hotel first, then its room types (plan §8), so the wizard hands
+  /// over rather than asking for a location it would only throw away.
+  void _startHotel() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PropertyFormScreen(
+          repository: widget.repository,
+          authState: widget.authState,
+        ),
+      ),
+    );
+  }
+
+  bool get _handsOffToHotel => !_inHotel && _propertyType == ListingType.hotel;
+
+  RoomLabelParse get _roomNames => parseRoomLabels(_roomNamesController.text);
+
+  @override
   void dispose() {
+    _roomNamesController.dispose();
     _pageController.dispose();
     _titleController.dispose();
     _descriptionController.dispose();
@@ -184,6 +336,9 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
     _monthlyPriceController.dispose();
     _minHoursController.dispose();
     _maxHoursController.dispose();
+    _hourlySlotsController.dispose();
+    _hourlyWindowStartController.dispose();
+    _hourlyWindowEndController.dispose();
     _minNightsController.dispose();
     _maxNightsController.dispose();
     _minMonthsController.dispose();
@@ -237,6 +392,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
           },
         ),
       _WizardStep.basics => _BasicsStep(
+          inHotel: _inHotel,
           titleController: _titleController,
           descriptionController: _descriptionController,
           onChanged: () => setState(() {}),
@@ -266,7 +422,17 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
           },
           onChanged: () => setState(() {}),
         ),
+      _WizardStep.hotel => _HotelStep(
+          roomNamesController: _roomNamesController,
+          roomNames: _roomNames,
+          onRoomNamesChanged: () => setState(() {}),
+          unitCount: _unitCount,
+          onUnitCountChanged: (v) => setState(() => _unitCount = v),
+        ),
       _WizardStep.details => _DetailsStep(
+          type: _propertyType,
+          roomFacts: _roomFacts,
+          onRoomFactsChanged: (v) => setState(() => _roomFacts = v),
           maxGuests: _maxGuests,
           partyLimits: _partyLimits,
           onPartyLimitsChanged: (v) => setState(() => _partyLimits = v),
@@ -274,6 +440,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
           beds: _beds,
           bathrooms: _bathrooms,
           selectedAmenities: _selectedAmenities,
+          inHotel: _inHotel,
           onGuestsChanged: (v) => setState(() {
             _maxGuests = v;
             // A sub-cap above the new total is unreachable — the
@@ -321,9 +488,17 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
           maxNightsController: _maxNightsController,
           minMonthsController: _minMonthsController,
           maxMonthsController: _maxMonthsController,
+          hourlySlotsController: _hourlySlotsController,
+          hourlyWindowStartController: _hourlyWindowStartController,
+          hourlyWindowEndController: _hourlyWindowEndController,
+          hourlyHelperText: hourlyPolicyHelperText(
+            _propertyType,
+            AppSettingsService.instance.hourlyPolicy,
+          ),
         ),
       _WizardStep.rules => _HouseRulesStep(
           isStay: _propertyType.isStay,
+          timesFromHotel: _inHotel,
           checkInTimeController: _checkInTimeController,
           checkOutTimeController: _checkOutTimeController,
           quietHoursController: _quietHoursController,
@@ -332,6 +507,8 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
           petsAllowed: _petsAllowed,
           partiesAllowed: _partiesAllowed,
           onSmokingToggled: (v) => setState(() => _smokingAllowed = v),
+          instantBook: _instantBook,
+          onInstantBookToggled: (v) => setState(() => _instantBook = v),
           onPetsToggled: (v) => setState(() => _petsAllowed = v),
           maxPets: _partyLimits.pets,
           onMaxPetsChanged: (v) => setState(() => _partyLimits =
@@ -383,6 +560,9 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
       // sport, format and surface are all nullable in 121 because a host who
       // skips them has still described a bookable ground.
       _WizardStep.turf => _maxGuests > 0,
+      // Stars, desk and ID are all nullable (150); the room count has a
+      // floor the counter already enforces.
+      _WizardStep.hotel => _unitCount >= 1 && _roomNames.isValid,
       _WizardStep.pricing => _pricingError() == null,
       // Optional in both shapes.
       _WizardStep.rules || _WizardStep.access => true,
@@ -397,13 +577,20 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   /// the enabled plans.
   String? _pricingError() {
     return validatePlanRates(
-      hourlyEnabled: _hourlyEnabled,
-      dailyEnabled: _dailyEnabled,
-      monthlyEnabled: _monthlyEnabled,
-      hourlyText: _hourlyPriceController.text,
-      dailyText: _dailyPriceController.text,
-      monthlyText: _monthlyPriceController.text,
-    );
+          hourlyEnabled: _hourlyEnabled,
+          dailyEnabled: _dailyEnabled,
+          monthlyEnabled: _monthlyEnabled,
+          hourlyText: _hourlyPriceController.text,
+          dailyText: _dailyPriceController.text,
+          monthlyText: _monthlyPriceController.text,
+        ) ??
+        hourlyHostFieldsError(
+          hourlyEnabled: _hourlyEnabled,
+          windowStartText: _hourlyWindowStartController.text,
+          windowEndText: _hourlyWindowEndController.text,
+          slotsText: _hourlySlotsController.text,
+          maxHoursText: _maxHoursController.text,
+        );
   }
 
   Future<void> _submitListing() async {
@@ -489,6 +676,8 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
       final scoped = scopeFieldsToType(
         type: _propertyType,
         turfDetails: _turfDetails,
+        hotelDetails: _hotelDetails,
+        roomFacts: _roomFacts,
         partyLimits: _partyLimits,
         bedrooms: _bedrooms,
         beds: _beds,
@@ -497,7 +686,8 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         partiesAllowed: _partiesAllowed,
       );
 
-      final listing = Listing(
+      final p = widget.property;
+      final draft = Listing(
         id: listingId,
         hostId: user?.id,
         ownerName: user?.name ?? 'Host',
@@ -533,6 +723,9 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         maxGuests: _maxGuests,
         partyLimits: scoped.partyLimits,
         turfDetails: scoped.turfDetails,
+        hotelDetails: scoped.hotelDetails,
+        roomFacts: scoped.roomFacts,
+        instantBook: _instantBook,
         bedrooms: scoped.bedrooms,
         beds: scoped.beds,
         bathrooms: scoped.bathrooms,
@@ -544,10 +737,26 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         isSuperhost: false,
         available: true,
         bookingLimits: BookingLimits(
-          minHours:
-              _hourlyEnabled ? int.tryParse(_minHoursController.text) : null,
+          // A minimum under the platform floor is saved as the floor, so the
+          // host sees the number guests are actually held to.
+          minHours: _hourlyEnabled
+              ? clampHostMinHours(
+                  int.tryParse(_minHoursController.text),
+                  AppSettingsService.instance.hourlyPolicy
+                      .forType(_propertyType),
+                )
+              : null,
           maxHours:
               _hourlyEnabled ? int.tryParse(_maxHoursController.text) : null,
+          hourlySlots: _hourlyEnabled
+              ? parseHourlySlotsText(_hourlySlotsController.text)
+              : null,
+          hourlyWindowStart: _hourlyEnabled
+              ? normalizeClockText(_hourlyWindowStartController.text)
+              : null,
+          hourlyWindowEnd: _hourlyEnabled
+              ? normalizeClockText(_hourlyWindowEndController.text)
+              : null,
           minNights:
               _dailyEnabled ? int.tryParse(_minNightsController.text) : null,
           maxNights:
@@ -579,14 +788,60 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
               )
             : const CheckInDetails(),
       );
+      // A room type takes the hotel's location, times and facts. The
+      // database would copy them in anyway (a_listing_property_inherit);
+      // doing it here keeps the optimistic copy honest until the refresh.
+      final listing = p == null
+          ? draft
+          : draft.copyWith(
+              propertyId: p.id,
+              address: p.publicAddress,
+              city: p.city,
+              country: p.country,
+              area: p.area,
+              postalCode: p.postalCode,
+              landmark: p.landmark,
+              latitude: p.latitude,
+              longitude: p.longitude,
+              hotelDetails: p.hotelDetails,
+              houseRules: HouseRules(
+                checkInTime: p.checkInTime,
+                checkOutTime: p.checkOutTime,
+                smokingAllowed: draft.houseRules.smokingAllowed,
+                petsAllowed: draft.houseRules.petsAllowed,
+                partiesAllowed: draft.houseRules.partiesAllowed,
+                quietHours: draft.houseRules.quietHours,
+                additionalRules: draft.houseRules.additionalRules,
+              ),
+            );
 
       // Add to repository — await so a failed insert surfaces below instead
       // of showing a success banner for a listing that was never created.
-      await widget.repository.addListing(listing);
+      // A host who picked hotel, set 12 rooms, then switched back to a room
+      // must not create a 12-unit flat.
+      await widget.repository.addListing(
+        listing,
+        unitCount: _propertyType == ListingType.hotel ? _unitCount : 1,
+        roomLabels: _inHotel ? _roomNames.labels : const [],
+      );
 
       if (mounted) {
-        Navigator.pop(context);
-        ModernBanner.showSuccess(context, 'Listing created successfully!');
+        Navigator.pop(context, true);
+        ModernBanner.showSuccess(context,
+            _inHotel ? 'Room type added' : 'Listing created successfully!');
+      }
+    } on RoomsNotSavedException catch (e) {
+      // The room type exists; only its rooms failed. Leave rather than
+      // offer a retry that would create it twice.
+      if (mounted) {
+        final hint = e.cause is PostgrestException
+            ? (e.cause as PostgrestException).hint
+            : null;
+        Navigator.pop(context, true);
+        ModernBanner.showWarning(
+            context,
+            'Room type added, but its rooms were not: '
+            '${propertyRefusalMessage(hint)} Fix them from the hotel page.');
       }
     } catch (e) {
       if (mounted) {
@@ -661,7 +916,12 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                       child: const Text('Back'),
                     ),
                   const Spacer(),
-                  if (_currentStep < _totalSteps - 1)
+                  if (_handsOffToHotel)
+                    FilledButton(
+                      onPressed: _startHotel,
+                      child: const Text('Set up your hotel'),
+                    )
+                  else if (_currentStep < _totalSteps - 1)
                     FilledButton(
                       onPressed: _canProceed() ? _nextStep : null,
                       child: const Text('Next'),
@@ -680,7 +940,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                                 color: Colors.white,
                               ),
                             )
-                          : const Text('Create Listing'),
+                          : Text(_inHotel ? 'Add room type' : 'Create Listing'),
                     ),
                 ],
               ),
@@ -791,6 +1051,7 @@ class _PropertyTypeCard extends StatelessWidget {
         ListingType.room => Icons.bed,
         ListingType.fullHouse => Icons.home,
         ListingType.turf => Icons.sports_soccer,
+        ListingType.hotel => Icons.hotel,
       };
 
   String get _description => switch (type) {
@@ -803,6 +1064,9 @@ class _PropertyTypeCard extends StatelessWidget {
         ListingType.turf =>
           'A sports ground rented by the hour — football, cricket, badminton '
               'and the like.',
+        ListingType.hotel =>
+          'A hotel or guest house with several rooms of the same kind, '
+              'booked by the night or for a day-use block.',
       };
 
   @override
@@ -861,11 +1125,15 @@ class _PropertyTypeCard extends StatelessWidget {
 // Step 2: Basics
 class _BasicsStep extends StatelessWidget {
   const _BasicsStep({
+    this.inHotel = false,
     required this.titleController,
     required this.descriptionController,
     required this.onChanged,
   });
 
+  /// A hotel's room type: the title is the room type's name ("Super
+  /// Deluxe Room"), shown under the hotel's own name.
+  final bool inHotel;
   final TextEditingController titleController;
   final TextEditingController descriptionController;
   final VoidCallback onChanged;
@@ -880,7 +1148,7 @@ class _BasicsStep extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Tell guests about your place',
+            inHotel ? 'Name this room type' : 'Tell guests about your place',
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.bold,
             ),
@@ -895,8 +1163,10 @@ class _BasicsStep extends StatelessWidget {
           const SizedBox(height: 32),
           AppTextField(
             controller: titleController,
-            label: 'Listing title',
-            hint: 'e.g., Cozy room in the heart of Gulshan',
+            label: inHotel ? 'Room type' : 'Listing title',
+            hint: inHotel
+                ? 'e.g., Super Deluxe Room, Sea Front Deluxe'
+                : 'e.g., Cozy room in the heart of Gulshan',
             onChanged: (_) => onChanged(),
           ),
           const SizedBox(height: 16),
@@ -1075,6 +1345,9 @@ class _LocationStep extends StatelessWidget {
 // Step 4: Details
 class _DetailsStep extends StatelessWidget {
   const _DetailsStep({
+    required this.type,
+    required this.roomFacts,
+    required this.onRoomFactsChanged,
     required this.maxGuests,
     required this.partyLimits,
     required this.onPartyLimitsChanged,
@@ -1087,8 +1360,15 @@ class _DetailsStep extends StatelessWidget {
     required this.onBedsChanged,
     required this.onBathroomsChanged,
     required this.onAmenityToggled,
+    this.inHotel = false,
   });
 
+  final ListingType type;
+
+  /// A room type of a hotel (153): its hotel-wide amenities are the hotel's.
+  final bool inHotel;
+  final RoomFacts roomFacts;
+  final ValueChanged<RoomFacts> onRoomFactsChanged;
   final int maxGuests;
   final PartyLimits partyLimits;
   final ValueChanged<PartyLimits> onPartyLimitsChanged;
@@ -1164,6 +1444,9 @@ class _DetailsStep extends StatelessWidget {
             min: 1,
             max: 10,
           ),
+          const Divider(),
+          const SizedBox(height: 8),
+          RoomFactsFields(facts: roomFacts, onChanged: onRoomFactsChanged),
           const SizedBox(height: 24),
           Text(
             'Amenities',
@@ -1173,14 +1456,20 @@ class _DetailsStep extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'What does your place offer?',
+            // A room type's hotel-wide amenities (gym, restaurant ...) are
+            // the hotel's, set once on the hotel form and copied here by
+            // the database (155), so this form asks only about the room.
+            inHotel
+                ? 'What is in this room? Hotel-wide amenities are set on the hotel.'
+                : 'What does your place offer?',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 8),
           // Amenities grouped by category (Essentials / Features / Power / Safety).
-          for (final group in FacilityCatalog.groups) ...[
+          for (final group
+              in FacilityCatalog.groupsFor(type, inHotel: inHotel)) ...[
             const SizedBox(height: 12),
             Text(
               group.title,
@@ -1217,6 +1506,100 @@ class _DetailsStep extends StatelessWidget {
 /// no bedrooms, beds, bathrooms or party sub-caps, and gains sport, format and
 /// surface. A single widget carrying both sets behind `if (isStay)` would be
 /// two forms in a trenchcoat, and the amenity list underneath differs too.
+/// The hotel page: how many rooms, then what the hotel says about itself.
+class _HotelStep extends StatelessWidget {
+  const _HotelStep({
+    required this.roomNamesController,
+    required this.roomNames,
+    required this.onRoomNamesChanged,
+    required this.unitCount,
+    required this.onUnitCountChanged,
+  });
+
+  final TextEditingController roomNamesController;
+  final RoomLabelParse roomNames;
+  final VoidCallback onRoomNamesChanged;
+  final int unitCount;
+  final ValueChanged<int> onUnitCountChanged;
+
+  @override
+  Widget build(BuildContext context) => _rooms(Theme.of(context));
+
+  /// Plan §8 step 3: rooms by name, ranges allowed, or a bare count. Names
+  /// are checked here exactly as add_listing_units checks them, except
+  /// "taken elsewhere in the hotel", which only the database can see.
+  Widget _rooms(ThemeData theme) {
+    final named = roomNames.labels.isNotEmpty;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Rooms of this type',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Type the room numbers. Ranges work: 101-105, 201-205. Guests '
+            'book a room of this type; we pick which one.',
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 24),
+          AppTextField(
+            controller: roomNamesController,
+            label: 'Room numbers (optional)',
+            hint: 'e.g., 101-105, 201-205, Garden room',
+            maxLines: 3,
+            onChanged: (_) => onRoomNamesChanged(),
+          ),
+          const SizedBox(height: 8),
+          if (named)
+            Text(
+              '${roomNames.labels.length} '
+              '${roomNames.labels.length == 1 ? 'room' : 'rooms'}: '
+              '${_preview(roomNames.labels)}',
+              style: theme.textTheme.bodySmall,
+            ),
+          for (final e in roomNames.errors)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                e,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.error),
+              ),
+            ),
+          if (!named) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Or just say how many — you can name them later.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            _CounterRow(
+              label: 'Rooms of this type',
+              value: unitCount,
+              onChanged: onUnitCountChanged,
+              min: 1,
+              max: 100,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static String _preview(List<String> labels) => labels.length <= 12
+      ? labels.join(', ')
+      : '${labels.take(10).join(', ')} … ${labels.last}';
+}
+
 class _TurfStep extends StatelessWidget {
   const _TurfStep({
     required this.maxPlayers,
@@ -1383,6 +1766,10 @@ class _PricingStep extends StatelessWidget {
     required this.maxNightsController,
     required this.minMonthsController,
     required this.maxMonthsController,
+    required this.hourlySlotsController,
+    required this.hourlyWindowStartController,
+    required this.hourlyWindowEndController,
+    required this.hourlyHelperText,
   });
 
   final TextEditingController hourlyPriceController;
@@ -1402,6 +1789,13 @@ class _PricingStep extends StatelessWidget {
   final TextEditingController maxNightsController;
   final TextEditingController minMonthsController;
   final TextEditingController maxMonthsController;
+  final TextEditingController hourlySlotsController;
+  final TextEditingController hourlyWindowStartController;
+  final TextEditingController hourlyWindowEndController;
+
+  /// The platform's hourly rule for this type, spelled out so the host knows
+  /// the floor their own minimum will be clamped to.
+  final String hourlyHelperText;
 
   @override
   Widget build(BuildContext context) {
@@ -1434,13 +1828,19 @@ class _PricingStep extends StatelessWidget {
             label: 'Hourly rate',
             icon: Icons.schedule,
             hint: '150',
-            helperText: 'For short stays (1-12 hours)',
+            helperText: hourlyHelperText,
             enabled: hourlyEnabled,
             onToggled: onHourlyToggled,
             onChanged: onChanged,
             minController: minHoursController,
             maxController: maxHoursController,
             unitLabel: 'hours',
+            extra: HourlyScheduleFields(
+              slotsController: hourlySlotsController,
+              windowStartController: hourlyWindowStartController,
+              windowEndController: hourlyWindowEndController,
+              onChanged: onChanged,
+            ),
           ),
           const SizedBox(height: 20),
 
@@ -1669,6 +2069,7 @@ String? _emptyToNull(String value) {
 class _HouseRulesStep extends StatelessWidget {
   const _HouseRulesStep({
     required this.isStay,
+    this.timesFromHotel = false,
     required this.checkInTimeController,
     required this.checkOutTimeController,
     required this.quietHoursController,
@@ -1681,12 +2082,18 @@ class _HouseRulesStep extends StatelessWidget {
     required this.onSmokingToggled,
     required this.onPetsToggled,
     required this.onPartiesToggled,
+    required this.instantBook,
+    required this.onInstantBookToggled,
   });
 
   /// False for a turf. Unlike the Details/Turf split -- two genuinely
   /// different forms -- this page is the SAME page with three rows dropped, so
   /// a flag is the honest shape here rather than a second widget.
   final bool isStay;
+
+  /// A hotel's room type: check-in and check-out are the hotel's (153
+  /// copies them over), so the pair is not asked here.
+  final bool timesFromHotel;
 
   final TextEditingController checkInTimeController;
   final TextEditingController checkOutTimeController;
@@ -1700,6 +2107,8 @@ class _HouseRulesStep extends StatelessWidget {
   final ValueChanged<bool> onSmokingToggled;
   final ValueChanged<bool> onPetsToggled;
   final ValueChanged<bool> onPartiesToggled;
+  final bool instantBook;
+  final ValueChanged<bool> onInstantBookToggled;
 
   @override
   Widget build(BuildContext context) {
@@ -1727,7 +2136,7 @@ class _HouseRulesStep extends StatelessWidget {
           // A turf booking already carries its own start and end -- the slot
           // IS the check-in time -- so a second, free-text pair here would be
           // a field that contradicts the booking.
-          if (isStay) ...[
+          if (isStay && !timesFromHotel) ...[
             Row(
               children: [
                 Expanded(
@@ -1749,6 +2158,17 @@ class _HouseRulesStep extends StatelessWidget {
             ),
             const SizedBox(height: 20),
           ],
+          // 151. Not stay-only: a turf may confirm its own slots too. The
+          // database decides the status at insert; this only flips the column.
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Instant booking'),
+            subtitle: const Text(
+                'Guests are confirmed straight away, without waiting for you to '
+                'accept. Keep your calendar up to date.'),
+            value: instantBook,
+            onChanged: onInstantBookToggled,
+          ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('Smoking allowed'),

@@ -522,4 +522,4 @@ grant execute on function public.admin_send_bulk_notification(
 comment on table public.notification_campaigns is
   'One bulk notification send. Unlike sms_campaigns there is no queue: delivery '
   'is the existing on_notification_send_push trigger, so the whole campaign is '
-  'one insert. See docs/BULK_SMS.md and 129 for why the two differ.';
+  'one insert. See docs/features/bulk-sms.md and 129 for why the two differ.';

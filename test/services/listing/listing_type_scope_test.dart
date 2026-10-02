@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:musafir/models/hotel_details.dart';
 import 'package:musafir/models/listing.dart';
 import 'package:musafir/models/listing_type.dart';
 import 'package:musafir/models/turf_details.dart';
@@ -13,6 +14,16 @@ TypeScopedFields scopeFor(ListingType type) => scopeFieldsToType(
         sport: TurfSport.football,
         format: TurfFormat.seven,
         surface: TurfSurface.artificial,
+      ),
+      hotelDetails: const HotelDetails(
+        starRating: 3,
+        frontDesk24h: true,
+        idRequired: true,
+      ),
+      roomFacts: const RoomFacts(
+        sizeSqft: 180,
+        bathroom: BathroomKind.attached,
+        toilet: ToiletKind.commode,
       ),
       partyLimits: const PartyLimits(adults: 2, children: 1),
       bedrooms: 3,
@@ -94,6 +105,8 @@ void main() {
       final scoped = scopeFieldsToType(
         type: type,
         turfDetails: const TurfDetails(),
+        hotelDetails: const HotelDetails(),
+        roomFacts: const RoomFacts(),
         partyLimits: const PartyLimits(),
         bedrooms: 1,
         beds: 1,
@@ -117,6 +130,89 @@ void main() {
         expect(scoped.bedrooms, 0,
             reason: '$type is not a stay and must claim no bedrooms');
       }
+      // 150's listings_hotel_fields_only_on_hotel: the other way round from
+      // turf, only ONE type may carry these, so it is checked for every type.
+      expect(scoped.hotelDetails.isEmpty, type != ListingType.hotel,
+          reason: '$type: hotel fields kept only on a hotel');
     }
+  });
+
+  group('the hotel fields (150)', () {
+    test('a hotel keeps its stars, desk and ID answers', () {
+      final h = scopeFor(ListingType.hotel).hotelDetails;
+      expect(h.starRating, 3);
+      expect(h.frontDesk24h, isTrue);
+      expect(h.idRequired, isTrue);
+    });
+
+    // The realistic switch: a guest house re-filed as rooms. A star rating
+    // left behind is a 23514 the host cannot see or fix.
+    test('a hotel re-filed as a room drops them', () {
+      expect(scopeFor(ListingType.room).hotelDetails.isEmpty, isTrue);
+    });
+
+    test('a hotel is a stay: no turf columns, rooms kept', () {
+      final s = scopeFor(ListingType.hotel);
+      expect(s.turfDetails.isEmpty, isTrue);
+      expect(s.bedrooms, 3);
+    });
+
+    // Room Matrix facts describe any stay; only a pitch sheds them.
+    test('room facts survive every stay type and clear on a turf', () {
+      for (final type in ListingType.values) {
+        expect(scopeFor(type).roomFacts.isEmpty, !type.isStay, reason: '$type');
+      }
+    });
+  });
+
+  group('RoomFacts / HotelDetails wire', () {
+    test('round-trips through the column names', () {
+      const facts = RoomFacts(
+          sizeSqft: 250,
+          bathroom: BathroomKind.common,
+          toilet: ToiletKind.indian);
+      final back = RoomFacts.fromJson(facts.toJson());
+      expect(back.sizeSqft, 250);
+      expect(back.bathroom, BathroomKind.common);
+      expect(back.toilet, ToiletKind.indian);
+      const hotel = HotelDetails(starRating: 4, frontDesk24h: false);
+      final h = HotelDetails.fromJson(hotel.toJson());
+      expect(h.starRating, 4);
+      expect(h.frontDesk24h, isFalse);
+      expect(h.idRequired, isNull);
+    });
+
+    // Always all keys, nulls included: that is how a switch away from hotel
+    // clears the columns in the same write.
+    test('an empty value still writes every key, as null', () {
+      expect(const HotelDetails().toJson(), {
+        'hotel_star_rating': null,
+        'hotel_front_desk_24h': null,
+        'hotel_id_required': null,
+      });
+      expect(const RoomFacts().toJson().keys,
+          ['size_sqft', 'bathroom_kind', 'toilet_kind']);
+    });
+
+    test('values the constraints forbid read as unstated', () {
+      expect(
+          HotelDetails.fromJson({'hotel_star_rating': 7}).starRating, isNull);
+      expect(RoomFacts.fromJson({'size_sqft': 0}).sizeSqft, isNull);
+      expect(RoomFacts.fromJson({'toilet_kind': 'bucket'}).toilet, isNull);
+      // A database without 150: no keys at all.
+      expect(HotelDetails.fromJson(const {}).isEmpty, isTrue);
+      expect(RoomFacts.fromJson(const {}).isEmpty, isTrue);
+    });
+
+    test('the host size field: blank is fine, junk is an error', () {
+      expect(RoomFacts.parseSize(''), isNull);
+      expect(RoomFacts.sizeError(''), isNull);
+      expect(RoomFacts.parseSize(' 180 '), 180);
+      expect(RoomFacts.sizeError('180'), isNull);
+      expect(RoomFacts.sizeError('0'), isNotNull);
+      expect(RoomFacts.sizeError('20001'), isNotNull);
+      expect(RoomFacts.sizeError('12.5'), isNotNull);
+      expect(RoomFacts.sizeError('big'), isNotNull);
+    });
   });
 }

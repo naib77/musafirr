@@ -148,7 +148,7 @@ Future<void> _setUpPushNotifications() async {
 
   // Web push not configured yet — keep today's no-op stub behaviour.
   debugPrint('[Main] Web push not configured; using stub. '
-      'See docs/web-push-setup.md');
+      'See docs/features/web-push-setup.md');
   PushNotificationServiceFactory.useStub();
 }
 

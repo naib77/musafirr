@@ -25,7 +25,7 @@ Migrations 141 and **142_nid_and_face_review.sql** are live in `bojkmonskqlhuakx
 
 Migration 142 now requires existing NID-approved users to complete face review before new bookings or listing publication. All 37 document records and 13 existing Document approvals were preserved. Because face capture is still disabled, NID-only accounts cannot yet complete this requirement. App/admin deployment, face assets, retention scheduling and the consented physical-device pilot remain necessary before enabling captures.
 
-See [implementation notes](FACE_VERIFICATION_IMPLEMENTATION.md) for the original capture implementation and remaining deployment checks.
+See [implementation notes](face-verification.md) for the original capture implementation and remaining deployment checks.
 
 ## Restoration follow-up (live, migration 143)
 

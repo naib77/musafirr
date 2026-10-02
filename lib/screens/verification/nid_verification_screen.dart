@@ -8,8 +8,13 @@ import '../../core/theme/app_colors.dart';
 import '../../services/verification/nid_verification_service.dart';
 
 class NidVerificationScreen extends StatefulWidget {
-  const NidVerificationScreen({super.key, this.repository, this.pickImage});
+  const NidVerificationScreen(
+      {super.key, this.repository, this.pickImage, this.faceNext = false});
   final NidVerificationRepository? repository;
+
+  /// Whether a face check follows this step. Once a document is submitted,
+  /// a "Next" button pops `true` so the overview opens the face step.
+  final bool faceNext;
   final Future<Uint8List?> Function()? pickImage;
   @override
   State<NidVerificationScreen> createState() => _NidVerificationScreenState();
@@ -204,6 +209,13 @@ class _NidVerificationScreenState extends State<NidVerificationScreen> {
                                   ? 'Document approved by admin'
                                   : 'Document pending admin review',
                               textAlign: TextAlign.center),
+                          if (widget.faceNext) ...[
+                            const SizedBox(height: 24),
+                            FilledButton(
+                                onPressed: () =>
+                                    Navigator.of(context).pop(true),
+                                child: const Text('Next: live face check')),
+                          ],
                         ] else if (_status != null) ...[
                           if (_status == 'rejected') ...[
                             const Text(
@@ -249,6 +261,7 @@ class _NidVerificationScreenState extends State<NidVerificationScreen> {
                           _side(false),
                           CheckboxListTile(
                               contentPadding: EdgeInsets.zero,
+                              controlAffinity: ListTileControlAffinity.leading,
                               value: _consent,
                               onChanged: _busy
                                   ? null

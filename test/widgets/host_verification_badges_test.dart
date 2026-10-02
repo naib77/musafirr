@@ -94,5 +94,28 @@ void main() {
       expect(find.text('Email'), findsNothing);
       expect(find.textContaining('Email'), findsNothing);
     });
+    // 152: the hotel badge is a claim about the premises, not the person, so
+    // it stands alone — a hotel with an unverified host still earns it.
+    testWidgets('a verified licence shows alone', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: HostVerificationBadges(
+              verifications: HostVerifications.none,
+              licensedHotel: true,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Licensed hotel'), findsOneWidget);
+    });
+
+    test('showsAny counts the licence', () {
+      expect(HostVerificationBadges.showsAny(null), isFalse);
+      expect(
+          HostVerificationBadges.showsAny(null, licensedHotel: true), isTrue);
+      expect(HostVerificationBadges.showsAny(HostVerifications.none), isFalse);
+    });
   });
 }

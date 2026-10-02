@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/responsive.dart';
 import '../../models/listing.dart';
+import '../../models/property.dart';
 import '../../models/rental_plan.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../services/verification/publish_gate.dart';
@@ -11,6 +12,7 @@ import '../../widgets/modern_banner.dart';
 import 'create_listing_screen.dart';
 import 'edit_listing_screen.dart';
 import 'listing_availability_screen.dart';
+import 'property_dashboard_screen.dart';
 import '../../widgets/app_network_image.dart';
 
 class HostListingsScreen extends StatelessWidget {
@@ -37,22 +39,45 @@ class HostListingsScreen extends StatelessWidget {
         child: ListenableBuilder(
           listenable: Listenable.merge([repository, authState]),
           builder: (context, _) {
-            final hostListings = user != null
+            final own = user != null
                 ? repository.listings.where((l) => l.hostId == user.id).toList()
                 : <Listing>[];
+            // A hotel's room types are listed under the hotel (its card
+            // opens the dashboard with every type and room), not again here
+            // one by one: the host thinks of Sea Crown as one place.
+            final hostListings = own.where((l) => !l.isHotelRoomType).toList();
+            final hasHotelTypes = own.any((l) => l.isHotelRoomType);
 
+            final hotels = _HotelsSection(
+              repository: repository,
+              authState: authState,
+            );
+            if (hostListings.isEmpty && hasHotelTypes) {
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                children: [hotels],
+              );
+            }
             if (hostListings.isEmpty) {
-              return _buildEmptyState(context, theme);
+              // A hotel just created has no room type yet, so no listing --
+              // it must still be reachable, or the host loses it.
+              return Column(
+                children: [
+                  hotels,
+                  Expanded(child: _buildEmptyState(context, theme)),
+                ],
+              );
             }
 
             return ListView.separated(
               // Extra bottom padding so the last card's action row (Edit/Delete)
               // clears the "Add Listing" FAB that floats over the list.
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-              itemCount: hostListings.length,
+              itemCount: hostListings.length + 1,
               separatorBuilder: (_, __) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
-                final listing = hostListings[index];
+                if (index == 0) return hotels;
+                final listing = hostListings[index - 1];
                 return _ListingCard(
                   listing: listing,
                   onEdit: () => _editListing(context, listing),
@@ -470,6 +495,93 @@ class _StatChip extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The host's hotels (153), each opening its room-type dashboard. Room types
+/// also appear below as ordinary listing cards -- they are listings -- but
+/// rooms, moves and new types are managed from the hotel.
+class _HotelsSection extends StatefulWidget {
+  const _HotelsSection({required this.repository, required this.authState});
+
+  final MusafirRepository repository;
+  final AuthStateNotifier authState;
+
+  @override
+  State<_HotelsSection> createState() => _HotelsSectionState();
+}
+
+class _HotelsSectionState extends State<_HotelsSection> {
+  List<Property> _hotels = const [];
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.repository.addListener(_load);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    widget.repository.removeListener(_load);
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    // The repository notifies in bursts (optimistic add, then refresh); one
+    // query in flight is enough.
+    if (_loading) return;
+    _loading = true;
+    try {
+      final hotels = await widget.repository.myProperties();
+      if (mounted) setState(() => _hotels = hotels);
+    } catch (e) {
+      // Before 153 is live the table does not exist; no section, no error.
+      debugPrint('Error loading hotels: $e');
+    } finally {
+      _loading = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_hotels.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+          child: Text(
+            'Your hotels',
+            style: theme.textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+        ),
+        for (final h in _hotels)
+          Card(
+            margin: const EdgeInsets.only(bottom: 8),
+            child: ListTile(
+              leading: const Icon(Icons.apartment),
+              title: Text(h.name),
+              subtitle: h.publicAddress.isEmpty ? null : Text(h.publicAddress),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PropertyDashboardScreen(
+                    repository: widget.repository,
+                    authState: widget.authState,
+                    property: h,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        const SizedBox(height: 4),
+      ],
     );
   }
 }

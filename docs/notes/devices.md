@@ -6,7 +6,7 @@ The short rule for each section is still in `CLAUDE.md`; the reasoning is here.
 ### Devices are recorded, nothing is capped (123)
 
 `user_devices` records which devices an account signs in from. Phase 0 of
-`docs/DEVICE_SESSIONS.md` — read that before extending this, particularly why
+`docs/features/device-sessions.md` — read that before extending this, particularly why
 the device list has to ship before any limit does, and why web cannot share a
 tight cap with phones.
 

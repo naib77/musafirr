@@ -66,6 +66,7 @@ class PlanPriceRow extends StatelessWidget {
     this.minController,
     this.maxController,
     this.unitLabel,
+    this.extra,
   });
 
   final TextEditingController controller;
@@ -82,6 +83,10 @@ class PlanPriceRow extends StatelessWidget {
   final TextEditingController? minController;
   final TextEditingController? maxController;
   final String? unitLabel;
+
+  /// Plan-specific fields rendered under the min/max row, greyed out and
+  /// inert with the rest of the plan when it is off.
+  final Widget? extra;
 
   @override
   Widget build(BuildContext context) {
@@ -167,6 +172,87 @@ class PlanPriceRow extends StatelessWidget {
             ),
           ),
         ],
+        if (extra != null) ...[
+          const SizedBox(height: 12),
+          Opacity(
+            opacity: enabled ? 1.0 : 0.4,
+            child: IgnorePointer(ignoring: !enabled, child: extra),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// The hourly plan's shape beyond price and min/max: which block lengths are
+/// sold (blank = any whole number of hours the platform allows) and the
+/// day-use window a stay must sit inside (blank = any time). Both are
+/// optional narrowings of the platform's `hourly_policy`; a host cannot widen
+/// it from here, and the server re-checks whatever is saved.
+class HourlyScheduleFields extends StatelessWidget {
+  const HourlyScheduleFields({
+    super.key,
+    required this.slotsController,
+    required this.windowStartController,
+    required this.windowEndController,
+    required this.onChanged,
+  });
+
+  final TextEditingController slotsController;
+  final TextEditingController windowStartController;
+  final TextEditingController windowEndController;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final mutedColor = theme.colorScheme.onSurfaceVariant;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AppTextField(
+          controller: slotsController,
+          label: 'Offered durations (hours)',
+          hint: 'Any — or e.g. 6, 12',
+          keyboardType: TextInputType.text,
+          onChanged: (_) => onChanged(),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Leave empty to let guests pick any number of hours. List a few '
+          'to sell fixed blocks only, like a 6-hour day-use.',
+          style: theme.textTheme.bodySmall?.copyWith(color: mutedColor),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: AppTextField(
+                controller: windowStartController,
+                label: 'Hourly from',
+                hint: '09:00',
+                keyboardType: TextInputType.datetime,
+                onChanged: (_) => onChanged(),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: AppTextField(
+                controller: windowEndController,
+                label: 'Hourly until',
+                hint: '21:00',
+                keyboardType: TextInputType.datetime,
+                onChanged: (_) => onChanged(),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Optional. Hourly stays must start and end inside this window on '
+          'the same day (24-hour clock; 24:00 means midnight).',
+          style: theme.textTheme.bodySmall?.copyWith(color: mutedColor),
+        ),
       ],
     );
   }

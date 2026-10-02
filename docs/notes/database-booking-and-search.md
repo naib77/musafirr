@@ -249,7 +249,7 @@ The host wizard is a **list** of steps derived from the type
 step's *identity* rather than its index — the two shapes put photos at 7 and 6,
 so an index-based rule would have let a turf publish with no photos. Sport,
 format and surface render through the shared
-[`TurfDetailsFields`](lib/widgets/host/turf_details_fields.dart), for the same
+[`TurfDetailsFields`](../../lib/widgets/host/turf_details_fields.dart), for the same
 reason `GuestPartyFields` is shared: the wire values are pinned by check
 constraints, and two copies drift into one screen offering a sport the other
 refuses.
@@ -316,3 +316,115 @@ six four-racer runs, two had all three losers deadlock.
 conflict message rather than a generic banner. **Once, not a loop with
 backoff**: the race is already decided by the time the retry runs, and a
 client hammering a contended slot adds to the contention it is losing to.
+
+### A listing is a set of units, and the overlap rule keys on the unit (147)
+
+A hotel with twelve rooms is twelve things that can each be booked once. The
+listing had been the unit of booking, so the exclusion constraint refused a
+second guest the moment one room was taken. 147 adds `listing_units` and
+moves the rule down one level.
+
+- **`bookings.unit_id` is `not null` and the database picks it.** The guest
+  never names a room: `create_marketplace_booking` takes the first free
+  active unit by label (`for update … skip locked`, so two guests racing for
+  the last room do not both win it) and refuses with the same `23P01` +
+  `listing_overlap` as before when none is free. The constraint keeps its
+  name, `bookings_no_overlap`, because the Dart fallback classifier matches
+  on it.
+- **Every listing has exactly one unit until the host adds more.** The
+  backfill made one per listing, `trg_listing_default_unit` makes one for
+  every new listing, and a legacy unitless insert (QA seed, the older
+  suites, `_insertBookingAsync`) is pinned to the only unit by
+  `trg_a_booking_unit_consistent`. So a single-unit listing behaves exactly
+  as it did, and the deployed web build keeps booking against the new
+  schema. A unitless insert on a multi-unit listing is `22023`
+  `unit_required` — only the RPC may book those.
+- **`unit_id` cannot be changed after the fact** unless the session sets
+  `musafir.unit_reassign = 'on'` (the Phase 4 RPC). A host fixing a room
+  clash must go through that function, not an UPDATE.
+- **Availability is `listing_rooms_left(listing, from, to) > 0`**, which
+  `is_booking_available` now wraps and search still calls. A listing-wide
+  block (`listing_availability_blocks.unit_id is null`) is zero rooms; a
+  per-unit block takes that one room out. The block constraint keys on
+  `(listing_id, coalesce(unit_id, zero-uuid), range)` so the two kinds do not
+  collide with each other.
+- **`listing_units` is the host's inventory, not public data.** Owner or
+  admin only; anon reaches rooms only through `listing_rooms_left`. The
+  revoke is explicit because default privileges would have granted anon
+  SELECT at create time.
+
+### Hourly stays are a two-layer policy, and the host can only narrow it (148)
+
+A hotel sells day-use in 6- or 12-hour blocks; a seat is sold by the hour
+from one upwards; a full house is not worth opening for less than three. The
+only hourly rule had been the host's `min_hours`/`max_hours` and a hard-coded
+1..12 stepper, so none of these could be expressed. 148 adds a platform
+layer above the host's and one check that reads both.
+
+- **Platform: `app_settings.hourly_policy`**, JSON keyed by `listing_type`
+  label (`fullHouse`, `hotel` — `hotel` accepted ahead of 149 so the row
+  needs no rewrite then): `{"enabled", "min_hours", "slots"}` per type,
+  validated by `fn_validate_setting_hourly_policy`. `hourly_policy_for(type)`
+  resolves a missing or corrupt entry to `hourly_policy_defaults()` per
+  type — the same fail-open the Dart `HourlyPolicy.fromRaw` does, and a test
+  in `test/services/hourly_policy_test.dart` pins the Dart defaults to the
+  SQL literal.
+- **Host: `listings.hourly_slots`, `hourly_window_start/end`** beside the
+  existing `min_hours`/`max_hours`. The floor is
+  `greatest(policy.min_hours, coalesce(listing.min_hours, 1))`; a host slot
+  list **replaces** the platform's (so a hotel can drop 12 h) but every
+  slot is still subject to `max_hours`; the window is one Asia/Dhaka
+  calendar day with `24:00` a valid end. A host cannot widen anything from
+  their form — the form clamps a typed minimum up to the floor before
+  saving so the host sees the number guests are held to.
+- **`hourly_booking_check` runs inside the RPC for `hour` bookings only**,
+  in a fixed order — disabled, floor, max, slots, window — and refuses with
+  `22023` + hints `hourly_disabled` / `hourly_min` / `hourly_max` /
+  `hourly_slot` / `hourly_window`. The order is part of the contract: a
+  1-hour stay at 07:00 that breaks both the floor and the window is told
+  about the floor, and the Dart `HourlyRule.refusalFor` returns the same
+  answer so the pre-check banner and a refusal that slips past it read
+  the same sentence.
+- **The Dart copy shapes the picker, never gates.** `resolveHourlyRule`
+  decides chips (slotted) versus stepper (free hours), hides a slot above
+  the host's max, and drops the hourly plan from the segments entirely when
+  nothing is bookable (`HourlyRule.bookable`). The SQL suite
+  `148_hourly_policy_test.sql` §3 and the Dart test share one rule table;
+  change a case in one and change it in the other.
+- Nightly and monthly are untouched: the check is not called for them and
+  `minFor`/`maxFor` still apply.
+
+
+### A hotel is a listing with many units, and only the RPC resizes it (150, applied 2026-10-02)
+
+147 gave every listing one unit and no way to add another. 150 adds
+`set_listing_unit_count(listing, n)`, the only way a host changes how many
+rooms a listing sells.
+
+- **Shrinking deactivates, never deletes.** `bookings.unit_id` references the
+  unit, and history must keep pointing somewhere. Growing reactivates the
+  oldest inactive units first, so 10 → 8 → 10 gives back the same rooms.
+- **All-or-nothing, by hint.** If fewer free units exist than the shrink
+  needs (free = no pending/confirmed/active booking ending after now()), it
+  raises 22023 with hint `units_in_use` and changes nothing. The edit screen
+  maps that hint, never the message (the message carries counts).
+- **The race.** The booking RPC picks a unit `for update of u skip locked`.
+  The resize locks every active unit `for update` (waiting) *before* checking
+  bookings, so a booking already holding a unit is seen, and one that starts
+  later skips the unit being retired.
+- **Definer, so it guards itself.** It must see every guest's booking, not
+  what the host's RLS shows, and it does its own owner/admin check (42501
+  `not_listing_owner`). `listing_unit_count` is invoker and RLS-gated.
+- **The edit form only resizes hotels**, and only after the count has
+  loaded. A default of 1 saved before the load answered would retire every
+  other room.
+
+The hotel trio (`hotel_star_rating`, `hotel_front_desk_24h`,
+`hotel_id_required`) is guarded like turf's (`listings_hotel_fields_only_on_hotel`),
+so `scopeFieldsToType` clears it whenever the type is not hotel. The Room
+Matrix facts (`size_sqft`, `bathroom_kind`, `toilet_kind`) describe any stay
+and carry no type guard; they are cleared only for a turf.
+
+**Deploy order:** the save path writes all six columns on every listing, and
+PostgREST refuses an unknown column (PGRST204). A build carrying them breaks
+*every* listing save on a database without 150. Live first, then build.

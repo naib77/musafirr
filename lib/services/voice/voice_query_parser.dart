@@ -346,6 +346,19 @@ const Map<String, ListingType> _typeWords = {
   'football': ListingType.turf,
   'futbol': ListingType.turf,
   'cricket': ListingType.turf,
+  // Hotel (149). "Resort" is folded in on purpose: on this marketplace it is a
+  // hotel with a pool, and a guest saying it means "several rooms, a front
+  // desk", which is what the hotel type is. "Guest house" is two words and
+  // this map is per token, so only the joined spelling matches here; the
+  // Gemini fallback catches the spaced one.
+  'হোটেল': ListingType.hotel,
+  'রিসোর্ট': ListingType.hotel,
+  'গেস্টহাউস': ListingType.hotel,
+  'hotel': ListingType.hotel,
+  'hotal': ListingType.hotel,
+  'hotels': ListingType.hotel,
+  'resort': ListingType.hotel,
+  'guesthouse': ListingType.hotel,
 };
 
 const Map<String, ListingPurpose> _purposeWords = {

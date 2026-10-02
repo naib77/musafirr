@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Dump the LIVE public schema as a REPLAYABLE baseline for a local Supabase.
 
-`scripts/dump_live_schema.py` writes the reference snapshot (docs/live_schema.sql)
+`scripts/dump_live_schema.py` writes the reference snapshot (docs/schema/live_schema.sql)
 and says of itself "not guaranteed to replay cleanly". This one exists because
 the migration chain in supabase/migrations does not apply from scratch — 003
 declares `UNIQUE (LEAST(a,b), GREATEST(a,b))`, which Postgres has never

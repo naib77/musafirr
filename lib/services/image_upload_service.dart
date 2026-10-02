@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/address_verification.dart';
+import '../models/trade_licence.dart';
 import 'image_compression_service.dart';
 
 /// Storage bucket names
@@ -767,6 +768,65 @@ class ImageUploadService {
       debugPrint('[ImageUploadService] submitAddressVerification failed: $e');
       return 'Could not submit your address. Please try again.';
     }
+  }
+
+  // ============== Hotel trade licence (host, optional) ==============
+
+  /// Extensions the licence picker offers: 152's submit RPC accepts JPG, PNG
+  /// and PDF only, and checks the stored MIME type, not the name.
+  static const tradeLicenceExtensions = ['jpg', 'jpeg', 'png', 'pdf'];
+
+  /// Uploads a licence file and submits it for review, in one step: an
+  /// uploaded file that was never submitted is invisible to the admin queue.
+  ///
+  /// The path must sit under `<uid>/trade_licence/` — the RPC refuses any
+  /// other, and also checks Storage stamped the caller as the uploader.
+  /// Returns null on success, or a message to show the host.
+  Future<String?> submitTradeLicence({
+    required PlatformFile file,
+    required String listingId,
+    String? licenceNumber,
+  }) async {
+    // The signed-in user, not the listing's owner_id: the folder has to be the
+    // caller's own for both the Storage policy and the RPC to accept it.
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return 'Sign in first.';
+    final ext = p.extension(file.name).toLowerCase().replaceAll('.', '');
+    final path = '$userId/trade_licence/${listingId}_'
+        '${DateTime.now().millisecondsSinceEpoch}.${ext.isEmpty ? 'jpg' : ext}';
+    final upload = await uploadPlatformFile(
+      file: file,
+      bucket: StorageBuckets.documents,
+      path: path,
+    );
+    if (!upload.success || upload.storagePath == null) {
+      return 'Could not upload the file. Please try again.';
+    }
+    try {
+      await _client.rpc('submit_trade_licence', params: {
+        'p_listing_id': listingId,
+        'p_document_path': upload.storagePath,
+        'p_licence_number': licenceNumber,
+      });
+      return null;
+    } on PostgrestException catch (e) {
+      return tradeLicenceRefusalMessage(e.hint);
+    } catch (e) {
+      debugPrint('[ImageUploadService] submitTradeLicence failed: $e');
+      return tradeLicenceRefusalMessage(null);
+    }
+  }
+
+  /// The host's own licence record for one listing; [TradeLicence.none] when
+  /// nothing was submitted. Throws when the lookup fails (including a database
+  /// without 152), so the caller can hide the card rather than claim "none".
+  Future<TradeLicence> tradeLicence(String listingId) async {
+    final row = await _client
+        .from('listing_trade_licences')
+        .select('status, licence_number, rejection_reason')
+        .eq('listing_id', listingId)
+        .maybeSingle();
+    return row == null ? TradeLicence.none : TradeLicence.fromJson(row);
   }
 
   // ============== Identity verification (guest + host) ==============
