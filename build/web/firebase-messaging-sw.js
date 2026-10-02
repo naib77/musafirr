@@ -7,7 +7,7 @@
  * ⚠️ Two values are still placeholders: apiKey and appId. Get them from the
  * Firebase console → Project settings → Your apps → Web app → SDK config, and
  * keep them IN SYNC with lib/config/firebase_web_config.dart. See
- * docs/features/web-push-setup.md.
+ * docs/web-push-setup.md.
  */
 importScripts(
   "https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js",
