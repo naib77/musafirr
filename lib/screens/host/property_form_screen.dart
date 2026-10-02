@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import '../../core/utils/responsive.dart';
+import '../../data/facility_catalog.dart';
 import '../../models/hotel_details.dart';
 import '../../models/listing.dart';
 import '../../models/property.dart';
@@ -51,6 +52,10 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
   final _checkOut = TextEditingController(text: '12:00 PM');
   HotelDetails _details = const HotelDetails();
 
+  /// Hotel-wide amenity names (155). Kept by name, like the listing forms,
+  /// and resolved against the catalog on save.
+  final Set<String> _amenities = {};
+
   // Same default as the listing wizard, and the same rule: it is not a
   // location until the host sets the pin.
   double _latitude = 23.7806;
@@ -75,6 +80,7 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
     _checkIn.text = p.checkInTime ?? '';
     _checkOut.text = p.checkOutTime ?? '';
     _details = p.hotelDetails;
+    _amenities.addAll(p.facilities.map((f) => f.name));
     _latitude = p.latitude ?? _latitude;
     _longitude = p.longitude ?? _longitude;
     _pinConfirmed = p.latitude != null;
@@ -157,6 +163,11 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
       checkOutTime: _blankToNull(_checkOut.text),
       hotelDetails: _details,
       imageUrls: widget.property?.imageUrls ?? const [],
+      facilities: [
+        for (final group in FacilityCatalog.hotelPropertyGroups)
+          for (final f in group.facilities)
+            if (_amenities.contains(f.name)) f,
+      ],
     );
     final address = PropertyAddress(
       houseNo: _blankToNull(_houseNo.text),
@@ -359,6 +370,40 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
               details: _details,
               onChanged: (v) => setState(() => _details = v),
             ),
+            section('Hotel amenities'),
+            Text(
+              // Said outright, since the room-type form no longer asks: a
+              // host who wonders where "Gym" went should find it here.
+              'Set once for the whole hotel; every room type shows them.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            for (final group in FacilityCatalog.hotelPropertyGroups) ...[
+              const SizedBox(height: 12),
+              Text(
+                group.title,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final f in group.facilities)
+                    FilterChip(
+                      selected: _amenities.contains(f.name),
+                      label: Text(f.name),
+                      avatar: Icon(f.icon, size: 18),
+                      onSelected: (on) => setState(() => on
+                          ? _amenities.add(f.name)
+                          : _amenities.remove(f.name)),
+                    ),
+                ],
+              ),
+            ],
             const SizedBox(height: 24),
             if (error != null)
               Padding(

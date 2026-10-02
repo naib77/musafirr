@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/responsive.dart';
+import '../../data/facility_catalog.dart';
 import '../../models/listing.dart';
 import '../../models/property.dart';
 import '../../models/rental_plan.dart';
@@ -187,6 +188,32 @@ class _HotelScreenState extends State<HotelScreen> {
               const SizedBox(height: 12),
               Text(property.description!, style: theme.textTheme.bodyLarge),
             ],
+            // Once per hotel (155). Every room type carries these too (search
+            // filters on them there), so the rows below leave them out.
+            if (property.facilities.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              Text(
+                'Hotel amenities',
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 16,
+                runSpacing: 8,
+                children: [
+                  for (final f in property.facilities)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(f.icon, size: 18),
+                        const SizedBox(width: 6),
+                        Text(f.name, style: theme.textTheme.bodyMedium),
+                      ],
+                    ),
+                ],
+              ),
+            ],
             const SizedBox(height: 24),
             Text(
               _types.length == 1
@@ -236,6 +263,13 @@ class _RoomTypeRow extends StatelessWidget {
         '${listing.beds} bed${listing.beds == 1 ? '' : 's'}',
     ].join(' · ');
     final photo = listing.imageUrls.isEmpty ? null : listing.imageUrls.first;
+    // What sets this type apart: its own amenities, not the hotel's, which
+    // are listed once above. By catalog name rather than against the
+    // hotel's actual set, so a stale pre-155 row reads the same way.
+    final own = listing.facilities
+        .where((f) => !FacilityCatalog.hotelPropertyNames.contains(f.name))
+        .map((f) => f.name)
+        .toList();
 
     return Semantics(
       button: true,
@@ -294,6 +328,16 @@ class _RoomTypeRow extends StatelessWidget {
                         style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant),
                       ),
+                      if (own.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          own.join(' · '),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                       if (rates.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         Text(

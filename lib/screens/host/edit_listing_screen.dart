@@ -968,7 +968,18 @@ class _EditListingScreenState extends State<EditListingScreen> {
                 style: theme.textTheme.titleMedium
                     ?.copyWith(fontWeight: FontWeight.bold),
               ),
-              for (final group in FacilityCatalog.groupsFor(_propertyType)) ...[
+              if (_inHotel) ...[
+                const SizedBox(height: 4),
+                Text(
+                  // See create_listing_screen: the hotel holds these (155).
+                  'Hotel-wide amenities are set on the hotel.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+              for (final group in FacilityCatalog.groupsFor(_propertyType,
+                  inHotel: _inHotel)) ...[
                 const SizedBox(height: 12),
                 Text(
                   group.title,

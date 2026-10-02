@@ -440,6 +440,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
           beds: _beds,
           bathrooms: _bathrooms,
           selectedAmenities: _selectedAmenities,
+          inHotel: _inHotel,
           onGuestsChanged: (v) => setState(() {
             _maxGuests = v;
             // A sub-cap above the new total is unreachable — the
@@ -1359,9 +1360,13 @@ class _DetailsStep extends StatelessWidget {
     required this.onBedsChanged,
     required this.onBathroomsChanged,
     required this.onAmenityToggled,
+    this.inHotel = false,
   });
 
   final ListingType type;
+
+  /// A room type of a hotel (153): its hotel-wide amenities are the hotel's.
+  final bool inHotel;
   final RoomFacts roomFacts;
   final ValueChanged<RoomFacts> onRoomFactsChanged;
   final int maxGuests;
@@ -1451,14 +1456,20 @@ class _DetailsStep extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'What does your place offer?',
+            // A room type's hotel-wide amenities (gym, restaurant ...) are
+            // the hotel's, set once on the hotel form and copied here by
+            // the database (155), so this form asks only about the room.
+            inHotel
+                ? 'What is in this room? Hotel-wide amenities are set on the hotel.'
+                : 'What does your place offer?',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 8),
           // Amenities grouped by category (Essentials / Features / Power / Safety).
-          for (final group in FacilityCatalog.groupsFor(type)) ...[
+          for (final group
+              in FacilityCatalog.groupsFor(type, inHotel: inHotel)) ...[
             const SizedBox(height: 12),
             Text(
               group.title,

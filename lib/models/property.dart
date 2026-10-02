@@ -1,3 +1,4 @@
+import 'facility.dart';
 import 'hotel_details.dart';
 import 'listing.dart';
 import 'listing_type.dart';
@@ -28,9 +29,14 @@ class Property {
     this.checkOutTime,
     this.hotelDetails = const HotelDetails(),
     this.imageUrls = const [],
+    this.facilities = const [],
   });
 
-  factory Property.fromJson(Map<String, dynamic> json) {
+  /// [facilities] is parsed by the repository, which owns the name -> catalog
+  /// lookup (the same one listings use), from the embedded
+  /// `property_facilities` rows.
+  factory Property.fromJson(Map<String, dynamic> json,
+      {List<Facility> facilities = const []}) {
     return Property(
       id: json['id'] as String,
       ownerId: json['owner_id'] as String,
@@ -47,6 +53,7 @@ class Property {
       checkOutTime: json['check_out_time'] as String?,
       hotelDetails: HotelDetails.fromJson(json),
       imageUrls: (json['image_urls'] as List?)?.cast<String>() ?? const [],
+      facilities: facilities,
     );
   }
 
@@ -68,6 +75,13 @@ class Property {
   final String? checkOutTime;
   final HotelDetails hotelDetails;
   final List<String> imageUrls;
+
+  /// The hotel-wide amenities (`property_facilities`, 155). The database
+  /// copies them onto every room type's `listing_facilities`, which is what
+  /// search filters on; this is the hotel form's copy and the hotel page's
+  /// "once per hotel" list. Not in [toJson]: saved by
+  /// [MusafirRepository.createProperty]/`updateProperty` as rows.
+  final List<Facility> facilities;
 
   /// The area line a guest sees, built the same way a listing's is.
   String get publicAddress =>

@@ -131,6 +131,33 @@ class FacilityCatalog {
   static const keycardAccess =
       Facility(name: 'Keycard Access', icon: Icons.key_outlined);
 
+  // Hotel, in the room (migration 155). Names must match the rows 155 inserts.
+  static const kettle =
+      Facility(name: 'Kettle', icon: Icons.coffee_maker_outlined);
+  static const toiletries =
+      Facility(name: 'Toiletries', icon: Icons.soap_outlined);
+  static const slippers =
+      Facility(name: 'Slippers', icon: Icons.dry_cleaning_outlined);
+  static const hairdryer = Facility(name: 'Hairdryer', icon: Icons.air);
+  static const iron = Facility(name: 'Iron', icon: Icons.iron_outlined);
+  static const minibar = Facility(name: 'Minibar', icon: Icons.liquor_outlined);
+  static const telephone =
+      Facility(name: 'Telephone', icon: Icons.phone_outlined);
+  static const bathtub =
+      Facility(name: 'Bathtub', icon: Icons.bathtub_outlined);
+
+  // Hotel, the hotel as a whole (migration 155).
+  static const tourDesk =
+      Facility(name: 'Tour Desk', icon: Icons.tour_outlined);
+  static const wheelchairAccessible =
+      Facility(name: 'Wheelchair Accessible', icon: Icons.accessible);
+  static const eventHall =
+      Facility(name: 'Event Hall', icon: Icons.groups_outlined);
+  static const familyFriendly =
+      Facility(name: 'Family Friendly', icon: Icons.family_restroom);
+  static const beachAccess =
+      Facility(name: 'Beach Access', icon: Icons.beach_access_outlined);
+
   /// Amenities grouped for the picker UI. The `name` of each must match a row
   /// in the `facilities` table (see migrations 001 + 053 + 121) or it silently
   /// won't persist.
@@ -206,38 +233,60 @@ class FacilityCatalog {
     ),
   ];
 
-  /// What a hotel host is offered. The room essentials are the stay ones; the
-  /// kitchen, freezer and washing machine are dropped (a hotel room has none,
-  /// and a host ticking "Shared Kitchen" for the restaurant downstairs is
-  /// the confusion this avoids), and a services group carries what a guest
-  /// actually compares hotels on.
-  static const hotelGroups = <FacilityGroup>[
+  /// What a hotel's room type is offered (155): only what differs between
+  /// one room type and the next. The kitchen, freezer and washing machine of
+  /// the stay list are dropped (a hotel room has none, and a host ticking
+  /// "Shared Kitchen" for the restaurant downstairs is the confusion this
+  /// avoids). Breakfast is here, not with the hotel, because hotels sell it
+  /// per room type ("Deluxe with breakfast").
+  static const hotelRoomGroups = <FacilityGroup>[
     FacilityGroup(
       title: 'In the room',
       facilities: [
         wifi,
         ac,
         bath,
+        bathtub,
         hotWater,
         drinkingWater,
+        toiletries,
+        slippers,
+        hairdryer,
         tv,
+        telephone,
         refrigerator,
+        minibar,
+        kettle,
+        iron,
         wardrobe,
+        balcony,
         inRoomSafe,
         keycardAccess,
       ],
     ),
+    FacilityGroup(
+      title: 'With this room',
+      facilities: [breakfastIncluded],
+    ),
+  ];
+
+  /// What the hotel itself is offered, once, on the hotel form (155). The
+  /// database copies these onto every room type (`property_facilities` ->
+  /// `listing_facilities`), so search's amenity filter still sees a room
+  /// type's gym. Migration 155's backfill lists these same names; keep the
+  /// two in step.
+  static const hotelPropertyGroups = <FacilityGroup>[
     FacilityGroup(
       title: 'Hotel services',
       facilities: [
         frontDesk24h,
         roomService,
         restaurant,
-        breakfastIncluded,
         housekeeping,
         laundryService,
         luggageStorage,
         airportPickup,
+        tourDesk,
       ],
     ),
     FacilityGroup(
@@ -246,10 +295,14 @@ class FacilityCatalog {
         carParking,
         bikeParking,
         elevator,
+        wheelchairAccessible,
         gym,
         swimmingPool,
+        eventHall,
         prayerSpace,
         sharedWorkspace,
+        familyFriendly,
+        beachAccess,
       ],
     ),
     FacilityGroup(
@@ -262,10 +315,27 @@ class FacilityCatalog {
     ),
   ];
 
-  /// The groups a given listing type should offer.
-  static List<FacilityGroup> groupsFor(ListingType type) => switch (type) {
+  /// Both halves, for a hotel listing with no [Property] (a pre-153 bundle's
+  /// shape): there is no hotel form to hold the hotel-wide half.
+  static const hotelGroups = <FacilityGroup>[
+    ...hotelRoomGroups,
+    ...hotelPropertyGroups,
+  ];
+
+  /// Names the hotel holds, for telling a room type's own amenities from the
+  /// ones it inherits.
+  static final Set<String> hotelPropertyNames = {
+    for (final group in hotelPropertyGroups)
+      for (final f in group.facilities) f.name,
+  };
+
+  /// The groups a given listing type should offer. [inHotel] is a room type
+  /// of a [Property]: its hotel-wide amenities are set on the hotel form.
+  static List<FacilityGroup> groupsFor(ListingType type,
+          {bool inHotel = false}) =>
+      switch (type) {
         ListingType.turf => turfGroups,
-        ListingType.hotel => hotelGroups,
+        ListingType.hotel => inHotel ? hotelRoomGroups : hotelGroups,
         _ => groups,
       };
 

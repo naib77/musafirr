@@ -1636,17 +1636,28 @@ class SupabaseMusafirRepository extends ChangeNotifier
     }
   }
 
+  static const _propertySelect =
+      '*, property_facilities(facility_id, facilities(name))';
+
+  Property _propertyFromJson(Map<String, dynamic> json) {
+    final rows = json['property_facilities'] as List? ?? const [];
+    return Property.fromJson(json, facilities: [
+      for (final f in rows)
+        _facilityFromName(f['facilities']?['name'] as String? ?? ''),
+    ]);
+  }
+
   @override
   Future<List<Property>> myProperties() async {
     final me = _client.auth.currentUser?.id;
     if (me == null) return const [];
     final rows = await _client
         .from('properties')
-        .select()
+        .select(_propertySelect)
         .eq('owner_id', me)
         .order('created_at', ascending: false);
     return (rows as List)
-        .map((r) => Property.fromJson(r as Map<String, dynamic>))
+        .map((r) => _propertyFromJson(r as Map<String, dynamic>))
         .toList();
   }
 
@@ -1654,10 +1665,48 @@ class SupabaseMusafirRepository extends ChangeNotifier
   Future<Property?> fetchProperty(String propertyId) async {
     final row = await _client
         .from('properties')
-        .select()
+        .select(_propertySelect)
         .eq('id', propertyId)
         .maybeSingle();
-    return row == null ? null : Property.fromJson(row);
+    return row == null ? null : _propertyFromJson(row);
+  }
+
+  /// Brings the hotel's amenity rows to [facilities] by difference, not by
+  /// delete-all like [_saveListingFacilities]: every row removed here is
+  /// removed from every room type too (155's push-down), so a rewrite would
+  /// strip and re-add the gym on all of them for no reason.
+  Future<void> _savePropertyFacilities(
+      String propertyId, List<Facility> facilities) async {
+    final catalog = await _client.from('facilities').select('id, name') as List;
+    final idByName = <String, String>{
+      for (final row in catalog)
+        (row['name'] as String).toLowerCase(): row['id'] as String,
+    };
+    final wanted = {
+      for (final f in facilities)
+        if (idByName[f.name.toLowerCase()] case final id?) id,
+    };
+    final current = {
+      for (final r in await _client
+          .from('property_facilities')
+          .select('facility_id')
+          .eq('property_id', propertyId) as List)
+        r['facility_id'] as String,
+    };
+    final removed = current.difference(wanted);
+    final added = wanted.difference(current);
+    if (removed.isNotEmpty) {
+      await _client
+          .from('property_facilities')
+          .delete()
+          .eq('property_id', propertyId)
+          .inFilter('facility_id', removed.toList());
+    }
+    if (added.isNotEmpty) {
+      await _client.from('property_facilities').insert([
+        for (final id in added) {'property_id': propertyId, 'facility_id': id},
+      ]);
+    }
   }
 
   @override
@@ -1686,6 +1735,13 @@ class SupabaseMusafirRepository extends ChangeNotifier
     } catch (e) {
       debugPrint('Error saving property address: $e');
     }
+    // Same reasoning: a new hotel has no room types yet, so nothing else
+    // depends on this, and the next save retries it.
+    try {
+      await _savePropertyFacilities(id, property.facilities);
+    } catch (e) {
+      debugPrint('Error saving property amenities: $e');
+    }
     // Nothing in the listing cache changed, but the host's hotel list did;
     // HostListingsScreen's hotel section listens here.
     notifyListeners();
@@ -1705,8 +1761,9 @@ class SupabaseMusafirRepository extends ChangeNotifier
     await _client
         .from('property_addresses')
         .upsert(address.toJson(property.id));
-    // The push-down trigger rewrote the room types; refresh the cache so the
-    // host's listing cards show the new location and times.
+    await _savePropertyFacilities(property.id, property.facilities);
+    // The push-down triggers (the hotel's facts and its amenities) rewrote the room types; refresh the cache so the
+    // host's listing cards show the new location, times and amenities.
     await _refreshListings();
   }
 
