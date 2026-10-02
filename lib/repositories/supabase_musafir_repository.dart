@@ -684,6 +684,9 @@ class SupabaseMusafirRepository extends ChangeNotifier
       purposeTags: listingPurposesFromWire(json['purpose_tags']),
       distanceMeters: (json['distance_m'] as num?)?.toDouble(),
       propertyId: json['property_id'] as String?,
+      // Present only on search_listings rows (154).
+      propertyName: json['property_name'] as String?,
+      roomTypesMatching: (json['room_types_matching'] as num?)?.toInt(),
       bookingLimits: BookingLimits(
         minHours: json['min_hours'] as int?,
         maxHours: json['max_hours'] as int?,

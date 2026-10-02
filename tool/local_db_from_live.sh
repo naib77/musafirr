@@ -45,7 +45,7 @@ apply supabase/baseline/live_seed.sql
 # applied to live and the baseline has been regenerated.
 # Last cleared 2026-10-02, after 146–148 went live (amenity split, listing
 # units, two-layer hourly policy).
-NEWER_MIGRATIONS="${NEWER_MIGRATIONS:-150 151 152 153}"
+NEWER_MIGRATIONS="${NEWER_MIGRATIONS:-150 151 152 153 154}"
 echo "== migrations newer than live"
 for m in ${NEWER_MIGRATIONS:-}; do
   f=$(ls supabase/migrations/${m}_*.sql | head -1)

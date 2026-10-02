@@ -249,7 +249,9 @@ class _ListingCardModernState extends State<ListingCardModern>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  listing.title,
+                  // The hotel's name for a hotel row (154), so a guest reads
+                  // "Hotel Sea Crown", not whichever room type was cheapest.
+                  listing.cardTitle,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,

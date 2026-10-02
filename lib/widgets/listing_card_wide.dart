@@ -197,10 +197,11 @@ class _ListingCardWideState extends State<ListingCardWide> {
           ),
           // The host's own name for the place. Skipped when it is already
           // doing duty as the headline.
-          if (_headline() != listing.title) ...[
+          if (_headline() != listing.cardTitle) ...[
             const SizedBox(height: 2),
             Text(
-              listing.title,
+              // The hotel's name for a hotel row (154), not the room type's.
+              listing.cardTitle,
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontSize: 13,
                 color: theme.colorScheme.onSurfaceVariant,
@@ -244,7 +245,7 @@ class _ListingCardWideState extends State<ListingCardWide> {
   String _headline() {
     final listing = widget.listing;
     final where = _firstNonEmpty([listing.area, listing.city]);
-    if (where == null) return listing.title;
+    if (where == null) return listing.cardTitle;
     return '${listing.type.title} in $where';
   }
 
@@ -260,6 +261,12 @@ class _ListingCardWideState extends State<ListingCardWide> {
   /// has neither and counts players, plus whatever it says about itself.
   String _capacity() {
     final listing = widget.listing;
+    // A hotel row stands for the whole hotel (154); the beds and guests of
+    // its cheapest type would describe one room of several.
+    final types = listing.roomTypesMatching;
+    if (listing.propertyName != null && types != null) {
+      return _plural(types, 'room type');
+    }
     if (listing.type == ListingType.seat) {
       return _plural(listing.maxGuests, 'seat');
     }

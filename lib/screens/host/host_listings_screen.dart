@@ -39,14 +39,25 @@ class HostListingsScreen extends StatelessWidget {
         child: ListenableBuilder(
           listenable: Listenable.merge([repository, authState]),
           builder: (context, _) {
-            final hostListings = user != null
+            final own = user != null
                 ? repository.listings.where((l) => l.hostId == user.id).toList()
                 : <Listing>[];
+            // A hotel's room types are listed under the hotel (its card
+            // opens the dashboard with every type and room), not again here
+            // one by one: the host thinks of Sea Crown as one place.
+            final hostListings = own.where((l) => !l.isHotelRoomType).toList();
+            final hasHotelTypes = own.any((l) => l.isHotelRoomType);
 
             final hotels = _HotelsSection(
               repository: repository,
               authState: authState,
             );
+            if (hostListings.isEmpty && hasHotelTypes) {
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                children: [hotels],
+              );
+            }
             if (hostListings.isEmpty) {
               // A hotel just created has no room type yet, so no listing --
               // it must still be reachable, or the host loses it.

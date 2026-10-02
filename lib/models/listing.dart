@@ -70,6 +70,10 @@ class Listing {
     // The hotel this listing is a room type of (153). Null for every other
     // listing, and for a hotel that predates 153's backfill.
     this.propertyId,
+    // Search-only (154): the hotel's name and how many of its room types
+    // matched. Null outside a search row.
+    this.propertyName,
+    this.roomTypesMatching,
   });
 
   final String id;
@@ -153,6 +157,21 @@ class Listing {
   /// and facts onto the row on every write, so for a room type those fields
   /// here are a read-only echo of the [Property].
   final String? propertyId;
+
+  /// The hotel's name, when this row came from `search_listings` (154),
+  /// which returns a hotel once, as its cheapest matching room type. Not
+  /// persisted.
+  final String? propertyName;
+
+  /// How many of the hotel's room types passed the search's filters (154).
+  final int? roomTypesMatching;
+
+  /// Whether a tap should open the hotel page rather than this room type.
+  bool get isHotelRoomType => propertyId != null;
+
+  /// What a card calls this row: the hotel for a room type found by search
+  /// ("Hotel Sea Crown", not "Deluxe"), the listing's own title otherwise.
+  String get cardTitle => propertyName ?? title;
 
   /// Per-plan minimum/maximum booking duration.
   final BookingLimits bookingLimits;
@@ -334,6 +353,8 @@ class Listing {
     List<ListingPurpose>? purposeTags,
     double? distanceMeters,
     String? propertyId,
+    String? propertyName,
+    int? roomTypesMatching,
   }) {
     return Listing(
       id: id ?? this.id,
@@ -381,6 +402,8 @@ class Listing {
       purposeTags: purposeTags ?? this.purposeTags,
       distanceMeters: distanceMeters ?? this.distanceMeters,
       propertyId: propertyId ?? this.propertyId,
+      propertyName: propertyName ?? this.propertyName,
+      roomTypesMatching: roomTypesMatching ?? this.roomTypesMatching,
     );
   }
 

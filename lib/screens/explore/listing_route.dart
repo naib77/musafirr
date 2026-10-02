@@ -5,6 +5,7 @@ import '../../repositories/musafir_repository.dart';
 import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
 import '../../state/messaging_state.dart';
+import 'hotel_screen.dart';
 import 'listing_detail_screen.dart';
 
 /// `/listing/<id>` — the shareable address of one stay.
@@ -67,6 +68,20 @@ class _ListingRouteState extends State<ListingRoute> {
   @override
   Widget build(BuildContext context) {
     final listing = _listing;
+    // A hotel's room type opens the hotel (154): search shows the hotel once,
+    // as whichever type was cheapest, and the guest chooses the type there.
+    // Old links to a room type land on the same page, that type marked.
+    final propertyId = listing?.propertyId;
+    if (propertyId != null) {
+      return HotelScreen(
+        propertyId: propertyId,
+        focusListingId: listing!.id,
+        repository: widget.repository,
+        authState: widget.authState,
+        favoritesState: widget.favoritesState,
+        messagingState: widget.messagingState,
+      );
+    }
     if (listing != null) {
       return ListingDetailScreen(
         listing: listing,
