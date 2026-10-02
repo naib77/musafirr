@@ -1,15 +1,15 @@
 # Hotels on Musafir — implementation plan
 
-Status: in progress (2026-10-02). Phases 1–2 (147 units, 148 hourly policy)
-and 149 (the `hotel` enum label) are **live**. 150 (hotel columns, Room Matrix
-facts, amenities, `set_listing_unit_count`) and the Dart hotel type (wizard
-hotel step, room count, room facts, hotel amenities, detail tiles) are built
-and green locally but **150 is not yet applied to live** — and the web build
-must not ship before it is: the save path now writes 150's columns, and
-PostgREST refuses unknown columns (PGRST204) for every listing type. Phase 4
-(151) is not started. Decisions D1–D5 at the end are taken.
+Status: in progress (2026-10-02). 147–150 are **live** and the Dart hotel
+type (wizard hotel step, room count, room facts, hotel amenities, detail
+tiles, card badge) is committed. 151 (`instant_book`, `reassign_booking_unit`,
+per-unit `block_listing_dates`) and the Dart instant-book toggle are written
+but **151 is not yet applied to live** — and the web build must not ship
+before it is: the save path now writes `instant_book`, and PostgREST refuses
+unknown columns (PGRST204) for every listing type. Host UI for reassign and
+per-unit blocks is not built yet. Decisions D1–D5 at the end are taken.
 
-Not yet done from Phase 3: the listing-card badge, and the trade-licence
+Not yet done from Phase 3: the trade-licence
 requirement in the verification queue. A host who switches a hotel to another
 type keeps its units (the edit form only resizes hotels).
 

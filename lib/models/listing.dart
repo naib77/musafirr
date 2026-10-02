@@ -45,6 +45,7 @@ class Listing {
     this.turfDetails = const TurfDetails(),
     this.hotelDetails = const HotelDetails(),
     this.roomFacts = const RoomFacts(),
+    this.instantBook = false,
     this.rating,
     this.reviewCount = 0,
     this.isSuperhost = false,
@@ -126,6 +127,11 @@ class Listing {
 
   /// Size, bathroom and toilet (150). Any stay type; empty on a turf.
   final RoomFacts roomFacts;
+
+  /// Bookings are created confirmed, with no host accept step (151). Any
+  /// type may set it; the database decides the status, so this only changes
+  /// what the guest is told to expect.
+  final bool instantBook;
   final double? rating;
   final int reviewCount;
   final bool isSuperhost;
@@ -307,6 +313,7 @@ class Listing {
     TurfDetails? turfDetails,
     HotelDetails? hotelDetails,
     RoomFacts? roomFacts,
+    bool? instantBook,
     double? rating,
     int? reviewCount,
     bool? isSuperhost,
@@ -352,6 +359,7 @@ class Listing {
       turfDetails: turfDetails ?? this.turfDetails,
       hotelDetails: hotelDetails ?? this.hotelDetails,
       roomFacts: roomFacts ?? this.roomFacts,
+      instantBook: instantBook ?? this.instantBook,
       rating: rating ?? this.rating,
       reviewCount: reviewCount ?? this.reviewCount,
       isSuperhost: isSuperhost ?? this.isSuperhost,
@@ -409,6 +417,7 @@ class Listing {
       turfDetails: turfDetails,
       hotelDetails: hotelDetails,
       roomFacts: roomFacts,
+      instantBook: instantBook,
       rating: rating,
       reviewCount: reviewCount,
       isSuperhost: isSuperhost,

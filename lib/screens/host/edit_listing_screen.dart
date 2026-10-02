@@ -113,6 +113,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
   late bool _smokingAllowed;
   late bool _petsAllowed;
   late bool _partiesAllowed;
+  late bool _instantBook;
 
   // Check-in & access (private)
   late final TextEditingController _directionsController;
@@ -241,6 +242,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
     _smokingAllowed = rules.smokingAllowed;
     _petsAllowed = rules.petsAllowed;
     _partiesAllowed = rules.partiesAllowed;
+    _instantBook = l.instantBook;
 
     _directionsController = TextEditingController();
     _wifiNameController = TextEditingController();
@@ -532,6 +534,12 @@ class _EditListingScreenState extends State<EditListingScreen> {
         // turf into a room could not save at all without this.
         partyLimits: scoped.partyLimits,
         turfDetails: scoped.turfDetails,
+        // Must be passed: this constructor is explicit, and an omitted field
+        // defaults to empty -- which toJson sends as nulls, wiping what the
+        // host stated on every save.
+        hotelDetails: scoped.hotelDetails,
+        roomFacts: scoped.roomFacts,
+        instantBook: _instantBook,
         bedrooms: scoped.bedrooms,
         beds: scoped.beds,
         bathrooms: scoped.bathrooms,
@@ -1068,6 +1076,17 @@ class _EditListingScreenState extends State<EditListingScreen> {
                 ),
                 const SizedBox(height: 8),
               ],
+              // 151. Not stay-only: a turf may confirm its own slots too. The
+              // database decides the status at insert; this only flips the column.
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Instant booking'),
+                subtitle: const Text(
+                    'Guests are confirmed straight away, without waiting for you to '
+                    'accept. Keep your calendar up to date.'),
+                value: _instantBook,
+                onChanged: (v) => setState(() => _instantBook = v),
+              ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Smoking allowed'),

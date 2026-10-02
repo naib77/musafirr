@@ -674,6 +674,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
       // and reads as empty.
       hotelDetails: HotelDetails.fromJson(json),
       roomFacts: RoomFacts.fromJson(json),
+      instantBook: json['instant_book'] as bool? ?? false,
       rating: (json['rating'] as num?)?.toDouble(),
       reviewCount: json['review_count'] as int? ?? 0,
       isSuperhost: json['is_superhost'] as bool? ?? false,
@@ -761,6 +762,9 @@ class SupabaseMusafirRepository extends ChangeNotifier
       // breaks every listing save, not just hotels.
       ...listing.hotelDetails.toJson(),
       ...listing.roomFacts.toJson(),
+      // 151, same DEPLOY ORDER as above: sent always (false is how a host
+      // switches it back off), so this build needs 151 live first.
+      'instant_book': listing.instantBook,
       // Per-plan booking limits.
       'min_hours': listing.bookingLimits.minHours,
       'max_hours': listing.bookingLimits.maxHours,

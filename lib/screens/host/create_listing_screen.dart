@@ -184,6 +184,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   // the default and means the host stated no separate limit.
   PartyLimits _partyLimits = const PartyLimits();
   bool _partiesAllowed = false;
+  bool _instantBook = false;
   final _quietHoursController = TextEditingController();
   final _additionalRulesController = TextEditingController();
 
@@ -384,6 +385,8 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
           petsAllowed: _petsAllowed,
           partiesAllowed: _partiesAllowed,
           onSmokingToggled: (v) => setState(() => _smokingAllowed = v),
+          instantBook: _instantBook,
+          onInstantBookToggled: (v) => setState(() => _instantBook = v),
           onPetsToggled: (v) => setState(() => _petsAllowed = v),
           maxPets: _partyLimits.pets,
           onMaxPetsChanged: (v) => setState(() => _partyLimits =
@@ -599,6 +602,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         turfDetails: scoped.turfDetails,
         hotelDetails: scoped.hotelDetails,
         roomFacts: scoped.roomFacts,
+        instantBook: _instantBook,
         bedrooms: scoped.bedrooms,
         beds: scoped.beds,
         bathrooms: scoped.bathrooms,
@@ -1852,6 +1856,8 @@ class _HouseRulesStep extends StatelessWidget {
     required this.onSmokingToggled,
     required this.onPetsToggled,
     required this.onPartiesToggled,
+    required this.instantBook,
+    required this.onInstantBookToggled,
   });
 
   /// False for a turf. Unlike the Details/Turf split -- two genuinely
@@ -1871,6 +1877,8 @@ class _HouseRulesStep extends StatelessWidget {
   final ValueChanged<bool> onSmokingToggled;
   final ValueChanged<bool> onPetsToggled;
   final ValueChanged<bool> onPartiesToggled;
+  final bool instantBook;
+  final ValueChanged<bool> onInstantBookToggled;
 
   @override
   Widget build(BuildContext context) {
@@ -1920,6 +1928,17 @@ class _HouseRulesStep extends StatelessWidget {
             ),
             const SizedBox(height: 20),
           ],
+          // 151. Not stay-only: a turf may confirm its own slots too. The
+          // database decides the status at insert; this only flips the column.
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Instant booking'),
+            subtitle: const Text(
+                'Guests are confirmed straight away, without waiting for you to '
+                'accept. Keep your calendar up to date.'),
+            value: instantBook,
+            onChanged: onInstantBookToggled,
+          ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('Smoking allowed'),

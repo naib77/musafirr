@@ -14,6 +14,7 @@ import '../../widgets/app_network_image.dart';
 import '../../models/booking.dart';
 import '../../models/booking_conflict_exception.dart';
 import '../../models/booking_rejected_exception.dart';
+import '../../models/booking_status.dart';
 import '../../models/host_verifications.dart';
 import '../../models/hotel_details.dart';
 import '../../models/listing.dart';
@@ -721,6 +722,26 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                   perUnit: listing.cheapestPlan?.displayUnit ?? 'night',
                   style: PriceDisplayStyle.normal,
                 ),
+                // Beside the button it changes the meaning of: on an
+                // instant-book listing "Reserve" confirms, not requests (151).
+                if (listing.instantBook) ...[
+                  const SizedBox(height: 2),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.bolt_rounded,
+                          size: 14, color: theme.colorScheme.primary),
+                      const SizedBox(width: 2),
+                      Text(
+                        'Instant booking',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -2434,7 +2455,7 @@ class _BookingSheetState extends State<_BookingSheet> {
     }
 
     try {
-      await widget.repository.createMarketplaceBooking(
+      final booking = await widget.repository.createMarketplaceBooking(
         listingId: widget.listing.id,
         userId: user.id,
         userName: user.name,
@@ -2455,12 +2476,18 @@ class _BookingSheetState extends State<_BookingSheet> {
         Navigator.pop(context);
         // Celebrate the milestone with a modern confirmation sheet instead of a
         // flat banner — a booking request is a "done!" moment.
+        // The returned status, not widget.listing.instantBook: the host may
+        // have switched instant booking since this page loaded, and the
+        // database decided (151).
+        final confirmed = booking.status == BookingStatus.confirmed;
         await SuccessSheet.show(
           context,
-          title: 'Request sent!',
-          message:
-              'Your booking request for ${widget.listing.title} is on its way. '
-              "You'll be notified as soon as the host confirms.",
+          title: confirmed ? 'Booking confirmed!' : 'Request sent!',
+          message: confirmed
+              ? 'Your stay at ${widget.listing.title} is confirmed. '
+                  'You can pay and see the details in Trips.'
+              : 'Your booking request for ${widget.listing.title} is on its way. '
+                  "You'll be notified as soon as the host confirms.",
           primaryLabel: 'Got it',
         );
         // Once acknowledged (or auto-dismissed), return to the shell and land
