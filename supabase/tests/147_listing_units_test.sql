@@ -193,11 +193,15 @@ select pg_temp.check_true((select count(*)=0 from public.listing_units where lis
 select pg_temp.as_user('11111111-1111-1111-1111-111111111111');
 select pg_temp.check_true((select count(*)=3 from public.listing_units where listing_id=:L2),'the owner sees their units');
 select pg_temp.as_server();
-select pg_temp.check_true(pg_temp.try('11111111-1111-1111-1111-111111111111', format('insert into public.listing_units (listing_id,label) values (%L,%L)', :L2, '104'))='OK','the owner can add a room');
-select pg_temp.check_true(pg_temp.try('11111111-1111-1111-1111-111111111111', 'insert into public.listing_units (listing_id,label) values (''aaaaaaaa-0000-0000-0000-000000000003'',''x'')')='REFUSED 42501 ','not on someone else''s listing');
-select pg_temp.check_true(pg_temp.try('55555555-5555-5555-5555-555555555555', 'insert into public.listing_units (listing_id,label) values (''aaaaaaaa-0000-0000-0000-000000000003'',''x'')')='OK','an admin can');
-select pg_temp.check_true(pg_temp.try('11111111-1111-1111-1111-111111111111', format('delete from public.listing_units where listing_id=%L and label=%L', :L2, '101'))='REFUSED 23503 ','a room with bookings cannot be deleted');
-select pg_temp.check_true(pg_temp.try('11111111-1111-1111-1111-111111111111', format('delete from public.listing_units where listing_id=%L and label=%L', :L2, '104'))='OK','an empty room can');
+-- 147 let the owner insert and delete units directly; 152 took that away
+-- (capacity changes only through set_listing_unit_count, 150) and left the
+-- label as the one writable column. Privileges refuse before RLS, so every
+-- direct write below is 42501, the admin's too.
+select pg_temp.check_true(pg_temp.try('11111111-1111-1111-1111-111111111111', format('insert into public.listing_units (listing_id,label) values (%L,%L)', :L2, '104')) like 'REFUSED 42501%','the owner cannot add a room directly (152)');
+select pg_temp.check_true(pg_temp.try('11111111-1111-1111-1111-111111111111', 'insert into public.listing_units (listing_id,label) values (''aaaaaaaa-0000-0000-0000-000000000003'',''x'')') like 'REFUSED 42501%','not on someone else''s listing');
+select pg_temp.check_true(pg_temp.try('55555555-5555-5555-5555-555555555555', 'insert into public.listing_units (listing_id,label) values (''aaaaaaaa-0000-0000-0000-000000000003'',''x'')') like 'REFUSED 42501%','nor an admin (152)');
+select pg_temp.check_true(pg_temp.try('11111111-1111-1111-1111-111111111111', format('delete from public.listing_units where listing_id=%L and label=%L', :L2, '101')) like 'REFUSED 42501%','a room cannot be deleted directly (152)');
+select pg_temp.check_true(pg_temp.try('11111111-1111-1111-1111-111111111111', format('update public.listing_units set label=%L where listing_id=%L and label=%L', '101A', :L2, '101'))='OK','but the owner can rename one');
 set local role anon;
 do $$ begin
   begin

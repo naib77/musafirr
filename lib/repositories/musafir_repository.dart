@@ -99,6 +99,10 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   /// a lookup failure must never present as a verified host.
   Future<HostVerifications> fetchHostVerifications(String hostId);
 
+  /// Whether an admin verified this hotel's optional trade licence (152).
+  /// Fails closed: an error, or a database without 152, reads as false.
+  Future<bool> listingLicenceVerified(String listingId);
+
   /// Ranked hosts for the public leaderboard (composite "Host Score").
   /// Computed server-side; the app only reads the ranked rows.
   Future<List<LeaderboardEntry>> getHostLeaderboard({
@@ -163,6 +167,12 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   /// A listing's rooms, active ones first, oldest first within each — the
   /// order that makes positional "Room N" names stable. Owner-only (RLS).
   Future<List<ListingUnit>> listingUnits(String listingId);
+
+  /// Names a room, or clears its name when [label] is null (152: the label
+  /// is the only column a host writes on a unit). Throws a
+  /// `PostgrestException` with code 23505 when another room already has the
+  /// name, and a `StateError` when no row changed (not the caller's room).
+  Future<void> renameListingUnit(String unitId, String? label);
 
   /// Moves a booking to another room of the same listing (151). Host-only.
   /// Throws a `PostgrestException` with hint `unit_taken`, `unit_blocked`,

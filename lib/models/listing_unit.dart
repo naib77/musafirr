@@ -52,3 +52,22 @@ String roomMoveRefusalMessage(String? hint) => switch (hint) {
       'not_listing_owner' => 'Only the host can move a booking.',
       _ => 'Could not move the booking. Please try again.',
     };
+
+/// The label to store for what the host typed: trimmed, and null when blank
+/// so the room falls back to "Room N" rather than storing ''. `label` is
+/// unique per listing (147) and '' would collide with the next blank rename.
+String? normalizeRoomLabel(String raw) {
+  final trimmed = raw.trim();
+  return trimmed.isEmpty ? null : trimmed;
+}
+
+/// The longest label `listing_units_label_len` accepts.
+const kRoomLabelMaxLength = 40;
+
+/// What to tell the host when a rename is refused, keyed by SQLSTATE: the
+/// write is a plain UPDATE, so there is no hint, only the constraint's code.
+String roomRenameRefusalMessage(String? code) => switch (code) {
+      '23505' => 'Another room already has that name.',
+      '23514' => 'Keep the name to $kRoomLabelMaxLength characters.',
+      _ => 'Could not rename the room. Please try again.',
+    };

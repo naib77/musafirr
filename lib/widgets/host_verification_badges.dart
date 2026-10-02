@@ -17,26 +17,42 @@ import '../models/host_verifications.dart';
 /// the right badge appear for the right flag" is exactly what a test should
 /// pin down.
 class HostVerificationBadges extends StatelessWidget {
-  const HostVerificationBadges({super.key, required this.verifications});
+  const HostVerificationBadges({
+    super.key,
+    required this.verifications,
+    this.licensedHotel = false,
+  });
 
   /// The flags as the database records them. Null while the lookup is still in
   /// flight — indistinguishable from "nothing verified" on purpose, since both
   /// mean there is no claim to make yet.
   final HostVerifications? verifications;
 
+  /// The listing's own credential, not the host's: an admin verified this
+  /// hotel's optional trade licence (152). Drawn in the same strip because a
+  /// guest reads it the same way, and only for a hotel (the RPC says so).
+  final bool licensedHotel;
+
+  /// Whether the strip draws anything at all.
+  static bool showsAny(HostVerifications? v, {bool licensedHotel = false}) =>
+      licensedHotel || (v?.hasAny ?? false);
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final v = verifications;
-    if (v == null || !v.hasAny) return const SizedBox.shrink();
+    if (!showsAny(v, licensedHotel: licensedHotel)) {
+      return const SizedBox.shrink();
+    }
 
     return Wrap(
       spacing: 14,
       runSpacing: 8,
       children: [
-        if (v.phoneVerified) _badge(theme, 'Phone number'),
-        if (v.identityVerified) _badge(theme, 'Identity verified'),
-        if (v.addressVerified) _badge(theme, 'Address verified'),
+        if (v?.phoneVerified ?? false) _badge(theme, 'Phone number'),
+        if (v?.identityVerified ?? false) _badge(theme, 'Identity verified'),
+        if (v?.addressVerified ?? false) _badge(theme, 'Address verified'),
+        if (licensedHotel) _badge(theme, 'Licensed hotel'),
       ],
     );
   }

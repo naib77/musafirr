@@ -15,6 +15,7 @@ import '../../services/booking/hourly_policy.dart';
 import '../../services/image_upload_service.dart';
 import '../../widgets/app_text_field.dart';
 import '../../widgets/host/hotel_details_fields.dart';
+import '../../widgets/host/trade_licence_card.dart';
 import '../../widgets/host/party_limits_fields.dart';
 import '../../services/listing/listing_type_scope.dart';
 import '../../widgets/host/turf_details_fields.dart';
@@ -922,6 +923,13 @@ class _EditListingScreenState extends State<EditListingScreen> {
                     details: _hotelDetails,
                     onChanged: (v) => setState(() => _hotelDetails = v),
                   ),
+                  // Only once saved as a hotel: the RPC checks the stored
+                  // type, so a host mid-switch would be refused (not_a_hotel).
+                  if (widget.listing.type == ListingType.hotel) ...[
+                    const SizedBox(height: 20),
+                    const Divider(),
+                    TradeLicenceCard(listingId: widget.listing.id),
+                  ],
                 ],
               ] else ...[
                 const SizedBox(height: 20),

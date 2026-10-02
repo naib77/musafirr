@@ -5,13 +5,14 @@ type (wizard hotel step, room count, room facts, hotel amenities, detail
 tiles, card badge, instant-book toggle) is committed and built. The host UI
 for 151 is committed: the availability screen asks which room to block on a
 multi-room listing and names the room on each tile, and a hotel reservation
-has "Move to another room" (refusals shown by hint). Not built: room labels
-(every room is "Room N" until the host can name it), "N rooms left".
+has "Move to another room" (refusals shown by hint).
+152 (committed, applied locally, **not live**) adds the optional trade
+licence and room names: the Dart for both is committed and fails soft
+without 152, so a build can ship before it. Not built: "N rooms left".
 Decisions D1–D5 at the end are taken.
 
-Not yet done from Phase 3: the trade-licence
-requirement in the verification queue. A host who switches a hotel to another
-type keeps its units (the edit form only resizes hotels).
+A host who switches a hotel to another type keeps its units (the edit form
+only resizes hotels).
 
 Scope: a hotel host lists a **room category** ("Deluxe Double", 12 rooms), a
 guest books it by the night **or by the hour (minimum 6 hours)**, the database
@@ -188,10 +189,24 @@ list in `FacilityCatalog` offers these plus the stay essentials and hides
 Kitchen / Freezer / Washing Machine, the way `turfGroups` hides Wi-Fi from a
 pitch.
 
-Trade licence: host verification already has a document path
-(`require_listing_address_proof`, identity + face review in 142–145). A hotel
-listing requires a `trade_licence` document before `PublishGate` lets it go
-live; the admin console's verification queue reviews it with the others.
+Trade licence (152): **optional**, by the owner's decision — this first said
+a hotel needed one before `PublishGate` let it go live, but many small guest
+houses trade without one, and a gate would push them to list as a "room". So
+it gates nothing. The host uploads it from the hotel's edit form (JPG, PNG or
+PDF in the private `documents` bucket, under `<uid>/trade_licence/`); it
+waits in the admin console's verification queue ("Hotel licences"); an
+approved one earns a guest-facing "Licensed hotel" badge in the host card.
+Per listing, in its own table with no write policy: only
+`submit_trade_licence` (owner, hotel, own file) and `review_trade_licence`
+(another admin, pinned to the document they saw) write it, and
+`listing_licence_verified` is the boolean guests read — false again if the
+type changes or the file is deleted.
+
+Room names (152): `listing_units.label` is now the only column a host writes
+on a unit directly. 147 had granted full DML, so a host could insert, delete
+or deactivate units around `set_listing_unit_count`; 152 narrows that to
+`update (label)`. The availability screen lists the rooms of a multi-room
+listing with a rename, and every place that said "Room 3" uses the name.
 
 ## 4. Booking flow after the change
 

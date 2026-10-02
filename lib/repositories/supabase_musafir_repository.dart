@@ -1588,6 +1588,20 @@ class SupabaseMusafirRepository extends ChangeNotifier
   }
 
   @override
+  Future<void> renameListingUnit(String unitId, String? label) async {
+    // `.select` so the result says whether a row changed: an RLS-filtered
+    // UPDATE returns [] and raises nothing (database-security.md).
+    final rows = await _client
+        .from('listing_units')
+        .update({'label': label})
+        .eq('id', unitId)
+        .select('id');
+    if ((rows as List).isEmpty) {
+      throw StateError('Room not found');
+    }
+  }
+
+  @override
   Future<void> reassignBookingUnit(String bookingId, String unitId) async {
     // Through the RPC: 147's trigger refuses any direct unit_id write unless
     // musafir.unit_reassign is on, and only this function sets it.
@@ -1980,6 +1994,19 @@ class SupabaseMusafirRepository extends ChangeNotifier
       // Fail CLOSED, unlike availability above: a lookup error must not paint
       // badges the database never granted.
       return HostVerifications.none;
+    }
+  }
+
+  @override
+  Future<bool> listingLicenceVerified(String listingId) async {
+    // A boolean RPC, open to anon: guests never read the licence row itself.
+    try {
+      final v = await _client
+          .rpc('listing_licence_verified', params: {'p_listing_id': listingId});
+      return v == true;
+    } catch (e) {
+      debugPrint('listing_licence_verified failed: $e');
+      return false;
     }
   }
 

@@ -76,4 +76,18 @@ void main() {
           roomMoveRefusalMessage(null));
     });
   });
+
+  group('room renames (152)', () {
+    test('a blank name clears the label rather than storing an empty one', () {
+      expect(normalizeRoomLabel('  '), isNull);
+      expect(normalizeRoomLabel(''), isNull);
+      expect(normalizeRoomLabel('  Deluxe 101 '), 'Deluxe 101');
+    });
+
+    test('refusals are chosen by SQLSTATE, with a fallback', () {
+      expect(roomRenameRefusalMessage('23505'), contains('already'));
+      expect(roomRenameRefusalMessage('23514'), contains('40'));
+      expect(roomRenameRefusalMessage(null), contains('try again'));
+    });
+  });
 }

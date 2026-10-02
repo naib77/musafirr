@@ -89,6 +89,10 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   /// badge strip reads as "claim nothing yet".
   HostVerifications? _hostVerifications;
 
+  /// The hotel's optional trade licence, verified by an admin (152). False
+  /// until the lookup says otherwise, and never asked for other types.
+  bool _licensedHotel = false;
+
   /// True while the conversation is being created. Drives the button's spinner
   /// and blocks a duplicate tap.
   bool _openingChat = false;
@@ -102,6 +106,14 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
         await widget.repository.fetchHostVerifications(hostId);
     if (!mounted) return;
     setState(() => _hostVerifications = verifications);
+  }
+
+  Future<void> _loadLicence() async {
+    if (widget.listing.type != ListingType.hotel) return;
+    final licensed =
+        await widget.repository.listingLicenceVerified(widget.listing.id);
+    if (!mounted || !licensed) return;
+    setState(() => _licensedHotel = true);
   }
 
   /// How much of this listing's location the viewer gets. Decided entirely by
@@ -208,6 +220,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     super.initState();
     _loadExactAddress();
     _loadHostVerifications();
+    _loadLicence();
     widget.repository.addListener(_onRepositoryChanged);
   }
 
@@ -400,6 +413,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                           _HostInfoCard(
                             listing: listing,
                             verifications: _hostVerifications,
+                            licensedHotel: _licensedHotel,
                             onContactHost:
                                 _canContactHost ? _contactHost : null,
                             openingChat: _openingChat,
@@ -1025,6 +1039,7 @@ class _HostInfoCard extends StatelessWidget {
   const _HostInfoCard({
     required this.listing,
     required this.verifications,
+    this.licensedHotel = false,
     this.onContactHost,
     this.openingChat = false,
   });
@@ -1033,6 +1048,8 @@ class _HostInfoCard extends StatelessWidget {
 
   /// The host's real verification flags, or null while the lookup is in flight.
   final HostVerifications? verifications;
+
+  final bool licensedHotel;
 
   /// When provided, shows the pre-booking "Message host" action.
   final VoidCallback? onContactHost;
@@ -1057,9 +1074,13 @@ class _HostInfoCard extends StatelessWidget {
         children: [
           _buildHostRow(theme),
           // An unverified host shows no strip at all, so no empty gap either.
-          if (verifications?.hasAny ?? false) ...[
+          if (HostVerificationBadges.showsAny(verifications,
+              licensedHotel: licensedHotel)) ...[
             const SizedBox(height: 12),
-            HostVerificationBadges(verifications: verifications),
+            HostVerificationBadges(
+              verifications: verifications,
+              licensedHotel: licensedHotel,
+            ),
           ],
           if (onContactHost != null) ...[
             const SizedBox(height: 14),

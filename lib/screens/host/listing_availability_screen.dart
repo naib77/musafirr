@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/responsive.dart';
@@ -25,6 +26,8 @@ import '../../widgets/modern_banner.dart';
 /// A listing with more than one room (a hotel, 147) can also block a single
 /// room (151): the flow asks which one, and every tile names its room, because
 /// "blocked" means something different when the other nine are still free.
+/// The same listings get a Rooms section to name them (152), so "Deluxe 101"
+/// can replace "Room 3" in every one of those places.
 class ListingAvailabilityScreen extends StatefulWidget {
   const ListingAvailabilityScreen({
     super.key,
@@ -208,6 +211,45 @@ class _ListingAvailabilityScreenState extends State<ListingAvailabilityScreen> {
     }
   }
 
+  Future<void> _renameRoom(ListingUnit room) async {
+    if (_flowOpen) return;
+    _flowOpen = true;
+    try {
+      final typed = await showDialog<String>(
+        context: context,
+        builder: (_) => _RenameRoomDialog(
+          initial: room.label ?? '',
+          placeholder: listingUnitName(
+              ListingUnit(
+                  id: room.id, listingId: room.listingId, isActive: true),
+              _rooms),
+        ),
+      );
+      if (typed == null || !mounted) return;
+      final label = normalizeRoomLabel(typed);
+      if (label == room.label) return;
+      setState(() => _saving = true);
+      try {
+        await widget.repository.renameListingUnit(room.id, label);
+        final rooms = await _loadRooms();
+        if (!mounted) return;
+        setState(() => _rooms = rooms);
+      } on PostgrestException catch (e) {
+        if (mounted) {
+          ModernBanner.showError(context, roomRenameRefusalMessage(e.code));
+        }
+      } catch (e) {
+        if (mounted) {
+          ModernBanner.showError(context, roomRenameRefusalMessage(null));
+        }
+      } finally {
+        if (mounted) setState(() => _saving = false);
+      }
+    } finally {
+      _flowOpen = false;
+    }
+  }
+
   Future<String?> _askForNote() async {
     final note = await showBlockNoteDialog(context);
     final trimmed = note?.trim();
@@ -315,6 +357,27 @@ class _ListingAvailabilityScreenState extends State<ListingAvailabilityScreen> {
                       theme: theme,
                     ),
                   ),
+                // Only where there is something to tell apart: a one-room
+                // listing never shows a room name anywhere (_roomName).
+                if (_activeRooms.length > 1) ...[
+                  const SizedBox(height: 24),
+                  _SectionHeader(
+                      title: 'Rooms', count: _activeRooms.length, theme: theme),
+                  ..._activeRooms.map(
+                    (r) => Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        leading: const Icon(Icons.meeting_room_outlined),
+                        title: Text(listingUnitName(r, _rooms)),
+                        trailing: IconButton(
+                          tooltip: 'Rename',
+                          icon: const Icon(Icons.edit_outlined),
+                          onPressed: _saving ? null : () => _renameRoom(r),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 24),
                 _SectionHeader(
                     title: 'Booked', count: booked.length, theme: theme),
@@ -403,6 +466,56 @@ class _NoteDialogState extends State<_NoteDialog> {
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Skip'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Owns its controller for the reason [showBlockNoteDialog] spells out.
+class _RenameRoomDialog extends StatefulWidget {
+  const _RenameRoomDialog({required this.initial, required this.placeholder});
+
+  final String initial;
+
+  /// The positional name the room falls back to when the field is cleared.
+  final String placeholder;
+
+  @override
+  State<_RenameRoomDialog> createState() => _RenameRoomDialogState();
+}
+
+class _RenameRoomDialogState extends State<_RenameRoomDialog> {
+  late final _controller = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Name this room'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLength: kRoomLabelMaxLength,
+        onSubmitted: (value) => Navigator.pop(context, value),
+        decoration: InputDecoration(
+          hintText: 'e.g. Deluxe 101',
+          helperText: 'Leave empty to show "${widget.placeholder}"',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, _controller.text),
