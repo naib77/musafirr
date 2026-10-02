@@ -220,6 +220,16 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   /// `unit_move_other_property`, `units_in_use`, `room_label_taken`.
   Future<String> moveListingUnit(String unitId, String toListingId);
 
+  /// Deletes one room type of a hotel (156). Refused with hint
+  /// `listing_has_bookings` (live bookings) or `listing_has_history` (paid
+  /// history); the hotel's trade licence moves to the next-oldest type.
+  Future<void> deleteRoomType(String listingId);
+
+  /// Deletes a hotel and all its room types in one transaction (156). Hints
+  /// `property_has_bookings`, `property_has_history`,
+  /// `property_owner_mismatch`.
+  Future<void> deleteProperty(String propertyId);
+
   /// Moves a booking to another room of the same listing (151). Host-only.
   /// Throws a `PostgrestException` with hint `unit_taken`, `unit_blocked`,
   /// `unit_mismatch`, `booking_not_live` or `not_listing_owner`.

@@ -2,17 +2,19 @@
 
 Status: planning only. No application code, database, AWS infrastructure, stored media, permissions or live settings changed by this plan.
 
-Prepared: 2026-09-27. Based on the Flutter app, sibling `musafir-admin`, checked-in live database baseline and official AWS documentation. The baseline is evidence of the last schema snapshot, not a fresh audit of production. Object counts, traffic, AWS account/region, current deployed clients and actual retention scheduling must be measured before implementation.
+Prepared: 2026-09-27. Revised 2026-10-02 against the live database (Management API), the deployed edge-function list, both repositories and migrations through 155. Live figures below are from that day; re-measure before implementation, but the shape of the system is now known rather than assumed. Traffic, AWS account/region and Android install counts are still unmeasured.
 
 ## 1. Scope and recommendation
 
 Move all application-uploaded files from Supabase Storage to Amazon S3. Keep Supabase PostgreSQL, Auth, Realtime and existing business RPCs. S3 is object storage, not a replacement for transactional database records. Keep Flutter web hosting, its bundled MediaPipe model/WASM and other shipped app assets on Cloudflare; they are deployment artifacts, not uploads. Moving hosting, database backups or logs is a separate project.
 
-Recommended design: a small authenticated storage API, S3 Standard, CloudFront for currently public media, and a provider-neutral metadata registry in PostgreSQL. Use adapters in Flutter and admin. Start with avatars/listing media, then chat, then sensitive documents and face evidence. Keep the Supabase adapter throughout coexistence and rollback.
+The live inventory is small: 116 objects, about 43 MB, across four buckets, and the fifth (`chat-attachments`) has never received an upload. The design is sized for that, not for a hypothetical large store.
 
-This is a moderate-to-high effort migration. The difficult parts are authorization equivalence, immutable review evidence, legacy Android clients and existing URLs—not copying files.
+Recommended design: a Supabase Edge Function as the storage signer (the project already deploys and pins edge functions), presigned POST uploads to S3 Standard, S3 signed GETs for every read including currently public media, and a two-table provider-neutral metadata registry in PostgreSQL. CloudFront is deferred until measured traffic justifies a CDN. Use adapters in Flutter and admin. Start with avatars/listing media, then sensitive documents and face evidence; chat has nothing to copy and only needs the adapter. Keep the Supabase adapter throughout coexistence and rollback.
 
-A hard constraint: an installed app that directly calls Supabase Storage cannot be redirected to S3 by changing a server setting. Immediate total removal of Supabase Storage and uninterrupted support for those clients are incompatible. Preserve service while clients upgrade; retire the old storage path only after an explicit compatibility decision.
+This is a moderate effort migration. The difficult parts are authorization equivalence, immutable review evidence, the installed Android app and the URLs already copied into business rows—not copying 116 files.
+
+A hard constraint: an installed app that directly calls Supabase Storage cannot be redirected to S3 by changing a server setting. Web is the primary target and reloads itself; this constraint is about Android (live on Play at `versionCode` 4). Immediate total removal of Supabase Storage and uninterrupted support for that client are incompatible. Preserve service while it upgrades, or raise the existing `app_settings.android_min_version_code` floor as an explicit decision; retire the old storage path only after that.
 
 ## 2. Behavior that must remain unchanged
 
@@ -29,40 +31,42 @@ A hard constraint: an installed app that directly calls Supabase Storage cannot 
 
 ## 3. Current storage inventory
 
-Limits below come from `supabase/baseline/live_baseline.sql`; stricter workflow limits still apply.
+Limits and policies below were read from the live database on 2026-10-02 and match `supabase/baseline/live_baseline.sql`; stricter workflow limits still apply. Every live object has a non-null `owner`.
 
-| Logical bucket | Access today | Bucket limit | Uses and special constraints |
-| --- | --- | --- | --- |
-| `avatars` | Public reads | 2 MiB; JPEG/PNG/WebP | App/admin profile photos; stable `{userId}.{ext}` keys; replacement and cache busting |
-| `listing-images` | Public reads | 5 MiB; JPEG/PNG/WebP | Listing galleries, cards and social previews; listing ID prefix |
-| `chat-attachments` | Public reads | 10 MiB; listed image, PDF, Office and text types | Chat photos/files; conversation prefix; URLs stored in messages |
-| `documents` | Owner/admin signed reads | 10 MiB; JPEG/PNG/WebP/PDF | Identity images, legacy selfies and address proofs. Current identity RPC restricts images to JPEG/PNG, 100 bytes–5 MiB; `/nid/` evidence cannot be updated/deleted by clients |
-| `face-evidence` | Owner/admin signed reads | 8 MiB; JPEG/WebM/MP4 | Selfie 100 bytes–512 KiB, video 100 bytes–8 MiB; draft-attempt ownership/expiry; immutable capture objects |
+| Logical bucket | Live objects | Access today | Bucket limit | Uses and special constraints |
+| --- | ---: | --- | --- | --- |
+| `avatars` | 7 (274 kB) | Public reads | 2 MiB; JPEG/PNG/WebP | App/admin profile photos; stable `{userId}.{ext}` keys; replacement and cache busting |
+| `listing-images` | 45 (12 MB) | Public reads | 5 MiB; JPEG/PNG/WebP | Listing galleries, cards and social previews; listing ID prefix |
+| `chat-attachments` | 0 | Public reads | 10 MiB; listed image, PDF, Office and text types | Chat photos/files; conversation prefix; URL stored in `messages.metadata->>'url'`. Wired in the app, never used |
+| `documents` | 50 (21 MB) | Owner/admin signed reads | 10 MiB; JPEG/PNG/WebP/PDF | Identity images, legacy selfies, address proofs and, since migration 152, hotel trade licences (`listing_trade_licences.document_path`). Identity RPC restricts images to JPEG/PNG, 100 bytes–5 MiB. Only the `/nid/` prefix is protected from owner update/delete; passport, driving, student, office and trade-licence files are owner-mutable after submission |
+| `face-evidence` | 14 (10 MB) | Owner/admin signed reads | 8 MiB; JPEG/WebM/MP4 | Selfie 100 bytes–512 KiB, video 100 bytes–8 MiB; draft-attempt ownership/expiry; immutable capture objects |
 
-Important existing behaviors:
+Important existing behaviors, each confirmed against the nineteen live `storage.objects` policies:
 
 - Chat attachment bytes are publicly accessible by URL even though messages have their own authorization. Making them participant-only is a valuable separate privacy improvement, but is not a behavior-preserving storage migration. Do not silently describe current chat files as private.
 - Listing upload authorization calls `can_upload_listing_image()`: publishing eligibility **or an existing owned listing**. It is not simply a target-listing ownership check. Uploads can precede listing creation. Replacing this with “listing row must already exist” would break current flows.
 - Chat storage insert currently requires authentication, not conversation membership. Preserve the current baseline in parity tests; flag stronger authorization as a separate decision rather than hiding it in the migration.
-- Storage object owner fields drive some update/delete policies. Copying bytes as a migration service must not change logical ownership to that service.
+- Submitted non-NID evidence is mutable by its owner today (see the `documents` row). The migration either carries that or a separate change freezes submitted evidence; it must not do either silently. Decision in §16.
+- Storage object owner fields drive the listing-image and chat update/delete policies. Copying bytes as a migration service must not change logical ownership to that service.
 - Public full URLs and private object paths coexist. Signed URLs must never become durable database identifiers.
-- Admin upload code uses authorized server-side upload tickets and sends bytes directly from the browser, avoiding Next.js action body limits.
+- Admin upload code (`storage-actions.ts`) uses the service-role client when `SUPABASE_SERVICE_ROLE_KEY` is set, else the session client, issues signed upload tickets and sends bytes directly from the browser, avoiding Next.js action body limits. Admin signs face evidence for 300 s and documents for 3600 s.
 
 ### Code and SQL touchpoints
 
 | Area | Existing locations | Required migration work |
 | --- | --- | --- |
-| Shared Flutter uploads/downloads/deletes | `lib/services/image_upload_service.dart` | Preserve API/results/progress/compression; delegate storage transport |
+| Shared Flutter uploads/downloads/deletes | `lib/services/image_upload_service.dart` (also uploads trade licences and chat files, and signs document URLs) | Preserve API/results/progress/compression; delegate storage transport |
 | Identity and face uploads | `lib/services/verification/nid_verification_service.dart`, `face_verification_service.dart` | Add authorized upload/finalize operation; retain existing submit RPC calls |
-| URL-to-key parsing | `lib/screens/host/edit_listing_screen.dart`, especially `_storagePathFromUrl` | Resolve both legacy URLs and new media references safely; preserve deletion behavior |
-| Messaging | `lib/screens/messaging/chat_screen.dart`, messaging service/models | Preserve filename, size, MIME and URL shapes; cover previews and file opening |
+| URL-to-key parsing | `_storagePathFromUrl` in BOTH `lib/screens/host/edit_listing_screen.dart` and `lib/screens/host/property_form_screen.dart` | One resolver for both; resolve legacy URLs and new media references safely; preserve deletion behavior |
+| Messaging | `lib/screens/messaging/chat_screen.dart`, `messages.metadata` jsonb | Preserve filename, size, MIME and URL shapes; cover previews and file opening |
 | Admin uploads | `musafir-admin/src/lib/storage-actions.ts`, `src/components/image-upload.tsx`, `src/lib/images.ts` | Keep `requireAdmin`; replace signed-upload transport; preserve cleanup and cache behavior |
 | Admin private readers | `verifications/page.tsx`, `verifications/faces/page.tsx`, `users/queries.ts` | Batch authorization and URL signing across both providers |
-| Evidence SQL | `submit_face_verification`, `submit_identity_document`, `approve_identity_document`, NID compatibility wrappers | Replace direct `storage.objects` evidence reads with trusted provider-aware lookup |
-| Retention | `orphan_face_evidence`, `record_face_evidence_deleted`, `supabase/functions/purge-face-evidence/index.ts` | Provider-aware enumeration/deletion, retry and audit synchronization |
-| Social previews | `worker/index.js` | Keep absolute public image URLs functional for crawlers; no private URLs in preview tags |
+| Evidence SQL | `submit_face_verification`, `submit_identity_document`, `approve_identity_document`, NID compatibility wrappers, and (152) `submit_trade_licence`, `review_trade_licence`, `listing_licence_verified` | Replace direct `storage.objects` evidence reads with trusted provider-aware lookup |
+| Retention | `orphan_face_evidence`, `record_face_evidence_deleted`, `supabase/functions/purge-face-evidence/index.ts` | **Not deployed and not scheduled today** (§10). Deploy, schedule, then make provider-aware |
+| Social previews | `worker/index.js` emits the first `listings.image_urls` entry verbatim as `og:image` | Keep absolute public image URLs functional for crawlers; no private URLs in preview tags; `sh tool/verify_link_previews.sh` |
+| Denormalised URL copies | `bookings.listing_image_url`, `reviews.reviewer_avatar_url`, `listings.host_avatar_url`, `notifications.image_url` | §8 rewrite surface; `bookings.listing_image_url` is a frozen snapshot column |
 
-Re-scan all repositories, functions, jobs, tests and actual deployed schema before implementation. Identify any additional upload callers or URL-bearing JSON fields; the table is the known migration surface, not a promise that no other dependency exists.
+Re-scan all repositories, functions, jobs, tests and actual deployed schema before implementation. The table is the known migration surface as of migration 155, not a promise that no other dependency exists.
 
 ## 4. Target architecture
 
@@ -75,22 +79,21 @@ flowchart LR
   API -->|verify and finalize exact version| S[S3 committed media]
   API -->|trusted storage metadata| DB
   C -->|existing submission RPC| DB
-  CDN[CloudFront public media] --> S
-  C --> CDN
-  C -->|authorized short-lived private GET| S
+  C -->|short-lived signed GET, public or private| S
+  CDN[CloudFront, deferred] -.-> S
 ```
 
-Use separate production and staging resources. Prefer separate physical buckets for public media, private documents, face evidence and upload staging so their access/retention policies cannot be confused. Logical bucket names remain unchanged in adapters; public media can share a physical bucket with separate prefixes. All physical S3 buckets have Block Public Access enabled and ACLs disabled. “Public media” means anonymous CloudFront reads, not public S3 buckets.
+Use separate production and staging resources. Prefer separate physical buckets for public media, private documents, face evidence and upload staging so their access/retention policies cannot be confused. Logical bucket names remain unchanged in adapters; public media can share a physical bucket with separate prefixes. All physical S3 buckets have Block Public Access enabled and ACLs disabled.
 
-Use a domain the project owns, such as `media.<owned-domain>`, for public media. If none is available, record that dependency before promising stable portable URLs. CloudFront uses origin access control; its public distribution must not have access to private buckets. Private files initially use S3 signed GETs after server authorization. CloudFront private delivery can be evaluated later if traffic warrants it.
+“Public media” is served by signed GETs with a long TTL at first; at 7 avatars and 45 listing images there is no CDN case yet. When traffic justifies it, add CloudFront with origin access control on a domain the project owns (`media.<owned-domain>`); its distribution must not have access to private buckets. The URL shape handed to clients must be opaque enough that adding a CDN later does not change stored references (§5).
 
 ### Storage API hosting choice
 
-Recommended default: API Gateway + Lambda with an execution role for S3, short-lived AWS role credentials, and a narrowly scoped PostgreSQL integration. This adds infrastructure but avoids long-lived AWS access keys in an external runtime.
+Recommended default: a Supabase Edge Function signs uploads and reads. The project already deploys, pins (`supabase-js@2.45.4`) and `deno check`s edge functions in CI, and the signer needs the same database access those functions already have. It needs an AWS IAM user with a key scoped to the signer's prefixes and actions, stored as a function secret; rotate it like the other secrets. Do not pretend the Deno runtime receives an AWS role.
 
-Lower-infrastructure alternative: Supabase Edge Functions authorize requests and sign S3 operations. It reuses current deployment tooling, but AWS credentials or supported federation need deliberate management. Do not pretend external runtimes automatically receive an AWS role. Decide once during the proof of concept; implement one backend, not both.
+Alternative if the AWS footprint grows: API Gateway + Lambda with an execution role, which removes the long-lived key but adds a second deployment pipeline and a database integration that does not exist today. Decide once during the proof of concept; implement one backend, not both.
 
-In either case, validate Supabase JWT signature, issuer, audience and expiry using the project's actual signing configuration. Support its real JWT/key rotation mechanism; do not assume JWKS works for legacy symmetric signing. An Auth-server validation path is acceptable. Check current database role/suspension/resource rules where existing behavior requires them, rather than trusting client-supplied roles. Pass caller identity through a constrained authorization operation; never use a service credential as a substitute for caller authorization.
+JWT verification: live Auth signs with an ES256 key (`in_use`) and keeps the HS256 key as `previously_used`, both since 2026-05-19. Verify signature, issuer, audience and expiry against `/auth/v1/.well-known/jwks.json`, and accept both `kid`s until the HS256 key is revoked. Check current database role/suspension/resource rules where existing behavior requires them, rather than trusting client-supplied roles. Pass caller identity through a constrained authorization operation; never use a service credential as a substitute for caller authorization.
 
 ## 5. Storage contract and trusted registry
 
@@ -103,12 +106,12 @@ Preserve existing business-facing method signatures where practical. A shared st
 
 Clients may name an authorized logical resource, never an arbitrary physical bucket/key, AWS account, URL or object version. The backend derives storage keys and binds tickets to the caller and intended resource. Validate resource IDs without introducing new business prerequisites, such as requiring a draft listing to be saved before an image upload.
 
-Proposed additive tables:
+Proposed additive tables, two rather than four because the inventory is 116 objects:
 
 - `storage_upload_intents`: caller, logical bucket/path, staging key, expected MIME/size, idempotency key, expiry, finalization state.
-- `storage_assets`: opaque asset ID, logical bucket/path, original owner, active generation, verified MIME/size/checksum, business-created time, retention deadline, deletion state.
-- `storage_asset_locations`: asset/generation, provider, physical bucket/key, pinned version, copy checksum and verification state. Multiple verified locations support migration and rollback.
-- `storage_operations`: durable copy/delete/outbox work, attempts, failure state and tombstones.
+- `storage_assets`: opaque asset ID, logical bucket/path, original owner, active generation, verified MIME/size/checksum, business-created time, retention deadline, deletion state, and per-provider location columns (Supabase path; S3 bucket/key/pinned version/verified checksum). Two verified locations are enough for coexistence and rollback.
+
+Copy/delete work and tombstones are rows in `storage_assets` with a state column, not a separate outbox; split one out only if a backlog ever exists.
 
 Authenticated clients cannot insert “verified” metadata, choose owners, or mutate provider locations. Use constrained backend-only operations and RLS/revoked grants. A caller cannot make an unuploaded file look real by inserting a database row.
 
@@ -148,7 +151,20 @@ Admin review URLs must resolve the exact immutable evidence generation/version t
 
 ## 8. Existing URLs and older app versions
 
-Inventory `profiles.avatar_url`, listing image arrays, message attachment URLs, document paths, address-proof paths and any JSON-embedded references. Retain an exact before/after mapping and reference counts. Do not blindly replace all occurrences of a hostname in database text or fetch arbitrary external URLs during migration.
+Live reference inventory, 2026-10-02:
+
+| Column | Rows with a Supabase storage URL |
+| --- | ---: |
+| `profiles.avatar_url` | 7 of 7 |
+| `listings.image_urls` (text[]) | 22 of 22 |
+| `bookings.listing_image_url` (frozen snapshot) | 46 of 106 |
+| `reviews.reviewer_avatar_url` | 14 of 14 |
+| `listings.host_avatar_url`, `notifications.image_url` | 0, columns exist |
+| `messages.metadata->>'url'` | 0 |
+
+Private paths, not URLs: `face_verification_attempts.selfie_path` / `clip_path`, `owner_documents.file_path`, `profiles.address_proof_path`, `listing_trade_licences.document_path`. These need no rewrite; the resolver maps a path to a provider.
+
+`bookings.listing_image_url` is a frozen column under the payments hardening (136–140): rewriting it is a change to a frozen row and needs its own decision, otherwise the read-only legacy copy below covers it. Retain an exact before/after mapping and reference counts. Do not blindly replace all occurrences of a hostname in database text or fetch arbitrary external URLs during migration.
 
 A resolver recognizes allowlisted legacy Supabase URL shapes and new media URLs, handles encoding/query parameters once, and returns a logical asset reference. External image URLs remain external. Private signed URLs are not copied as durable references. Update the listing deletion parser as well as image display.
 
@@ -157,7 +173,7 @@ Recommended compatibility sequence:
 1. Publish storage-adapter-capable app/admin versions while Supabase remains authoritative.
 2. Copy Supabase objects to S3 and reconcile new writes, replacements and deletions. New clients can read verified S3 replicas; old clients keep using Supabase.
 3. Keep Supabase as the write authority while old clients remain active. This avoids silently splitting mutable avatar writes across two independent stores.
-4. Before S3 becomes write-authoritative, demonstrate that supported active clients understand the new protocol. If old clients persist, extend coexistence. Requiring an upgrade/raising a minimum version is a separate rollout decision, not something this migration silently enables.
+4. Before S3 becomes write-authoritative, demonstrate that supported active clients understand the new protocol. Web reloads itself, so this is about the Android app (Play `versionCode` 4). The floor already exists: `app_settings.android_min_version_code` (`docs/notes/android.md`; Play's answer is checked before the floor, zero forces nobody). Raising it is one setting but a separate rollout decision, not something this migration silently does.
 5. Cut over by logical bucket/cohort. Preserve legacy URLs and copies for the agreed overlap; then rewrite only verified stored public references with compare-and-swap updates and an undo map.
 
 The project cannot redirect a Supabase-owned hostname using its own DNS. Historical messages/bookmarks/cached payloads with those URLs may require keeping a read-only Supabase copy longer. Document that unavoidable exception. “All storage now on S3” is not an honest completion claim while these dependencies remain.
@@ -176,7 +192,7 @@ Preserve original retention deadlines; migration time must not restart a 30-day 
 
 ## 10. Retention and deletion
 
-The existing face cleanup code targets evidence older than 30 days and abandoned draft/superseded attempts after their expiry grace period, plus orphans. Its actual live scheduling has not been verified for this plan; earlier work left deployment/scheduling pending. Preserve that selection logic, document the current operational gap and test the provider-aware replacement before enabling it.
+The existing face cleanup code targets evidence older than 30 days and abandoned draft/superseded attempts after their expiry grace period, plus orphans. **It is not running.** On 2026-10-02 `purge-face-evidence` was absent from the deployed function list and nothing in `cron.job` invokes it; `orphan_face_evidence` and `record_face_evidence_deleted` exist in the database with no caller. The 30-day deadline is unenforced today, and the 14 live face objects include evidence older than that. Deploying and scheduling the purge (with `FACE_RETENTION_SECRET`) is a prerequisite that is outward-facing and separately approved; do it against Supabase first so the provider-aware version has a working baseline to be compared with.
 
 Use the existing business deadline as the authoritative clock. A durable deletion job marks the object unavailable, deletes every in-scope provider copy/version, retries failures, then records confirmed deletion using the existing audit mechanism. Do not set `media_deleted_at` while bytes remain retrievable. Pending deletions must not be resurrected by reconciliation or rollback.
 
@@ -204,8 +220,8 @@ Cross-region replication is optional disaster recovery, not an initial prerequis
 
 | Stage | Deliverable | Exit gate |
 | --- | --- | --- |
-| 0: inventory | Fresh live schema/policies, object/reference counts, old-client usage, cost inputs | Complete known storage surface; business invariants signed off |
-| 1: compatibility seam | Supabase-backed adapters, characterization tests, URL resolver | Existing provider behavior unchanged across app/admin |
+| 0: inventory | Done 2026-10-02 for schema, policies, objects and references (§3, §8). Still open: Android install count, traffic, cost inputs, retention deploy | Business invariants signed off; purge running against Supabase |
+| 1: compatibility seam | Supabase-backed adapters, characterization tests, URL resolver. Flutter done 2026-10-02 (`lib/services/storage/`, `test/services/storage/`); admin repo still open | Existing provider behavior unchanged across app/admin |
 | 2: AWS staging | Infrastructure as code, IAM, storage API, metadata registry | Cross-user/admin/anonymous access tests and failure injection pass |
 | 3: migration rehearsal | Copy/reconcile jobs, deletion ledger, rollback procedure | Full fixture inventory reconciles; interrupted jobs resume without duplicates |
 | 4: public media pilot | Avatars/listing reads, then chat; small eligible cohort | No broken old URLs, stale avatars, lost messages or unauthorized writes |
@@ -238,7 +254,7 @@ Required before production cutover:
 - NID/passport/driving/student/office ID workflows; manual/guided face submission; existing approval, rejection and revocation behavior unchanged.
 - Booking/publishing decisions and relevant profile/document/attempt audit fingerprints unchanged by migration itself.
 - Chat send failure/retry, original filenames, PDF/Office downloads, image previews and existing public-link behavior.
-- Listing display, editing/deletion and social previews for legacy URLs, new URLs and external images; preserve image order/cover.
+- Listing display, editing/deletion and social previews for legacy URLs, new URLs and external images; preserve image order/cover. `sh tool/verify_link_previews.sh` against the pilot listing.
 - Signed-link expiry/renewal, video seeking, narrow/mobile UI, CORS, physical Android/iPhone and current web browsers.
 - Upload succeeds but DB commit fails; DB commits but response is lost; deletion partially succeeds; copy races overwrite/delete; IAM/KMS denies access.
 - Entire test inventory checksum/reference reconciliation, original-owner preservation, rollback after S3-only writes, no deleted-object resurrection.
@@ -252,15 +268,16 @@ Planning estimate for one engineer familiar with both repositories, with AWS acc
 
 | Work | Engineer-days |
 | --- | ---: |
-| Inventory, authorization characterization, compatibility design | 2–3 |
-| AWS infrastructure, storage API, registry, upload finalization | 4–6 |
-| Flutter/admin adapters, URL compatibility, reader changes | 3–5 |
-| SQL evidence abstraction and retention integration | 3–5 |
-| Copy/reconciliation/rollback tooling | 3–4 |
-| Integration, security, device tests and staged rollout work | 4–6 |
-| Total | 19–29 |
+| Remaining inventory, authorization characterization, compatibility design | 1–2 |
+| Deploy and schedule the face purge against Supabase (prerequisite) | 0.5–1 |
+| AWS buckets/IAM, edge-function signer, two registry tables, upload finalization | 3–4 |
+| Flutter/admin adapters, one URL resolver, reader changes | 2–4 |
+| SQL evidence lookup across seven RPCs | 2–3 |
+| Copy/verify/rollback script for 116 objects and five reference columns | 1–2 |
+| Integration, security, device tests and staged rollout work | 3–4 |
+| Total | 12.5–20 |
 
-Allow roughly 4–6 working weeks plus app-store review, observed client adoption and the agreed rollback window. Live inventory may expand this estimate. A public-images-only pilot is smaller but is not completion of “all storage.”
+Allow roughly 3–4 working weeks plus Play review, observed Android adoption and the agreed rollback window. The 2026-09-27 estimate of 19–29 days assumed API Gateway, CloudFront and a four-table registry; the measured inventory removed those. A public-images-only pilot is smaller but is not completion of “all storage.”
 
 S3 is not guaranteed cheaper or free. Model stored GB-months, object requests, public/private download GB, CloudFront requests/egress, API/Lambda, KMS, logs, versions, replication, temporary staging and Supabase egress during copying. Coexistence temporarily pays for two copies/providers. Use measured traffic and selected-region prices; no defensible monthly amount is available yet. [AWS S3 pricing](https://aws.amazon.com/s3/pricing/)
 
@@ -268,11 +285,19 @@ Cost controls: budgets/alerts, bounded temporary storage, appropriate cache hit 
 
 ## 16. Decisions needed before implementation
 
-1. AWS account, budget owner, preferred region/data-location constraints and an owned media domain.
+1. AWS account, budget owner, preferred region/data-location constraints. An owned media domain only when CloudFront is added.
 2. Confirmation that “all storage” means uploaded files; this plan keeps database/auth and Cloudflare app hosting.
-3. Accepted legacy-client support window. With no forced upgrade, full Supabase retirement has no guaranteed date.
-4. Storage API hosting choice and acceptable provider-outage recovery targets.
-5. Whether to keep existing public chat attachment semantics for strict parity or approve a separate participant-only privacy change.
-6. Actual retention requirements/scheduling and whether backup/replication copies may retain sensitive evidence at all.
+3. Android support window: either wait for adoption of the adapter build or raise `android_min_version_code`. With neither, full Supabase retirement has no guaranteed date.
+4. Edge-function signer (default) versus Lambda, and acceptable provider-outage recovery targets.
+5. Whether to keep existing public chat attachment semantics for strict parity or approve a separate participant-only privacy change. Zero objects exist, so parity costs nothing either way.
+6. Whether submitted non-NID evidence (passport, driving, student, office, trade licence) stays owner-mutable, as it is today, or is frozen in a separate change before migration.
+7. Approval to deploy and schedule `purge-face-evidence` against Supabase now, and whether backup/replication copies may retain sensitive evidence at all.
+8. Whether `bookings.listing_image_url`, a frozen column, is rewritten or served from the read-only legacy copy.
 
 These decisions do not block documenting the plan. Until answered, use the defaults above, keep existing behavior, and do not provision or migrate production resources.
+
+## 17. Revision log
+
+- 2026-09-27: first draft from the repository baseline.
+- 2026-10-02: verified against live. Measured the object and reference inventory; found `chat-attachments` empty, the face purge undeployed and unscheduled, ES256 JWT signing in use, migration 152's trade-licence evidence, a second URL parser and four denormalised URL columns. Resized the design (edge-function signer, no CloudFront yet, two tables) and the estimate. No live resource was changed.
+- 2026-10-02: Stage 1 started. Flutter uploads, signed reads and deletes go through `StorageProvider` (Supabase-only implementation); both `_storagePathFromUrl` copies now call one strict resolver, which no longer keeps a `?query` in the key or matches external URLs.

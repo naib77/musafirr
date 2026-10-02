@@ -1805,6 +1805,27 @@ class SupabaseMusafirRepository extends ChangeNotifier
   }
 
   @override
+  Future<void> deleteRoomType(String listingId) async {
+    // Through the RPC, not `.from('listings').delete()`: the live-booking
+    // check has to hold under a row lock, and the hotel's licence must move
+    // off the type before it cascades away (156).
+    await _client.rpc('delete_room_type', params: {'p_listing_id': listingId});
+    // Evict by hand: _refreshListings keeps the host's own cached listings,
+    // so a deleted type would otherwise linger on the host screens.
+    _listings.removeWhere((l) => l.id == listingId);
+    notifyListeners();
+  }
+
+  @override
+  Future<void> deleteProperty(String propertyId) async {
+    await _client.rpc('delete_property', params: {'p_property_id': propertyId});
+    // Same eviction as deleteRoomType; the notify also refreshes
+    // HostListingsScreen's hotel section, which listens here.
+    _listings.removeWhere((l) => l.propertyId == propertyId);
+    notifyListeners();
+  }
+
+  @override
   Future<void> reassignBookingUnit(String bookingId, String unitId) async {
     // Through the RPC: 147's trigger refuses any direct unit_id write unless
     // musafir.unit_reassign is on, and only this function sets it.

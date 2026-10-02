@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/responsive.dart';
@@ -545,6 +546,47 @@ class _HotelsSectionState extends State<_HotelsSection> {
     }
   }
 
+  /// The same 156 RPC the hotel dashboard uses; offered here too so a host
+  /// does not have to open a hotel only to delete it.
+  Future<void> _delete(Property hotel) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete ${hotel.name}?'),
+        content: const Text(
+            'The hotel and all its room types will be removed for good. A '
+            'hotel with upcoming bookings cannot be deleted.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await widget.repository.deleteProperty(hotel.id);
+      if (mounted) ModernBanner.showSuccess(context, '${hotel.name} deleted');
+    } on PostgrestException catch (e) {
+      if (mounted) {
+        ModernBanner.showError(context, propertyRefusalMessage(e.hint));
+      }
+    } catch (_) {
+      if (mounted) {
+        ModernBanner.showError(context, propertyRefusalMessage(null));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_hotels.isEmpty) return const SizedBox.shrink();
@@ -564,10 +606,26 @@ class _HotelsSectionState extends State<_HotelsSection> {
           Card(
             margin: const EdgeInsets.only(bottom: 8),
             child: ListTile(
-              leading: const Icon(Icons.apartment),
+              leading: h.imageUrls.isEmpty
+                  ? const Icon(Icons.apartment)
+                  : AppNetworkImage(
+                      url: h.imageUrls.first,
+                      width: 48,
+                      height: 48,
+                      decodeWidth: 144,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
               title: Text(h.name),
               subtitle: h.publicAddress.isEmpty ? null : Text(h.publicAddress),
-              trailing: const Icon(Icons.chevron_right),
+              trailing: PopupMenuButton<String>(
+                tooltip: 'Hotel actions',
+                onSelected: (v) {
+                  if (v == 'delete') _delete(h);
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'delete', child: Text('Delete hotel')),
+                ],
+              ),
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(

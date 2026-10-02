@@ -3,6 +3,9 @@ import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../storage/storage_provider.dart';
+import '../storage/supabase_storage_provider.dart';
+
 class FaceAttempt {
   const FaceAttempt(
       {required this.id,
@@ -73,8 +76,11 @@ class FaceReviewUnavailable implements Exception {
 }
 
 class FaceVerificationService implements FaceVerificationRepository {
-  FaceVerificationService({SupabaseClient? client}) : _providedClient = client;
+  FaceVerificationService({SupabaseClient? client, StorageProvider? storage})
+      : _providedClient = client,
+        _storage = storage ?? SupabaseStorageProvider(client: client);
   final SupabaseClient? _providedClient;
+  final StorageProvider _storage;
   SupabaseClient get _client => _providedClient ?? Supabase.instance.client;
   static final instance = FaceVerificationService();
 
@@ -126,15 +132,18 @@ class FaceVerificationService implements FaceVerificationRepository {
     }
     if (existing['status'] != 'draft') throw StateError('Start a new capture');
     final prefix = '${attempt.userId}/${attempt.id}';
-    final bucket = _client.storage.from('face-evidence');
     // INSERT only. A retry may find an already uploaded immutable object. The
     // server validates both objects before atomically accepting the attempt.
     Future<void> upload(String path, Uint8List bytes, String type) async {
       try {
-        await bucket.uploadBinary(path, bytes,
-            fileOptions: FileOptions(contentType: type, upsert: false));
-      } on StorageException catch (error) {
-        if (error.statusCode != '409' && error.error != 'Duplicate') rethrow;
+        await _storage.upload(
+            bucket: 'face-evidence',
+            path: path,
+            bytes: bytes,
+            contentType: type,
+            upsert: false);
+      } on StorageConflict {
+        // Already there from the lost-response attempt; keep that copy.
       }
     }
 

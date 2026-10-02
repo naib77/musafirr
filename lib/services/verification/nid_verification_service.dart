@@ -3,6 +3,9 @@ import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../storage/storage_provider.dart';
+import '../storage/supabase_storage_provider.dart';
+
 const identityDocumentTypes = <String, String>{
   'nid': 'National ID (NID)',
   'passport': 'Passport',
@@ -20,6 +23,9 @@ abstract class NidVerificationRepository {
 /// Uploads both sides privately, then commits the submission atomically.
 /// Retains the historical document choices; no paid provider is called.
 class NidVerificationService implements NidVerificationRepository {
+  NidVerificationService({StorageProvider? storage})
+      : _storage = storage ?? SupabaseStorageProvider();
+  final StorageProvider _storage;
   SupabaseClient get _client => Supabase.instance.client;
   @override
   Future<Map<String, dynamic>> status() async => Map<String, dynamic>.from(
@@ -63,9 +69,14 @@ class NidVerificationService implements NidVerificationRepository {
       if (back != null) '$prefix/back.${types[1]}'
     ];
     for (var i = 0; i < paths.length; i++) {
-      await _client.storage.from('documents').uploadBinary(
-          paths[i], i == 0 ? front : back!,
-          fileOptions: FileOptions(contentType: 'image/${types[i]}'));
+      // upsert stays false, as the old default was: each submission writes a
+      // fresh uuid prefix, and `/nid/` objects are not owner-replaceable.
+      await _storage.upload(
+          bucket: 'documents',
+          path: paths[i],
+          bytes: i == 0 ? front : back!,
+          contentType: 'image/${types[i]}',
+          upsert: false);
     }
     // A failed row write is an error, even when the Storage upload succeeded.
     await _client.rpc('submit_identity_document', params: {

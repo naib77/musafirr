@@ -92,6 +92,24 @@ void main() {
     test('does not repeat a type said twice', () {
       expect(parser.parse('basa bari dhaka').types, [ListingType.fullHouse]);
     });
+
+    test('hears the two-word hotel names', () {
+      // Each half alone is nothing — "guest" is a guest word, "house" is not
+      // a type — so only the pair can say hotel.
+      expect(parser.parse('খুলনায় গেস্ট হাউস').types, [ListingType.hotel]);
+      expect(parser.parse('khulna guest house').types, [ListingType.hotel]);
+      expect(parser.parse('খুলনায় গেস্ট হাউস').placeText, 'Khulna');
+    });
+
+    test('"hotel room" is one hotel, not hotel-or-room', () {
+      // The per-token map would add both types and the search would OR
+      // them, showing rented rooms in flats to someone who asked for a
+      // hotel.
+      final q = parser.parse('আমার একটা হোটেল রুম দরকার কক্সবাজারে');
+      expect(q.types, [ListingType.hotel]);
+      expect(q.placeText, "Cox's Bazar");
+      expect(parser.parse('coxs bazar hotel room').types, [ListingType.hotel]);
+    });
   });
 
   group('guests', () {
@@ -107,6 +125,32 @@ void main() {
 
     test('does not treat a bare number as a guest count', () {
       expect(parser.parse('mirpur 10 basa').guestCount, isNull);
+    });
+
+    test('reads the glued Bangla form the recogniser emits', () {
+      // Bangla writes "চারজন" as one word; the recogniser does too, and the
+      // genitive rides on the end. None of it may leak into the place.
+      final q = parser.parse('চারজনের জন্য হোটেল কক্সবাজার');
+      expect(q.guestCount, 4);
+      expect(q.types, [ListingType.hotel]);
+      expect(q.placeText, "Cox's Bazar");
+      expect(parser.parse('dhaka duijon room').guestCount, 2);
+      expect(parser.parse('dhaka duijon room').placeText, 'Dhaka');
+    });
+
+    test('a name that merely ends in a guest word is not a count', () {
+      // "sujon" ends in "jon" but "su" is not a number.
+      expect(parser.parse('sujon er basa').guestCount, isNull);
+    });
+
+    test('verbs of staying are dropped, not geocoded', () {
+      // "থাকার মতো" rode into the place name before, and "নিতে" was
+      // stripped to "নি" and sent to Google.
+      final q = parser.parse('তিন জন থাকার মতো বাসা বনানীতে');
+      expect(q.guestCount, 3);
+      expect(q.placeText, 'Banani');
+      expect(parser.parse('মোহাম্মদপুরে রুম ভাড়া নিতে চাই').placeText,
+          'Mohammadpur');
     });
   });
 
@@ -126,6 +170,29 @@ void main() {
 
     test('requires a currency word so house numbers are not prices', () {
       expect(parser.parse('road 5 dhanmondi basa').maxPrice, isNull);
+    });
+
+    test('a thousands word is proof enough without a currency word', () {
+      // The spoken idiom puts the genitive on হাজার and never says টাকা.
+      // Nothing else in a rental sentence comes in thousands.
+      final q = parser.parse('পাঁচ হাজারের মধ্যে রুম ঢাকায়');
+      expect(q.maxPrice, 5000);
+      expect(q.placeText, 'Dhaka');
+      expect(parser.parse('dhaka 8 hajar e room').maxPrice, 8000);
+    });
+
+    test('reads glued hundreds', () {
+      // Seat and hourly prices live here, and Bangla says "পাঁচশো" as one
+      // word.
+      expect(parser.parse('মিরপুর পাঁচশো টাকা সিট').maxPrice, 500);
+      expect(parser.parse('mirpur dusho taka seat').maxPrice, 200);
+    });
+
+    test('price and quality qualifiers are not places', () {
+      expect(parser.parse('সস্তা হোটেল কক্সবাজারে').placeText, "Cox's Bazar");
+      expect(parser.parse('কম দামে হোটেল চট্টগ্রামে').placeText, 'Chattogram');
+      expect(parser.parse('এসি রুম ঢাকায়').placeText, 'Dhaka');
+      expect(parser.parse('আগামীকাল ঢাকায় রুম লাগবে').placeText, 'Dhaka');
     });
 
     test('does not eat the guest count', () {
@@ -175,6 +242,12 @@ void main() {
   });
 
   group('case endings the table has to see through', () {
+    test('reads the Bangla transliteration of the English city name', () {
+      // Speakers say "Chittagong" in a Bangla sentence; the recogniser
+      // writes it in Bengali script, where it looked like an unknown place.
+      expect(parser.parse('চিটাগাং এ হোটেল').placeText, 'Chattogram');
+    });
+
     // The reported bug: "dhakay room dekho" searched for the whole sentence
     // because "dhakay" carried an unlisted locative and "dekho" was not a
     // known verb, so both fell through into the place name.

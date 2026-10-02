@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import '../../core/utils/responsive.dart';
@@ -7,16 +8,20 @@ import '../../models/hotel_details.dart';
 import '../../models/listing.dart';
 import '../../models/property.dart';
 import '../../repositories/musafir_repository.dart';
+import '../../services/image_upload_service.dart';
+import '../../services/storage/storage_url.dart';
 import '../../state/auth_state.dart';
 import '../../widgets/app_text_field.dart';
 import '../../widgets/host/hotel_details_fields.dart';
+import '../../widgets/image_picker_grid.dart';
 import '../../widgets/location_picker.dart';
 import '../../widgets/modern_banner.dart';
 import 'property_dashboard_screen.dart';
 
 /// The hotel itself, entered once (plan §8 step 1): name, location, check-in
-/// times and the hotel facts every room type shares. Room types are added
-/// from [PropertyDashboardScreen] afterwards.
+/// times, the hotel's own photos and the hotel facts every room type shares.
+/// Room types are added from [PropertyDashboardScreen] afterwards, each with
+/// its own photos.
 ///
 /// One form for create and edit. On edit, the database pushes the shared
 /// fields down to every room type in the same transaction, so a moved pin or
@@ -56,6 +61,12 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
   /// and resolved against the catalog on save.
   final Set<String> _amenities = {};
 
+  /// The hotel's own photos (lobby, frontage, pool) -- properties.image_urls,
+  /// separate from each room type's. The guest hotel page leads with these
+  /// and falls back to a room type's photo only when there are none.
+  List<SelectedImage> _images = [];
+  List<String> _originalImageUrls = const [];
+
   // Same default as the listing wizard, and the same rule: it is not a
   // location until the host sets the pin.
   double _latitude = 23.7806;
@@ -84,6 +95,11 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
     _latitude = p.latitude ?? _latitude;
     _longitude = p.longitude ?? _longitude;
     _pinConfirmed = p.latitude != null;
+    _originalImageUrls = List<String>.from(p.imageUrls);
+    _images = [
+      for (final url in p.imageUrls)
+        SelectedImage(uploadedUrl: url, storagePath: _storagePathFromUrl(url)),
+    ];
     _loadAddress(p.id);
   }
 
@@ -138,12 +154,94 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
 
   static String? _blankToNull(String s) => s.trim().isEmpty ? null : s.trim();
 
+  /// Same as EditListingScreen's: the object path inside the bucket, which is
+  /// what a delete takes.
+  /// The shared resolver (one copy for this form and the other listing form).
+  static String? _storagePathFromUrl(String url) =>
+      storagePathFromUrl(url, bucket: StorageBuckets.listingImages);
+
+  /// Uploads the photos not uploaded yet, in order, and returns every URL.
+  /// Into the listing-images bucket (its insert policy is "may publish or
+  /// already hosts", which a hotel owner is), under a `property_` folder so
+  /// hotel photos never mix with a room type's. Throws on the first failure
+  /// so a half-uploaded set is never saved.
+  Future<List<String>> _uploadImages() async {
+    final upload = ImageUploadService.instance;
+    final folder =
+        'property_${widget.property?.id ?? DateTime.now().millisecondsSinceEpoch}';
+    final urls = <String>[];
+    for (var i = 0; i < _images.length; i++) {
+      final img = _images[i];
+      if (img.uploadedUrl != null) {
+        urls.add(img.uploadedUrl!);
+        continue;
+      }
+      if (img.localPath == null) continue;
+      setState(() =>
+          _images[i] = img.copyWith(isUploading: true, uploadProgress: 0));
+      final result = await upload.uploadListingImage(
+        image: XFile(img.localPath!),
+        listingId: folder,
+        onProgress: (p) {
+          if (mounted) {
+            setState(() => _images[i] = _images[i].copyWith(uploadProgress: p));
+          }
+        },
+      );
+      if (!result.success || result.publicUrl == null) {
+        if (mounted) {
+          setState(() => _images[i] = _images[i].copyWith(
+              isUploading: false,
+              error: result.errorMessage ?? 'Upload failed'));
+        }
+        throw Exception(
+            'Photo ${i + 1} did not upload: ${result.errorMessage}');
+      }
+      if (mounted) {
+        setState(() => _images[i] = _images[i].copyWith(
+              isUploading: false,
+              uploadedUrl: result.publicUrl,
+              storagePath: result.storagePath,
+            ));
+      }
+      urls.add(result.publicUrl!);
+    }
+    return urls;
+  }
+
+  /// After a successful save only: a failed save must not lose photos the
+  /// hotel row still points at.
+  Future<void> _deleteRemovedImages(List<String> kept) async {
+    for (final url in _originalImageUrls) {
+      if (kept.contains(url)) continue;
+      final path = _storagePathFromUrl(url);
+      if (path == null) continue;
+      try {
+        await ImageUploadService.instance.deleteListingImage(path);
+      } catch (e) {
+        // An orphaned object costs storage, not correctness.
+        debugPrint('Could not delete hotel photo $path: $e');
+      }
+    }
+  }
+
   Future<void> _save() async {
     if (_error() != null || _saving) return;
     final ownerId =
         widget.property?.ownerId ?? widget.authState.currentUser?.id;
     if (ownerId == null) return;
     setState(() => _saving = true);
+
+    final List<String> imageUrls;
+    try {
+      imageUrls = await _uploadImages();
+    } catch (e) {
+      if (mounted) {
+        ModernBanner.showError(context, 'Could not upload photos: $e');
+        setState(() => _saving = false);
+      }
+      return;
+    }
 
     final property = Property(
       id: widget.property?.id ?? '',
@@ -162,7 +260,7 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
       checkInTime: _blankToNull(_checkIn.text),
       checkOutTime: _blankToNull(_checkOut.text),
       hotelDetails: _details,
-      imageUrls: widget.property?.imageUrls ?? const [],
+      imageUrls: imageUrls,
       facilities: [
         for (final group in FacilityCatalog.hotelPropertyGroups)
           for (final f in group.facilities)
@@ -186,6 +284,7 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
     try {
       if (_isEdit) {
         await widget.repository.updateProperty(property, address);
+        await _deleteRemovedImages(imageUrls);
         if (!mounted) return;
         Navigator.pop(context, true);
         ModernBanner.showSuccess(context, 'Hotel saved');
@@ -280,6 +379,19 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
               label: 'About the hotel (optional)',
               hint: 'What guests should know about the hotel as a whole',
               maxLines: 4,
+            ),
+            section('Hotel photos'),
+            Text(
+              'The building, lobby, pool, view -- the hotel as a whole. Each '
+              'room type has its own photos, added on that room type.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            ImagePickerGrid(
+              images: _images,
+              onImagesChanged: (imgs) => setState(() => _images = imgs),
+              enabled: !_saving,
             ),
             section('Location'),
             Text(

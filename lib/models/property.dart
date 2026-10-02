@@ -193,6 +193,16 @@ String propertyRefusalMessage(String? hint) => switch (hint) {
         'Only the hotel\'s host can change its rooms.',
       'property_fixed' => 'A room type cannot leave its hotel.',
       'property_child_type' => 'Only hotel rooms can belong to a hotel.',
+      // 156: deleting a room type or a whole hotel.
+      'listing_has_bookings' => 'This room type has upcoming or current '
+          'bookings. Cancel or complete them before deleting.',
+      'property_has_bookings' => 'This hotel has upcoming or current '
+          'bookings. Cancel or complete them before deleting.',
+      'listing_has_history' || 'property_has_history' => 'This has payment '
+          'history and can\'t be deleted. Hide the room types instead -- '
+          'guests won\'t see them, and your records stay intact.',
+      'property_not_found' => 'That hotel no longer exists.',
+      'not_a_room_type' => 'That listing is not part of a hotel.',
       _ => 'Could not save. Please try again.',
     };
 
