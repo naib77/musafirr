@@ -6,6 +6,7 @@ import '../../models/availability_block.dart';
 import '../../models/booking.dart';
 import '../../models/booking_status.dart';
 import '../../models/listing.dart';
+import '../../models/listing_unit.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../widgets/modern_banner.dart';
 
@@ -20,6 +21,10 @@ import '../../widgets/modern_banner.dart';
 /// a host most often can't block a range, so showing them here is what makes
 /// the refusal ("decline that booking first") comprehensible instead of
 /// arbitrary.
+///
+/// A listing with more than one room (a hotel, 147) can also block a single
+/// room (151): the flow asks which one, and every tile names its room, because
+/// "blocked" means something different when the other nine are still free.
 class ListingAvailabilityScreen extends StatefulWidget {
   const ListingAvailabilityScreen({
     super.key,
@@ -37,6 +42,10 @@ class ListingAvailabilityScreen extends StatefulWidget {
 
 class _ListingAvailabilityScreenState extends State<ListingAvailabilityScreen> {
   List<AvailabilityBlock> _blocks = const [];
+
+  /// Active rooms first (see [MusafirRepository.listingUnits]), so positional
+  /// names match what the host sees when picking.
+  List<ListingUnit> _rooms = const [];
   bool _loading = true;
   bool _saving = false;
 
@@ -59,9 +68,11 @@ class _ListingAvailabilityScreenState extends State<ListingAvailabilityScreen> {
     try {
       final blocks =
           await widget.repository.listingAvailabilityBlocks(widget.listing.id);
+      final rooms = await _loadRooms();
       if (!mounted) return;
       setState(() {
         _blocks = blocks;
+        _rooms = rooms;
         _loading = false;
       });
     } catch (e) {
@@ -71,6 +82,28 @@ class _ListingAvailabilityScreenState extends State<ListingAvailabilityScreen> {
         _loadError = e.toString().replaceFirst('Exception: ', '');
       });
     }
+  }
+
+  /// Rooms are a refinement: if they fail to load, the screen still blocks
+  /// the whole listing, as it did before 151.
+  Future<List<ListingUnit>> _loadRooms() async {
+    try {
+      return await widget.repository.listingUnits(widget.listing.id);
+    } catch (e) {
+      debugPrint('listing_units failed: $e');
+      return const [];
+    }
+  }
+
+  List<ListingUnit> get _activeRooms =>
+      _rooms.where((u) => u.isActive).toList();
+
+  /// Null when the listing has one room or the room is unknown: naming
+  /// "Room 1" on a single-room listing only adds noise.
+  String? _roomName(String? unitId) {
+    if (unitId == null || _activeRooms.length < 2) return null;
+    final unit = _rooms.where((u) => u.id == unitId).firstOrNull;
+    return unit == null ? null : listingUnitName(unit, _rooms);
   }
 
   /// The listing's live bookings, from the cache the host already has — RLS
@@ -110,6 +143,34 @@ class _ListingAvailabilityScreenState extends State<ListingAvailabilityScreen> {
     );
     if (range == null || !mounted) return;
 
+    // Only asked when there is a choice. A dismissed picker cancels the flow;
+    // "Whole listing" is an answer (unitId null), not a dismissal.
+    String? unitId;
+    final rooms = _activeRooms;
+    if (rooms.length > 1) {
+      final choice = await showDialog<_RoomChoice>(
+        context: context,
+        builder: (dialogContext) => SimpleDialog(
+          title: const Text('Which room?'),
+          children: [
+            SimpleDialogOption(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, const _RoomChoice(null)),
+              child: const Text('Whole listing (every room)'),
+            ),
+            for (final u in rooms)
+              SimpleDialogOption(
+                onPressed: () =>
+                    Navigator.pop(dialogContext, _RoomChoice(u.id)),
+                child: Text(listingUnitName(u, _rooms)),
+              ),
+          ],
+        ),
+      );
+      if (choice == null || !mounted) return;
+      unitId = choice.unitId;
+    }
+
     final note = await _askForNote();
     if (!mounted) return;
 
@@ -129,6 +190,7 @@ class _ListingAvailabilityScreenState extends State<ListingAvailabilityScreen> {
         startsAt: startsAt,
         endsAt: endsAt,
         note: note,
+        unitId: unitId,
       );
       if (!mounted) return;
       await _load();
@@ -244,6 +306,11 @@ class _ListingAvailabilityScreenState extends State<ListingAvailabilityScreen> {
                     (b) => _BlockTile(
                       block: b,
                       label: formatAvailabilityRange(b.startsAt, b.endsAt),
+                      // A unit block on a multi-room listing says which room;
+                      // a whole-listing one says so, since the rest don't.
+                      room: _activeRooms.length < 2
+                          ? null
+                          : (_roomName(b.unitId) ?? 'Whole listing'),
                       onRemove: _saving ? null : () => _removeBlock(b),
                       theme: theme,
                     ),
@@ -257,7 +324,10 @@ class _ListingAvailabilityScreenState extends State<ListingAvailabilityScreen> {
                   ...booked.map(
                     (b) => _BookedTile(
                       label: formatAvailabilityRange(b.startAt, b.endAt),
-                      guest: b.tenantName,
+                      guest: [
+                        b.tenantName.isEmpty ? 'Guest' : b.tenantName,
+                        if (_roomName(b.roomUnitId) case final room?) room,
+                      ].join(' · '),
                       theme: theme,
                     ),
                   ),
@@ -273,6 +343,13 @@ class _ListingAvailabilityScreenState extends State<ListingAvailabilityScreen> {
       ),
     );
   }
+}
+
+/// The room picker's answer. A wrapper so "whole listing" (null) can be told
+/// apart from a dismissed dialog (also null).
+class _RoomChoice {
+  const _RoomChoice(this.unitId);
+  final String? unitId;
 }
 
 /// Asks for the optional, host-private note on a block. Returns null when the
@@ -429,10 +506,12 @@ class _BlockTile extends StatelessWidget {
     required this.label,
     required this.onRemove,
     required this.theme,
+    this.room,
   });
 
   final AvailabilityBlock block;
   final String label;
+  final String? room;
   final VoidCallback? onRemove;
   final ThemeData theme;
 
@@ -443,7 +522,12 @@ class _BlockTile extends StatelessWidget {
       child: ListTile(
         leading: Icon(Icons.event_busy, color: AppColors.warning),
         title: Text(label),
-        subtitle: block.note == null ? null : Text(block.note!),
+        subtitle: room == null && block.note == null
+            ? null
+            : Text([
+                if (room case final r?) r,
+                if (block.note case final n?) n,
+              ].join(' · ')),
         trailing: IconButton(
           icon: const Icon(Icons.close),
           tooltip: 'Unblock',

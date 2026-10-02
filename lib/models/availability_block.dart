@@ -16,6 +16,7 @@ class AvailabilityBlock {
     required this.startsAt,
     required this.endsAt,
     this.note,
+    this.unitId,
   });
 
   factory AvailabilityBlock.fromJson(Map<String, dynamic> json) {
@@ -25,6 +26,7 @@ class AvailabilityBlock {
       startsAt: DateTime.parse(json['starts_at'] as String).toLocal(),
       endsAt: DateTime.parse(json['ends_at'] as String).toLocal(),
       note: json['note'] as String?,
+      unitId: json['unit_id'] as String?,
     );
   }
 
@@ -37,6 +39,10 @@ class AvailabilityBlock {
   /// guest-facing `listing_blocked_ranges` RPC returns the two timestamps only,
   /// which is also why the table's SELECT policy is owner-scoped.
   final String? note;
+
+  /// The one room this block closes (151), or null for the whole listing —
+  /// every pre-151 block, and the only kind a single-room listing needs.
+  final String? unitId;
 
   /// Whether this block collides with [start]–[end].
   ///

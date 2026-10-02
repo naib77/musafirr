@@ -40,6 +40,7 @@ class Booking {
     this.paymentStatus = 'unpaid',
     this.paidAt,
     this.paymentMethod,
+    this.roomUnitId,
   });
 
   final String id;
@@ -103,6 +104,10 @@ class Booking {
   /// Null until chosen (treated as online-by-default). 'cash' means the guest
   /// will pay the host directly and the host confirms receipt.
   final String? paymentMethod;
+
+  /// The `listing_units` row the database put this stay in (147). Not the
+  /// pricing [unitLabel]. Null only for a booking built client-side.
+  final String? roomUnitId;
 
   /// Whether the guest chose to pay in hand cash (host confirms receipt).
   bool get isCashChosen => paymentMethod == 'cash';
@@ -243,6 +248,7 @@ class Booking {
     String? paymentStatus,
     DateTime? paidAt,
     String? paymentMethod,
+    String? roomUnitId,
   }) {
     return Booking(
       id: id ?? this.id,
@@ -276,6 +282,7 @@ class Booking {
       paymentStatus: paymentStatus ?? this.paymentStatus,
       paidAt: paidAt ?? this.paidAt,
       paymentMethod: paymentMethod ?? this.paymentMethod,
+      roomUnitId: roomUnitId ?? this.roomUnitId,
     );
   }
 }

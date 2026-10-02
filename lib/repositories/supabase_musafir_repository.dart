@@ -22,6 +22,7 @@ import '../models/host_verifications.dart';
 import '../models/landmark.dart';
 import '../models/leaderboard_entry.dart';
 import '../models/listing.dart';
+import '../models/listing_unit.dart';
 import '../models/listing_exact_address.dart';
 import '../models/listing_purpose.dart';
 import '../models/listing_type.dart';
@@ -1022,6 +1023,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
           ? DateTime.parse(json['paid_at'] as String)
           : null,
       paymentMethod: json['payment_method'] as String?,
+      roomUnitId: json['unit_id'] as String?,
     );
   }
 
@@ -1572,6 +1574,29 @@ class SupabaseMusafirRepository extends ChangeNotifier
   }
 
   @override
+  Future<List<ListingUnit>> listingUnits(String listingId) async {
+    final rows = await _client
+        .from('listing_units')
+        .select('id, listing_id, label, is_active')
+        .eq('listing_id', listingId)
+        .order('is_active', ascending: false)
+        .order('created_at')
+        .order('id');
+    return (rows as List)
+        .map((r) => ListingUnit.fromJson(r as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<void> reassignBookingUnit(String bookingId, String unitId) async {
+    // Through the RPC: 147's trigger refuses any direct unit_id write unless
+    // musafir.unit_reassign is on, and only this function sets it.
+    await _client.rpc('reassign_booking_unit',
+        params: {'p_booking_id': bookingId, 'p_unit_id': unitId});
+    await _refreshBookings();
+  }
+
+  @override
   Future<void> updateListing(Listing listing) async {
     final index = _listings.indexWhere((l) => l.id == listing.id);
     if (index == -1) return;
@@ -1645,6 +1670,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
     required DateTime startsAt,
     required DateTime endsAt,
     String? note,
+    String? unitId,
   }) async {
     // Through the RPC, not a direct insert: the table has no INSERT policy, and
     // the "are these dates already booked?" check lives inside the function so
@@ -1654,6 +1680,9 @@ class SupabaseMusafirRepository extends ChangeNotifier
       'p_starts_at': startsAt.toUtc().toIso8601String(),
       'p_ends_at': endsAt.toUtc().toIso8601String(),
       'p_note': note,
+      // Only when set: a listing-wide block keeps sending the pre-151 keys.
+      // There is one overload (p_unit_id defaulted), so either shape resolves.
+      if (unitId != null) 'p_unit_id': unitId,
     });
     return AvailabilityBlock.fromJson(row as Map<String, dynamic>);
   }

@@ -1,13 +1,13 @@
 # Hotels on Musafir — implementation plan
 
-Status: in progress (2026-10-02). 147–150 are **live** and the Dart hotel
+Status: in progress (2026-10-02). 147–151 are **live**. The Dart hotel
 type (wizard hotel step, room count, room facts, hotel amenities, detail
-tiles, card badge) is committed. 151 (`instant_book`, `reassign_booking_unit`,
-per-unit `block_listing_dates`) and the Dart instant-book toggle are written
-but **151 is not yet applied to live** — and the web build must not ship
-before it is: the save path now writes `instant_book`, and PostgREST refuses
-unknown columns (PGRST204) for every listing type. Host UI for reassign and
-per-unit blocks is not built yet. Decisions D1–D5 at the end are taken.
+tiles, card badge, instant-book toggle) is committed and built. The host UI
+for 151 is committed: the availability screen asks which room to block on a
+multi-room listing and names the room on each tile, and a hotel reservation
+has "Move to another room" (refusals shown by hint). Not built: room labels
+(every room is "Room N" until the host can name it), "N rooms left".
+Decisions D1–D5 at the end are taken.
 
 Not yet done from Phase 3: the trade-licence
 requirement in the verification queue. A host who switches a hotel to another

@@ -12,6 +12,7 @@ import '../models/listing_exact_address.dart';
 import '../models/landmark.dart';
 import '../models/leaderboard_entry.dart';
 import '../models/listing.dart';
+import '../models/listing_unit.dart';
 import '../models/owner_registration_draft.dart';
 import '../models/payment_record.dart';
 import '../models/payout_method.dart';
@@ -158,6 +159,16 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   /// would retire a room that still has an upcoming booking -- all-or-nothing,
   /// so the count is unchanged when it throws.
   Future<int> setListingUnitCount(String listingId, int count);
+
+  /// A listing's rooms, active ones first, oldest first within each — the
+  /// order that makes positional "Room N" names stable. Owner-only (RLS).
+  Future<List<ListingUnit>> listingUnits(String listingId);
+
+  /// Moves a booking to another room of the same listing (151). Host-only.
+  /// Throws a `PostgrestException` with hint `unit_taken`, `unit_blocked`,
+  /// `unit_mismatch`, `booking_not_live` or `not_listing_owner`.
+  Future<void> reassignBookingUnit(String bookingId, String unitId);
+
   Future<void> deleteListing(String listingId);
 
   /// Flips only a listing's visibility (`is_active`). Unlike [updateListing]
@@ -185,6 +196,7 @@ abstract class MusafirRepository implements Listenable, BookingStore {
     required DateTime startsAt,
     required DateTime endsAt,
     String? note,
+    String? unitId,
   });
 
   /// Removes one block. Only the owning host (or an admin) can.
