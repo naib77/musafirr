@@ -249,7 +249,9 @@ class _ListingCardModernState extends State<ListingCardModern>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  listing.title,
+                  // The hotel's name for a hotel row (154), so a guest reads
+                  // "Hotel Sea Crown", not whichever room type was cheapest.
+                  listing.cardTitle,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -344,7 +346,11 @@ class _ListingCardModernState extends State<ListingCardModern>
               ),
             ),
           TextSpan(
-            text: listing.type.title,
+            // "3★ Hotel" when the host stated a class (150): on the grid card
+            // this badge is the only place a guest sees it before tapping.
+            text: listing.hotelDetails.starRating != null
+                ? '${listing.hotelDetails.starRating}★ ${listing.type.title}'
+                : listing.type.title,
             style: const TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w700,

@@ -9,6 +9,7 @@ export class FaceChallenge {
   reset() {
     this.index = 0; this.phase = 'neutral'; this.since = null; this.lastTime = null;
     this.missingSince = null; this.baseline = null; this.neutralSum = 0; this.neutralCount = 0;
+    this.eyeBaseline = null; this.eyeSum = 0;
   }
   get complete() { return this.index === this.actions.length; }
   get instruction() {
@@ -34,11 +35,23 @@ export class FaceChallenge {
     this.missingSince = null;
     if (this.complete) return;
     const relativeYaw = yaw - (this.baseline ?? 0);
-    const neutral = Math.abs(relativeYaw) < (this.baseline === null ? .18 : .10) && blink < 0.3;
+    // Blink is judged against this person's own open-eye score, learned with
+    // the yaw baseline. Resting eyeBlink runs from ~0.05 to ~0.4 depending on
+    // eye shape, glasses and a phone held below eye level, and a natural blink
+    // sampled at ~16 fps (and smoothed by VIDEO mode) often peaks near 0.5 —
+    // a fixed 0.65 left most people stuck on "Blink naturally", and a fixed
+    // 0.3 open-eye limit kept narrow-eyed people from ever starting.
+    const eyesOpen = blink < (this.eyeBaseline === null ? .45 : Math.max(.3, this.eyeBaseline + .15));
+    const neutral = Math.abs(relativeYaw) < (this.baseline === null ? .18 : .10) && eyesOpen;
     const action = this.actions[this.index];
     let matches = false, hold = 220;
     if (this.phase === 'neutral' || this.phase === 'return') matches = neutral;
-    else if (action === 'blink') { matches = blink > 0.65 && Math.abs(relativeYaw) < 0.15; hold = 0; }
+    else if (action === 'blink') {
+      // Always above the open-eye limit, so one noisy frame cannot count as
+      // both the blink and the reopen.
+      matches = blink > Math.max(.4, (this.eyeBaseline ?? 0) + .25) && Math.abs(relativeYaw) < 0.15;
+      hold = 0;
+    }
     else {
       // Enter at a clear turn, then tolerate small tracking fluctuations while
       // holding it. Returning toward center still breaks the hold immediately.
@@ -47,13 +60,16 @@ export class FaceChallenge {
     }
     if (!matches) { this.since = null; this.neutralSum = 0; this.neutralCount = 0; return; }
     if (this.phase === 'neutral' && this.baseline === null) {
-      this.neutralSum += yaw; this.neutralCount++;
+      this.neutralSum += yaw; this.eyeSum += blink; this.neutralCount++;
     }
     this.since ??= time;
     if (time - this.since < hold) return;
     this.since = null;
     if (this.phase === 'neutral') {
-      this.baseline ??= this.neutralSum / this.neutralCount;
+      if (this.baseline === null) {
+        this.baseline = this.neutralSum / this.neutralCount;
+        this.eyeBaseline = this.eyeSum / this.neutralCount;
+      }
       this.phase = 'action';
     }
     else if (this.phase === 'action') { this.phase = 'return'; }

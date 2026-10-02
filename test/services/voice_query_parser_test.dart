@@ -79,6 +79,14 @@ void main() {
       expect(parser.parse('rum').types, [ListingType.room]);
       expect(parser.parse('সিট').types, [ListingType.seat]);
       expect(parser.parse('seat').types, [ListingType.seat]);
+      expect(parser.parse('হোটেল').types, [ListingType.hotel]);
+      expect(parser.parse('hotel').types, [ListingType.hotel]);
+      expect(parser.parse('resort').types, [ListingType.hotel]);
+    });
+
+    test('finds a hotel inside a sentence, with the place', () {
+      final q = parser.parse('coxs bazar e hotel khojo');
+      expect(q.types, [ListingType.hotel]);
     });
 
     test('does not repeat a type said twice', () {

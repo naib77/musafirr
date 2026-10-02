@@ -63,7 +63,7 @@ Without this, "full flow" testing means driving production with real SMS and
 real money.
 
 **Until it exists, QA runs on production with the master account**
-(01673293542, code 3969), under the rules in `docs/QA_PAYMENT_TEST_PLAN.md`
+(01673293542, code 3969), under the rules in `docs/qa/payment-test-plan.md`
 section 2: own listings only, never widen the allowlist, never point
 production at the sandbox, log every QA booking in `docs/qa/payment-runs.md`.
 
@@ -288,7 +288,7 @@ screenshot at every step and a hard assertion at the end:
    suppression honoured, retry only `failed`.
 4. Bulk notification: audience preview counts match sent rows; opt-out and
    quiet hours honoured.
-5. Every admin action lands in the audit log (`docs/AUDIT_LOG_PLAN.md` says
+5. Every admin action lands in the audit log (`docs/features/audit-log.md` says
    how far that exists).
 
 Run the visitor and guest suites on every deploy to staging; the full set
@@ -318,7 +318,7 @@ Skills, by surface:
 **Live is the production gateway, not the sandbox** (`SSLCZ_API_BASE` is
 `securepay`, verified 2026-09-17). How each row below is exercised without a
 sandbox, and what one ৳10 live run covers, is in
-`docs/QA_PAYMENT_TEST_PLAN.md`; that document is the runbook, this table is
+`docs/qa/payment-test-plan.md`; that document is the runbook, this table is
 the contract. In short: the handler decisions become `deno test` rows on an
 extracted `settle()`, the authorization rows become rolled-back SQL, and only
 the end-to-end success and cancel paths are driven for real, on the master
@@ -347,7 +347,7 @@ flow:
 
 Refunds and partial payments: confirm whether they exist. If not, the
 decision ("no refunds through the app, handled manually") belongs in
-`docs/sslcommerz.md`, and the UI must not promise one.
+`docs/features/sslcommerz.md`, and the UI must not promise one.
 
 Reconciliation: a nightly query comparing `payments.status = 'paid'` totals
 against the SSLCommerz merchant report. Any difference is an alert.
@@ -480,7 +480,7 @@ production deploy, zero open S1/S2.
 1. **Week 1** — staging project, seed script, master OTP on staging only.
    Add `deno check`, secret scan and the bundle-secret grep to CI. Delete
    `tmp_h1_test.dart`. Apply migration 131 (132 was applied 2026-09-18 and
-   closed the S1 in `docs/QA_PAYMENT_TEST_PLAN.md` section 7). Run `/dart-collect-coverage`
+   closed the S1 in `docs/qa/payment-test-plan.md` section 7). Run `/dart-collect-coverage`
    once for the baseline number.
 2. **Week 2** — `/api-security-review` first, then the authz matrix script
    and expectation file; fix what it finds (expect the `search_path` twenty

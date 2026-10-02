@@ -5,7 +5,7 @@ it, convert to web/legal/refund.html in the same style as its siblings and add
 it to the footer links of all three existing pages.
 
 The *mechanics* below are read off the code and are true today: payment happens
-only after the host accepts (docs/sslcommerz.md), pending requests expire after
+only after the host accepts (docs/features/sslcommerz.md), pending requests expire after
 24h (booking_lifecycle_service.dart), refunds are manual Disbursements to a
 verified payout method (CONTEXT.md "Getting paid"), and there is no platform
 service fee to withhold (host payout = full booking total).

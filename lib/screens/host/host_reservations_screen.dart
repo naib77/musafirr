@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import '../../core/theme/app_colors.dart';
 import '../../models/booking.dart';
 import '../../models/booking_categorizer.dart';
 import '../../models/booking_status.dart';
 import '../../models/listing.dart';
+import '../../models/listing_unit.dart';
 import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart'
     show MusafirRepository, BookingUpdateError;
@@ -630,6 +632,10 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
               ),
               const SizedBox(height: 12),
             ],
+            if (_canMoveRoom(booking)) ...[
+              _buildMoveRoomButton(context, booking),
+              const SizedBox(height: 12),
+            ],
             Row(
               children: [
                 Expanded(
@@ -676,6 +682,10 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
               ),
             ),
             const SizedBox(height: 12),
+            if (_canMoveRoom(booking)) ...[
+              _buildMoveRoomButton(context, booking),
+              const SizedBox(height: 12),
+            ],
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
@@ -1106,6 +1116,74 @@ class _HostReservationsScreenState extends State<HostReservationsScreen>
       if (mounted) {
         _showErrorBanner('Could not mark the no-show. Please try again.');
       }
+    }
+  }
+
+  /// Hotels only: other types have one room, so there is nowhere to move to
+  /// (the list is re-checked when tapped, since a hotel can have one room too).
+  bool _canMoveRoom(Booking booking) => booking.listingType == 'hotel';
+
+  Widget _buildMoveRoomButton(BuildContext context, Booking booking) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: () {
+          Navigator.pop(context);
+          _moveToAnotherRoom(booking);
+        },
+        icon: const Icon(Icons.swap_horiz),
+        label: const Text('Move to another room'),
+      ),
+    );
+  }
+
+  /// The database picks the room (151, D4); this is the host's override, for
+  /// a broken AC or a guest who asked for a quieter floor. Free-room checks
+  /// stay server-side: the picker lists every other active room and lets
+  /// `reassign_booking_unit` refuse a taken or blocked one by hint.
+  Future<void> _moveToAnotherRoom(Booking booking) async {
+    final List<ListingUnit> rooms;
+    try {
+      rooms = await widget.repository.listingUnits(booking.listingId);
+    } catch (_) {
+      if (mounted) {
+        _showErrorBanner('Could not load the rooms. Please try again.');
+      }
+      return;
+    }
+    if (!mounted) return;
+    final others =
+        rooms.where((u) => u.isActive && u.id != booking.roomUnitId).toList();
+    if (others.isEmpty) {
+      _showInfoBanner('This listing has no other room to move to.');
+      return;
+    }
+    final current = rooms.where((u) => u.id == booking.roomUnitId).firstOrNull;
+    final picked = await showDialog<ListingUnit>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: Text(current == null
+            ? 'Move to which room?'
+            : 'Move from ${listingUnitName(current, rooms)} to'),
+        children: [
+          for (final u in others)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, u),
+              child: Text(listingUnitName(u, rooms)),
+            ),
+        ],
+      ),
+    );
+    if (picked == null || !mounted) return;
+    try {
+      await widget.repository.reassignBookingUnit(booking.id, picked.id);
+      if (mounted) {
+        _showSuccessBanner('Moved to ${listingUnitName(picked, rooms)}');
+      }
+    } on PostgrestException catch (e) {
+      if (mounted) _showErrorBanner(roomMoveRefusalMessage(e.hint));
+    } catch (_) {
+      if (mounted) _showErrorBanner(roomMoveRefusalMessage(null));
     }
   }
 

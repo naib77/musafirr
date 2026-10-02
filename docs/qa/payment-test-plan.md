@@ -31,7 +31,7 @@ Three things about the environment that decide the shape of this plan:
 1. **SSLCommerz on live is the production gateway.** `SSLCZ_API_BASE` on the
    project resolves to `https://securepay.sslcommerz.com` (checked by hashing
    the two candidate URLs against the Management API's secret value, not by
-   reading a doc). `docs/sslcommerz.md` still says "sandbox" in its first
+   reading a doc). `docs/features/sslcommerz.md` still says "sandbox" in its first
    line; that is stale. There are no sandbox credentials anywhere in this
    project. Every online payment made during QA is real money.
 2. **Small real payments have already been made on live**, by other accounts:
@@ -62,7 +62,7 @@ that has already gone wrong here.
 - **Never point production at the SSLCommerz sandbox**, even for an hour. A
   guest paying during that hour would complete a sandbox transaction, see
   "Paid", and no money would arrive. The sandbox belongs to the staging
-  project (`docs/QA_PLAN.md` section 3) and nowhere else.
+  project (`docs/qa/qa-plan.md` section 3) and nowhere else.
 - **Never post a forged IPN at a `tran_id` you do not own.** The IPN
   function is deployed without JWT verification on purpose, so it accepts
   anything. Posting `status=FAILED` against a real guest's in-flight
@@ -131,7 +131,7 @@ Cost of the full table: about ৳40 in real payments plus a handful of SMS.
 
 ## 4. The scenario matrix without money
 
-Most of the payments table in `docs/QA_PLAN.md` section 4.6 is about the
+Most of the payments table in `docs/qa/qa-plan.md` section 4.6 is about the
 IPN handler's decisions, and those do not need a gateway at all.
 
 ### 4.1 Deno unit tests on the settlement logic (do this first)
@@ -215,7 +215,7 @@ with a real `val_id`) waits for the staging project and its sandbox store.
 
 ## 7. Findings from preparing this plan
 
-Not fixed here; each is a candidate row in `docs/QA_PLAN.md`.
+Not fixed here; each is a candidate row in `docs/qa/qa-plan.md`.
 
 1. **A host can book their own listing.** No check in
    `create_marketplace_booking`. Harmless for QA, odd for a marketplace: a
@@ -228,12 +228,12 @@ Not fixed here; each is a candidate row in `docs/QA_PLAN.md`.
    is wrong. A 24-hour sweep marking `initiated` older than a day as
    `abandoned` (or `failed` with a reason) is one migration and one cron
    entry, same shape as `expire_stale_bookings`.
-3. **IPN may not be enabled in the merchant panel.** `docs/sslcommerz.md`
+3. **IPN may not be enabled in the merchant panel.** `docs/features/sslcommerz.md`
    calls it optional. Without it, a guest who pays and closes the tab
    before the redirect has paid and is shown `unpaid` until they tap I've
    paid; and if the redirect is lost, forever. The variant in section 3
    tells you which state you are in. Turn it on.
-4. **`docs/sslcommerz.md` says sandbox; live is production.** Update the
+4. **`docs/features/sslcommerz.md` says sandbox; live is production.** Update the
    first line and the Testing section, and add the section 2 rules.
 5. **A guest or a host can mark their own booking `paid` with one
    PostgREST PATCH. Confirmed live, rolled back, 2026-09-17. S1.

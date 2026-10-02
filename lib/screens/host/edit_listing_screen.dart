@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import '../../core/utils/responsive.dart';
 import '../../data/facility_catalog.dart';
+import '../../models/hotel_details.dart';
 import '../../models/listing.dart';
 import '../../models/listing_purpose.dart';
 import '../../models/listing_type.dart';
 import '../../models/turf_details.dart';
 import '../../repositories/musafir_repository.dart';
+import '../../services/app_settings_service.dart';
+import '../../services/booking/hourly_policy.dart';
 import '../../services/image_upload_service.dart';
 import '../../widgets/app_text_field.dart';
+import '../../widgets/host/hotel_details_fields.dart';
+import '../../widgets/host/trade_licence_card.dart';
 import '../../widgets/host/party_limits_fields.dart';
 import '../../services/listing/listing_type_scope.dart';
 import '../../widgets/host/turf_details_fields.dart';
@@ -62,6 +68,15 @@ class _EditListingScreenState extends State<EditListingScreen> {
   // listing, so a host who set none keeps none.
   late PartyLimits _partyLimits;
   late TurfDetails _turfDetails;
+  late HotelDetails _hotelDetails;
+  late RoomFacts _roomFacts;
+
+  /// The room count as the database has it, and as the host has set it.
+  /// Null until `listing_unit_count` answers: the counter is hidden until
+  /// then, because showing a default of 1 and saving it would retire every
+  /// other room of a hotel the host never meant to touch.
+  int? _savedUnitCount;
+  int? _unitCount;
 
   /// Whether the type currently selected on this form describes a place
   /// someone stays in. Read from `_propertyType`, NOT from the listing passed
@@ -86,6 +101,11 @@ class _EditListingScreenState extends State<EditListingScreen> {
   late final TextEditingController _minMonthsController;
   late final TextEditingController _maxMonthsController;
 
+  // Hourly shape beyond min/max: fixed block lengths and a day-use window.
+  late final TextEditingController _hourlySlotsController;
+  late final TextEditingController _hourlyWindowStartController;
+  late final TextEditingController _hourlyWindowEndController;
+
   // House rules
   late final TextEditingController _checkInTimeController;
   late final TextEditingController _checkOutTimeController;
@@ -94,6 +114,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
   late bool _smokingAllowed;
   late bool _petsAllowed;
   late bool _partiesAllowed;
+  late bool _instantBook;
 
   // Check-in & access (private)
   late final TextEditingController _directionsController;
@@ -119,6 +140,20 @@ class _EditListingScreenState extends State<EditListingScreen> {
   void setState(VoidCallback fn) {
     if (_trackChanges) _dirty = true;
     super.setState(fn);
+  }
+
+  Future<void> _loadUnitCount() async {
+    try {
+      final n = await widget.repository.listingUnitCount(widget.listing.id);
+      if (!mounted) return;
+      // Seeding, not a user edit — don't let it flip the dirty flag.
+      _trackChanges = false;
+      setState(() => _savedUnitCount = _unitCount = n);
+      _trackChanges = true;
+    } catch (e) {
+      // Leaves the counter hidden; everything else on the form still saves.
+      debugPrint('listing_unit_count failed: $e');
+    }
   }
 
   void _markDirty() {
@@ -158,10 +193,19 @@ class _EditListingScreenState extends State<EditListingScreen> {
     _maxGuests = l.maxGuests;
     _partyLimits = l.partyLimits;
     _turfDetails = l.turfDetails;
+    _hotelDetails = l.hotelDetails;
+    _roomFacts = l.roomFacts;
+    _loadUnitCount();
     _bedrooms = l.bedrooms;
     _beds = l.beds;
     _bathrooms = l.bathrooms;
-    _selectedAmenities = l.amenityNames.toSet();
+    // Upgraded here so the picker shows a pre-146 Kitchen as the split chip
+    // it will be saved as, and again at save in case the type changed.
+    _selectedAmenities = FacilityCatalog.upgradeLegacy(
+      l.amenityNames,
+      isStay: l.type.isStay,
+      isFullHouse: l.type == ListingType.fullHouse,
+    );
 
     _hourlyEnabled = l.hourlyRate != null;
     _dailyEnabled = l.dailyRate != null;
@@ -181,6 +225,12 @@ class _EditListingScreenState extends State<EditListingScreen> {
         TextEditingController(text: limitText(limits.minMonths));
     _maxMonthsController =
         TextEditingController(text: limitText(limits.maxMonths));
+    _hourlySlotsController =
+        TextEditingController(text: limits.hourlySlots?.join(', ') ?? '');
+    _hourlyWindowStartController =
+        TextEditingController(text: limits.hourlyWindowStart ?? '');
+    _hourlyWindowEndController =
+        TextEditingController(text: limits.hourlyWindowEnd ?? '');
 
     final rules = l.houseRules;
     _checkInTimeController =
@@ -193,6 +243,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
     _smokingAllowed = rules.smokingAllowed;
     _petsAllowed = rules.petsAllowed;
     _partiesAllowed = rules.partiesAllowed;
+    _instantBook = l.instantBook;
 
     _directionsController = TextEditingController();
     _wifiNameController = TextEditingController();
@@ -232,6 +283,9 @@ class _EditListingScreenState extends State<EditListingScreen> {
       _maxNightsController,
       _minMonthsController,
       _maxMonthsController,
+      _hourlySlotsController,
+      _hourlyWindowStartController,
+      _hourlyWindowEndController,
       _checkInTimeController,
       _checkOutTimeController,
       _quietHoursController,
@@ -261,6 +315,9 @@ class _EditListingScreenState extends State<EditListingScreen> {
     _monthlyPriceController.dispose();
     _minHoursController.dispose();
     _maxHoursController.dispose();
+    _hourlySlotsController.dispose();
+    _hourlyWindowStartController.dispose();
+    _hourlyWindowEndController.dispose();
     _minNightsController.dispose();
     _maxNightsController.dispose();
     _minMonthsController.dispose();
@@ -334,20 +391,40 @@ class _EditListingScreenState extends State<EditListingScreen> {
     return trimmed.isEmpty ? null : trimmed;
   }
 
-  String? _pricingError() => validatePlanRates(
+  String? _pricingError() =>
+      validatePlanRates(
         hourlyEnabled: _hourlyEnabled,
         dailyEnabled: _dailyEnabled,
         monthlyEnabled: _monthlyEnabled,
         hourlyText: _hourlyPriceController.text,
         dailyText: _dailyPriceController.text,
         monthlyText: _monthlyPriceController.text,
+      ) ??
+      hourlyHostFieldsError(
+        hourlyEnabled: _hourlyEnabled,
+        windowStartText: _hourlyWindowStartController.text,
+        windowEndText: _hourlyWindowEndController.text,
+        slotsText: _hourlySlotsController.text,
+        maxHoursText: _maxHoursController.text,
       );
+
+  /// A room type of a hotel (153). Its location, check-in times and hotel
+  /// facts belong to the hotel -- the database copies them over whatever
+  /// this form sends -- and its rooms are managed from the hotel dashboard,
+  /// so those sections are hidden rather than shown as edits that vanish.
+  bool get _inHotel => widget.listing.propertyId != null;
 
   String? _formError() {
     if (_titleController.text.trim().isEmpty) return 'Add a listing title.';
-    if (_streetController.text.trim().isEmpty) return 'Add the road / street.';
-    if (_areaController.text.trim().isEmpty) return 'Add the area / locality.';
-    if (_cityController.text.trim().isEmpty) return 'Add the city.';
+    if (!_inHotel) {
+      if (_streetController.text.trim().isEmpty) {
+        return 'Add the road / street.';
+      }
+      if (_areaController.text.trim().isEmpty) {
+        return 'Add the area / locality.';
+      }
+      if (_cityController.text.trim().isEmpty) return 'Add the city.';
+    }
     if (_images.isEmpty) return 'Add at least one photo.';
     return _pricingError();
   }
@@ -420,6 +497,8 @@ class _EditListingScreenState extends State<EditListingScreen> {
       final scoped = scopeFieldsToType(
         type: _propertyType,
         turfDetails: _turfDetails,
+        hotelDetails: _hotelDetails,
+        roomFacts: _roomFacts,
         partyLimits: _partyLimits,
         bedrooms: _bedrooms,
         beds: _beds,
@@ -468,23 +547,51 @@ class _EditListingScreenState extends State<EditListingScreen> {
         // turf into a room could not save at all without this.
         partyLimits: scoped.partyLimits,
         turfDetails: scoped.turfDetails,
+        // Must be passed: this constructor is explicit, and an omitted field
+        // defaults to empty -- which toJson sends as nulls, wiping what the
+        // host stated on every save.
+        hotelDetails: scoped.hotelDetails,
+        roomFacts: scoped.roomFacts,
+        instantBook: _instantBook,
         bedrooms: scoped.bedrooms,
         beds: scoped.beds,
         bathrooms: scoped.bathrooms,
-        facilities: FacilityCatalog.ownerSelectable
-            .where((f) => _selectedAmenities.contains(f.name))
-            .toList(),
+        facilities: () {
+          final names = FacilityCatalog.upgradeLegacy(
+            _selectedAmenities,
+            isStay: _isStay,
+            isFullHouse: _propertyType == ListingType.fullHouse,
+          );
+          return FacilityCatalog.ownerSelectable
+              .where((f) => names.contains(f.name))
+              .toList();
+        }(),
         rating: l.rating,
         reviewCount: l.reviewCount,
         isSuperhost: l.isSuperhost,
         currency: l.currency,
         available: l.available,
         bookingLimits: BookingLimits(
+          // A minimum under the platform floor is saved as the floor, so the
+          // host sees the number guests are actually held to.
           minHours: hourlyRate != null
-              ? int.tryParse(_minHoursController.text)
+              ? clampHostMinHours(
+                  int.tryParse(_minHoursController.text),
+                  AppSettingsService.instance.hourlyPolicy
+                      .forType(_propertyType),
+                )
               : null,
           maxHours: hourlyRate != null
               ? int.tryParse(_maxHoursController.text)
+              : null,
+          hourlySlots: hourlyRate != null
+              ? parseHourlySlotsText(_hourlySlotsController.text)
+              : null,
+          hourlyWindowStart: hourlyRate != null
+              ? normalizeClockText(_hourlyWindowStartController.text)
+              : null,
+          hourlyWindowEnd: hourlyRate != null
+              ? normalizeClockText(_hourlyWindowEndController.text)
               : null,
           minNights: dailyRate != null
               ? int.tryParse(_minNightsController.text)
@@ -518,6 +625,18 @@ class _EditListingScreenState extends State<EditListingScreen> {
         ),
       );
 
+      // Before the row update, so a refused shrink fails the save with
+      // nothing written. Only for a hotel: a host switching a hotel to a room
+      // keeps its units (the type change is the decision; retiring rooms
+      // that may hold bookings is not one this form should make silently).
+      final unitCount = _unitCount;
+      if (_propertyType == ListingType.hotel &&
+          unitCount != null &&
+          unitCount != _savedUnitCount) {
+        _savedUnitCount =
+            await widget.repository.setListingUnitCount(l.id, unitCount);
+      }
+
       await widget.repository.updateListing(updated);
 
       // Delete photos the host removed (originally uploaded, now gone).
@@ -537,6 +656,16 @@ class _EditListingScreenState extends State<EditListingScreen> {
         _dirty = false;
         Navigator.pop(context);
         ModernBanner.showSuccess(context, 'Listing updated');
+      }
+    } on PostgrestException catch (e) {
+      if (mounted) {
+        // By hint, never by message (the message carries counts).
+        ModernBanner.showError(
+            context,
+            e.hint == 'units_in_use'
+                ? 'Some of the rooms you are removing have upcoming '
+                    'bookings. Lower the count after those stays end.'
+                : 'Failed to update listing: ${e.message}');
       }
     } catch (e) {
       if (mounted) {
@@ -625,19 +754,21 @@ class _EditListingScreenState extends State<EditListingScreen> {
               _sectionDivider(),
 
               // ---------- Type ----------
-              _sectionTitle(theme, 'Property type'),
-              Wrap(
-                spacing: 8,
-                children: ListingType.values.map((t) {
-                  return ChoiceChip(
-                    label: Text(t.title),
-                    selected: _propertyType == t,
-                    onSelected: (_) => setState(() => _propertyType = t),
-                  );
-                }).toList(),
-              ),
-
-              _sectionDivider(),
+              // A room type cannot leave its hotel (hint property_fixed).
+              if (!_inHotel) ...[
+                _sectionTitle(theme, 'Property type'),
+                Wrap(
+                  spacing: 8,
+                  children: ListingType.values.map((t) {
+                    return ChoiceChip(
+                      label: Text(t.title),
+                      selected: _propertyType == t,
+                      onSelected: (_) => setState(() => _propertyType = t),
+                    );
+                  }).toList(),
+                ),
+                _sectionDivider(),
+              ],
 
               // ---------- Purpose ----------
               PurposeSelector(
@@ -652,87 +783,97 @@ class _EditListingScreenState extends State<EditListingScreen> {
               _sectionDivider(),
 
               // ---------- Location ----------
-              _sectionTitle(theme, 'Location'),
-              AppTextField(
-                controller: _houseNoController,
-                label: 'House / Building no.',
-                hint: 'e.g., House 12',
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 16),
-              AppTextField(
-                controller: _flatFloorController,
-                label: 'Flat / Floor (optional)',
-                hint: 'e.g., B-4, 3rd floor',
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 16),
-              AppTextField(
-                controller: _streetController,
-                label: 'Road / Street',
-                hint: 'e.g., Road 27',
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 16),
-              AppTextField(
-                controller: _areaController,
-                label: 'Area / Locality',
-                hint: 'e.g., Banani',
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 16),
-              AppTextField(
-                controller: _cityController,
-                label: 'City',
-                hint: 'e.g., Dhaka',
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 16),
-              AppTextField(
-                controller: _postalCodeController,
-                label: 'Postal code (optional)',
-                hint: 'e.g., 1213',
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 16),
-              AppTextField(
-                controller: _landmarkController,
-                label: 'Landmark (optional)',
-                hint: 'e.g., Near Banani Bridge',
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  final result = await LocationPicker.show(
-                    context,
-                    initialLatitude: _latitude,
-                    initialLongitude: _longitude,
-                  );
-                  if (!mounted) return;
-                  if (result != null) {
-                    setState(() {
-                      _latitude = result.latitude;
-                      _longitude = result.longitude;
-                      // Seed Road/Street from the geocoded address only if empty.
-                      if (result.address != null &&
-                          result.address!.isNotEmpty &&
-                          _streetController.text.trim().isEmpty) {
-                        _streetController.text = result.address!;
-                      }
-                    });
-                  }
-                },
-                icon: const Icon(Icons.map),
-                label: const Text('Pick on Map'),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Location: ${_latitude.toStringAsFixed(4)}, ${_longitude.toStringAsFixed(4)}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+              if (_inHotel)
+                Text(
+                  'Location, check-in times and hotel details are set on '
+                  'the hotel and shared by all its room types.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                )
+              else ...[
+                _sectionTitle(theme, 'Location'),
+                AppTextField(
+                  controller: _houseNoController,
+                  label: 'House / Building no.',
+                  hint: 'e.g., House 12',
+                  onChanged: (_) => setState(() {}),
                 ),
-              ),
+                const SizedBox(height: 16),
+                AppTextField(
+                  controller: _flatFloorController,
+                  label: 'Flat / Floor (optional)',
+                  hint: 'e.g., B-4, 3rd floor',
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 16),
+                AppTextField(
+                  controller: _streetController,
+                  label: 'Road / Street',
+                  hint: 'e.g., Road 27',
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 16),
+                AppTextField(
+                  controller: _areaController,
+                  label: 'Area / Locality',
+                  hint: 'e.g., Banani',
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 16),
+                AppTextField(
+                  controller: _cityController,
+                  label: 'City',
+                  hint: 'e.g., Dhaka',
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 16),
+                AppTextField(
+                  controller: _postalCodeController,
+                  label: 'Postal code (optional)',
+                  hint: 'e.g., 1213',
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 16),
+                AppTextField(
+                  controller: _landmarkController,
+                  label: 'Landmark (optional)',
+                  hint: 'e.g., Near Banani Bridge',
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final result = await LocationPicker.show(
+                      context,
+                      initialLatitude: _latitude,
+                      initialLongitude: _longitude,
+                    );
+                    if (!mounted) return;
+                    if (result != null) {
+                      setState(() {
+                        _latitude = result.latitude;
+                        _longitude = result.longitude;
+                        // Seed Road/Street from the geocoded address only if empty.
+                        if (result.address != null &&
+                            result.address!.isNotEmpty &&
+                            _streetController.text.trim().isEmpty) {
+                          _streetController.text = result.address!;
+                        }
+                      });
+                    }
+                  },
+                  icon: const Icon(Icons.map),
+                  label: const Text('Pick on Map'),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Location: ${_latitude.toStringAsFixed(4)}, ${_longitude.toStringAsFixed(4)}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
 
               _sectionDivider(),
 
@@ -784,6 +925,36 @@ class _EditListingScreenState extends State<EditListingScreen> {
                   max: 10,
                   onChanged: (v) => setState(() => _bathrooms = v),
                 ),
+                const Divider(),
+                const SizedBox(height: 8),
+                RoomFactsFields(
+                  facts: _roomFacts,
+                  onChanged: (v) => setState(() => _roomFacts = v),
+                ),
+                if (_propertyType == ListingType.hotel && !_inHotel) ...[
+                  const SizedBox(height: 20),
+                  const Divider(),
+                  if (_unitCount != null)
+                    _CounterRow(
+                      label: 'Rooms of this kind',
+                      value: _unitCount!,
+                      min: 1,
+                      max: 100,
+                      onChanged: (v) => setState(() => _unitCount = v),
+                    ),
+                  const SizedBox(height: 12),
+                  HotelDetailsFields(
+                    details: _hotelDetails,
+                    onChanged: (v) => setState(() => _hotelDetails = v),
+                  ),
+                  // Only once saved as a hotel: the RPC checks the stored
+                  // type, so a host mid-switch would be refused (not_a_hotel).
+                  if (widget.listing.type == ListingType.hotel) ...[
+                    const SizedBox(height: 20),
+                    const Divider(),
+                    TradeLicenceCard(listingId: widget.listing.id),
+                  ],
+                ],
               ] else ...[
                 const SizedBox(height: 20),
                 TurfDetailsFields(
@@ -797,7 +968,18 @@ class _EditListingScreenState extends State<EditListingScreen> {
                 style: theme.textTheme.titleMedium
                     ?.copyWith(fontWeight: FontWeight.bold),
               ),
-              for (final group in FacilityCatalog.groupsFor(_isStay)) ...[
+              if (_inHotel) ...[
+                const SizedBox(height: 4),
+                Text(
+                  // See create_listing_screen: the hotel holds these (155).
+                  'Hotel-wide amenities are set on the hotel.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+              for (final group in FacilityCatalog.groupsFor(_propertyType,
+                  inHotel: _inHotel)) ...[
                 const SizedBox(height: 12),
                 Text(
                   group.title,
@@ -844,13 +1026,22 @@ class _EditListingScreenState extends State<EditListingScreen> {
                 label: 'Hourly rate',
                 icon: Icons.schedule,
                 hint: '150',
-                helperText: 'For short stays (1-12 hours)',
+                helperText: hourlyPolicyHelperText(
+                  _propertyType,
+                  AppSettingsService.instance.hourlyPolicy,
+                ),
                 enabled: _hourlyEnabled,
                 onToggled: (v) => setState(() => _hourlyEnabled = v),
                 onChanged: () => setState(() {}),
                 minController: _minHoursController,
                 maxController: _maxHoursController,
                 unitLabel: 'hours',
+                extra: HourlyScheduleFields(
+                  slotsController: _hourlySlotsController,
+                  windowStartController: _hourlyWindowStartController,
+                  windowEndController: _hourlyWindowEndController,
+                  onChanged: () => setState(() {}),
+                ),
               ),
               const SizedBox(height: 20),
               PlanPriceRow(
@@ -906,7 +1097,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
               _sectionTitle(theme, _isStay ? 'House rules' : 'Ground rules'),
               // A turf slot carries its own start and end, so a free-text
               // check-in pair here would contradict the booking.
-              if (_isStay) ...[
+              if (_isStay && !_inHotel) ...[
                 Row(
                   children: [
                     Expanded(
@@ -928,6 +1119,17 @@ class _EditListingScreenState extends State<EditListingScreen> {
                 ),
                 const SizedBox(height: 8),
               ],
+              // 151. Not stay-only: a turf may confirm its own slots too. The
+              // database decides the status at insert; this only flips the column.
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Instant booking'),
+                subtitle: const Text(
+                    'Guests are confirmed straight away, without waiting for you to '
+                    'accept. Keep your calendar up to date.'),
+                value: _instantBook,
+                onChanged: (v) => setState(() => _instantBook = v),
+              ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Smoking allowed'),

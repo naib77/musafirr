@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/facility.dart';
+import '../models/listing_type.dart';
 
 /// A named group of amenities, for the grouped picker on the create/edit
 /// listing screens.
@@ -19,26 +20,36 @@ class FacilityCatalog {
     name: 'Attached Bath',
     icon: Icons.bathtub_outlined,
   );
-  static const kitchen = Facility(
-    name: 'Kitchen',
-    icon: Icons.soup_kitchen_outlined,
-  );
+  // Kitchen and Workspace are split by who shares them (migration 146). The
+  // plain rows still exist -- see [legacyKitchen] and [upgradeLegacy].
+  static const sharedKitchen =
+      Facility(name: 'Shared Kitchen', icon: Icons.soup_kitchen_outlined);
+  static const privateKitchen =
+      Facility(name: 'Private Kitchen', icon: Icons.soup_kitchen_outlined);
   static const hotWater = Facility(name: 'Hot Water', icon: Icons.hot_tub);
   static const drinkingWater =
       Facility(name: 'Drinking Water', icon: Icons.local_drink_outlined);
 
   // Features
-  static const parking = Facility(
-    name: 'Parking',
-    icon: Icons.local_parking_outlined,
-  );
+  static const carParking =
+      Facility(name: 'Car Parking', icon: Icons.local_parking_outlined);
+  static const bikeParking =
+      Facility(name: 'Bike Parking', icon: Icons.two_wheeler_outlined);
   static const refrigerator =
       Facility(name: 'Refrigerator', icon: Icons.kitchen_outlined);
+  // A separate appliance from the fridge, not a synonym: a deep freezer is
+  // its own purchase here, and the product sheet lists it on its own.
+  static const freezer =
+      Facility(name: 'Freezer', icon: Icons.kitchen_outlined);
   static const washingMachine = Facility(
       name: 'Washing Machine', icon: Icons.local_laundry_service_outlined);
+  static const laundryService = Facility(
+      name: 'Laundry Service', icon: Icons.local_laundry_service_outlined);
   static const tv = Facility(name: 'TV', icon: Icons.tv_outlined);
-  static const workspace =
-      Facility(name: 'Workspace', icon: Icons.desk_outlined);
+  static const sharedWorkspace =
+      Facility(name: 'Shared Workspace', icon: Icons.desk_outlined);
+  static const privateWorkspace =
+      Facility(name: 'Private Workspace', icon: Icons.desk_outlined);
   static const balcony =
       Facility(name: 'Balcony', icon: Icons.balcony_outlined);
   static const elevator =
@@ -47,6 +58,22 @@ class FacilityCatalog {
       Facility(name: 'Wardrobe', icon: Icons.checkroom_outlined);
   static const prayerSpace =
       Facility(name: 'Prayer Space', icon: Icons.mosque_outlined);
+  static const swimmingPool =
+      Facility(name: 'Swimming Pool', icon: Icons.pool_outlined);
+
+  // The pre-146 generic rows. Still in `facilities`: a turf offers plain
+  // Parking, and a stale pre-146 bundle keeps writing all three. A stay is
+  // never offered them; [upgradeLegacy] converts them when the host edits.
+  static const parking = Facility(
+    name: 'Parking',
+    icon: Icons.local_parking_outlined,
+  );
+  static const legacyKitchen = Facility(
+    name: 'Kitchen',
+    icon: Icons.soup_kitchen_outlined,
+  );
+  static const legacyWorkspace =
+      Facility(name: 'Workspace', icon: Icons.desk_outlined);
 
   // Power (Bangladesh context — load-shedding matters to guests)
   static const generator =
@@ -83,26 +110,87 @@ class FacilityCatalog {
   static const spectatorSeating =
       Facility(name: 'Spectator Seating', icon: Icons.event_seat_outlined);
 
+  // Hotel (migration 150). Names must match the rows 150 inserts.
+  static const frontDesk24h =
+      Facility(name: '24h Front Desk', icon: Icons.support_agent_outlined);
+  static const roomService =
+      Facility(name: 'Room Service', icon: Icons.room_service_outlined);
+  static const restaurant =
+      Facility(name: 'Restaurant', icon: Icons.restaurant_outlined);
+  static const breakfastIncluded =
+      Facility(name: 'Breakfast Included', icon: Icons.free_breakfast_outlined);
+  static const housekeeping =
+      Facility(name: 'Housekeeping', icon: Icons.cleaning_services_outlined);
+  static const gym = Facility(name: 'Gym', icon: Icons.fitness_center_outlined);
+  static const airportPickup =
+      Facility(name: 'Airport Pickup', icon: Icons.airport_shuttle_outlined);
+  static const luggageStorage =
+      Facility(name: 'Luggage Storage', icon: Icons.luggage_outlined);
+  static const inRoomSafe =
+      Facility(name: 'In-room Safe', icon: Icons.lock_outline);
+  static const keycardAccess =
+      Facility(name: 'Keycard Access', icon: Icons.key_outlined);
+
+  // Hotel, in the room (migration 155). Names must match the rows 155 inserts.
+  static const kettle =
+      Facility(name: 'Kettle', icon: Icons.coffee_maker_outlined);
+  static const toiletries =
+      Facility(name: 'Toiletries', icon: Icons.soap_outlined);
+  static const slippers =
+      Facility(name: 'Slippers', icon: Icons.dry_cleaning_outlined);
+  static const hairdryer = Facility(name: 'Hairdryer', icon: Icons.air);
+  static const iron = Facility(name: 'Iron', icon: Icons.iron_outlined);
+  static const minibar = Facility(name: 'Minibar', icon: Icons.liquor_outlined);
+  static const telephone =
+      Facility(name: 'Telephone', icon: Icons.phone_outlined);
+  static const bathtub =
+      Facility(name: 'Bathtub', icon: Icons.bathtub_outlined);
+
+  // Hotel, the hotel as a whole (migration 155).
+  static const tourDesk =
+      Facility(name: 'Tour Desk', icon: Icons.tour_outlined);
+  static const wheelchairAccessible =
+      Facility(name: 'Wheelchair Accessible', icon: Icons.accessible);
+  static const eventHall =
+      Facility(name: 'Event Hall', icon: Icons.groups_outlined);
+  static const familyFriendly =
+      Facility(name: 'Family Friendly', icon: Icons.family_restroom);
+  static const beachAccess =
+      Facility(name: 'Beach Access', icon: Icons.beach_access_outlined);
+
   /// Amenities grouped for the picker UI. The `name` of each must match a row
   /// in the `facilities` table (see migrations 001 + 053 + 121) or it silently
   /// won't persist.
   static const groups = <FacilityGroup>[
     FacilityGroup(
       title: 'Essentials',
-      facilities: [wifi, ac, bath, kitchen, hotWater, drinkingWater],
+      facilities: [
+        wifi,
+        ac,
+        bath,
+        sharedKitchen,
+        privateKitchen,
+        hotWater,
+        drinkingWater,
+      ],
     ),
     FacilityGroup(
       title: 'Features',
       facilities: [
-        parking,
+        carParking,
+        bikeParking,
         refrigerator,
+        freezer,
         washingMachine,
+        laundryService,
         tv,
-        workspace,
+        sharedWorkspace,
+        privateWorkspace,
         balcony,
         elevator,
         wardrobe,
         prayerSpace,
+        swimmingPool,
       ],
     ),
     FacilityGroup(
@@ -145,9 +233,111 @@ class FacilityCatalog {
     ),
   ];
 
-  /// The groups a given listing type should offer.
-  static List<FacilityGroup> groupsFor(bool isStay) =>
-      isStay ? groups : turfGroups;
+  /// What a hotel's room type is offered (155): only what differs between
+  /// one room type and the next. The kitchen, freezer and washing machine of
+  /// the stay list are dropped (a hotel room has none, and a host ticking
+  /// "Shared Kitchen" for the restaurant downstairs is the confusion this
+  /// avoids). Breakfast is here, not with the hotel, because hotels sell it
+  /// per room type ("Deluxe with breakfast").
+  static const hotelRoomGroups = <FacilityGroup>[
+    FacilityGroup(
+      title: 'In the room',
+      facilities: [
+        wifi,
+        ac,
+        bath,
+        bathtub,
+        hotWater,
+        drinkingWater,
+        toiletries,
+        slippers,
+        hairdryer,
+        tv,
+        telephone,
+        refrigerator,
+        minibar,
+        kettle,
+        iron,
+        wardrobe,
+        balcony,
+        inRoomSafe,
+        keycardAccess,
+      ],
+    ),
+    FacilityGroup(
+      title: 'With this room',
+      facilities: [breakfastIncluded],
+    ),
+  ];
+
+  /// What the hotel itself is offered, once, on the hotel form (155). The
+  /// database copies these onto every room type (`property_facilities` ->
+  /// `listing_facilities`), so search's amenity filter still sees a room
+  /// type's gym. Migration 155's backfill lists these same names; keep the
+  /// two in step.
+  static const hotelPropertyGroups = <FacilityGroup>[
+    FacilityGroup(
+      title: 'Hotel services',
+      facilities: [
+        frontDesk24h,
+        roomService,
+        restaurant,
+        housekeeping,
+        laundryService,
+        luggageStorage,
+        airportPickup,
+        tourDesk,
+      ],
+    ),
+    FacilityGroup(
+      title: 'The building',
+      facilities: [
+        carParking,
+        bikeParking,
+        elevator,
+        wheelchairAccessible,
+        gym,
+        swimmingPool,
+        eventHall,
+        prayerSpace,
+        sharedWorkspace,
+        familyFriendly,
+        beachAccess,
+      ],
+    ),
+    FacilityGroup(
+      title: 'Power',
+      facilities: [generator, powerBackup],
+    ),
+    FacilityGroup(
+      title: 'Safety',
+      facilities: [smokeAlarm, fireExtinguisher, firstAid, cctv, securityGuard],
+    ),
+  ];
+
+  /// Both halves, for a hotel listing with no [Property] (a pre-153 bundle's
+  /// shape): there is no hotel form to hold the hotel-wide half.
+  static const hotelGroups = <FacilityGroup>[
+    ...hotelRoomGroups,
+    ...hotelPropertyGroups,
+  ];
+
+  /// Names the hotel holds, for telling a room type's own amenities from the
+  /// ones it inherits.
+  static final Set<String> hotelPropertyNames = {
+    for (final group in hotelPropertyGroups)
+      for (final f in group.facilities) f.name,
+  };
+
+  /// The groups a given listing type should offer. [inHotel] is a room type
+  /// of a [Property]: its hotel-wide amenities are set on the hotel form.
+  static List<FacilityGroup> groupsFor(ListingType type,
+          {bool inHotel = false}) =>
+      switch (type) {
+        ListingType.turf => turfGroups,
+        ListingType.hotel => inHotel ? hotelRoomGroups : hotelGroups,
+        _ => groups,
+      };
 
   /// Flat list of every host-selectable amenity (all groups, both shapes).
   ///
@@ -166,5 +356,35 @@ class FacilityCatalog {
       for (final f in group.facilities) f.name: f,
     for (final group in turfGroups)
       for (final f in group.facilities) f.name: f,
+    for (final group in hotelGroups)
+      for (final f in group.facilities) f.name: f,
   }.values.toList(growable: false);
+
+  /// Replaces the pre-146 generic names in a stay's amenity set with the
+  /// split ones, by the same rule migration 146 backfilled with: a full house
+  /// is the guest's alone, so its kitchen/workspace is private; a room or
+  /// seat shares them. Plain Parking on a stay is Car Parking.
+  ///
+  /// Without this, editing a listing a stale bundle saved would silently drop
+  /// Kitchen: the picker no longer shows it, and the save path keeps only
+  /// names in [ownerSelectable] -- which still holds Parking (via the turf
+  /// list) but not Kitchen or Workspace. A turf's set is returned unchanged.
+  static Set<String> upgradeLegacy(
+    Iterable<String> names, {
+    required bool isStay,
+    required bool isFullHouse,
+  }) {
+    final out = names.toSet();
+    if (!isStay) return out;
+    void swap(String legacy, String replacement) {
+      if (out.remove(legacy)) out.add(replacement);
+    }
+
+    swap(legacyKitchen.name,
+        isFullHouse ? privateKitchen.name : sharedKitchen.name);
+    swap(legacyWorkspace.name,
+        isFullHouse ? privateWorkspace.name : sharedWorkspace.name);
+    swap(parking.name, carParking.name);
+    return out;
+  }
 }

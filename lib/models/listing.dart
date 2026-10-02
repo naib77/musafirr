@@ -4,6 +4,7 @@ import 'facility.dart';
 import 'listing_purpose.dart';
 import 'listing_type.dart';
 import 'rental_plan.dart';
+import 'hotel_details.dart';
 import 'turf_details.dart';
 
 class Listing {
@@ -42,6 +43,9 @@ class Listing {
     this.bathrooms = 1,
     this.partyLimits = const PartyLimits(),
     this.turfDetails = const TurfDetails(),
+    this.hotelDetails = const HotelDetails(),
+    this.roomFacts = const RoomFacts(),
+    this.instantBook = false,
     this.rating,
     this.reviewCount = 0,
     this.isSuperhost = false,
@@ -63,6 +67,13 @@ class Listing {
     // Distance in metres from a searched landmark, when the listing came from a
     // proximity search. Null otherwise. Not persisted — a per-search value.
     this.distanceMeters,
+    // The hotel this listing is a room type of (153). Null for every other
+    // listing, and for a hotel that predates 153's backfill.
+    this.propertyId,
+    // Search-only (154): the hotel's name and how many of its room types
+    // matched. Null outside a search row.
+    this.propertyName,
+    this.roomTypesMatching,
   });
 
   final String id;
@@ -116,6 +127,18 @@ class Listing {
   /// Turf-only description (121). Empty for every other listing type, which
   /// the database enforces rather than merely expecting.
   final TurfDetails turfDetails;
+
+  /// Hotel-only description (150). Empty for every other type -- enforced by
+  /// `listings_hotel_fields_only_on_hotel`, like [turfDetails].
+  final HotelDetails hotelDetails;
+
+  /// Size, bathroom and toilet (150). Any stay type; empty on a turf.
+  final RoomFacts roomFacts;
+
+  /// Bookings are created confirmed, with no host accept step (151). Any
+  /// type may set it; the database decides the status, so this only changes
+  /// what the guest is told to expect.
+  final bool instantBook;
   final double? rating;
   final int reviewCount;
   final bool isSuperhost;
@@ -128,6 +151,27 @@ class Listing {
 
   /// Distance in metres from a searched landmark (proximity search only).
   final double? distanceMeters;
+
+  /// `listings.property_id` (153): set once, on insert. The database refuses
+  /// a change (hint `property_fixed`) and copies the hotel's location, times
+  /// and facts onto the row on every write, so for a room type those fields
+  /// here are a read-only echo of the [Property].
+  final String? propertyId;
+
+  /// The hotel's name, when this row came from `search_listings` (154),
+  /// which returns a hotel once, as its cheapest matching room type. Not
+  /// persisted.
+  final String? propertyName;
+
+  /// How many of the hotel's room types passed the search's filters (154).
+  final int? roomTypesMatching;
+
+  /// Whether a tap should open the hotel page rather than this room type.
+  bool get isHotelRoomType => propertyId != null;
+
+  /// What a card calls this row: the hotel for a room type found by search
+  /// ("Hotel Sea Crown", not "Deluxe"), the listing's own title otherwise.
+  String get cardTitle => propertyName ?? title;
 
   /// Per-plan minimum/maximum booking duration.
   final BookingLimits bookingLimits;
@@ -295,6 +339,9 @@ class Listing {
     int? bathrooms,
     PartyLimits? partyLimits,
     TurfDetails? turfDetails,
+    HotelDetails? hotelDetails,
+    RoomFacts? roomFacts,
+    bool? instantBook,
     double? rating,
     int? reviewCount,
     bool? isSuperhost,
@@ -305,6 +352,9 @@ class Listing {
     DateTime? createdAt,
     List<ListingPurpose>? purposeTags,
     double? distanceMeters,
+    String? propertyId,
+    String? propertyName,
+    int? roomTypesMatching,
   }) {
     return Listing(
       id: id ?? this.id,
@@ -338,6 +388,9 @@ class Listing {
       bathrooms: bathrooms ?? this.bathrooms,
       partyLimits: partyLimits ?? this.partyLimits,
       turfDetails: turfDetails ?? this.turfDetails,
+      hotelDetails: hotelDetails ?? this.hotelDetails,
+      roomFacts: roomFacts ?? this.roomFacts,
+      instantBook: instantBook ?? this.instantBook,
       rating: rating ?? this.rating,
       reviewCount: reviewCount ?? this.reviewCount,
       isSuperhost: isSuperhost ?? this.isSuperhost,
@@ -348,6 +401,9 @@ class Listing {
       createdAt: createdAt ?? this.createdAt,
       purposeTags: purposeTags ?? this.purposeTags,
       distanceMeters: distanceMeters ?? this.distanceMeters,
+      propertyId: propertyId ?? this.propertyId,
+      propertyName: propertyName ?? this.propertyName,
+      roomTypesMatching: roomTypesMatching ?? this.roomTypesMatching,
     );
   }
 
@@ -393,6 +449,9 @@ class Listing {
       bathrooms: bathrooms,
       partyLimits: partyLimits,
       turfDetails: turfDetails,
+      hotelDetails: hotelDetails,
+      roomFacts: roomFacts,
+      instantBook: instantBook,
       rating: rating,
       reviewCount: reviewCount,
       isSuperhost: isSuperhost,
@@ -408,6 +467,13 @@ class Listing {
 /// Per-plan minimum/maximum booking duration. Units are hours (hourly plan),
 /// nights (daily plan), and months (monthly plan). A null minimum means 1;
 /// a null maximum means no cap.
+///
+/// The hourly plan carries three more host settings (148): the slot list and
+/// the day-use window. They are the host's half of the hourly policy; the
+/// platform's half is `app_settings.hourly_policy`, and `resolveHourlyRule`
+/// in lib/services/booking/hourly_policy.dart combines the two. [minHours]
+/// alone is NOT the floor a guest sees — the platform's minimum can be
+/// higher — so read the rule, not this field, anywhere a guest picks hours.
 class BookingLimits {
   const BookingLimits({
     this.minHours,
@@ -416,6 +482,9 @@ class BookingLimits {
     this.maxNights,
     this.minMonths,
     this.maxMonths,
+    this.hourlySlots,
+    this.hourlyWindowStart,
+    this.hourlyWindowEnd,
   });
 
   final int? minHours;
@@ -424,6 +493,17 @@ class BookingLimits {
   final int? maxNights;
   final int? minMonths;
   final int? maxMonths;
+
+  /// The only hourly durations this host sells, ascending — e.g. `[6, 12]` —
+  /// or null to inherit the platform's list for the type (which may itself
+  /// be "any whole hours").
+  final List<int>? hourlySlots;
+
+  /// Day-use window as `HH:MM` wall-clock (Postgres `time`), both set or
+  /// both null; `24:00` is a valid end. Outside it no hourly stay may start
+  /// or end, and none may cross midnight.
+  final String? hourlyWindowStart;
+  final String? hourlyWindowEnd;
 
   /// Minimum units for [plan] (defaults to 1 when unset).
   int minFor(DurationType plan) => switch (plan) {
@@ -446,6 +526,9 @@ class BookingLimits {
     int? maxNights,
     int? minMonths,
     int? maxMonths,
+    List<int>? hourlySlots,
+    String? hourlyWindowStart,
+    String? hourlyWindowEnd,
   }) {
     return BookingLimits(
       minHours: minHours ?? this.minHours,
@@ -454,6 +537,9 @@ class BookingLimits {
       maxNights: maxNights ?? this.maxNights,
       minMonths: minMonths ?? this.minMonths,
       maxMonths: maxMonths ?? this.maxMonths,
+      hourlySlots: hourlySlots ?? this.hourlySlots,
+      hourlyWindowStart: hourlyWindowStart ?? this.hourlyWindowStart,
+      hourlyWindowEnd: hourlyWindowEnd ?? this.hourlyWindowEnd,
     );
   }
 }

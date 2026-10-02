@@ -24,7 +24,9 @@ export function faceMetrics(result, aspect = 4 / 3) {
   const scores = Object.fromEntries((result.faceBlendshapes?.[0]?.categories ?? [])
     .map(c => [c.categoryName,c.score]));
   // Missing blendshapes cannot supply evidence that the eyes opened.
+  // Mean, not min: the model scores the two eyes unevenly (glasses, side
+  // light, a slight turn), and min let the weaker eye veto a real blink.
   sample.blink = Number.isFinite(scores.eyeBlinkLeft) && Number.isFinite(scores.eyeBlinkRight)
-    ? Math.min(scores.eyeBlinkLeft,scores.eyeBlinkRight) : NaN;
+    ? (scores.eyeBlinkLeft+scores.eyeBlinkRight)/2 : NaN;
   return sample;
 }

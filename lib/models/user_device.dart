@@ -1,6 +1,6 @@
 /// One device an account has signed in from, as `user_devices` holds it.
 ///
-/// See `docs/DEVICE_SESSIONS.md`. The id is an opaque UUID this device
+/// See `docs/features/device-sessions.md`. The id is an opaque UUID this device
 /// generated for itself — never a hardware identifier, because Android 10+
 /// refuses IMEI and serial, iOS's IDFV resets on uninstall, and the web has
 /// nothing of the kind.

@@ -12,7 +12,7 @@ import 'device_identity.dart';
 /// Records this device against the signed-in account, lists the account's
 /// devices, and ends one.
 ///
-/// See `docs/DEVICE_SESSIONS.md`. The eviction under
+/// See `docs/features/device-sessions.md`. The eviction under
 /// `max_devices_per_user` happens inside `register_device` (125), so it is
 /// **not** something this class decides — a client that chose its own victim
 /// would be a second enforcer of a rule the database owns.

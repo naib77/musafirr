@@ -58,7 +58,7 @@ const MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.5-flash-lite";
 
 // The app's enums. Anything outside these lists is dropped rather than passed
 // through, so a hallucinated value can never reach SearchFilters.
-const TYPES = ["seat", "room", "fullHouse", "turf"];
+const TYPES = ["seat", "room", "fullHouse", "turf", "hotel"];
 const PURPOSES = [
   "general",
   "medical",
@@ -81,9 +81,12 @@ Rules:
 - Never invent a place that was not spoken. If no place was named, use null.
 - Never output coordinates.
 - "types": seat = a bed in a shared room, room = a private room,
-  fullHouse = the whole place, turf = a sports ground rented by the hour.
+  fullHouse = the whole place, turf = a sports ground rented by the hour,
+  hotel = a hotel, resort or guest house with many rooms.
   Bangla: সিট/seat, রুম/room, বাসা/বাড়ি/basa/bari = fullHouse,
-  টার্ফ/মাঠ/turf/math/ground/football/cricket = turf. Empty array if unstated.
+  টার্ফ/মাঠ/turf/math/ground/football/cricket = turf,
+  হোটেল/রিসোর্ট/গেস্ট হাউস/hotel/resort/guest house = hotel.
+  Empty array if unstated.
 - "guests": integer number of people, or null.
 - "max_price": a BDT ceiling as a number, or null. "5 hajar" = 5000,
   "8k" = 8000.

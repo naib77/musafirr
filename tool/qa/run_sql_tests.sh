@@ -28,10 +28,13 @@ for f in supabase/tests/*.sql; do
     [ "$match" = 1 ] || continue
   fi
   out=$( (echo 'begin;'; cat "$f"; echo 'rollback;') | psql "$DB" -q 2>&1 )
-  # Every suite prints one verdict word per row; the two formats in use are
-  # "| PASS"/"| FAIL" columns and "PASS"/"FAIL: …" cells. ERROR lines are the
-  # file failing to run at all (a missing fixture, a stale column name).
-  p=$(printf '%s\n' "$out" | grep -cE '(^|\|)\s*PASS\b')
+  # Every suite prints one verdict word per row; the formats in use are
+  # "| PASS"/"| FAIL" columns, "PASS"/"FAIL: …" cells, and (147 onward, the
+  # pg_temp.check_true helper) "NOTICE:  PASS: …" -- which the first two
+  # patterns miss, so those suites read PASS=0 without the third. ERROR lines
+  # are the file failing to run at all (a missing fixture, a stale column
+  # name); check_true's own FAIL is raised, so it lands there too.
+  p=$(printf '%s\n' "$out" | grep -cE '(^|\||NOTICE:)\s*PASS\b')
   fl=$(printf '%s\n' "$out" | grep -cE '(^|\|)\s*FAIL\b')
   e=$(printf '%s\n' "$out" | grep -cE '^(psql:.*)?ERROR:' )
   e=$(( e - $(printf '%s\n' "$out" | grep -cE 'ERROR:  current transaction is aborted') ))

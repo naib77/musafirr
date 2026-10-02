@@ -1,7 +1,7 @@
 -- =============================================
 -- 123 — user_devices: which devices an account signs in from
 --
--- Phase 0 of docs/DEVICE_SESSIONS.md: RECORDING ONLY. Nothing here restricts a
+-- Phase 0 of docs/features/device-sessions.md: RECORDING ONLY. Nothing here restricts a
 -- login, and no cap exists yet. Read that file before extending this — in
 -- particular why the device list has to ship before any limit does, and why a
 -- limit belongs in `verify-otp` rather than in a client-called RPC.
@@ -96,7 +96,7 @@ grant update (label) on public.user_devices to authenticated;
 -- list loses the very history it exists to show.
 
 comment on table public.user_devices is
-  'Devices an account signs in from. Phase 0 of docs/DEVICE_SESSIONS.md: '
+  'Devices an account signs in from. Phase 0 of docs/features/device-sessions.md: '
   'recording only, nothing is capped.';
 
 -- ---------------------------------------------------------------------------

@@ -11,11 +11,11 @@ booking-hardening RPC in migration 070) and every successful payment is
 trusted — the client never decides that a payment succeeded.
 
 Defined in migrations
-[`072_sslcommerz_payments.sql`](../supabase/migrations/072_sslcommerz_payments.sql)
-+ [`073_payment_transaction_details.sql`](../supabase/migrations/073_payment_transaction_details.sql)
+[`072_sslcommerz_payments.sql`](../../supabase/migrations/072_sslcommerz_payments.sql)
++ [`073_payment_transaction_details.sql`](../../supabase/migrations/073_payment_transaction_details.sql)
 and Edge Functions
-[`sslcommerz-init`](../supabase/functions/sslcommerz-init/index.ts) +
-[`sslcommerz-ipn`](../supabase/functions/sslcommerz-ipn/index.ts)
+[`sslcommerz-init`](../../supabase/functions/sslcommerz-init/index.ts) +
+[`sslcommerz-ipn`](../../supabase/functions/sslcommerz-ipn/index.ts)
 (all applied/deployed to the live project `bojkmonskqlhuakxhzcb`).
 
 ## Flow
@@ -139,15 +139,15 @@ npx supabase functions deploy sslcommerz-ipn --no-verify-jwt
 ```
 
 ## Flutter (app side — already wired)
-- [`lib/services/payment/sslcommerz_service.dart`](../lib/services/payment/sslcommerz_service.dart)
+- [`lib/services/payment/sslcommerz_service.dart`](../../lib/services/payment/sslcommerz_service.dart)
   — `initiate(bookingId)` + `awaitSettlement(tranId)` → `PaymentSettlement`
   (`paid` / `failed` / `pending`).
-- [`lib/screens/payment/payment_webview_screen.dart`](../lib/screens/payment/payment_webview_screen.dart)
+- [`lib/screens/payment/payment_webview_screen.dart`](../../lib/screens/payment/payment_webview_screen.dart)
   — hosts the gateway page (`webview_flutter`), reports `PaymentOutcome`.
-- [`lib/screens/trips/trips_screen.dart`](../lib/screens/trips/trips_screen.dart)
+- [`lib/screens/trips/trips_screen.dart`](../../lib/screens/trips/trips_screen.dart)
   — "Pay ৳X" button on `confirmed`/`active` + unpaid bookings; "Paid" badge
   afterwards.
-- [`lib/screens/host/host_reservations_screen.dart`](../lib/screens/host/host_reservations_screen.dart)
+- [`lib/screens/host/host_reservations_screen.dart`](../../lib/screens/host/host_reservations_screen.dart)
   — "Service Complete" blocked until `booking.isPaid`.
 - `Booking.paymentStatus` / `Booking.isPaid` on the model.
 
@@ -183,10 +183,10 @@ unverifiable payment shows a real error instead of a false success.
 
 ## Admin panel (`../musafir-admin`)
 Admins see **every** transaction at **Payments** (sidebar):
-- [`payments/page.tsx`](../../musafir-admin/src/app/(dashboard)/payments/page.tsx)
+- [`payments/page.tsx`](../../../musafir-admin/src/app/(dashboard)/payments/page.tsx)
   — list + status filter tabs + summary (count · paid · total collected), joined
   to the booking's listing and guest.
-- [`payments/payment-details.tsx`](../../musafir-admin/src/app/(dashboard)/payments/payment-details.tsx)
+- [`payments/payment-details.tsx`](../../../musafir-admin/src/app/(dashboard)/payments/payment-details.tsx)
   — per-transaction dialog with all fields (amounts, references, card, risk,
   validation time) **plus the raw `gateway_response` JSON**.
 

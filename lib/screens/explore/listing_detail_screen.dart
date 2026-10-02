@@ -14,7 +14,9 @@ import '../../widgets/app_network_image.dart';
 import '../../models/booking.dart';
 import '../../models/booking_conflict_exception.dart';
 import '../../models/booking_rejected_exception.dart';
+import '../../models/booking_status.dart';
 import '../../models/host_verifications.dart';
+import '../../models/hotel_details.dart';
 import '../../models/listing.dart';
 import '../../services/listing/party_limits_summary.dart';
 import '../../models/listing_exact_address.dart';
@@ -24,7 +26,9 @@ import '../../models/turf_details.dart';
 import '../../models/rental_plan.dart';
 import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
+import '../../services/app_settings_service.dart';
 import '../../services/auth/auth_flow.dart';
+import '../../services/booking/hourly_policy.dart';
 import '../../services/discount/coupon_service.dart';
 import '../../services/verification/identity_gate.dart';
 import '../../state/auth_state.dart';
@@ -85,6 +89,10 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   /// badge strip reads as "claim nothing yet".
   HostVerifications? _hostVerifications;
 
+  /// The hotel's optional trade licence, verified by an admin (152). False
+  /// until the lookup says otherwise, and never asked for other types.
+  bool _licensedHotel = false;
+
   /// True while the conversation is being created. Drives the button's spinner
   /// and blocks a duplicate tap.
   bool _openingChat = false;
@@ -98,6 +106,14 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
         await widget.repository.fetchHostVerifications(hostId);
     if (!mounted) return;
     setState(() => _hostVerifications = verifications);
+  }
+
+  Future<void> _loadLicence() async {
+    if (widget.listing.type != ListingType.hotel) return;
+    final licensed =
+        await widget.repository.listingLicenceVerified(widget.listing.id);
+    if (!mounted || !licensed) return;
+    setState(() => _licensedHotel = true);
   }
 
   /// How much of this listing's location the viewer gets. Decided entirely by
@@ -204,6 +220,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     super.initState();
     _loadExactAddress();
     _loadHostVerifications();
+    _loadLicence();
     widget.repository.addListener(_onRepositoryChanged);
   }
 
@@ -396,6 +413,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                           _HostInfoCard(
                             listing: listing,
                             verifications: _hostVerifications,
+                            licensedHotel: _licensedHotel,
                             onContactHost:
                                 _canContactHost ? _contactHost : null,
                             openingChat: _openingChat,
@@ -718,6 +736,26 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                   perUnit: listing.cheapestPlan?.displayUnit ?? 'night',
                   style: PriceDisplayStyle.normal,
                 ),
+                // Beside the button it changes the meaning of: on an
+                // instant-book listing "Reserve" confirms, not requests (151).
+                if (listing.instantBook) ...[
+                  const SizedBox(height: 2),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.bolt_rounded,
+                          size: 14, color: theme.colorScheme.primary),
+                      const SizedBox(width: 2),
+                      Text(
+                        'Instant booking',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -806,12 +844,14 @@ class _CategoryBadge extends StatelessWidget {
       ListingType.room => AppColors.room,
       ListingType.fullHouse => AppColors.fullHouse,
       ListingType.turf => AppColors.turf,
+      ListingType.hotel => AppColors.hotel,
     };
     final icon = switch (type) {
       ListingType.seat => Icons.event_seat_rounded,
       ListingType.room => Icons.meeting_room_rounded,
       ListingType.fullHouse => Icons.house_rounded,
       ListingType.turf => Icons.sports_soccer_rounded,
+      ListingType.hotel => Icons.hotel_rounded,
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
@@ -999,6 +1039,7 @@ class _HostInfoCard extends StatelessWidget {
   const _HostInfoCard({
     required this.listing,
     required this.verifications,
+    this.licensedHotel = false,
     this.onContactHost,
     this.openingChat = false,
   });
@@ -1007,6 +1048,8 @@ class _HostInfoCard extends StatelessWidget {
 
   /// The host's real verification flags, or null while the lookup is in flight.
   final HostVerifications? verifications;
+
+  final bool licensedHotel;
 
   /// When provided, shows the pre-booking "Message host" action.
   final VoidCallback? onContactHost;
@@ -1031,9 +1074,13 @@ class _HostInfoCard extends StatelessWidget {
         children: [
           _buildHostRow(theme),
           // An unverified host shows no strip at all, so no empty gap either.
-          if (verifications?.hasAny ?? false) ...[
+          if (HostVerificationBadges.showsAny(verifications,
+              licensedHotel: licensedHotel)) ...[
             const SizedBox(height: 12),
-            HostVerificationBadges(verifications: verifications),
+            HostVerificationBadges(
+              verifications: verifications,
+              licensedHotel: licensedHotel,
+            ),
           ],
           if (onContactHost != null) ...[
             const SizedBox(height: 14),
@@ -1420,6 +1467,8 @@ class _PropertyDetails extends StatelessWidget {
   Widget build(BuildContext context) {
     final isStay = listing.type.isStay;
     final turf = listing.turfDetails;
+    final hotel = listing.hotelDetails;
+    final room = listing.roomFacts;
 
     // A turf writes 0 into bedrooms/beds/bathrooms (121 + the host form), so
     // the stay tiles would read "0 Bedrooms · 0 Beds · 0 Baths". It answers a
@@ -1451,6 +1500,41 @@ class _PropertyDetails extends StatelessWidget {
               'Baths',
               AppColors.amber
             ),
+            // The 150 facts, each only when stated -- same rule as the turf
+            // tiles below. Stars first among them: it is the one a hotel
+            // guest filters on.
+            if (hotel.starRating != null)
+              (
+                Icons.star_rounded,
+                '${hotel.starRating}★',
+                'Hotel class',
+                AppColors.hotel
+              ),
+            if (room.sizeSqft != null)
+              (
+                Icons.square_foot_rounded,
+                '${room.sizeSqft}',
+                'Sq ft',
+                AppColors.violet
+              ),
+            if (room.bathroom != null)
+              (
+                Icons.shower_rounded,
+                room.bathroom!.label,
+                'Bathroom',
+                AppColors.blue
+              ),
+            if (room.toilet != null)
+              (Icons.wc_rounded, room.toilet!.label, 'Toilet', AppColors.amber),
+            if (hotel.frontDesk24h == true)
+              (
+                Icons.support_agent_rounded,
+                '24h',
+                'Front desk',
+                AppColors.brand
+              ),
+            if (hotel.idRequired == true)
+              (Icons.badge_rounded, 'ID', 'At check-in', AppColors.violet),
           ]
         : <(IconData, String, String, Color)>[
             (
@@ -1489,17 +1573,31 @@ class _PropertyDetails extends StatelessWidget {
           )
         : null;
 
-    final stats = Row(
+    // Rows of four: a hotel can state up to ten facts, and ten Expanded
+    // tiles in one Row would FittedBox themselves into unreadable type on a
+    // phone. A short last row is padded with empty slots so every tile keeps
+    // the width of the four above it.
+    const perRow = 4;
+    final stats = Column(
       children: [
-        for (var i = 0; i < items.length; i++) ...[
-          if (i > 0) const SizedBox(width: 12),
-          Expanded(
-            child: _StatCard(
-              icon: items[i].$1,
-              value: items[i].$2,
-              label: items[i].$3,
-              color: items[i].$4,
-            ),
+        for (var start = 0; start < items.length; start += perRow) ...[
+          if (start > 0) const SizedBox(height: 12),
+          Row(
+            children: [
+              for (var i = start; i < start + perRow; i++) ...[
+                if (i > start) const SizedBox(width: 12),
+                Expanded(
+                  child: i < items.length
+                      ? _StatCard(
+                          icon: items[i].$1,
+                          value: items[i].$2,
+                          label: items[i].$3,
+                          color: items[i].$4,
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            ],
           ),
         ],
       ],
@@ -1926,12 +2024,40 @@ class _BookingSheetState extends State<_BookingSheet> {
   bool get _hasUserConflict => _userConflictingBookings.isNotEmpty;
   bool get _hasConflict => _hasListingConflict || _hasUserConflict;
 
+  /// The hourly rule for this listing: platform policy (loaded at boot) and
+  /// the host's limits combined. The server enforces the same rule inside the
+  /// booking RPC; this copy shapes the picker so it never offers an hour the
+  /// server refuses. Resolved once — the policy does not change while the
+  /// sheet is open.
+  late final HourlyRule _hourlyRule = resolveHourlyRule(
+    type: widget.listing.type,
+    policy: AppSettingsService.instance.hourlyPolicy,
+    limits: widget.listing.bookingLimits,
+  );
+
+  /// The listing's plans minus an hourly plan the policy makes unbookable
+  /// (type switched off, or every slot above the host's own max). A rate
+  /// alone is not an offer.
+  List<DurationType> get _offeredPlans => [
+        for (final plan in widget.listing.offeredPlans)
+          if (plan != DurationType.hourly || _hourlyRule.bookable) plan,
+      ];
+
   @override
   void initState() {
     super.initState();
     // Default to the cheapest offered plan so the price matches the
-    // "from ৳X" teaser the guest tapped on the explore card.
-    _durationType = widget.listing.cheapestPlan ?? DurationType.daily;
+    // "from ৳X" teaser the guest tapped on the explore card — unless that
+    // plan is the hourly one and the policy has taken it off the table.
+    final cheapest = widget.listing.cheapestPlan;
+    final offered = _offeredPlans;
+    _durationType = cheapest != null && offered.contains(cheapest)
+        ? cheapest
+        : (offered.isNotEmpty ? offered.first : DurationType.daily);
+    // Start the hourly picker on the first allowed duration, which is the
+    // floor for free hours and the shortest slot for a slotted type.
+    final options = _hourlyRule.options;
+    if (options.isNotEmpty) _hours = options.first;
 
     // Pre-fill the selection with sensible "now" defaults so the guest starts
     // from a ready-to-book state instead of an empty form; they can change any
@@ -2279,6 +2405,18 @@ class _BookingSheetState extends State<_BookingSheet> {
       return;
     }
 
+    // Hourly selections are judged by the full rule — platform floor, slots,
+    // day-use window — in the server's order, with the server's sentences.
+    // The picker already keeps the guest inside it, so this fires only when
+    // the start time puts the stay outside the window.
+    if (_durationType == DurationType.hourly) {
+      final refusal = _hourlyRule.check(_hours, start: _checkIn);
+      if (refusal != null) {
+        _showWarningBanner(refusal);
+        return;
+      }
+    }
+
     // Enforce the host's per-plan min/max booking duration.
     final limits = widget.listing.bookingLimits;
     final unit = switch (_durationType) {
@@ -2338,7 +2476,7 @@ class _BookingSheetState extends State<_BookingSheet> {
     }
 
     try {
-      await widget.repository.createMarketplaceBooking(
+      final booking = await widget.repository.createMarketplaceBooking(
         listingId: widget.listing.id,
         userId: user.id,
         userName: user.name,
@@ -2359,12 +2497,18 @@ class _BookingSheetState extends State<_BookingSheet> {
         Navigator.pop(context);
         // Celebrate the milestone with a modern confirmation sheet instead of a
         // flat banner — a booking request is a "done!" moment.
+        // The returned status, not widget.listing.instantBook: the host may
+        // have switched instant booking since this page loaded, and the
+        // database decided (151).
+        final confirmed = booking.status == BookingStatus.confirmed;
         await SuccessSheet.show(
           context,
-          title: 'Request sent!',
-          message:
-              'Your booking request for ${widget.listing.title} is on its way. '
-              "You'll be notified as soon as the host confirms.",
+          title: confirmed ? 'Booking confirmed!' : 'Request sent!',
+          message: confirmed
+              ? 'Your stay at ${widget.listing.title} is confirmed. '
+                  'You can pay and see the details in Trips.'
+              : 'Your booking request for ${widget.listing.title} is on its way. '
+                  "You'll be notified as soon as the host confirms.",
           primaryLabel: 'Got it',
         );
         // Once acknowledged (or auto-dismissed), return to the shell and land
@@ -2521,11 +2665,11 @@ class _BookingSheetState extends State<_BookingSheet> {
                     children: [
                       // Duration type selector — only the plans this listing
                       // offers. Hidden when a single plan is offered (no choice).
-                      if (widget.listing.offeredPlans.length > 1) ...[
+                      if (_offeredPlans.length > 1) ...[
                         const _SectionTitle('Choose a plan'),
                         const SizedBox(height: 10),
                         _PlanSegments(
-                          plans: widget.listing.offeredPlans,
+                          plans: _offeredPlans,
                           selected: _durationType,
                           iconFor: _planIcon,
                           onChanged: (plan) {
@@ -2820,24 +2964,48 @@ class _BookingSheetState extends State<_BookingSheet> {
         onTap: _selectStartTime,
       ),
       const SizedBox(height: 12),
-      _StepperBox(
-        icon: Icons.hourglass_bottom_rounded,
-        label: 'Duration',
-        value: '$_hours hour${_hours > 1 ? 's' : ''}',
-        color: AppColors.amber,
-        onDecrement: _hours > 1
-            ? () {
-                setState(() => _hours--);
-                _checkAvailability();
-              }
-            : null,
-        onIncrement: _hours < 12
-            ? () {
-                setState(() => _hours++);
-                _checkAvailability();
-              }
-            : null,
-      ),
+      // Slotted types (a hotel's 6 h / 12 h day-use) get chips — a stepper
+      // that skips from 6 to 12 reads as broken. Free-hours types keep the
+      // stepper, bounded by the resolved rule rather than a hard-coded 1..12,
+      // so the platform floor and the host's cap are what the guest feels.
+      if (_hourlyRule.slots != null)
+        _SlotChips(
+          options: _hourlyRule.options,
+          selected: _hours,
+          color: AppColors.amber,
+          onSelected: (h) {
+            setState(() => _hours = h);
+            _checkAvailability();
+          },
+        )
+      else
+        _StepperBox(
+          icon: Icons.hourglass_bottom_rounded,
+          label: 'Duration',
+          value: '$_hours hour${_hours > 1 ? 's' : ''}',
+          color: AppColors.amber,
+          onDecrement: _hours > _hourlyRule.options.first
+              ? () {
+                  setState(() => _hours--);
+                  _checkAvailability();
+                }
+              : null,
+          onIncrement: _hours < _hourlyRule.options.last
+              ? () {
+                  setState(() => _hours++);
+                  _checkAvailability();
+                }
+              : null,
+        ),
+      if (_hourlyRule.hasWindow) ...[
+        const SizedBox(height: 12),
+        _PreviewPill(
+          icon: Icons.wb_sunny_outlined,
+          text: 'Day-use between '
+              '${formatClockMinutes(_hourlyRule.windowStartMinutes!)} and '
+              '${formatClockMinutes(_hourlyRule.windowEndMinutes!)}',
+        ),
+      ],
 
       // End time preview
       if (_hourlyDate != null && _startTime != null) ...[
@@ -3480,6 +3648,76 @@ class _StepBtn extends StatelessWidget {
 }
 
 /// Subtle centered info pill (e.g. "Ends at 5:00 PM" / booking period).
+/// The hourly duration picker for a slotted listing: one chip per offered
+/// block, in the card style the stepper uses so the two read as the same
+/// control in different shapes.
+class _SlotChips extends StatelessWidget {
+  const _SlotChips({
+    required this.options,
+    required this.selected,
+    required this.color,
+    required this.onSelected,
+  });
+
+  final List<int> options;
+  final int selected;
+  final Color color;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceMuted,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.hourglass_bottom_rounded, size: 19, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Duration',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final h in options)
+                      ChoiceChip(
+                        label: Text('$h hours'),
+                        selected: h == selected,
+                        onSelected: (_) => onSelected(h),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PreviewPill extends StatelessWidget {
   const _PreviewPill({required this.icon, required this.text});
 

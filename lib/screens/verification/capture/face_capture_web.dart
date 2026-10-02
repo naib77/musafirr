@@ -72,7 +72,7 @@ class _FaceCaptureViewState extends State<FaceCaptureView> {
             frame.style.width = '100%';
             frame.style.height = '100%';
             frame.src = Uri.base
-                .resolve('/face/index.html')
+                .resolve('face/index.html')
                 .replace(
                     fragment:
                         jsonEncode(widget.attempt.captureConfig(widget.brand)))

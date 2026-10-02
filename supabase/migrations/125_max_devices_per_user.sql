@@ -1,7 +1,7 @@
 -- =============================================
 -- 125 — a limit on how many devices an account may hold
 --
--- Phase 2 of docs/DEVICE_SESSIONS.md. Read that first: the shape of this is
+-- Phase 2 of docs/features/device-sessions.md. Read that first: the shape of this is
 -- decided by two facts about THIS app rather than by what other apps do.
 --
 --   1. The only way back into Musafir is a real SMS. Every hard lockout costs

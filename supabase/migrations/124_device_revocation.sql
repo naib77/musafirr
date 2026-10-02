@@ -1,7 +1,7 @@
 -- =============================================
 -- 124 — signing a device out, for real
 --
--- Phase 1 of docs/DEVICE_SESSIONS.md. Phase 0 (123) recorded devices; this is
+-- Phase 1 of docs/features/device-sessions.md. Phase 0 (123) recorded devices; this is
 -- what lets a user end one.
 --
 -- **Deleting the auth.sessions row is the only part of a sign-out that means

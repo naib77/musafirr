@@ -3,8 +3,8 @@
 How to run Musafir as a web app locally and deploy the web build to a server.
 
 > **Good news:** web is already enabled (`web/` exists) and all config is baked in —
-> the Supabase URL + anon key are hardcoded in [`lib/config/supabase_config.dart`](../lib/config/supabase_config.dart),
-> and the Google Maps key is present both in [`web/index.html`](../web/index.html) and as
+> the Supabase URL + anon key are hardcoded in [`lib/config/supabase_config.dart`](../../lib/config/supabase_config.dart),
+> and the Google Maps key is present both in [`web/index.html`](../../web/index.html) and as
 > the `GOOGLE_MAPS_API_KEY` dart-define default in [`lib/config/api_keys.dart`](../lib/config/api_keys.dart).
 > **A web build needs no extra flags to work.**
 
@@ -121,7 +121,7 @@ plan does not), and deploys the committed `build/web/` folder straight from git 
 no Flutter needed in their CI.
 
 **One-time setup** (the dashboard now routes git repos through the "Create a
-Worker" wizard — the repo's [`wrangler.jsonc`](../wrangler.jsonc) tells it to
+Worker" wizard — the repo's [`wrangler.jsonc`](../../wrangler.jsonc) tells it to
 serve `build/web` as a static site with SPA fallback):
 
 1. [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** →
@@ -146,7 +146,7 @@ Every push to `main` auto-deploys.
 
 > **Always build with `./tool/build_web.sh`.** Flutter skips underscore-prefixed
 > files when copying `web/` into `build/web/`, so the script copies
-> [`web/_headers`](../web/_headers) in after the build. That file tells Cloudflare
+> [`web/_headers`](../../web/_headers) in after the build. That file tells Cloudflare
 > not to cache `index.html` / `flutter_bootstrap.js` / `flutter_service_worker.js` —
 > without it, users can get stuck on stale builds after a deploy.
 >
@@ -178,7 +178,7 @@ causes login/maps/push to silently fail on the deployed site.
    all refuse to run over plain HTTP (only `localhost` is exempt). Firebase Hosting
    provides it free; on a VPS use certbot.
 
-2. **Corbado passkeys** ([`passkeys_bundle.js`](../web/index.html)) are bound to a
+2. **Corbado passkeys** ([`passkeys_bundle.js`](../../web/index.html)) are bound to a
    relying-party **domain**. Register your deployed domain in the Corbado dashboard,
    or passkey login fails on the web build.
 
@@ -216,14 +216,14 @@ items below are the wins that are actually in your control.
 
 > **If you deploy on Cloudflare (Option C — the current production path):** Brotli,
 > HTTP/2 and HTTP/3 are applied **automatically** at the edge, and caching is handled
-> by [`web/_headers`](../web/_headers). So §6.2 (Brotli), §6.3 (HTTP/2) and the nginx
+> by [`web/_headers`](../../web/_headers). So §6.2 (Brotli), §6.3 (HTTP/2) and the nginx
 > config in §6.5 **do not apply to you** — they're only for the self-hosted nginx
 > option (§3 Option B). The code-level wins (§6.1 splash, §6.1b `defer`) still apply
 > and ship by rebuilding with `./tool/build_web.sh` and pushing to git.
 
 ### 6.1 Instant-paint splash (done — biggest FCP win)
 
-[`web/index.html`](../web/index.html) now renders a static logo + spinner splash that
+[`web/index.html`](../../web/index.html) now renders a static logo + spinner splash that
 paints on the first frame and is removed on Flutter's `flutter-first-frame` event.
 Without it the browser (and Lighthouse's FCP/LCP timers) saw a blank white page for
 several seconds. No rebuild of app logic needed — just `flutter build web --release`
@@ -231,7 +231,7 @@ and redeploy.
 
 ### 6.1b Defer render-blocking `<head>` scripts (done — big mobile FCP win)
 
-[`web/index.html`](../web/index.html) loaded the external Google Maps API and
+[`web/index.html`](../../web/index.html) loaded the external Google Maps API and
 `passkeys_bundle.js` as **synchronous** `<head>` scripts, so the browser had to fetch
 and execute both *before parsing `<body>`* — i.e. before the splash could paint. On
 Slow-4G mobile that external Maps fetch alone added several seconds to FCP. Both now
@@ -441,7 +441,7 @@ latency remains. Adding Brotli + HTTP/2 (§6.2–6.3) pushes it further up.
 Flutter web ships as **one monolithic bundle** — there is no per-route code-splitting
 that lets a landing page paint before the ~1.8 MB JS + ~3.3 MB WASM download and boot.
 So for a genuinely fast first impression, the landing page is **not built in Flutter at
-all**. It's a self-contained static HTML/CSS page ([`landing/index.html`](../landing/index.html))
+all**. It's a self-contained static HTML/CSS page ([`landing/index.html`](../../landing/index.html))
 that arrives in a single request and paints almost instantly. Its CTAs hand off to the
 Flutter app.
 
@@ -521,7 +521,7 @@ server {
 
 ### 8.3 Editing the landing page
 
-It's plain HTML with inline CSS — no build step. Open [`landing/index.html`](../landing/index.html),
+It's plain HTML with inline CSS — no build step. Open [`landing/index.html`](../../landing/index.html),
 edit copy/colors (brand teal `#0B7285` is defined once in `:root`), and redeploy. Icons
 are inline SVG; `favicon.png` + `Icon-192.png` are copied from `web/`. Keep it
 self-contained (no web fonts, no external scripts) to preserve the 100 score.

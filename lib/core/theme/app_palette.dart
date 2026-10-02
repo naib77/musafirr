@@ -58,6 +58,7 @@ class AppPalette {
     required this.room,
     required this.fullHouse,
     required this.turf,
+    required this.hotel,
     required this.accentCycle,
   });
 
@@ -147,6 +148,12 @@ class AppPalette {
   /// cannot be reused here, which is why this is its own field rather than an
   /// alias the way `fullHouse` aliases `brand`.
   final Color turf;
+
+  /// The hotel badge (149/150). Same white-text tier as [turf], so held to
+  /// 4.5:1 against white. Dark amber in the palettes whose `room` is violet or
+  /// indigo; slate in `coral_ink`, whose `room` is already a burnt orange that
+  /// amber would sit beside.
+  final Color hotel;
 
   /// Vivid, stable accents for an arbitrary index (list items, chips, badges).
   /// Order is load-bearing — it is indexed by position, so inserting a colour

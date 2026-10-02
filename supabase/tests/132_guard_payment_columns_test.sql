@@ -132,7 +132,7 @@ begin
   -- test. Doing this as role `authenticated` measures RLS instead: bookings
   -- has no admin UPDATE policy, so the console's refund switch matches zero
   -- rows on live today — a separate finding, recorded in
-  -- docs/QA_PAYMENT_TEST_PLAN.md, not this row's business.
+  -- docs/qa/payment-test-plan.md, not this row's business.
   perform set_config('request.jwt.claims',
     json_build_object('sub', v_admin, 'role', 'authenticated')::text, true);
   begin

@@ -375,8 +375,8 @@ void main() {
         }
       });
 
-      test('${p.id}: the four listing types read apart', () {
-        // seat/room/fullHouse/turf appear side by side as chips, so they only
+      test('${p.id}: the five listing types read apart', () {
+        // seat/room/fullHouse/turf/hotel appear side by side as chips, so they only
         // carry meaning if they are mutually distinguishable. Every pair, not
         // just adjacent ones -- adding `turf` in 120 tripled the number of
         // ways two of them could collide.
@@ -385,6 +385,7 @@ void main() {
           'room': p.room,
           'fullHouse': p.fullHouse,
           'turf': p.turf,
+          'hotel': p.hotel,
         };
         final keys = named.keys.toList();
         for (var i = 0; i < keys.length; i++) {
@@ -397,7 +398,7 @@ void main() {
       });
 
       // _CategoryBadge paints the type's NAME in white on this colour, so
-      // every one of the four is a text-bearing token and clears 4.5:1 -- not
+      // every one of the five is a text-bearing token and clears 4.5:1 -- not
       // the 3:1 a colour that only ever tints an icon would get.
       //
       // This is the tier that rules out the obvious `turf` choice: the palette
@@ -409,6 +410,7 @@ void main() {
           'room': p.room,
           'fullHouse': p.fullHouse,
           'turf': p.turf,
+          'hotel': p.hotel,
         };
         named.forEach((name, colour) {
           expect(contrast(Colors.white, colour),

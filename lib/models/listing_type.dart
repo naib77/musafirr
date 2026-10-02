@@ -1,10 +1,10 @@
 /// What kind of space a listing is.
 ///
 /// The `name` of each value is the wire value: it is written straight into
-/// `listings.listing_type` (a Postgres enum, migrations 001 and 120) and sent
+/// `listings.listing_type` (a Postgres enum, migrations 001, 120 and 149) and sent
 /// as-is in `search_listings`'s `p_property_types`. Renaming one silently
 /// orphans every row already stored under the old spelling.
-enum ListingType { seat, room, fullHouse, turf }
+enum ListingType { seat, room, fullHouse, turf, hotel }
 
 extension ListingTypeLabel on ListingType {
   String get title => switch (this) {
@@ -12,6 +12,7 @@ extension ListingTypeLabel on ListingType {
         ListingType.room => 'Room',
         ListingType.fullHouse => 'Full House',
         ListingType.turf => 'Turf',
+        ListingType.hotel => 'Hotel',
       };
 
   /// True when the listing is a place someone *stays* in, as opposed to a

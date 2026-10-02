@@ -7,7 +7,7 @@ import '../../services/devices/device_registry.dart';
 /// "Where you're signed in" — every device on this account, and a way to end
 /// any of them.
 ///
-/// See `docs/DEVICE_SESSIONS.md`. Two things about this screen are load-bearing
+/// See `docs/features/device-sessions.md`. Two things about this screen are load-bearing
 /// rather than cosmetic:
 ///
 /// - **It exists before the cap does.** A limit with no way to see or manage

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 
 import '../core/utils/distance_format.dart';
+import '../models/hotel_details.dart';
 import '../models/listing.dart';
 import '../models/listing_type.dart';
 import '../models/turf_details.dart';
@@ -196,10 +197,11 @@ class _ListingCardWideState extends State<ListingCardWide> {
           ),
           // The host's own name for the place. Skipped when it is already
           // doing duty as the headline.
-          if (_headline() != listing.title) ...[
+          if (_headline() != listing.cardTitle) ...[
             const SizedBox(height: 2),
             Text(
-              listing.title,
+              // The hotel's name for a hotel row (154), not the room type's.
+              listing.cardTitle,
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontSize: 13,
                 color: theme.colorScheme.onSurfaceVariant,
@@ -243,7 +245,7 @@ class _ListingCardWideState extends State<ListingCardWide> {
   String _headline() {
     final listing = widget.listing;
     final where = _firstNonEmpty([listing.area, listing.city]);
-    if (where == null) return listing.title;
+    if (where == null) return listing.cardTitle;
     return '${listing.type.title} in $where';
   }
 
@@ -259,6 +261,12 @@ class _ListingCardWideState extends State<ListingCardWide> {
   /// has neither and counts players, plus whatever it says about itself.
   String _capacity() {
     final listing = widget.listing;
+    // A hotel row stands for the whole hotel (154); the beds and guests of
+    // its cheapest type would describe one room of several.
+    final types = listing.roomTypesMatching;
+    if (listing.propertyName != null && types != null) {
+      return _plural(types, 'room type');
+    }
     if (listing.type == ListingType.seat) {
       return _plural(listing.maxGuests, 'seat');
     }
@@ -271,6 +279,18 @@ class _ListingCardWideState extends State<ListingCardWide> {
         if (turf.format != null) turf.format!.label,
         if (turf.sport != null) turf.sport!.label,
         _plural(listing.maxGuests, 'player'),
+      ].join(' · ');
+    }
+    if (listing.type == ListingType.hotel) {
+      // A hotel room's bedroom count is always one and says nothing; its
+      // class and bathroom are what a guest compares hotels on (150). Each
+      // only when the host stated it.
+      final hotel = listing.hotelDetails;
+      final bath = listing.roomFacts.bathroom;
+      return [
+        hotel.starRating != null ? '${hotel.starRating}★ hotel' : 'Hotel',
+        if (bath != null) '${bath.label} bath',
+        _plural(listing.maxGuests, 'guest'),
       ].join(' · ');
     }
     return [

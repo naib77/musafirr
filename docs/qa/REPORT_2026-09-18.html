@@ -473,7 +473,7 @@ Prefer: return=representation
 <ul>
 <li><b>Server-to-server IPN.</b> The sandbox cannot reach localhost, so only the browser-redirect settlement was observed. The IPN-and-redirect race needs a tunnel (cloudflared or ngrok) in front of the local gateway.</li>
 <li><b>The Flutter payment screens</b> and the Android WebView return. The mirror is ready for an app build pointed at <code>127.0.0.1:54321</code>; this is where <code>/flutter-add-integration-test</code> and Playwright come in.</li>
-<li><b>Production smoke</b> with the master account and ৳10. Deliberately last, after the above pass locally; runbook in <code>docs/QA_PAYMENT_TEST_PLAN.md</code> section 3.</li>
+<li><b>Production smoke</b> with the master account and ৳10. Deliberately last, after the above pass locally; runbook in <code>docs/qa/payment-test-plan.md</code> section 3.</li>
 </ul>
 
 <h2>11. Findings</h2>
@@ -488,7 +488,7 @@ Prefer: return=representation
 <tr><td>F7</td><td class="sev">S3</td><td>Three edge functions fail <code>deno check</code>; unpinned <code>supabase-js@2</code></td><td><span class="v fail">open</span></td></tr>
 <tr><td>F11</td><td class="sev">S3</td><td>Payments with <code>risk_level 1</code> settle and post earnings immediately</td><td><span class="v fail">open</span> decision needed</td></tr>
 <tr><td>F8</td><td class="sev">hyg</td><td>Analyzer scanned <code>build/ios</code></td><td><span class="v pass">fixed</span> <code>analysis_options.yaml</code></td></tr>
-<tr><td>F9</td><td class="sev">hyg</td><td><code>docs/sslcommerz.md</code> says sandbox; live is production</td><td><span class="v fail">open</span></td></tr>
+<tr><td>F9</td><td class="sev">hyg</td><td><code>docs/features/sslcommerz.md</code> says sandbox; live is production</td><td><span class="v fail">open</span></td></tr>
 <tr><td>F10</td><td class="sev">hyg</td><td>Management API drops rows from the repo's standard verdict select</td><td><span class="v pass">documented</span> in CLAUDE.md</td></tr>
 </table></div>
 
@@ -496,7 +496,7 @@ Prefer: return=representation
 <ul>
 <li><code>tool/qa/sandbox_pay.js</code>, <code>tool/dump_live_baseline.py</code>, <code>tool/local_db_from_live.sh</code>, <code>supabase/baseline/{live_baseline,live_seed,qa_seed}.sql</code>, <code>supabase/config.toml</code>, <code>supabase/functions/.env.local</code> (ignored)</li>
 <li><code>supabase/migrations/132_guard_payment_columns.sql</code>, <code>supabase/tests/132_guard_payment_columns_test.sql</code></li>
-<li><code>docs/QA_PLAN.md</code>, <code>docs/QA_PAYMENT_TEST_PLAN.md</code>, <code>docs/qa/payment-runs.md</code>, <code>docs/qa/REPORT_2026-09-18.md</code>, this page</li>
+<li><code>docs/qa/qa-plan.md</code>, <code>docs/qa/payment-test-plan.md</code>, <code>docs/qa/payment-runs.md</code>, <code>docs/qa/REPORT_2026-09-18.md</code>, this page</li>
 <li>Modified: <code>analysis_options.yaml</code>, <code>CLAUDE.md</code>, <code>.gitignore</code>, <code>supabase/.gitignore</code></li>
 </ul>
 <p class="note">Nothing committed. The local stack is still running; <code>supabase stop</code> ends it. Seed logins for the mirror: <code>phone.170000000N@musaafir.app</code>, password <code>qa-password</code>, or master OTP <code>3969</code> on <code>0170000000N</code>.</p>

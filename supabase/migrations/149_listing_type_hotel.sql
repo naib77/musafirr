@@ -1,0 +1,37 @@
+-- Migration 149: add 'hotel' to the listing_type enum.
+--
+-- Alone in its file for the same Postgres rule as 120 (turf):
+--
+--   55P04: unsafe use of new value "hotel" of enum type listing_type
+--   HINT:  New enum values must be committed before they can be used.
+--
+-- Everything that names 'hotel' as an enum value -- the hotel-only check
+-- constraint and columns in 150, a fixture, a function body casting to it --
+-- has to run in a later transaction. Apply this, commit, then 150. The
+-- rolled-back-transaction test pattern cannot wrap a hotel fixture together
+-- with this file; the 150 suite runs after both are applied.
+--
+-- NOT reversible: Postgres has no ALTER TYPE ... DROP VALUE. `if not exists`
+-- keeps it re-runnable, which matters because a failed apply cannot be rolled
+-- back into "nothing happened" the way the rest of this directory can.
+--
+-- ── What already handles 'hotel' before this lands ─────────────────────────
+--
+-- 148 keyed `app_settings.hourly_policy` by type NAME (text), not by enum, and
+-- its validator and `hourly_policy_for(text)` already accept 'hotel' -- so the
+-- seeded policy row ({min_hours: 6, slots: [6, 12]}) needs no rewrite and
+-- starts applying the moment a listing carries this type. 147's units are
+-- type-agnostic: a hotel is a listing with many units, which is why it is a
+-- listing_type and not a separate table.
+--
+-- ── Deploy order: writes need this first, reads do not ─────────────────────
+--
+-- As with turf, search_listings filters with
+--
+--     l.listing_type::text = any(p_property_types)
+--
+-- casting the COLUMN, never the input array, so a build sending 'hotel' to a
+-- database without this matches zero rows instead of raising 22P02. Only a
+-- host publishing a hotel needs it first -- the safe direction.
+
+alter type public.listing_type add value if not exists 'hotel';

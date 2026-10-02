@@ -3,7 +3,7 @@
 Sending one in-app notification (and, where allowed, a push) to many people from
 the admin console. Migration 129 and `/notifications` in `../musafir-admin`.
 
-Read `docs/BULK_SMS.md` first if you have not: this is its sibling, and the
+Read `docs/features/bulk-sms.md` first if you have not: this is its sibling, and the
 interesting part is **where the two deliberately differ**.
 
 ## Why this is not the SMS design
