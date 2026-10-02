@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import '../../core/utils/responsive.dart';
 import '../../data/facility_catalog.dart';
@@ -7,6 +8,8 @@ import '../../models/listing.dart';
 import '../../models/listing_purpose.dart';
 import '../../models/listing_type.dart';
 import '../../models/hotel_details.dart';
+import '../../models/property.dart';
+import '../../models/room_labels.dart';
 import '../../models/turf_details.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../services/app_settings_service.dart';
@@ -23,16 +26,30 @@ import '../../widgets/host/party_limits_fields.dart';
 import '../../widgets/host/turf_details_fields.dart';
 import '../../services/listing/listing_type_scope.dart';
 import 'listing_pricing_fields.dart';
+import 'property_form_screen.dart';
 
 class CreateListingScreen extends StatefulWidget {
   const CreateListingScreen({
     super.key,
     required this.repository,
     required this.authState,
+    this.property,
+    this.duplicateFrom,
   });
 
   final MusafirRepository repository;
   final AuthStateNotifier authState;
+
+  /// Adds a room type to this hotel (153) instead of creating a standalone
+  /// listing: the type and location pages are skipped and the hotel's
+  /// facts are used, since the database copies them over anyway.
+  final Property? property;
+
+  /// Prefills the form from another room type of the same hotel -- the
+  /// "Duplicate" of plan §8 step 2. Photos and rooms are not copied: a
+  /// Deluxe Triple's photos are not the Deluxe Double's, and room names are
+  /// unique across the hotel.
+  final Listing? duplicateFrom;
 
   @override
   State<CreateListingScreen> createState() => _CreateListingScreenState();
@@ -60,9 +77,10 @@ enum _WizardStep {
   /// Turf only: players, sport, format, surface, amenities.
   turf,
 
-  /// Hotel only, before [details]: how many rooms of this kind, stars, front
-  /// desk, ID. The details page that follows then describes ONE of those
-  /// rooms, which is what the units model (147) means by a listing.
+  /// A hotel's room type only (153), before [details]: which rooms are of
+  /// this type, by name or count. The details page that follows then
+  /// describes ONE of those rooms, which is what the units model (147)
+  /// means by a listing. Stars, desk and ID are the hotel's, not asked.
   hotel,
   pricing,
   rules,
@@ -84,11 +102,9 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   /// wrong page. Safe to recompute because page 0 is common to both shapes --
   /// switching type can only ever shorten or lengthen what comes *after* the
   /// page the host is standing on.
-  List<_WizardStep> get _steps => _propertyType == ListingType.hotel
+  List<_WizardStep> get _steps => _inHotel
       ? const [
-          _WizardStep.type,
           _WizardStep.basics,
-          _WizardStep.location,
           _WizardStep.hotel,
           _WizardStep.details,
           _WizardStep.pricing,
@@ -96,26 +112,33 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
           _WizardStep.access,
           _WizardStep.photos,
         ]
-      : _propertyType.isStay
-          ? const [
-              _WizardStep.type,
-              _WizardStep.basics,
-              _WizardStep.location,
-              _WizardStep.details,
-              _WizardStep.pricing,
-              _WizardStep.rules,
-              _WizardStep.access,
-              _WizardStep.photos,
-            ]
-          : const [
-              _WizardStep.type,
-              _WizardStep.basics,
-              _WizardStep.location,
-              _WizardStep.turf,
-              _WizardStep.pricing,
-              _WizardStep.rules,
-              _WizardStep.photos,
-            ];
+      // A hotel is set up as the hotel first (153), then its room types, so
+      // page 0 is all a standalone create asks before handing off to
+      // PropertyFormScreen.
+      : _propertyType == ListingType.hotel
+          ? const [_WizardStep.type]
+          : _propertyType.isStay
+              ? const [
+                  _WizardStep.type,
+                  _WizardStep.basics,
+                  _WizardStep.location,
+                  _WizardStep.details,
+                  _WizardStep.pricing,
+                  _WizardStep.rules,
+                  _WizardStep.access,
+                  _WizardStep.photos,
+                ]
+              : const [
+                  _WizardStep.type,
+                  _WizardStep.basics,
+                  _WizardStep.location,
+                  _WizardStep.turf,
+                  _WizardStep.pricing,
+                  _WizardStep.rules,
+                  _WizardStep.photos,
+                ];
+
+  bool get _inHotel => widget.property != null;
 
   int get _totalSteps => _steps.length;
 
@@ -128,6 +151,10 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   /// Rooms of this kind the hotel sells. Only the hotel step shows it; every
   /// other type submits 1, which is what the insert trigger already creates.
   int _unitCount = 1;
+
+  /// Room names for a hotel's room type ("101-105, 201"). Blank means the
+  /// host gave a count instead and the rooms show as "Room N".
+  final _roomNamesController = TextEditingController();
   final Set<ListingPurpose> _selectedPurposes = {ListingPurpose.general};
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -202,7 +229,98 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   bool _isSubmitting = false;
 
   @override
+  void initState() {
+    super.initState();
+    final p = widget.property;
+    if (p != null) {
+      _propertyType = ListingType.hotel;
+      _hotelDetails = p.hotelDetails;
+      _latitude = p.latitude ?? _latitude;
+      _longitude = p.longitude ?? _longitude;
+      _pinConfirmed = true;
+      if (p.checkInTime != null) _checkInTimeController.text = p.checkInTime!;
+      if (p.checkOutTime != null) {
+        _checkOutTimeController.text = p.checkOutTime!;
+      }
+    }
+    final d = widget.duplicateFrom;
+    if (d != null) _prefillFrom(d);
+  }
+
+  void _prefillFrom(Listing d) {
+    _titleController.text = '${d.title} (copy)';
+    _descriptionController.text = d.description ?? '';
+    _selectedPurposes
+      ..clear()
+      ..addAll(
+          d.purposeTags.isEmpty ? {ListingPurpose.general} : d.purposeTags);
+    _maxGuests = d.maxGuests;
+    _partyLimits = d.partyLimits;
+    _bedrooms = d.bedrooms;
+    _beds = d.beds;
+    _bathrooms = d.bathrooms;
+    _roomFacts = d.roomFacts;
+    _selectedAmenities
+      ..clear()
+      ..addAll(d.facilities.map((f) => f.name));
+    _hourlyEnabled = d.hourlyRate != null;
+    _dailyEnabled = d.dailyRate != null;
+    _monthlyEnabled = d.monthlyRate != null;
+    String fmt(double? v) => v == null ? '' : v.toStringAsFixed(0);
+    if (d.hourlyRate != null) _hourlyPriceController.text = fmt(d.hourlyRate);
+    if (d.dailyRate != null) _dailyPriceController.text = fmt(d.dailyRate);
+    if (d.monthlyRate != null) {
+      _monthlyPriceController.text = fmt(d.monthlyRate);
+    }
+    final b = d.bookingLimits;
+    String n(int? v) => v?.toString() ?? '';
+    _minHoursController.text = n(b.minHours ?? 1);
+    _maxHoursController.text = n(b.maxHours);
+    _minNightsController.text = n(b.minNights ?? 1);
+    _maxNightsController.text = n(b.maxNights);
+    _minMonthsController.text = n(b.minMonths ?? 1);
+    _maxMonthsController.text = n(b.maxMonths);
+    _hourlySlotsController.text = b.hourlySlots?.join(', ') ?? '';
+    _hourlyWindowStartController.text = b.hourlyWindowStart ?? '';
+    _hourlyWindowEndController.text = b.hourlyWindowEnd ?? '';
+    final r = d.houseRules;
+    _smokingAllowed = r.smokingAllowed;
+    _petsAllowed = r.petsAllowed;
+    _partiesAllowed = r.partiesAllowed;
+    _quietHoursController.text = r.quietHours ?? '';
+    _additionalRulesController.text = r.additionalRules ?? '';
+    _instantBook = d.instantBook;
+    final c = d.checkInDetails;
+    if (c != null) {
+      _directionsController.text = c.directions ?? '';
+      _wifiNameController.text = c.wifiName ?? '';
+      _wifiPasswordController.text = c.wifiPassword ?? '';
+      _accessCodeController.text = c.accessCode ?? '';
+    }
+  }
+
+  /// Picking Hotel on page 0 of a standalone create: a hotel is entered as
+  /// the hotel first, then its room types (plan §8), so the wizard hands
+  /// over rather than asking for a location it would only throw away.
+  void _startHotel() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PropertyFormScreen(
+          repository: widget.repository,
+          authState: widget.authState,
+        ),
+      ),
+    );
+  }
+
+  bool get _handsOffToHotel => !_inHotel && _propertyType == ListingType.hotel;
+
+  RoomLabelParse get _roomNames => parseRoomLabels(_roomNamesController.text);
+
+  @override
   void dispose() {
+    _roomNamesController.dispose();
     _pageController.dispose();
     _titleController.dispose();
     _descriptionController.dispose();
@@ -274,6 +392,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
           },
         ),
       _WizardStep.basics => _BasicsStep(
+          inHotel: _inHotel,
           titleController: _titleController,
           descriptionController: _descriptionController,
           onChanged: () => setState(() {}),
@@ -304,10 +423,11 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
           onChanged: () => setState(() {}),
         ),
       _WizardStep.hotel => _HotelStep(
+          roomNamesController: _roomNamesController,
+          roomNames: _roomNames,
+          onRoomNamesChanged: () => setState(() {}),
           unitCount: _unitCount,
           onUnitCountChanged: (v) => setState(() => _unitCount = v),
-          details: _hotelDetails,
-          onDetailsChanged: (v) => setState(() => _hotelDetails = v),
         ),
       _WizardStep.details => _DetailsStep(
           type: _propertyType,
@@ -377,6 +497,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         ),
       _WizardStep.rules => _HouseRulesStep(
           isStay: _propertyType.isStay,
+          timesFromHotel: _inHotel,
           checkInTimeController: _checkInTimeController,
           checkOutTimeController: _checkOutTimeController,
           quietHoursController: _quietHoursController,
@@ -440,7 +561,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
       _WizardStep.turf => _maxGuests > 0,
       // Stars, desk and ID are all nullable (150); the room count has a
       // floor the counter already enforces.
-      _WizardStep.hotel => _unitCount >= 1,
+      _WizardStep.hotel => _unitCount >= 1 && _roomNames.isValid,
       _WizardStep.pricing => _pricingError() == null,
       // Optional in both shapes.
       _WizardStep.rules || _WizardStep.access => true,
@@ -564,7 +685,8 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         partiesAllowed: _partiesAllowed,
       );
 
-      final listing = Listing(
+      final p = widget.property;
+      final draft = Listing(
         id: listingId,
         hostId: user?.id,
         ownerName: user?.name ?? 'Host',
@@ -665,17 +787,60 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
               )
             : const CheckInDetails(),
       );
+      // A room type takes the hotel's location, times and facts. The
+      // database would copy them in anyway (a_listing_property_inherit);
+      // doing it here keeps the optimistic copy honest until the refresh.
+      final listing = p == null
+          ? draft
+          : draft.copyWith(
+              propertyId: p.id,
+              address: p.publicAddress,
+              city: p.city,
+              country: p.country,
+              area: p.area,
+              postalCode: p.postalCode,
+              landmark: p.landmark,
+              latitude: p.latitude,
+              longitude: p.longitude,
+              hotelDetails: p.hotelDetails,
+              houseRules: HouseRules(
+                checkInTime: p.checkInTime,
+                checkOutTime: p.checkOutTime,
+                smokingAllowed: draft.houseRules.smokingAllowed,
+                petsAllowed: draft.houseRules.petsAllowed,
+                partiesAllowed: draft.houseRules.partiesAllowed,
+                quietHours: draft.houseRules.quietHours,
+                additionalRules: draft.houseRules.additionalRules,
+              ),
+            );
 
       // Add to repository — await so a failed insert surfaces below instead
       // of showing a success banner for a listing that was never created.
       // A host who picked hotel, set 12 rooms, then switched back to a room
       // must not create a 12-unit flat.
-      await widget.repository.addListing(listing,
-          unitCount: _propertyType == ListingType.hotel ? _unitCount : 1);
+      await widget.repository.addListing(
+        listing,
+        unitCount: _propertyType == ListingType.hotel ? _unitCount : 1,
+        roomLabels: _inHotel ? _roomNames.labels : const [],
+      );
 
       if (mounted) {
-        Navigator.pop(context);
-        ModernBanner.showSuccess(context, 'Listing created successfully!');
+        Navigator.pop(context, true);
+        ModernBanner.showSuccess(context,
+            _inHotel ? 'Room type added' : 'Listing created successfully!');
+      }
+    } on RoomsNotSavedException catch (e) {
+      // The room type exists; only its rooms failed. Leave rather than
+      // offer a retry that would create it twice.
+      if (mounted) {
+        final hint = e.cause is PostgrestException
+            ? (e.cause as PostgrestException).hint
+            : null;
+        Navigator.pop(context, true);
+        ModernBanner.showWarning(
+            context,
+            'Room type added, but its rooms were not: '
+            '${propertyRefusalMessage(hint)} Fix them from the hotel page.');
       }
     } catch (e) {
       if (mounted) {
@@ -750,7 +915,12 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                       child: const Text('Back'),
                     ),
                   const Spacer(),
-                  if (_currentStep < _totalSteps - 1)
+                  if (_handsOffToHotel)
+                    FilledButton(
+                      onPressed: _startHotel,
+                      child: const Text('Set up your hotel'),
+                    )
+                  else if (_currentStep < _totalSteps - 1)
                     FilledButton(
                       onPressed: _canProceed() ? _nextStep : null,
                       child: const Text('Next'),
@@ -769,7 +939,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                                 color: Colors.white,
                               ),
                             )
-                          : const Text('Create Listing'),
+                          : Text(_inHotel ? 'Add room type' : 'Create Listing'),
                     ),
                 ],
               ),
@@ -954,11 +1124,15 @@ class _PropertyTypeCard extends StatelessWidget {
 // Step 2: Basics
 class _BasicsStep extends StatelessWidget {
   const _BasicsStep({
+    this.inHotel = false,
     required this.titleController,
     required this.descriptionController,
     required this.onChanged,
   });
 
+  /// A hotel's room type: the title is the room type's name ("Super
+  /// Deluxe Room"), shown under the hotel's own name.
+  final bool inHotel;
   final TextEditingController titleController;
   final TextEditingController descriptionController;
   final VoidCallback onChanged;
@@ -973,7 +1147,7 @@ class _BasicsStep extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Tell guests about your place',
+            inHotel ? 'Name this room type' : 'Tell guests about your place',
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.bold,
             ),
@@ -988,8 +1162,10 @@ class _BasicsStep extends StatelessWidget {
           const SizedBox(height: 32),
           AppTextField(
             controller: titleController,
-            label: 'Listing title',
-            hint: 'e.g., Cozy room in the heart of Gulshan',
+            label: inHotel ? 'Room type' : 'Listing title',
+            hint: inHotel
+                ? 'e.g., Super Deluxe Room, Sea Front Deluxe'
+                : 'e.g., Cozy room in the heart of Gulshan',
             onChanged: (_) => onChanged(),
           ),
           const SizedBox(height: 16),
@@ -1322,57 +1498,95 @@ class _DetailsStep extends StatelessWidget {
 /// The hotel page: how many rooms, then what the hotel says about itself.
 class _HotelStep extends StatelessWidget {
   const _HotelStep({
+    required this.roomNamesController,
+    required this.roomNames,
+    required this.onRoomNamesChanged,
     required this.unitCount,
     required this.onUnitCountChanged,
-    required this.details,
-    required this.onDetailsChanged,
   });
 
+  final TextEditingController roomNamesController;
+  final RoomLabelParse roomNames;
+  final VoidCallback onRoomNamesChanged;
   final int unitCount;
   final ValueChanged<int> onUnitCountChanged;
-  final HotelDetails details;
-  final ValueChanged<HotelDetails> onDetailsChanged;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+  Widget build(BuildContext context) => _rooms(Theme.of(context));
+
+  /// Plan §8 step 3: rooms by name, ranges allowed, or a bare count. Names
+  /// are checked here exactly as add_listing_units checks them, except
+  /// "taken elsewhere in the hotel", which only the database can see.
+  Widget _rooms(ThemeData theme) {
+    final named = roomNames.labels.isNotEmpty;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'About your hotel',
+            'Rooms of this type',
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'List one kind of room at a time — a Deluxe Double, say. Guests '
-            'book a room of this kind; we pick which one.',
+            'Type the room numbers. Ranges work: 101-105, 201-205. Guests '
+            'book a room of this type; we pick which one.',
             style: theme.textTheme.bodyLarge?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 32),
-          // 500 is set_listing_unit_count's ceiling; the counter is capped
-          // well below it because a tap-per-room counter is not how anyone
-          // enters 300. A larger hotel splits into room kinds anyway.
-          _CounterRow(
-            label: 'Rooms of this kind',
-            value: unitCount,
-            onChanged: onUnitCountChanged,
-            min: 1,
-            max: 100,
+          const SizedBox(height: 24),
+          AppTextField(
+            controller: roomNamesController,
+            label: 'Room numbers (optional)',
+            hint: 'e.g., 101-105, 201-205, Garden room',
+            maxLines: 3,
+            onChanged: (_) => onRoomNamesChanged(),
           ),
-          const Divider(),
-          const SizedBox(height: 16),
-          HotelDetailsFields(details: details, onChanged: onDetailsChanged),
+          const SizedBox(height: 8),
+          if (named)
+            Text(
+              '${roomNames.labels.length} '
+              '${roomNames.labels.length == 1 ? 'room' : 'rooms'}: '
+              '${_preview(roomNames.labels)}',
+              style: theme.textTheme.bodySmall,
+            ),
+          for (final e in roomNames.errors)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                e,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.error),
+              ),
+            ),
+          if (!named) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Or just say how many — you can name them later.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            _CounterRow(
+              label: 'Rooms of this type',
+              value: unitCount,
+              onChanged: onUnitCountChanged,
+              min: 1,
+              max: 100,
+            ),
+          ],
         ],
       ),
     );
   }
+
+  static String _preview(List<String> labels) => labels.length <= 12
+      ? labels.join(', ')
+      : '${labels.take(10).join(', ')} … ${labels.last}';
 }
 
 class _TurfStep extends StatelessWidget {
@@ -1844,6 +2058,7 @@ String? _emptyToNull(String value) {
 class _HouseRulesStep extends StatelessWidget {
   const _HouseRulesStep({
     required this.isStay,
+    this.timesFromHotel = false,
     required this.checkInTimeController,
     required this.checkOutTimeController,
     required this.quietHoursController,
@@ -1864,6 +2079,10 @@ class _HouseRulesStep extends StatelessWidget {
   /// different forms -- this page is the SAME page with three rows dropped, so
   /// a flag is the honest shape here rather than a second widget.
   final bool isStay;
+
+  /// A hotel's room type: check-in and check-out are the hotel's (153
+  /// copies them over), so the pair is not asked here.
+  final bool timesFromHotel;
 
   final TextEditingController checkInTimeController;
   final TextEditingController checkOutTimeController;
@@ -1906,7 +2125,7 @@ class _HouseRulesStep extends StatelessWidget {
           // A turf booking already carries its own start and end -- the slot
           // IS the check-in time -- so a second, free-text pair here would be
           // a field that contradicts the booking.
-          if (isStay) ...[
+          if (isStay && !timesFromHotel) ...[
             Row(
               children: [
                 Expanded(

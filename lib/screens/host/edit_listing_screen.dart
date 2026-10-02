@@ -408,11 +408,23 @@ class _EditListingScreenState extends State<EditListingScreen> {
         maxHoursText: _maxHoursController.text,
       );
 
+  /// A room type of a hotel (153). Its location, check-in times and hotel
+  /// facts belong to the hotel -- the database copies them over whatever
+  /// this form sends -- and its rooms are managed from the hotel dashboard,
+  /// so those sections are hidden rather than shown as edits that vanish.
+  bool get _inHotel => widget.listing.propertyId != null;
+
   String? _formError() {
     if (_titleController.text.trim().isEmpty) return 'Add a listing title.';
-    if (_streetController.text.trim().isEmpty) return 'Add the road / street.';
-    if (_areaController.text.trim().isEmpty) return 'Add the area / locality.';
-    if (_cityController.text.trim().isEmpty) return 'Add the city.';
+    if (!_inHotel) {
+      if (_streetController.text.trim().isEmpty) {
+        return 'Add the road / street.';
+      }
+      if (_areaController.text.trim().isEmpty) {
+        return 'Add the area / locality.';
+      }
+      if (_cityController.text.trim().isEmpty) return 'Add the city.';
+    }
     if (_images.isEmpty) return 'Add at least one photo.';
     return _pricingError();
   }
@@ -742,19 +754,21 @@ class _EditListingScreenState extends State<EditListingScreen> {
               _sectionDivider(),
 
               // ---------- Type ----------
-              _sectionTitle(theme, 'Property type'),
-              Wrap(
-                spacing: 8,
-                children: ListingType.values.map((t) {
-                  return ChoiceChip(
-                    label: Text(t.title),
-                    selected: _propertyType == t,
-                    onSelected: (_) => setState(() => _propertyType = t),
-                  );
-                }).toList(),
-              ),
-
-              _sectionDivider(),
+              // A room type cannot leave its hotel (hint property_fixed).
+              if (!_inHotel) ...[
+                _sectionTitle(theme, 'Property type'),
+                Wrap(
+                  spacing: 8,
+                  children: ListingType.values.map((t) {
+                    return ChoiceChip(
+                      label: Text(t.title),
+                      selected: _propertyType == t,
+                      onSelected: (_) => setState(() => _propertyType = t),
+                    );
+                  }).toList(),
+                ),
+                _sectionDivider(),
+              ],
 
               // ---------- Purpose ----------
               PurposeSelector(
@@ -769,87 +783,97 @@ class _EditListingScreenState extends State<EditListingScreen> {
               _sectionDivider(),
 
               // ---------- Location ----------
-              _sectionTitle(theme, 'Location'),
-              AppTextField(
-                controller: _houseNoController,
-                label: 'House / Building no.',
-                hint: 'e.g., House 12',
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 16),
-              AppTextField(
-                controller: _flatFloorController,
-                label: 'Flat / Floor (optional)',
-                hint: 'e.g., B-4, 3rd floor',
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 16),
-              AppTextField(
-                controller: _streetController,
-                label: 'Road / Street',
-                hint: 'e.g., Road 27',
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 16),
-              AppTextField(
-                controller: _areaController,
-                label: 'Area / Locality',
-                hint: 'e.g., Banani',
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 16),
-              AppTextField(
-                controller: _cityController,
-                label: 'City',
-                hint: 'e.g., Dhaka',
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 16),
-              AppTextField(
-                controller: _postalCodeController,
-                label: 'Postal code (optional)',
-                hint: 'e.g., 1213',
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 16),
-              AppTextField(
-                controller: _landmarkController,
-                label: 'Landmark (optional)',
-                hint: 'e.g., Near Banani Bridge',
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  final result = await LocationPicker.show(
-                    context,
-                    initialLatitude: _latitude,
-                    initialLongitude: _longitude,
-                  );
-                  if (!mounted) return;
-                  if (result != null) {
-                    setState(() {
-                      _latitude = result.latitude;
-                      _longitude = result.longitude;
-                      // Seed Road/Street from the geocoded address only if empty.
-                      if (result.address != null &&
-                          result.address!.isNotEmpty &&
-                          _streetController.text.trim().isEmpty) {
-                        _streetController.text = result.address!;
-                      }
-                    });
-                  }
-                },
-                icon: const Icon(Icons.map),
-                label: const Text('Pick on Map'),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Location: ${_latitude.toStringAsFixed(4)}, ${_longitude.toStringAsFixed(4)}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+              if (_inHotel)
+                Text(
+                  'Location, check-in times and hotel details are set on '
+                  'the hotel and shared by all its room types.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                )
+              else ...[
+                _sectionTitle(theme, 'Location'),
+                AppTextField(
+                  controller: _houseNoController,
+                  label: 'House / Building no.',
+                  hint: 'e.g., House 12',
+                  onChanged: (_) => setState(() {}),
                 ),
-              ),
+                const SizedBox(height: 16),
+                AppTextField(
+                  controller: _flatFloorController,
+                  label: 'Flat / Floor (optional)',
+                  hint: 'e.g., B-4, 3rd floor',
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 16),
+                AppTextField(
+                  controller: _streetController,
+                  label: 'Road / Street',
+                  hint: 'e.g., Road 27',
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 16),
+                AppTextField(
+                  controller: _areaController,
+                  label: 'Area / Locality',
+                  hint: 'e.g., Banani',
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 16),
+                AppTextField(
+                  controller: _cityController,
+                  label: 'City',
+                  hint: 'e.g., Dhaka',
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 16),
+                AppTextField(
+                  controller: _postalCodeController,
+                  label: 'Postal code (optional)',
+                  hint: 'e.g., 1213',
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 16),
+                AppTextField(
+                  controller: _landmarkController,
+                  label: 'Landmark (optional)',
+                  hint: 'e.g., Near Banani Bridge',
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final result = await LocationPicker.show(
+                      context,
+                      initialLatitude: _latitude,
+                      initialLongitude: _longitude,
+                    );
+                    if (!mounted) return;
+                    if (result != null) {
+                      setState(() {
+                        _latitude = result.latitude;
+                        _longitude = result.longitude;
+                        // Seed Road/Street from the geocoded address only if empty.
+                        if (result.address != null &&
+                            result.address!.isNotEmpty &&
+                            _streetController.text.trim().isEmpty) {
+                          _streetController.text = result.address!;
+                        }
+                      });
+                    }
+                  },
+                  icon: const Icon(Icons.map),
+                  label: const Text('Pick on Map'),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Location: ${_latitude.toStringAsFixed(4)}, ${_longitude.toStringAsFixed(4)}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
 
               _sectionDivider(),
 
@@ -907,7 +931,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
                   facts: _roomFacts,
                   onChanged: (v) => setState(() => _roomFacts = v),
                 ),
-                if (_propertyType == ListingType.hotel) ...[
+                if (_propertyType == ListingType.hotel && !_inHotel) ...[
                   const SizedBox(height: 20),
                   const Divider(),
                   if (_unitCount != null)
@@ -1062,7 +1086,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
               _sectionTitle(theme, _isStay ? 'House rules' : 'Ground rules'),
               // A turf slot carries its own start and end, so a free-text
               // check-in pair here would contradict the booking.
-              if (_isStay) ...[
+              if (_isStay && !_inHotel) ...[
                 Row(
                   children: [
                     Expanded(

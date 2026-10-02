@@ -67,6 +67,9 @@ class Listing {
     // Distance in metres from a searched landmark, when the listing came from a
     // proximity search. Null otherwise. Not persisted — a per-search value.
     this.distanceMeters,
+    // The hotel this listing is a room type of (153). Null for every other
+    // listing, and for a hotel that predates 153's backfill.
+    this.propertyId,
   });
 
   final String id;
@@ -144,6 +147,12 @@ class Listing {
 
   /// Distance in metres from a searched landmark (proximity search only).
   final double? distanceMeters;
+
+  /// `listings.property_id` (153): set once, on insert. The database refuses
+  /// a change (hint `property_fixed`) and copies the hotel's location, times
+  /// and facts onto the row on every write, so for a room type those fields
+  /// here are a read-only echo of the [Property].
+  final String? propertyId;
 
   /// Per-plan minimum/maximum booking duration.
   final BookingLimits bookingLimits;
@@ -324,6 +333,7 @@ class Listing {
     DateTime? createdAt,
     List<ListingPurpose>? purposeTags,
     double? distanceMeters,
+    String? propertyId,
   }) {
     return Listing(
       id: id ?? this.id,
@@ -370,6 +380,7 @@ class Listing {
       createdAt: createdAt ?? this.createdAt,
       purposeTags: purposeTags ?? this.purposeTags,
       distanceMeters: distanceMeters ?? this.distanceMeters,
+      propertyId: propertyId ?? this.propertyId,
     );
   }
 

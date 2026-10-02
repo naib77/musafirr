@@ -16,6 +16,7 @@ import '../models/listing_unit.dart';
 import '../models/owner_registration_draft.dart';
 import '../models/payment_record.dart';
 import '../models/payout_method.dart';
+import '../models/property.dart';
 import '../models/review.dart';
 import '../models/search_filters.dart';
 import '../models/user.dart';
@@ -152,7 +153,11 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   /// [unitCount] is how many identical rooms the listing sells (150); the
   /// insert trigger gives every new listing one unit, so only a count other
   /// than 1 costs an extra call.
-  Future<void> addListing(Listing listing, {int unitCount = 1});
+  /// [roomLabels], when given, names the rooms instead of [unitCount]
+  /// (153's `add_listing_units`, naming the seeded room first): one room
+  /// per label, so [unitCount] is ignored.
+  Future<void> addListing(Listing listing,
+      {int unitCount = 1, List<String> roomLabels = const []});
   Future<void> updateListing(Listing listing);
 
   /// Active units on one of the host's own listings (`listing_unit_count`).
@@ -173,6 +178,47 @@ abstract class MusafirRepository implements Listenable, BookingStore {
   /// `PostgrestException` with code 23505 when another room already has the
   /// name, and a `StateError` when no row changed (not the caller's room).
   Future<void> renameListingUnit(String unitId, String? label);
+
+  // ---- Hotels with several room types (153) ----
+
+  /// The signed-in host's hotels, newest first.
+  Future<List<Property>> myProperties();
+
+  Future<Property?> fetchProperty(String propertyId);
+
+  /// The hotel's private address. Owner/admin only (RLS); null otherwise.
+  Future<PropertyAddress?> fetchPropertyAddress(String propertyId);
+
+  /// Inserts the hotel and its address and returns the new id. The address
+  /// trigger copies into the room types' `listing_addresses`, so this is the
+  /// only place a host types the hotel's door-level line.
+  Future<String> createProperty(Property property, PropertyAddress address);
+
+  /// Saves the hotel; the database pushes the shared facts down to every
+  /// room type in the same transaction (`fn_property_push_down`).
+  Future<void> updateProperty(Property property, PropertyAddress address);
+
+  /// Every room type of a hotel, the host's inactive ones included.
+  Future<List<Listing>> propertyRoomTypes(String propertyId);
+
+  /// Adds named rooms to a room type and returns its active count. With
+  /// [nameUnnamed], unnamed rooms that never had a booking take the first
+  /// names before new rooms are made -- what a new room type wants, since
+  /// its insert already seeded one unnamed room. Hints: `room_label_taken`
+  /// (anywhere in the hotel), `room_label_duplicate`, `room_label_invalid`,
+  /// `unit_count_range`.
+  Future<int> addListingUnits(String listingId, List<String> labels,
+      {bool nameUnnamed = false});
+
+  /// Retires one room and returns the active count left. Hints
+  /// `units_in_use`, `unit_count_range` (the last room), `unit_not_found`.
+  Future<int> deactivateListingUnit(String unitId);
+
+  /// Moves a room to another room type of the same hotel and returns the
+  /// room's id there (a new id: the source unit is retired so its bookings
+  /// keep pointing at the type they were made for). Hints
+  /// `unit_move_other_property`, `units_in_use`, `room_label_taken`.
+  Future<String> moveListingUnit(String unitId, String toListingId);
 
   /// Moves a booking to another room of the same listing (151). Host-only.
   /// Throws a `PostgrestException` with hint `unit_taken`, `unit_blocked`,

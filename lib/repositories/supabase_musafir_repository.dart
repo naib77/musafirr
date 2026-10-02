@@ -29,6 +29,7 @@ import '../models/listing_type.dart';
 import '../models/hotel_details.dart';
 import '../models/turf_details.dart';
 import '../models/owner_registration_draft.dart';
+import '../models/property.dart';
 import '../models/review.dart';
 import '../models/search_filters.dart';
 import '../models/user.dart';
@@ -682,6 +683,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? ''),
       purposeTags: listingPurposesFromWire(json['purpose_tags']),
       distanceMeters: (json['distance_m'] as num?)?.toDouble(),
+      propertyId: json['property_id'] as String?,
       bookingLimits: BookingLimits(
         minHours: json['min_hours'] as int?,
         maxHours: json['max_hours'] as int?,
@@ -788,6 +790,11 @@ class SupabaseMusafirRepository extends ChangeNotifier
       'parties_allowed': listing.houseRules.partiesAllowed,
       'quiet_hours': listing.houseRules.quietHours,
       'additional_rules': listing.houseRules.additionalRules,
+      // 153. Only when set, unlike the hotel keys above: an ordinary listing
+      // must keep saving against a database without the column (PGRST204),
+      // and the trigger refuses any change once set, so re-sending the same
+      // id on an edit is the only other write it ever sees.
+      if (listing.propertyId != null) 'property_id': listing.propertyId,
     };
   }
 
@@ -1522,7 +1529,8 @@ class SupabaseMusafirRepository extends ChangeNotifier
   }
 
   @override
-  Future<void> addListing(Listing listing, {int unitCount = 1}) async {
+  Future<void> addListing(Listing listing,
+      {int unitCount = 1, List<String> roomLabels = const []}) async {
     // Optimistic add for instant UI feedback (carries the client temp id).
     _listings.add(listing);
     notifyListeners();
@@ -1540,16 +1548,40 @@ class SupabaseMusafirRepository extends ChangeNotifier
 
       await _saveListingFacilities(realId, listing.facilities);
       await _saveCheckInDetails(realId, listing.checkInDetails);
-      await _saveListingExactAddress(realId, listing);
+      // A hotel's room type gets its exact address from the hotel (153's
+      // copy trigger); writing the form's snapped copy over it would lose
+      // the door-level line the guest is shown after booking.
+      if (listing.propertyId == null) {
+        await _saveListingExactAddress(realId, listing);
+      }
       // After the insert, not in it: units are a separate table the insert
       // trigger seeds with one row (147). A failure here leaves a listing
       // with one room, which the host can fix from the edit screen -- better
       // than rolling back a listing whose photos are already uploaded.
-      if (unitCount != 1) await setListingUnitCount(realId, unitCount);
+      //
+      // Caught on its own for that reason: rethrown as RoomsNotSavedException
+      // AFTER the cache holds the real row, so the caller can say "created,
+      // fix the rooms" instead of "failed" -- which invites a retry that
+      // makes a second copy of the listing.
+      Object? roomsError;
+      try {
+        if (roomLabels.isNotEmpty) {
+          await addListingUnits(realId, roomLabels, nameUnnamed: true);
+        } else if (unitCount != 1) {
+          await setListingUnitCount(realId, unitCount);
+        }
+      } catch (e) {
+        roomsError = e;
+      }
 
       // Drop the temp-id copy; _refreshListings brings in the canonical row.
       _listings.removeWhere((l) => l.id == listing.id);
       await _refreshListings();
+      if (roomsError != null) {
+        throw RoomsNotSavedException(realId, roomsError);
+      }
+    } on RoomsNotSavedException {
+      rethrow;
     } catch (e) {
       // Roll back the optimistic add so a failed create doesn't leave a ghost.
       _listings.removeWhere((l) => l.id == listing.id);
@@ -1602,6 +1634,117 @@ class SupabaseMusafirRepository extends ChangeNotifier
   }
 
   @override
+  Future<List<Property>> myProperties() async {
+    final me = _client.auth.currentUser?.id;
+    if (me == null) return const [];
+    final rows = await _client
+        .from('properties')
+        .select()
+        .eq('owner_id', me)
+        .order('created_at', ascending: false);
+    return (rows as List)
+        .map((r) => Property.fromJson(r as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<Property?> fetchProperty(String propertyId) async {
+    final row = await _client
+        .from('properties')
+        .select()
+        .eq('id', propertyId)
+        .maybeSingle();
+    return row == null ? null : Property.fromJson(row);
+  }
+
+  @override
+  Future<PropertyAddress?> fetchPropertyAddress(String propertyId) async {
+    final row = await _client
+        .from('property_addresses')
+        .select()
+        .eq('property_id', propertyId)
+        .maybeSingle();
+    return row == null ? null : PropertyAddress.fromJson(row);
+  }
+
+  @override
+  Future<String> createProperty(
+      Property property, PropertyAddress address) async {
+    final row = await _client
+        .from('properties')
+        .insert(property.toJson(includeOwner: true))
+        .select('id')
+        .single();
+    final id = row['id'] as String;
+    // Second write, not fatal to the first: a hotel without its door-level
+    // line is still a hotel, and the form saves it again on the next edit.
+    try {
+      await _client.from('property_addresses').upsert(address.toJson(id));
+    } catch (e) {
+      debugPrint('Error saving property address: $e');
+    }
+    // Nothing in the listing cache changed, but the host's hotel list did;
+    // HostListingsScreen's hotel section listens here.
+    notifyListeners();
+    return id;
+  }
+
+  @override
+  Future<void> updateProperty(
+      Property property, PropertyAddress address) async {
+    // `.select` so an RLS-filtered no-op is visible (database-security.md).
+    final rows = await _client
+        .from('properties')
+        .update(property.toJson())
+        .eq('id', property.id)
+        .select('id');
+    if ((rows as List).isEmpty) throw StateError('Hotel not found');
+    await _client
+        .from('property_addresses')
+        .upsert(address.toJson(property.id));
+    // The push-down trigger rewrote the room types; refresh the cache so the
+    // host's listing cards show the new location and times.
+    await _refreshListings();
+  }
+
+  @override
+  Future<List<Listing>> propertyRoomTypes(String propertyId) async {
+    final rows = await _client
+        .from('listings')
+        .select('*, listing_facilities(facility_id, facilities(name))')
+        .eq('property_id', propertyId)
+        .order('created_at');
+    return (rows as List)
+        .map((r) => _listingFromJson(r as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<int> addListingUnits(String listingId, List<String> labels,
+      {bool nameUnnamed = false}) async {
+    final n = await _client.rpc('add_listing_units', params: {
+      'p_listing_id': listingId,
+      'p_labels': labels,
+      'p_name_unnamed': nameUnnamed,
+    });
+    return (n as num).toInt();
+  }
+
+  @override
+  Future<int> deactivateListingUnit(String unitId) async {
+    final n = await _client
+        .rpc('deactivate_listing_unit', params: {'p_unit_id': unitId});
+    return (n as num).toInt();
+  }
+
+  @override
+  Future<String> moveListingUnit(String unitId, String toListingId) async {
+    final id = await _client.rpc('move_listing_unit',
+        params: {'p_unit_id': unitId, 'p_to_listing_id': toListingId});
+    return id as String;
+  }
+
+  @override
   Future<void> reassignBookingUnit(String bookingId, String unitId) async {
     // Through the RPC: 147's trigger refuses any direct unit_id write unless
     // musafir.unit_reassign is on, and only this function sets it.
@@ -1626,7 +1769,9 @@ class SupabaseMusafirRepository extends ChangeNotifier
           .eq('id', listing.id);
       await _saveListingFacilities(listing.id, listing.facilities);
       await _saveCheckInDetails(listing.id, listing.checkInDetails);
-      await _saveListingExactAddress(listing.id, listing);
+      if (listing.propertyId == null) {
+        await _saveListingExactAddress(listing.id, listing);
+      }
     } catch (e) {
       // Roll back to the previous value on failure.
       final i = _listings.indexWhere((l) => l.id == listing.id);
