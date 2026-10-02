@@ -7,7 +7,7 @@ import 'package:uuid/uuid.dart';
 /// serial to normal apps, iOS's IDFV resets when the last app from a vendor is
 /// uninstalled, and the web has nothing of the kind at all — every app that
 /// tried fingerprinting gave it up. It is an opaque UUID this device generates
-/// once and keeps, which is what the apps in `docs/DEVICE_SESSIONS.md` settled
+/// once and keeps, which is what the apps in `docs/features/device-sessions.md` settled
 /// on too.
 ///
 /// The consequence to remember before a cap is ever turned on: **clearing site

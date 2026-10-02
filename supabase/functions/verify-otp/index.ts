@@ -210,7 +210,7 @@ serve(async (req) => {
     // session is minted and the only one running as service role. A client
     // that simply never called `register_device` was never recorded and so
     // never evicted — the cap applied to cooperating clients and to nothing
-    // else. See docs/DEVICE_SESSIONS.md.
+    // else. See docs/features/device-sessions.md.
     //
     // It cannot record `session_id`: the session does not exist yet, it is
     // created when the client redeems the token hash below. The client's own

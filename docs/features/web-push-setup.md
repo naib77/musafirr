@@ -7,10 +7,10 @@ the Firebase console. No code changes remain on our side.
 
 ## Status
 - ✅ In-app toast on new realtime notification (works on web now) — `app.dart`.
-- ✅ Web push service — [`web_push_notification_service.dart`](../lib/services/notifications/web_push_notification_service.dart) (VAPID `getToken`, foreground → toast).
+- ✅ Web push service — [`web_push_notification_service.dart`](../../lib/services/notifications/web_push_notification_service.dart) (VAPID `getToken`, foreground → toast).
 - ✅ `main.dart` web branch: initialises Firebase with web options + selects the web push service **when configured**, else the stub (no regression).
-- ✅ Service worker with background-notification + click-to-focus — [`web/firebase-messaging-sw.js`](../web/firebase-messaging-sw.js).
-- ✅ Config guard — [`firebase_web_config.dart`](../lib/config/firebase_web_config.dart) (`isConfigured`).
+- ✅ Service worker with background-notification + click-to-focus — [`web/firebase-messaging-sw.js`](../../web/firebase-messaging-sw.js).
+- ✅ Config guard — [`firebase_web_config.dart`](../../lib/config/firebase_web_config.dart) (`isConfigured`).
 - ⏳ Blocked only on **you** pasting the 3 real values below.
 
 ## What you do (Firebase console, project `musafir-200107`)

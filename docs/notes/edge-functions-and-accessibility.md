@@ -42,7 +42,7 @@ to keep in step.
 
 Two consequences, and the second is why this is not only an accessibility
 item: a screen reader user hears "button" with no idea what it does, and the
-end-to-end strategy in `docs/QA_PLAN.md` selects controls **by accessibility
+end-to-end strategy in `docs/qa/qa-plan.md` selects controls **by accessibility
 label**, so an unnamed control cannot be driven by a test either.
 
 `test/widgets/accessibility_labels_test.dart` pins the names.

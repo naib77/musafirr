@@ -22,7 +22,7 @@ import 'package:musafir/widgets/top_hosts_button.dart';
 /// Nearly every control on this list already had a tooltip.
 ///
 /// The second consequence is the one that costs time rather than users: the
-/// end-to-end strategy in `docs/QA_PLAN.md` selects controls by accessibility
+/// end-to-end strategy in `docs/qa/qa-plan.md` selects controls by accessibility
 /// label, so an unnamed control cannot be driven by a test either.
 /// Finds a control by the accessibility name it declares.
 ///

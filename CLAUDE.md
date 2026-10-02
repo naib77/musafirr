@@ -29,7 +29,7 @@ bundle for immutable caching, copies `web/_headers` (Flutter skips
 underscore-prefixed files), strips `.symbols`, writes `build_stamp.json`, and
 runs the registrant guard below.
 
-`docs/WEB_DEPLOYMENT.md` predates the script and still says to run
+`docs/release/web-deployment.md` predates the script and still says to run
 `flutter build web --release`. Follow this file instead.
 
 ## The stale plugin registrant trap
@@ -73,7 +73,7 @@ reports GREEN is a client cache, not a failed deploy.
 
 Migrations in `supabase/migrations/`, applied in order. The **live database has
 drifted from the repo** in the past, so verify against it rather than assuming;
-`docs/live_schema.sql` is a snapshot, not the truth. Live SQL can be run through
+`docs/schema/live_schema.sql` is a snapshot, not the truth. Live SQL can be run through
 the Management API (`POST /v1/projects/{ref}/database/query`) with the token in
 the `Supabase CLI` keychain entry.
 

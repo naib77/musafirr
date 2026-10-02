@@ -90,7 +90,7 @@ the OS or the browser paints them before any Dart runs: `values/colors.xml`,
 `values-v31/styles.xml`, `LaunchScreen.storyboard`, `web/manifest.json`, the
 `web/index.html` boot splash, `tool/gen_brand_assets.py`, and — by choice, to
 end the chain in the same colour — `SplashScreen` via
-[`Brand.rose`](lib/core/theme/brand.dart). That file lists all seven; if the
+[`Brand.rose`](../../lib/core/theme/brand.dart). That file lists all seven; if the
 brand colour changes they all change together, and nothing can automate it.
 
 `SplashScreen` used to paint `colorScheme.primary`. With the default

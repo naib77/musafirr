@@ -991,7 +991,7 @@ end $$;
 
 comment on table public.sms_campaigns is
   'One bulk SMS send. Composed as draft, made irreversible by '
-  'admin_start_sms_campaign. See docs/BULK_SMS.md.';
+  'admin_start_sms_campaign. See docs/features/bulk-sms.md.';
 comment on table public.sms_recipients is
   'One row per number per campaign. The unique index on (campaign_id, phone) '
   'is what makes a duplicate send impossible; claim-before-send is what makes '

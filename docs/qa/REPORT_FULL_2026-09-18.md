@@ -290,7 +290,7 @@ listing cards. The search pill's three segments, the Filters button, the
 search button, the voice button, the wishlist hearts, the account menu and the
 bottom navigation all have a role but no name. Two consequences: a screen
 reader user hears "button" with no idea what it does, and the end-to-end test
-strategy in `docs/QA_PLAN.md` section 4.5, which selects controls by
+strategy in `docs/qa/qa-plan.md` section 4.5, which selects controls by
 accessibility label, cannot address most of the interface as it stands. This
 is the cheapest high-value UX fix on the list: a `Semantics(label: …)` per
 control, and the E2E suite becomes possible at the same time.

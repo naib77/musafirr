@@ -249,7 +249,7 @@ The host wizard is a **list** of steps derived from the type
 step's *identity* rather than its index — the two shapes put photos at 7 and 6,
 so an index-based rule would have let a turf publish with no photos. Sport,
 format and surface render through the shared
-[`TurfDetailsFields`](lib/widgets/host/turf_details_fields.dart), for the same
+[`TurfDetailsFields`](../../lib/widgets/host/turf_details_fields.dart), for the same
 reason `GuestPartyFields` is shared: the wire values are pinned by check
 constraints, and two copies drift into one screen offering a sport the other
 refuses.

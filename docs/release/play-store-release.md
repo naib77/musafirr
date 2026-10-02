@@ -8,7 +8,7 @@ the one-time account setup as well as the build.
 The click-by-click walkthrough is §7; §§1–6 are the things to have ready before
 you start clicking.
 
-`docs/WEB_DEPLOYMENT.md` is the web story; this file is Android only — with one
+`docs/release/web-deployment.md` is the web story; this file is Android only — with one
 exception. The legal pages Play requires (§5) are served by the web app, so
 shipping them means a `build/web` rebuild and deploy. That is the only step here
 that touches the web bundle.
@@ -454,7 +454,7 @@ number you control, and expect the Play reviewer to need a genuine test number
 
 Because the app carries user listings, photos and chat, Play expects: a way for
 users to **report** objectionable content and other users, a way to **block**
-users, and a moderation process. `docs/SAFETY.md` may already cover some of
+users, and a moderation process. `docs/features/safety.md` may already cover some of
 this — confirm the report/block affordances exist in the UI, because a reviewer
 looks for them.
 

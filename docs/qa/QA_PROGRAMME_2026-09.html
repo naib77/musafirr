@@ -172,7 +172,7 @@ footer{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);color:v
 </div>
 <h3>Findings by severity</h3>
 <div class="bars"><div class="lab" title="money or identity">S1 · money or identity</div><div class="trk" role="img" aria-label="S1 · money or identity: 10"><div class="fil" style="width:45.5%"></div></div><div class="num">10</div><div class="lab" title="privacy or a broken core flow">S2 · privacy or a broken core flow</div><div class="trk" role="img" aria-label="S2 · privacy or a broken core flow: 10"><div class="fil" style="width:45.5%"></div></div><div class="num">10</div><div class="lab" title="wrong information shown, or cost">S3 · wrong information shown, or cost</div><div class="trk" role="img" aria-label="S3 · wrong information shown, or cost: 22"><div class="fil" style="width:100.0%"></div></div><div class="num">22</div><div class="lab" title="hygiene">S4 · hygiene</div><div class="trk" role="img" aria-label="S4 · hygiene: 7"><div class="fil" style="width:31.8%"></div></div><div class="num">7</div><div class="lab" title="housekeeping">Housekeeping</div><div class="trk" role="img" aria-label="Housekeeping: 4"><div class="fil" style="width:18.2%"></div></div><div class="num">4</div></div>
-<p class="chart-note">Severity follows docs/QA_PLAN.md: S1 money or identity, S2 privacy or a broken core flow, S3 wrong information or cost, S4 hygiene. Housekeeping rows are tooling and documentation with no user-facing effect.</p>
+<p class="chart-note">Severity follows docs/qa/qa-plan.md: S1 money or identity, S2 privacy or a broken core flow, S3 wrong information or cost, S4 hygiene. Housekeeping rows are tooling and documentation with no user-facing effect.</p>
 
 <h3>The pattern behind most of it</h3>
 <p>Thirty-odd of these findings are one bug in different clothes: <strong>a rule the app enforced and the database did not.</strong> The booking form checked capacity, the Dart lifecycle service checked state transitions, the client filtered blocked users, the widget hid past dates. Every one of those is skippable, because the REST layer is a public endpoint and the compiled-in key is in the web bundle. The fix each time was to move the rule into a trigger, a policy or the RPC, and to pin it with a test that goes red when the rule is removed.</p>
@@ -318,10 +318,10 @@ footer{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);color:v
 <dl><dt>Seen</dt><dd>Errors from a Swift package checkout under build/ masked real ones.</dd><dt>Cause</dt><dd>analysis_options.yaml did not exclude build/.</dd><dt>Fix</dt><dd>Excluded build/**.</dd><dt>Verified</dt><dd>Analyzer clean.</dd></dl></details></td>
 <td><span class="v info">Done in repo</span></td>
 </tr>
-<tr data-round="R1P" data-sev="H" data-status="repo" data-text="f9 docs/sslcommerz.md said sandbox; live is production docs anyone following the doc would have believed live payments were test payments. stale document. corrected; base url confirmed by hashing the secret.">
+<tr data-round="R1P" data-sev="H" data-status="repo" data-text="f9 docs/features/sslcommerz.md said sandbox; live is production docs anyone following the doc would have believed live payments were test payments. stale document. corrected; base url confirmed by hashing the secret.">
 <td class="mono">F9</td>
 <td><span class="sev sev-H" title="housekeeping">—</span></td>
-<td class="what"><span class="title">docs/sslcommerz.md said sandbox; live is production</span><span class="area">Docs · Round 1 · payments &amp; platform</span>
+<td class="what"><span class="title">docs/features/sslcommerz.md said sandbox; live is production</span><span class="area">Docs · Round 1 · payments &amp; platform</span>
 <details><summary>What a user saw, why, and the fix</summary>
 <dl><dt>Seen</dt><dd>Anyone following the doc would have believed live payments were test payments.</dd><dt>Cause</dt><dd>Stale document.</dd><dt>Fix</dt><dd>Corrected; base URL confirmed by hashing the secret.</dd><dt>Verified</dt><dd>By inspection.</dd></dl></details></td>
 <td><span class="v info">Done in repo</span></td>

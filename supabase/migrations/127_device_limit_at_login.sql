@@ -2,7 +2,7 @@
 -- 127 — enforcing the device limit where the session is minted, and telling
 --       the user when it bites
 --
--- Closes the gap docs/DEVICE_SESSIONS.md has carried since 125: registration
+-- Closes the gap docs/features/device-sessions.md has carried since 125: registration
 -- was a client call, so a client that simply never called `register_device`
 -- was never recorded and therefore never evicted. The cap was enforced *for*
 -- cooperating clients rather than *against* anything — the same class as "the

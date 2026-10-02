@@ -55,7 +55,7 @@ renumbering the destinations would silently repoint every one of them.
 ### Desktop wears a top header, not a rail
 
 Above `Responsive.wide` (1000px) the shell renders [`DesktopTopNav`
-](lib/widgets/desktop_top_nav.dart) — brand, centred destinations, account
+](../../lib/widgets/desktop_top_nav.dart) — brand, centred destinations, account
 menu, plus a Where/When/Who search pill on Explore. It replaced an extended
 `NavigationRail`, which spent ~220px of every viewport on five fixed labels and
 left the search field buried inside a scrolling tab.

@@ -38393,7 +38393,7 @@ case 5:s=2
 break
 case 8:s=1
 break
-case 4:A.aq().$1("[Main] Web push not configured; using stub. See docs/web-push-setup.md")
+case 4:A.aq().$1("[Main] Web push not configured; using stub. See docs/features/web-push-setup.md")
 $.bZ1=!1
 k=$.Vv
 $.adm=k==null?$.Vv=A.bQm():k

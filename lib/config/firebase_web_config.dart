@@ -21,7 +21,7 @@ import 'package:firebase_core/firebase_core.dart';
 ///
 /// Until every `REPLACE_WITH_*` below is replaced, [isConfigured] is false and
 /// the app falls back to the no-op stub on web (exactly today's behaviour — no
-/// crash, just no web push). See `docs/web-push-setup.md`.
+/// crash, just no web push). See `docs/features/web-push-setup.md`.
 class FirebaseWebConfig {
   FirebaseWebConfig._();
 

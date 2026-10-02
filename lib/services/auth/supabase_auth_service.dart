@@ -103,7 +103,7 @@ class SupabaseAuthService implements AuthService {
 
   /// Records this device against the account, without blocking sign-in.
   ///
-  /// Phase 0 of `docs/DEVICE_SESSIONS.md` — recording only, nothing is capped.
+  /// Phase 0 of `docs/features/device-sessions.md` — recording only, nothing is capped.
   /// Deliberately unawaited: a device that cannot be written down must still
   /// be able to use the app.
   void _recordDevice(String userId) {
@@ -242,7 +242,7 @@ class SupabaseAuthService implements AuthService {
       // The device travels WITH the OTP so the cap is applied where the
       // session is minted. Registering afterwards from here would leave the
       // rule enforceable only by a client that chose to run it — the same
-      // class as "the booking form checks it". See docs/DEVICE_SESSIONS.md.
+      // class as "the booking form checks it". See docs/features/device-sessions.md.
       //
       // Best-effort: if the id cannot be read, the keys are omitted and the
       // login proceeds uncounted. Blocking a sign-in on device bookkeeping
