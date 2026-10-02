@@ -11,7 +11,9 @@
 -- `property_id` is a room type of that hotel.
 --
 --   1. properties: the hotel's own facts and photos. Readable by anyone once
---      it has a live room type; written by its owner.
+--      it has a live room type; written by its owner. Its exact address is
+--      private (property_addresses) and copied into each type's
+--      listing_addresses, which is what a booked guest sees.
 --   2. listings.property_id, and a trigger that COPIES the hotel's facts onto
 --      each room type on every write. Copy, not refuse: the deployed edit
 --      form sends every column on save, and a refusal would break it; a copy
@@ -225,6 +227,91 @@ revoke all on table public.properties from public, anon, authenticated;
 grant select on table public.properties to anon, authenticated;
 grant insert, update, delete on table public.properties to authenticated;
 grant all on table public.properties to service_role;
+
+-- The exact address, private the way listing_addresses is. `properties`
+-- holds the area-level, snapped location that guests browse; the street and
+-- the precise pin go here, and are copied into each room type's
+-- listing_addresses row, which is what a booked guest is shown
+-- (can_see_listing_address). Owner and admin only.
+create table if not exists public.property_addresses (
+  property_id    uuid primary key references public.properties(id) on delete cascade,
+  house_no       text,
+  street         text,
+  exact_address  text,
+  latitude       numeric,
+  longitude      numeric,
+  updated_at     timestamptz not null default now()
+);
+alter table public.property_addresses enable row level security;
+
+drop policy if exists property_addresses_owner_all on public.property_addresses;
+create policy property_addresses_owner_all on public.property_addresses
+  for all to authenticated
+  using (exists (select 1 from public.properties p
+                  where p.id = property_addresses.property_id and p.owner_id = auth.uid())
+         or public.is_admin())
+  with check (exists (select 1 from public.properties p
+                       where p.id = property_addresses.property_id and p.owner_id = auth.uid())
+              or public.is_admin());
+
+revoke all on table public.property_addresses from public, anon, authenticated;
+grant select, insert, update, delete on table public.property_addresses to authenticated;
+grant all on table public.property_addresses to service_role;
+
+-- Copies one hotel's exact address onto its room types (all of them, or one).
+create or replace function public.fn_copy_property_address(p_property_id uuid, p_listing_id uuid default null)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.listing_addresses
+    (listing_id, house_no, flat_floor, street, exact_address, latitude, longitude)
+  select l.id, a.house_no, null, a.street, a.exact_address, a.latitude, a.longitude
+    from public.property_addresses a
+    join public.listings l on l.property_id = a.property_id
+   where a.property_id = p_property_id
+     and (p_listing_id is null or l.id = p_listing_id)
+  on conflict (listing_id) do update
+    set house_no = excluded.house_no, flat_floor = null, street = excluded.street,
+        exact_address = excluded.exact_address,
+        latitude = excluded.latitude, longitude = excluded.longitude;
+end $$;
+revoke all on function public.fn_copy_property_address(uuid, uuid) from public, anon, authenticated;
+
+create or replace function public.fn_property_address_touch()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  new.updated_at := now();
+  return new;
+end $$;
+drop trigger if exists trg_property_address_touch on public.property_addresses;
+create trigger trg_property_address_touch
+  before insert or update on public.property_addresses
+  for each row execute function public.fn_property_address_touch();
+
+create or replace function public.fn_property_address_copy_all()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  perform public.fn_copy_property_address(new.property_id);
+  return null;
+end $$;
+drop trigger if exists trg_property_address_copy on public.property_addresses;
+create trigger trg_property_address_copy
+  after insert or update on public.property_addresses
+  for each row execute function public.fn_property_address_copy_all();
+
+-- A room type joining a hotel gets its address at once.
+create or replace function public.fn_listing_property_address()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.property_id is not null
+     and (tg_op = 'INSERT' or old.property_id is distinct from new.property_id) then
+    perform public.fn_copy_property_address(new.property_id, new.id);
+  end if;
+  return null;
+end $$;
+drop trigger if exists trg_listing_property_address on public.listings;
+create trigger trg_listing_property_address
+  after insert or update of property_id on public.listings
+  for each row execute function public.fn_listing_property_address();
 
 -- ---------------------------------------------------------------------------
 -- 3. Room names unique across the hotel
@@ -501,6 +588,11 @@ begin
        r.hotel_star_rating, r.hotel_front_desk_24h, r.hotel_id_required,
        coalesce(r.image_urls[1:30], '{}'))
     returning id into v_id;
+    -- The exact address first, so the copy-down that the property_id
+    -- update triggers writes the same values back, not nothing.
+    insert into public.property_addresses (property_id, house_no, street, exact_address, latitude, longitude)
+    select v_id, a.house_no, a.street, a.exact_address, a.latitude, a.longitude
+      from public.listing_addresses a where a.listing_id = r.id;
     update public.listings set property_id = v_id where id = r.id;
   end loop;
 end $$;

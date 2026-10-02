@@ -248,6 +248,35 @@ select pg_temp.check_true(pg_temp.rows(:H, format(
   $q$insert into public.listing_units (listing_id, label) values (%L, '999')$q$, :T1)) = -1,
   'direct unit inserts stay refused (152)');
 
+-- ---------------------------------------------------------------- 5b. the exact address
+select pg_temp.check_true(pg_temp.try(:H, format(
+  $q$insert into public.property_addresses (property_id, street, exact_address, latitude, longitude)
+     values (%L, 'Marine Drive', 'Marine Drive, Kola Toli, Cox''s Bazar', 21.4194712, 91.9735511)$q$, :P)) = 'OK',
+  'the host saves the hotel''s exact address');
+select pg_temp.check_true(
+  (select count(*) = 3 and bool_and(street = 'Marine Drive' and latitude = 21.4194712)
+     from public.listing_addresses where listing_id in (select id from public.listings where property_id = :P)),
+  'every room type gets the exact address, unsnapped');
+select pg_temp.check_true(pg_temp.rows(:GV, format(
+  $q$select 1 from public.property_addresses where property_id = %L$q$, :P)) = 0,
+  'another user cannot read it');
+select pg_temp.check_true(pg_temp.rows(null, format(
+  $q$select 1 from public.property_addresses where property_id = %L$q$, :P)) = -1,
+  'anon cannot read it at all');
+select pg_temp.check_true(pg_temp.rows(:H2, format(
+  $q$update public.property_addresses set street = 'Moved' where property_id = %L$q$, :P)) = 0,
+  'another host cannot change it');
+update public.property_addresses set street = 'Sugandha Point' where property_id = :P;
+select pg_temp.check_true(
+  (select bool_and(street = 'Sugandha Point') from public.listing_addresses
+    where listing_id in (select id from public.listings where property_id = :P)),
+  'an address edit reaches every type');
+insert into public.listings (id, owner_id, owner_name, title, description, address, city, country, listing_type, daily_rate, max_guests, property_id)
+values ('cccccccc-0000-0000-0000-000000000003', :H, 'QA Host One', 'Triple', 'x', 'a', 'b', 'c', 'hotel', 3791, 5, :P);
+select pg_temp.check_true(
+  (select street = 'Sugandha Point' from public.listing_addresses where listing_id = 'cccccccc-0000-0000-0000-000000000003'),
+  'a new type gets it on insert');
+
 -- ---------------------------------------------------------------- 6. licence badges the hotel
 insert into storage.objects (bucket_id, name, owner, metadata)
 values ('documents', '11111111-1111-1111-1111-111111111111/trade_licence/p153.jpg', :H, '{"mimetype":"image/jpeg","size":2048}');
