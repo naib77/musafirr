@@ -221,12 +221,12 @@ Cross-region replication is optional disaster recovery, not an initial prerequis
 | Stage | Deliverable | Exit gate |
 | --- | --- | --- |
 | 0: inventory | Done 2026-10-02 for schema, policies, objects and references (§3, §8). Still open: Android install count, traffic, cost inputs, retention deploy | Business invariants signed off; purge running against Supabase |
-| 1: compatibility seam | Supabase-backed adapters, characterization tests, URL resolver. Flutter done 2026-10-02 (`lib/services/storage/`, `test/services/storage/`); admin repo still open | Existing provider behavior unchanged across app/admin |
-| 2: AWS staging | Infrastructure as code, IAM, storage API, metadata registry | Cross-user/admin/anonymous access tests and failure injection pass |
-| 3: migration rehearsal | Copy/reconcile jobs, deletion ledger, rollback procedure | Full fixture inventory reconciles; interrupted jobs resume without duplicates |
+| 1: compatibility seam | Supabase-backed adapters, characterization tests, URL resolver. Flutter done 2026-10-02 (`lib/services/storage/`, `test/services/storage/`); admin repo done 2026-10-02 (`src/lib/storage-signer.ts`) | Existing provider behavior unchanged across app/admin |
+| 2: AWS staging | Infrastructure as code, IAM, storage API, metadata registry. Built locally 2026-10-02 against MinIO: migration 157 (registry + RPCs, not applied to live), `storage-signer` function, `_shared/s3.ts` + `sniff.ts`, `tool/storage_local.sh`. Cutover pieces built locally 2026-10-02: migration 158 (verifiers read the registry, admin write arms, S3 purge hook; not applied to live), `S3StorageProvider` + `RoutingStorageProvider` (Flutter), signer-routed admin uploads/reads, retention purge by version. AWS IaC still open | Cross-user/admin/anonymous access tests and failure injection pass |
+| 3: migration rehearsal | Copy/reconcile jobs, deletion ledger, rollback procedure. Not started: the backfill must run server-side (never via a laptop) | Full fixture inventory reconciles; interrupted jobs resume without duplicates |
 | 4: public media pilot | Avatars/listing reads, then chat; small eligible cohort | No broken old URLs, stale avatars, lost messages or unauthorized writes |
 | 5: private media pilot | Documents/address proof, then face evidence | Exact evidence approved, immutable bytes, parity of all status/eligibility results |
-| 6: S3 write cutover | Compatible client coverage, per-bucket routing, observation | Successful controlled uploads/reads/deletes; measured error/latency acceptable |
+| 6: S3 write cutover | Compatible client coverage, per-bucket routing, observation. Routing built: the server's `S3_WRITE_BUCKETS` decides per bucket, a client only routes when built with `--dart-define=STORAGE_SIGNER_URL` (admin: `STORAGE_SIGNER_URL` env), and a 421 sends a stale client back to Supabase | Successful controlled uploads/reads/deletes; measured error/latency acceptable |
 | 7: retirement | Legacy-client/URL closure and separately approved deletion | All retained objects/references accounted for; rollback window closed explicitly |
 
 Deploy backward-compatible SQL expansion before new upload clients. Compare live definitions with the baseline and take snapshots; this repository's historical migration chain is not safely replayable from scratch. Use the project's baseline workflow and existing rolled-back SQL test pattern. Schema deployment and final destructive retirement need separate authorization during implementation; this document does not authorize them.
@@ -301,3 +301,78 @@ These decisions do not block documenting the plan. Until answered, use the defau
 - 2026-09-27: first draft from the repository baseline.
 - 2026-10-02: verified against live. Measured the object and reference inventory; found `chat-attachments` empty, the face purge undeployed and unscheduled, ES256 JWT signing in use, migration 152's trade-licence evidence, a second URL parser and four denormalised URL columns. Resized the design (edge-function signer, no CloudFront yet, two tables) and the estimate. No live resource was changed.
 - 2026-10-02: Stage 1 started. Flutter uploads, signed reads and deletes go through `StorageProvider` (Supabase-only implementation); both `_storagePathFromUrl` copies now call one strict resolver, which no longer keeps a `?query` in the key or matches external URLs.
+- 2026-10-02: Stage 2 built locally. Migration 157 adds `storage_upload_intents` / `storage_assets` and RPCs that mirror the 19 live `storage.objects` policies; every decision runs under the caller's JWT, and the signer only holds the S3 key. Uploads use a presigned POST to `staging/{intent}` (policy pins key, type and exact length), then finalize reads the bytes back, checks length and magic bytes, copies that exact version to `{bucket}/{path}@{intent}` and records it. Public reads go through `/media/{bucket}/{path}?g={generation}` (302 to a presigned GET, signed per UTC day so it caches); private reads are presigned for 1 h (documents) or 5 min (face). Verified: SQL suite 39/39, SigV4 against AWS reference vectors, 10 MinIO checks under the scoped key (no list, no anon), 18 end-to-end checks through the signer. Open: a delete leaves a delete marker, so a version-pinned URL that was already issued stays valid until it expires and the old version stays until noncurrent expiry (30 days). That is fine for public media but not for face evidence, whose purge must delete versions (`s3:DeleteObjectVersion`, retention job only).
+- 2026-10-02: Write path completed locally (stages 2/4/5/6 code; nothing applied to live, deployed or committed). Migration 158: `storage_object_meta` (registry first, `storage.objects` only when no registry row exists) replaces the `storage.objects` lookups in `submit_face_verification`, `submit_identity_document`, `approve_identity_document`, `submit_trade_licence` and `listing_licence_verified`, with the same size/type limits; a deleted asset satisfies nothing. Admins gain avatar/listing-image write arms (the console no longer needs the service key to upload); `orphan_face_evidence` also scans the registry; `storage_purge_begin` hands the retention job exact versions. Flutter: `defaultStorageProvider()` returns a router when `STORAGE_SIGNER_URL` is compiled in (plain Supabase otherwise, so existing builds are unchanged); uploads follow the server's routing, reads try S3 then Supabase, deletes hit both. `upload` now returns the stored URL so S3 media URLs keep their generation. `storagePathFromUrl` understands `/storage-signer/media/...`. Admin console: uploads, cleanup and the four signed-read sites go through the signer with the admin's own JWT, falling back to Supabase. Retention: `purge-face-evidence` deletes S3 versions with its own `musafir-retention` key (DeleteObjectVersion on the face bucket only). Verified: SQL 158 22/22 (157 39/39, 143/144/152/153 pass; 141's admin-approval check fails as it did before 158), Flutter 1158 tests + 5 real-MinIO e2e (`test/services/storage/storage_minio_e2e_test.dart`), 7 admin-path checks, retention purge left no version or delete marker.
+
+### Running the S3 path locally
+
+```sh
+sh tool/storage_local.sh                       # MinIO + scoped users; prints env
+# local DB with 157 + 158 applied (tool/local_db_from_live.sh), then the signer:
+SUPABASE_URL=http://127.0.0.1:54321 SUPABASE_ANON_KEY=… SUPABASE_SERVICE_ROLE_KEY=… \
+S3_ENDPOINT=http://127.0.0.1:9000 SIGNER_PUBLIC_URL=http://127.0.0.1:8000/storage-signer \
+<the rest of the printed env> deno run -A supabase/functions/storage-signer/index.ts
+flutter run -d chrome --dart-define=SUPABASE_URL=http://127.0.0.1:54321 \
+  --dart-define=SUPABASE_ANON_KEY=… \
+  --dart-define=STORAGE_SIGNER_URL=http://127.0.0.1:8000/storage-signer
+```
+
+Production still needs: AWS buckets/IAM matching `tool/storage_local.sh`, the signer deployed with its secrets (`S3_WRITE_BUCKETS` empty at first), a web/Android build with `STORAGE_SIGNER_URL`, then buckets enabled one at a time (stage 4, then 5).
+
+**2026-10-03.** 157 then 158 applied to live (bojkmonskqlhuakxhzcb) and tracked in `schema_migrations`. The preflight confirmed the six verifier bodies matched what 158 was written against. Afterwards, live function bodies and grants for every `storage_*` function and the six verifiers were identical to local, where the suites pass (157: 39/39, 158: 22/22). This is inert until the signer records objects: the registry is empty, so verifiers keep reading `storage.objects`.
+
+## 18. Production rollout: status and next steps
+
+*As of 2026-10-03. This supersedes the "Production still needs" line above.*
+
+### Done
+
+| Item | State |
+|---|---|
+| Migrations 157 (registry) and 158 (cutover) | Applied to live, tracked in `schema_migrations`, and identical to local. Inert while the registry is empty. |
+| Live edge-function secrets, non-credential | Set: `S3_ENDPOINT` and `S3_PUBLIC_ENDPOINT` (`https://s3.ap-south-1.amazonaws.com`), `S3_REGION=ap-south-1`, `S3_PATH_STYLE=false`, `S3_STAGING_BUCKET`, `S3_BUCKET_PUBLIC`, `S3_BUCKET_DOCUMENTS` and `S3_BUCKET_FACE` (`musafir-bd-{staging,public,documents,face}`), `SIGNER_PUBLIC_URL`. |
+| `tool/aws_storage_setup.sh` | Written, not yet run successfully. It is the AWS twin of `tool/storage_local.sh`. It creates the 4 buckets (versioned, public access blocked, lifecycle, CORS) and two least-privilege IAM users, then sets every S3 secret on Supabase. The generated keys are also saved to `~/.config/musafir/supabase-s3-<ref>.env` (mode 600). |
+| Local dev mirror | `tool/mirror_media_local.py` copies the live public listings and their images into local Supabase and MinIO. A debug web run (`flutter run -d chrome`) uses the local stack. |
+
+### Blocked
+
+The first run of `aws_storage_setup.sh` failed at `CreateBucket`, its first write, so it created nothing. The bootstrap IAM user `musaafir-s3` has a **permissions boundary** that does not allow `s3:CreateBucket`.
+
+### Not set yet (the script sets them)
+
+- `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY`, for the `musafir-bd-signer` user.
+- `S3_RETENTION_ACCESS_KEY_ID` and `S3_RETENTION_SECRET_ACCESS_KEY`, for the `musafir-bd-retention` user.
+- `S3_WRITE_BUCKETS` stays **unset on purpose**: unset routes nothing to S3, so deploying the signer is not a cutover.
+
+### Next steps, in order
+
+1. **Unblock IAM.** Sign in as root or an admin, then open IAM → Users → `musaafir-s3`. Remove the permissions boundary and attach `AdministratorAccess`. Alternatively, run step 2 with any other admin key.
+2. **Run the setup.** Export the admin key in your own shell; never commit it or paste it anywhere.
+   ```sh
+    export AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=…
+    PREFIX=musafir-bd sh tool/aws_storage_setup.sh
+   ```
+   If a `musafir-bd-*` name is taken (bucket names are global across AWS), re-run with another `PREFIX`; the script rewrites the bucket-name secrets to match. It is idempotent.
+3. **Retire the bootstrap key.** In IAM, deactivate the key you ran the script with, and remove `AdministratorAccess` from `musaafir-s3`. The signer and the retention job each now hold their own scoped keys.
+4. **Check the secrets.** Run `supabase secrets list --project-ref bojkmonskqlhuakxhzcb`. It should show all 13 `S3_*`/`SIGNER_*` names, without `S3_WRITE_BUCKETS`.
+5. **Deploy the functions.** Run `supabase functions deploy storage-signer purge-face-evidence --project-ref bojkmonskqlhuakxhzcb`. Both have `verify_jwt = false` in `supabase/config.toml`, so media URLs load without an auth header.
+6. **Smoke-test the signer.** `POST {"action":"config"}` with the anon key should answer `{"write_buckets":[]}`.
+7. **Ship builds that know the signer.** Add `--dart-define=STORAGE_SIGNER_URL=https://bojkmonskqlhuakxhzcb.supabase.co/functions/v1/storage-signer` to the builds:
+   - Web: forward it in `tool/build_web.sh` (not wired yet; about 3 lines) and set it in each GitHub Environment.
+   - Android: `flutter build appbundle --release …`.
+   - iOS: `flutter build ipa --release …`.
+
+   Nothing changes in `android/` or `ios/`. Optionally, default `kStorageSignerUrl` to the live URL so no build can forget the flag; that is safe because routing stays server-controlled. Older builds without the flag keep writing to Supabase, and reads fall back.
+8. **Enable buckets one at a time** (stages 4–5). Move each bucket only after the one before it has run clean:
+   ```sh
+   supabase secrets set --project-ref bojkmonskqlhuakxhzcb S3_WRITE_BUCKETS=avatars
+   # then: avatars,listing-images  ->  …,chat-attachments  ->  …,documents  ->  …,face-evidence
+   ```
+   Rollback is the same command with the bucket removed; no app release is needed. Clients re-read the routing within 5 minutes, and a 421 sends an in-flight upload back to Supabase.
+9. **Backfill existing objects** (stage 3, not built). This is a server-side job that copies each Supabase object to S3 at `{bucket}/{path}@{uuid}`. It registers each object in `storage_assets` with its original owner, sha256 and version, and is checked with a re-read. `tool/mirror_media_local.py` is the local prototype of the copy-and-register step.
+10. **Decommission Supabase Storage** for a bucket only after its backfill is verified and no supported app version still writes there (plan §8, §13).
+
+### Open items
+
+- The anon read path for `/media` relies on `storage_can_read`. Re-check it on live after step 5 with a real object, as anon (plan §14).
+- iOS push and the edge-function redeploys from earlier rounds are tracked separately and are not blocked by this.

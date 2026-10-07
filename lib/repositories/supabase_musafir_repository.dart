@@ -825,6 +825,10 @@ class SupabaseMusafirRepository extends ChangeNotifier
   @override
   Future<ListingExactAddress?> fetchListingExactAddress(
       String listingId) async {
+    // Signed-out viewers can never be entitled (093 revoked anon's grant
+    // outright, so the request is a guaranteed 401 that the browser console
+    // paints red). Skip it: the answer is "area only" either way.
+    if (_client.auth.currentSession == null) return null;
     try {
       final row = await _client
           .from('listing_addresses')

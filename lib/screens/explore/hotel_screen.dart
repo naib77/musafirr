@@ -11,6 +11,7 @@ import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
 import '../../state/messaging_state.dart';
 import '../../widgets/app_network_image.dart';
+import '../../widgets/photo_carousel.dart';
 import 'listing_detail_screen.dart';
 import 'listing_gallery_screen.dart';
 
@@ -161,54 +162,32 @@ class _HotelScreenState extends State<HotelScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
           children: [
-            if (cover != null)
-              Semantics(
-                button: hotelPhotos.isNotEmpty,
-                label: hotelPhotos.isEmpty
-                    ? null
-                    : 'Show all ${hotelPhotos.length} hotel photos',
-                child: GestureDetector(
-                  onTap: hotelPhotos.isEmpty
-                      ? null
-                      : () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ListingGalleryScreen(
-                                images: hotelPhotos,
-                                title: property.name,
-                              ),
-                            ),
-                          ),
-                  child: AspectRatio(
-                    aspectRatio: 16 / 9,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        AppNetworkImage(
-                          url: cover,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        if (hotelPhotos.length > 1)
-                          Positioned(
-                            right: 12,
-                            bottom: 12,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.6),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                '${hotelPhotos.length} photos',
-                                style: theme.textTheme.labelMedium
-                                    ?.copyWith(color: Colors.white),
-                              ),
-                            ),
-                          ),
-                      ],
+            // Every hotel photo is reachable in place: swipe, or the arrows
+            // on a desktop browser where a mouse cannot drag a PageView. A
+            // tap still opens the full gallery.
+            if (hotelPhotos.isNotEmpty)
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: PhotoCarousel(
+                  urls: hotelPhotos,
+                  borderRadius: BorderRadius.circular(16),
+                  onOpen: (_) => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ListingGalleryScreen(
+                        images: hotelPhotos,
+                        title: property.name,
+                      ),
                     ),
                   ),
+                ),
+              )
+            else if (cover != null)
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: AppNetworkImage(
+                  url: cover,
+                  borderRadius: BorderRadius.circular(16),
                 ),
               ),
             const SizedBox(height: 16),

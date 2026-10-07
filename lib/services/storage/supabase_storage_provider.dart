@@ -20,18 +20,20 @@ class SupabaseStorageProvider implements StorageProvider {
       (_providedClient ?? Supabase.instance.client).storage;
 
   @override
-  Future<void> upload({
+  Future<String?> upload({
     required String bucket,
     required String path,
     required Uint8List bytes,
     required String contentType,
     required bool upsert,
-  }) =>
-      _guard(() => _storage.from(bucket).uploadBinary(
-            path,
-            bytes,
-            fileOptions: FileOptions(contentType: contentType, upsert: upsert),
-          ));
+  }) async {
+    await _guard(() => _storage.from(bucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: contentType, upsert: upsert),
+        ));
+    return null;
+  }
 
   @override
   String publicUrl(String bucket, String path) =>

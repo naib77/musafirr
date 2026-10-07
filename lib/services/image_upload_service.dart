@@ -11,7 +11,7 @@ import '../models/address_verification.dart';
 import '../models/trade_licence.dart';
 import 'image_compression_service.dart';
 import 'storage/storage_provider.dart';
-import 'storage/supabase_storage_provider.dart';
+import 'storage/routing_storage_provider.dart';
 
 /// Storage bucket names
 class StorageBuckets {
@@ -81,7 +81,7 @@ class ImageUploadService {
   /// this, never `supabase.storage`, so the S3 migration can route a bucket
   /// elsewhere without changing this service's API (plan stage 1).
   @visibleForTesting
-  StorageProvider storage = SupabaseStorageProvider();
+  StorageProvider storage = defaultStorageProvider();
 
   /// Configuration
   static const int maxListingImages = 10;
@@ -358,15 +358,16 @@ class ImageUploadService {
     try {
       debugPrint('[ImageUploadService] Uploading to $bucket/$path ($mimeType)');
 
-      await storage.upload(
-        bucket: bucket,
-        path: path,
-        bytes: bytes,
-        contentType: mimeType,
-        upsert: true, // Overwrite if exists
-      );
-
-      final publicUrl = storage.publicUrl(bucket, path);
+      // An S3 upload hands back its own durable URL (with a generation, so a
+      // replaced avatar busts caches); Supabase's is computed as before.
+      final publicUrl = await storage.upload(
+            bucket: bucket,
+            path: path,
+            bytes: bytes,
+            contentType: mimeType,
+            upsert: true, // Overwrite if exists
+          ) ??
+          storage.publicUrl(bucket, path);
 
       debugPrint('[ImageUploadService] Upload successful: $publicUrl');
 

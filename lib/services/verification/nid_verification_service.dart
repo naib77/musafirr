@@ -4,7 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../storage/storage_provider.dart';
-import '../storage/supabase_storage_provider.dart';
+import '../storage/routing_storage_provider.dart';
 
 const identityDocumentTypes = <String, String>{
   'nid': 'National ID (NID)',
@@ -24,7 +24,7 @@ abstract class NidVerificationRepository {
 /// Retains the historical document choices; no paid provider is called.
 class NidVerificationService implements NidVerificationRepository {
   NidVerificationService({StorageProvider? storage})
-      : _storage = storage ?? SupabaseStorageProvider();
+      : _storage = storage ?? defaultStorageProvider();
   final StorageProvider _storage;
   SupabaseClient get _client => Supabase.instance.client;
   @override

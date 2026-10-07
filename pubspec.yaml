@@ -20,6 +20,7 @@ dependencies:
   geocoding: ^3.0.0
   supabase_flutter: ^2.5.0
   http: ^1.2.0
+  http_parser: ^4.1.2 # MediaType for the S3 multipart POST
   intl: ^0.19.0
   url_launcher: ^6.2.5
   web: ^1.1.0

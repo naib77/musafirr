@@ -14,13 +14,24 @@
 /// `/storage/v1/render/image/{public|sign}/{bucket}/…`. Segments are decoded,
 /// so the result is the key as it was uploaded.
 ///
-/// The S3 migration will add its own media references beside these; legacy
-/// URLs keep resolving through this function for as long as rows hold them
-/// (plan §8).
+/// S3 objects are stored as the signer's media URL,
+/// `…/storage-signer/media/{bucket}/…?g={generation}`; the query never
+/// reaches the key. Legacy URLs keep resolving here for as long as rows hold
+/// them (plan §8).
 String? storagePathFromUrl(String url, {required String bucket}) {
   final uri = Uri.tryParse(url);
   if (uri == null || !uri.hasScheme) return null;
   final s = uri.pathSegments;
+  final signer = s.indexOf('storage-signer');
+  if (signer != -1) {
+    if (s.length <= signer + 3 ||
+        s[signer + 1] != 'media' ||
+        s[signer + 2] != bucket) {
+      return null;
+    }
+    final key = s.sublist(signer + 3);
+    return key.any((segment) => segment.isEmpty) ? null : key.join('/');
+  }
   final start = s.indexOf('storage');
   if (start == -1 || s.length < start + 2 || s[start + 1] != 'v1') return null;
   final rest = s.sublist(start + 2);

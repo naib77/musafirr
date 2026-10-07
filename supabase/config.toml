@@ -420,3 +420,9 @@ enabled = true
 # Dedicated scheduler secret is checked inside the function; no user JWT works.
 [functions.purge-face-evidence]
 verify_jwt = false
+
+# GET /media/... is fetched by <img> tags with no apikey or JWT. Every
+# action authorizes inside the database under the caller's own JWT
+# (migration 157), so the gateway check adds nothing.
+[functions.storage-signer]
+verify_jwt = false
