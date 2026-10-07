@@ -13,7 +13,10 @@ import '../../repositories/musafir_repository.dart';
 import '../../services/app_settings_service.dart';
 import '../../services/booking/hourly_policy.dart';
 import '../../services/image_upload_service.dart';
+import '../../services/storage/storage_url.dart';
 import '../../widgets/app_text_field.dart';
+import '../../widgets/clock_text_field.dart';
+import '../../widgets/contact_phones_field.dart';
 import '../../widgets/host/hotel_details_fields.dart';
 import '../../widgets/host/trade_licence_card.dart';
 import '../../widgets/host/party_limits_fields.dart';
@@ -54,6 +57,13 @@ class _EditListingScreenState extends State<EditListingScreen> {
   late final TextEditingController _areaController;
   late final TextEditingController _cityController;
   late final TextEditingController _postalCodeController;
+
+  /// 160/162. Seeded only from the gated address row (the listing read
+  /// back from `listings` never carries them), so an existing place without
+  /// a number stays without one until the host types it. Not in the
+  /// listener list below: its rows come and go, so the field reports edits
+  /// through `onChanged` instead.
+  final _contactPhones = ContactPhonesController();
   late final TextEditingController _landmarkController;
   late final TextEditingController _hourlyPriceController;
   late final TextEditingController _dailyPriceController;
@@ -309,6 +319,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
     _areaController.dispose();
     _cityController.dispose();
     _postalCodeController.dispose();
+    _contactPhones.dispose();
     _landmarkController.dispose();
     _hourlyPriceController.dispose();
     _dailyPriceController.dispose();
@@ -335,12 +346,9 @@ class _EditListingScreenState extends State<EditListingScreen> {
 
   /// Derives the storage path ("{listingId}/{file}") from a public image URL,
   /// needed to delete the file when a host removes a photo.
-  String? _storagePathFromUrl(String url) {
-    const marker = '/${StorageBuckets.listingImages}/';
-    final i = url.indexOf(marker);
-    if (i == -1) return null;
-    return url.substring(i + marker.length);
-  }
+  /// The shared resolver (one copy for this form and the other listing form).
+  String? _storagePathFromUrl(String url) =>
+      storagePathFromUrl(url, bucket: StorageBuckets.listingImages);
 
   /// Pulls the host's own street address out of the gated table. `public.listings`
   /// only carries the area-level form, so without this the edit form would show a
@@ -366,6 +374,9 @@ class _EditListingScreenState extends State<EditListingScreen> {
         // composed line. Put it in the road field so the host can see and split
         // it rather than being shown an empty form.
         _streetController.text = exact.address!;
+      }
+      if (exact.contactPhones.isNotEmpty) {
+        _contactPhones.setStored(exact.contactPhones);
       }
     });
     _trackChanges = true;
@@ -424,6 +435,8 @@ class _EditListingScreenState extends State<EditListingScreen> {
         return 'Add the area / locality.';
       }
       if (_cityController.text.trim().isEmpty) return 'Add the city.';
+      final phoneError = _contactPhones.error;
+      if (phoneError != null) return phoneError;
     }
     if (_images.isEmpty) return 'Add at least one photo.';
     return _pricingError();
@@ -528,6 +541,8 @@ class _EditListingScreenState extends State<EditListingScreen> {
         flatFloor: _nullIfEmpty(_flatFloorController.text),
         houseNo: _nullIfEmpty(_houseNoController.text),
         street: _nullIfEmpty(_streetController.text),
+        // _formError() already refused anything normalise would throw on.
+        contactPhones: _contactPhones.normalized(),
         area: _nullIfEmpty(_areaController.text),
         postalCode: _nullIfEmpty(_postalCodeController.text),
         landmark: _nullIfEmpty(_landmarkController.text),
@@ -835,6 +850,12 @@ class _EditListingScreenState extends State<EditListingScreen> {
                   onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: 16),
+                // 160/162. Disclosed with the address, so they sit with it.
+                ContactPhonesField(
+                  controller: _contactPhones,
+                  onChanged: () => setState(_markDirty),
+                ),
+                const SizedBox(height: 16),
                 AppTextField(
                   controller: _landmarkController,
                   label: 'Landmark (optional)',
@@ -1101,7 +1122,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
                 Row(
                   children: [
                     Expanded(
-                      child: AppTextField(
+                      child: ClockTextField(
                         controller: _checkInTimeController,
                         label: 'Check-in time',
                         hint: 'e.g. 2:00 PM',
@@ -1109,7 +1130,7 @@ class _EditListingScreenState extends State<EditListingScreen> {
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: AppTextField(
+                      child: ClockTextField(
                         controller: _checkOutTimeController,
                         label: 'Check-out time',
                         hint: 'e.g. 11:00 AM',

@@ -1,7 +1,7 @@
 name: musafir
 description: Musafir rental marketplace for tenants, house owners, and admins.
 publish_to: "none"
-version: 0.2.1+5
+version: 0.2.2+6
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -20,6 +20,7 @@ dependencies:
   geocoding: ^3.0.0
   supabase_flutter: ^2.5.0
   http: ^1.2.0
+  http_parser: ^4.1.2 # MediaType for the S3 multipart POST
   intl: ^0.19.0
   url_launcher: ^6.2.5
   web: ^1.1.0

@@ -39,6 +39,7 @@ import '../../widgets/purpose_picker.dart';
 import '../../widgets/hover_lift.dart';
 import '../../widgets/listing_card_modern.dart';
 import '../../widgets/listing_card_wide.dart';
+import 'hotel_rows.dart';
 import 'show_all_listings_screen.dart';
 import '../../widgets/listing_price_map.dart';
 import '../../widgets/notification_bell.dart';
@@ -892,7 +893,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   /// Airbnb-style curated rows shown while browsing (no search, no single
   /// category filter): Popular stays in {city}, Featured, Top rated,
-  /// Budget-friendly, and other cities — each a horizontal, scrolling list.
+  /// Budget-friendly, hotels ([hotelRows]), and other cities — each a
+  /// horizontal, scrolling list.
   Widget _buildCategoryRows(List<Listing> listings) {
     final sections = <Widget>[];
 
@@ -934,6 +936,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
     final newest = listings.where((l) => l.createdAt != null).toList()
       ..sort((a, b) => b.createdAt!.compareTo(a.createdAt!));
     add('Newly available', newest);
+
+    // Hotels get their own rows, right after the general ones: a hotel is
+    // one card among flats and rooms above, easy to miss in a mixed feed.
+    for (final row in hotelRows(listings)) {
+      add(row.title, row.items);
+    }
 
     // Featured stays — superhosts.
     add('Featured stays', listings.where((l) => l.isSuperhost).toList());

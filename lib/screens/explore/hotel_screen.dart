@@ -11,7 +11,9 @@ import '../../state/auth_state.dart';
 import '../../state/favorites_state.dart';
 import '../../state/messaging_state.dart';
 import '../../widgets/app_network_image.dart';
+import '../../widgets/photo_carousel.dart';
 import 'listing_detail_screen.dart';
+import 'listing_gallery_screen.dart';
 
 /// A hotel and its room types (plan hotel-room-types.md §5). Search shows a
 /// hotel once (154), so this page is where a guest picks Deluxe or Sea
@@ -136,8 +138,11 @@ class _HotelScreenState extends State<HotelScreen> {
     }
 
     final theme = Theme.of(context);
-    // No hotel photos yet (phase 1 has none on the property), so the cover
-    // is the first room type's first photo.
+    // The hotel's own photos lead; a hotel the host has not photographed
+    // yet borrows its first room type's first photo as the cover. Only the
+    // hotel's own photos open the gallery -- each room type's photos are on
+    // that room type's page.
+    final hotelPhotos = property.imageUrls;
     final cover = property.imageUrls.isNotEmpty
         ? property.imageUrls.first
         : _types
@@ -157,7 +162,27 @@ class _HotelScreenState extends State<HotelScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
           children: [
-            if (cover != null)
+            // Every hotel photo is reachable in place: swipe, or the arrows
+            // on a desktop browser where a mouse cannot drag a PageView. A
+            // tap still opens the full gallery.
+            if (hotelPhotos.isNotEmpty)
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: PhotoCarousel(
+                  urls: hotelPhotos,
+                  borderRadius: BorderRadius.circular(16),
+                  onOpen: (_) => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ListingGalleryScreen(
+                        images: hotelPhotos,
+                        title: property.name,
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            else if (cover != null)
               AspectRatio(
                 aspectRatio: 16 / 9,
                 child: AppNetworkImage(

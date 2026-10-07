@@ -25,19 +25,47 @@
 /// data), so compiling one in as the default leaks nothing that isn't already
 /// in the shipped bundle.
 class SupabaseConfig {
+  /// Every build, a plain `flutter run -d chrome` included, talks to LIVE
+  /// Supabase and, through its storage signer, the live AWS buckets. Decided
+  /// 2026-10-07: the Docker stack is opt-in, not the debug default, because
+  /// the user does not want to run local Supabase for day-to-day work and
+  /// storage is S3-only everywhere (see `defaultStorageProvider`).
+  ///
+  /// So: a debug run writes to live. Opt into the local stack for one run
+  /// with `--dart-define=LOCAL_STACK=true` (docs/notes/local-database.md);
+  /// an explicit SUPABASE_URL always wins.
+  static const bool useLocalStack = !bool.hasEnvironment('SUPABASE_URL') &&
+      bool.fromEnvironment('LOCAL_STACK', defaultValue: false);
+
+  static const String _liveUrl = 'https://bojkmonskqlhuakxhzcb.supabase.co';
+  static const String _liveAnonKey =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJvamttb25za3FsaHVha3hoemNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMjI1ODUsImV4cCI6MjA5NDc5ODU4NX0.CPPAG0gh7vj5QSRMAVbcEP9FsPMjouFVIxfVJE-La7o';
+
+  /// `supabase start`'s standard demo anon key: identical on every machine,
+  /// published in the Supabase docs, and useless against any real project.
+  static const String _localUrl = 'http://127.0.0.1:54321';
+  static const String _localAnonKey =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
+
+  /// The local signer, as `supabase functions serve --env-file
+  /// supabase/functions/.env.local` serves it — the same address that file's
+  /// SIGNER_PUBLIC_URL names. Only used when [useLocalStack]. (Media mirrored
+  /// earlier by `tool/mirror_media_local.py` names a `deno run` signer on
+  /// :8000 instead; re-mirror to repoint it.)
+  static const String localSignerUrl = '$_localUrl/functions/v1/storage-signer';
+
   /// Your Supabase project URL
   /// Example: https://xxxxxxxxxxxxx.supabase.co
   static const String url = String.fromEnvironment(
     'SUPABASE_URL',
-    defaultValue: 'https://bojkmonskqlhuakxhzcb.supabase.co',
+    defaultValue: useLocalStack ? _localUrl : _liveUrl,
   );
 
   /// Your Supabase anonymous (public) key
   /// This is safe to use in client-side code
   static const String anonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJvamttb25za3FsaHVha3hoemNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMjI1ODUsImV4cCI6MjA5NDc5ODU4NX0.CPPAG0gh7vj5QSRMAVbcEP9FsPMjouFVIxfVJE-La7o',
+    defaultValue: useLocalStack ? _localAnonKey : _liveAnonKey,
   );
 
   /// The project ref the build is pointed at ("bojkmonskqlhuakxhzcb"), for

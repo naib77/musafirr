@@ -28,6 +28,7 @@ import '../../models/review.dart';
 import '../../repositories/musafir_repository.dart';
 import '../../services/app_settings_service.dart';
 import '../../services/auth/auth_flow.dart';
+import '../../services/contact_phone.dart';
 import '../../services/booking/hourly_policy.dart';
 import '../../services/discount/coupon_service.dart';
 import '../../services/verification/identity_gate.dart';
@@ -489,6 +490,8 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                           _LocationSection(
                             listing: listing,
                             location: _viewerLocation,
+                            contactPhones:
+                                _exactAddress?.contactPhones ?? const [],
                           ),
                           const SizedBox(height: 20),
 
@@ -1188,9 +1191,19 @@ class _HostInfoCard extends StatelessWidget {
 }
 
 class _LocationSection extends StatefulWidget {
-  const _LocationSection({required this.listing, required this.location});
+  const _LocationSection({
+    required this.listing,
+    required this.location,
+    this.contactPhones = const [],
+  });
 
   final Listing listing;
+
+  /// 160/162. The host's numbers for this place, `+880…`. Empty means the
+  /// server declined (same gate as the address) or the host gave none;
+  /// either way nothing is shown, so this never leaks a phone the address
+  /// would not.
+  final List<String> contactPhones;
 
   /// How much of the location this viewer may see. Governs the address line,
   /// the map (pin vs area circle), and whether directions are offered at all.
@@ -1350,6 +1363,33 @@ class _LocationSectionState extends State<_LocationSection> {
             ),
           ],
         ),
+        // Contact phones -- on the same row type as the address because they
+        // are disclosed on the same terms; a tap dials that number.
+        for (final phone in widget.contactPhones) ...[
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Icon(Icons.call, size: 17, color: theme.colorScheme.primary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Semantics(
+                  button: true,
+                  label: 'Call the host on ${displayContactPhone(phone)}',
+                  child: InkWell(
+                    onTap: () => openExternalUrl('tel:$phone'),
+                    child: Text(
+                      displayContactPhone(phone),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 10),
 
         // Google Map

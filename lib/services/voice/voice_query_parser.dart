@@ -32,6 +32,23 @@ class VoiceQueryParser {
     final types = <ListingType>[];
     ListingPurpose? purpose;
 
+    // Two-word type names first, as a pair. The per-token map below cannot
+    // see "গেস্ট হাউস" / "guest house" (each half alone is nothing), and it
+    // reads "হোটেল রুম" as two types — hotel OR room — when the speaker meant
+    // one: a room in a hotel. Claiming the pair here settles both before the
+    // single-word pass gets a look. Stems too, for "হোটেলে রুম".
+    for (var i = 0; i + 1 < tokens.length; i++) {
+      if (claimed[i] || claimed[i + 1]) continue;
+      final pair = _typeBigrams['${tokens[i]} ${tokens[i + 1]}'] ??
+          _typeBigrams[
+              '${_stripCaseSuffix(tokens[i])} ${_stripCaseSuffix(tokens[i + 1])}'];
+      if (pair == null) continue;
+      if (!types.contains(pair)) types.add(pair);
+      claimed[i] = true;
+      claimed[i + 1] = true;
+      i++;
+    }
+
     for (var i = 0; i < tokens.length; i++) {
       if (claimed[i]) continue;
       final t = tokens[i];
@@ -139,18 +156,28 @@ class VoiceQueryParser {
       var amount = value;
       var last = i;
 
-      // Optional multiplier: "5 hajar" → 5000.
-      if (i + 1 < tokens.length && _thousandWords.contains(tokens[i + 1])) {
+      // Optional multiplier: "5 hajar" → 5000. Matched through the stem as
+      // well, because the spoken idiom is "পাঁচ হাজারের মধ্যে" — the genitive
+      // sits on the multiplier, not on a currency word that may never come.
+      var thousands = false;
+      if (i + 1 < tokens.length &&
+          (_thousandWords.contains(tokens[i + 1]) ||
+              _thousandWords.contains(_stripCaseSuffix(tokens[i + 1])))) {
         amount *= 1000;
         last = i + 1;
+        thousands = true;
       }
 
       // A currency word is what proves this is a price and not a guest count
-      // or a house number, so it is required rather than optional.
+      // or a house number, so it is required — except after a thousands
+      // multiplier. Nothing else in a rental sentence comes in thousands: no
+      // road, sector or party does, so "পাঁচ হাজারের মধ্যে" is a budget even
+      // though টাকা was never said.
       final currencyAt = last + 1;
-      if (currencyAt < tokens.length &&
-          _currencyWords.contains(tokens[currencyAt])) {
-        for (var k = i; k <= currencyAt; k++) {
+      final hasCurrency = currencyAt < tokens.length &&
+          _currencyWords.contains(tokens[currencyAt]);
+      if (hasCurrency || thousands) {
+        for (var k = i; k <= (hasCurrency ? currencyAt : last); k++) {
           claimed[k] = true;
         }
         return amount;
@@ -159,16 +186,37 @@ class VoiceQueryParser {
     return null;
   }
 
-  /// "২ জন" / "2 jon" / "3 people" → 2, 2, 3.
+  /// "২ জন" / "2 jon" / "3 people" → 2, 2, 3. Also the glued form the
+  /// recogniser actually emits for Bangla — "চারজনের", "duijon" — where the
+  /// number and its unit arrive as one token.
   int? _extractGuests(List<String> tokens, List<bool> claimed) {
-    for (var i = 0; i < tokens.length - 1; i++) {
-      if (claimed[i] || claimed[i + 1]) continue;
+    for (var i = 0; i < tokens.length; i++) {
+      if (claimed[i]) continue;
       final value = _numberValue(tokens[i]);
-      if (value == null) continue;
-      if (!_guestWords.contains(tokens[i + 1])) continue;
-      claimed[i] = true;
-      claimed[i + 1] = true;
-      return value.round().clamp(1, 16);
+      if (value != null &&
+          i + 1 < tokens.length &&
+          !claimed[i + 1] &&
+          _guestWords.contains(tokens[i + 1])) {
+        claimed[i] = true;
+        claimed[i + 1] = true;
+        return value.round().clamp(1, 16);
+      }
+      final glued = _gluedGuestCount(tokens[i]);
+      if (glued != null) {
+        claimed[i] = true;
+        return glued;
+      }
+    }
+    return null;
+  }
+
+  /// "তিনজন" → 3, "4person" → 4, "সুজন" → null (the prefix is not a number).
+  int? _gluedGuestCount(String token) {
+    for (final unit in _guestWords) {
+      if (token.length <= unit.length || !token.endsWith(unit)) continue;
+      final value =
+          _numberValue(token.substring(0, token.length - unit.length));
+      if (value != null) return value.round().clamp(1, 16);
     }
     return null;
   }
@@ -176,7 +224,7 @@ class VoiceQueryParser {
   double? _numberValue(String token) {
     final digits = double.tryParse(token);
     if (digits != null) return digits;
-    return _numberWords[token]?.toDouble();
+    return (_numberWords[token] ?? _hundredWords[token])?.toDouble();
   }
 
   // ── Place ─────────────────────────────────────────────────────────────────
@@ -350,7 +398,7 @@ const Map<String, ListingType> _typeWords = {
   // hotel with a pool, and a guest saying it means "several rooms, a front
   // desk", which is what the hotel type is. "Guest house" is two words and
   // this map is per token, so only the joined spelling matches here; the
-  // Gemini fallback catches the spaced one.
+  // spaced one is in `_typeBigrams`.
   'হোটেল': ListingType.hotel,
   'রিসোর্ট': ListingType.hotel,
   'গেস্টহাউস': ListingType.hotel,
@@ -359,6 +407,17 @@ const Map<String, ListingType> _typeWords = {
   'hotels': ListingType.hotel,
   'resort': ListingType.hotel,
   'guesthouse': ListingType.hotel,
+};
+
+/// Type names that arrive as two tokens. Consulted on adjacent pairs before
+/// the single-word map, so "হোটেল রুম" is one hotel and not hotel-or-room.
+const Map<String, ListingType> _typeBigrams = {
+  'গেস্ট হাউস': ListingType.hotel,
+  'guest house': ListingType.hotel,
+  'রেস্ট হাউস': ListingType.hotel,
+  'rest house': ListingType.hotel,
+  'হোটেল রুম': ListingType.hotel,
+  'hotel room': ListingType.hotel,
 };
 
 const Map<String, ListingPurpose> _purposeWords = {
@@ -440,6 +499,35 @@ const Set<String> _stopWords = {
   'e', 'te', 'er', 'ey', 'y', 'এ', 'তে', 'ের', 'য়',
   // Qualifiers that follow a purpose word rather than naming a place.
   'center', 'centre', 'kendro', 'কেন্দ্র', 'hall', 'zone',
+  // Verbs of staying and taking. "রুম ভাড়া নিতে চাই", "তিন জন থাকার মতো
+  // বাসা": every one of these rode into the place name in the Bangla probe,
+  // and "নিতে" then lost its ending to the suffix table and was geocoded as
+  // "নি".
+  'থাকা', 'থাকার', 'থাকতে', 'থাকব', 'থাকবো', 'নিতে', 'নিব', 'নেব', 'নেওয়া',
+  'নেয়া', 'মতো', 'মত', 'ভাড়ায়', 'ভাড়ার',
+  'thaka', 'thakar', 'thakte', 'thakbo', 'nite', 'nibo', 'nebo', 'neoa',
+  'moto', 'varay', 'bharay', 'varar', 'bharar',
+  // Time words. When to stay is the calendar's slot, not this parser's, so a
+  // spoken "আগামীকাল" has to be dropped rather than handed to the geocoder.
+  'আজ', 'আজকে', 'আজকের', 'কাল', 'কালকে', 'আগামীকাল', 'আগামী', 'পরশু', 'রাত',
+  'রাতে', 'মাস', 'মাসের', 'সপ্তাহ', 'সপ্তাহের',
+  'aj', 'ajke', 'kal', 'kalke', 'agamikal', 'agami', 'porshu', 'rat', 'rate',
+  'mash', 'masher', 'today', 'tomorrow', 'tonight', 'night', 'nights', 'week',
+  'weekend', 'month', 'monthly', 'daily',
+  // Price and quality qualifiers. Not slots either — "সস্তা হোটেল" is a
+  // hotel, and the budget is whatever number follows. Deliberately NOT here:
+  // "নতুন"/"new", because Natun Bazar and New Market are places.
+  'সস্তা', 'সস্তায়', 'কম', 'কমে', 'দাম', 'দামে', 'দামের', 'বাজেট', 'ভালো',
+  'ভাল', 'সুন্দর',
+  'sosta', 'shosta', 'kom', 'kome', 'dam', 'dame', 'damer', 'budget', 'valo',
+  'bhalo', 'shundor', 'sundor', 'cheap', 'cheapest', 'affordable', 'good',
+  'best', 'nice', 'low', 'price', 'cost',
+  // Amenity and tenant words. The sheet has no voice slot for these, and
+  // "এসি রুম ঢাকায়" must not search for a place called "এসি".
+  'এসি', 'ওয়াইফাই', 'ফার্নিশড', 'অ্যাটাচড', 'বাথরুম', 'ব্যাচেলর', 'ফ্যামিলি',
+  'সাবলেট', 'মেয়েদের', 'ছেলেদের',
+  'ac', 'wifi', 'furnished', 'attached', 'bathroom', 'bachelor', 'bachelors',
+  'family', 'sublet', 'meyeder', 'cheleder', 'girls', 'boys',
   // English
   'find', 'show', 'search', 'searching', 'look', 'looking', 'get', 'want',
   'need', 'give', 'please', 'me', 'my', 'i', 'a', 'an', 'the', 'some', 'any',
@@ -534,6 +622,46 @@ const Set<String> _guestWords = {
 
 const Set<String> _thousandWords = {'হাজার', 'hajar', 'hazar', 'thousand', 'k'};
 
+/// Hundreds as one spoken word. Bangla glues the multiplier on ("পাঁচশো",
+/// never "পাঁচ শো"), and seat and hourly prices live in this range, so without
+/// these "পাঁচশো টাকা" was a price the parser could not hear.
+const Map<String, int> _hundredWords = {
+  'একশো': 100,
+  'একশ': 100,
+  'দুইশো': 200,
+  'দুশো': 200,
+  'দুইশ': 200,
+  'দুশ': 200,
+  'তিনশো': 300,
+  'তিনশ': 300,
+  'চারশো': 400,
+  'চারশ': 400,
+  'পাঁচশো': 500,
+  'পাঁচশ': 500,
+  'পাচশো': 500,
+  'পাচশ': 500,
+  'ছয়শো': 600,
+  'ছয়শ': 600,
+  'সাতশো': 700,
+  'সাতশ': 700,
+  'আটশো': 800,
+  'আটশ': 800,
+  'নয়শো': 900,
+  'নয়শ': 900,
+  'eksho': 100,
+  'duisho': 200,
+  'dusho': 200,
+  'tinsho': 300,
+  'charsho': 400,
+  'pachsho': 500,
+  'panchsho': 500,
+  'choysho': 600,
+  'satsho': 700,
+  'aatsho': 800,
+  'atsho': 800,
+  'noysho': 900,
+};
+
 const Set<String> _currencyWords = {
   'টাকা',
   'টাকার',
@@ -610,6 +738,16 @@ const Map<String, String> _placeAliases = {
   'ঢাকা': 'Dhaka', 'dhaka': 'Dhaka',
   'চট্টগ্রাম': 'Chattogram', 'chattogram': 'Chattogram',
   'chittagong': 'Chattogram', 'ctg': 'Chattogram',
+  // What the recogniser writes when the speaker says the English name in
+  // Bangla, and the misspelling it produces for the Bangla one.
+  'চিটাগাং': 'Chattogram', 'চিটাগং': 'Chattogram', 'চট্রগ্রাম': 'Chattogram',
+  // Where the hotels and resorts are (149).
+  'কক্স বাজার': "Cox's Bazar", 'সেন্টমার্টিন': "Saint Martin's Island",
+  'কুয়াকাটা': 'Kuakata', 'kuakata': 'Kuakata',
+  'বান্দরবান': 'Bandarban', 'bandarban': 'Bandarban',
+  'রাঙ্গামাটি': 'Rangamati', 'রাঙামাটি': 'Rangamati', 'rangamati': 'Rangamati',
+  'শ্রীমঙ্গল': 'Sreemangal', 'sreemangal': 'Sreemangal',
+  'srimangal': 'Sreemangal',
   'সিলেট': 'Sylhet', 'sylhet': 'Sylhet',
   'খুলনা': 'Khulna', 'khulna': 'Khulna',
   'রাজশাহী': 'Rajshahi', 'rajshahi': 'Rajshahi',

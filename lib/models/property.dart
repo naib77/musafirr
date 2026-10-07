@@ -1,3 +1,4 @@
+import '../services/contact_phone.dart';
 import 'facility.dart';
 import 'hotel_details.dart';
 import 'listing.dart';
@@ -147,6 +148,7 @@ class PropertyAddress {
     this.exactAddress,
     this.latitude,
     this.longitude,
+    this.contactPhones = const [],
   });
 
   factory PropertyAddress.fromJson(Map<String, dynamic> json) {
@@ -156,6 +158,7 @@ class PropertyAddress {
       exactAddress: json['exact_address'] as String?,
       latitude: (json['latitude'] as num?)?.toDouble(),
       longitude: (json['longitude'] as num?)?.toDouble(),
+      contactPhones: contactPhonesFromJson(json['contact_phones']),
     );
   }
 
@@ -165,6 +168,10 @@ class PropertyAddress {
   final double? latitude;
   final double? longitude;
 
+  /// 160/162. The hotel's contact numbers (`+880…`), copied onto every room
+  /// type's address row by the database, the way the address itself is.
+  final List<String> contactPhones;
+
   Map<String, dynamic> toJson(String propertyId) => {
         'property_id': propertyId,
         'house_no': houseNo,
@@ -172,6 +179,7 @@ class PropertyAddress {
         'exact_address': exactAddress,
         'latitude': latitude,
         'longitude': longitude,
+        'contact_phones': contactPhones.isEmpty ? null : contactPhones,
       };
 }
 
@@ -193,6 +201,16 @@ String propertyRefusalMessage(String? hint) => switch (hint) {
         'Only the hotel\'s host can change its rooms.',
       'property_fixed' => 'A room type cannot leave its hotel.',
       'property_child_type' => 'Only hotel rooms can belong to a hotel.',
+      // 156: deleting a room type or a whole hotel.
+      'listing_has_bookings' => 'This room type has upcoming or current '
+          'bookings. Cancel or complete them before deleting.',
+      'property_has_bookings' => 'This hotel has upcoming or current '
+          'bookings. Cancel or complete them before deleting.',
+      'listing_has_history' || 'property_has_history' => 'This has payment '
+          'history and can\'t be deleted. Hide the room types instead -- '
+          'guests won\'t see them, and your records stay intact.',
+      'property_not_found' => 'That hotel no longer exists.',
+      'not_a_room_type' => 'That listing is not part of a hotel.',
       _ => 'Could not save. Please try again.',
     };
 

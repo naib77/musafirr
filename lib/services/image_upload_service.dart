@@ -10,6 +10,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/address_verification.dart';
 import '../models/trade_licence.dart';
 import 'image_compression_service.dart';
+import 'storage/storage_provider.dart';
+import 'storage/routing_storage_provider.dart';
 
 /// Storage bucket names
 class StorageBuckets {
@@ -74,7 +76,12 @@ class ImageUploadService {
 
   final ImagePicker _imagePicker = ImagePicker();
   SupabaseClient get _client => Supabase.instance.client;
-  SupabaseStorageClient get _storage => _client.storage;
+
+  /// Where bytes go. Every upload, signed read and delete below goes through
+  /// this, never `supabase.storage`, so the S3 migration can route a bucket
+  /// elsewhere without changing this service's API (plan stage 1).
+  @visibleForTesting
+  StorageProvider storage = defaultStorageProvider();
 
   /// Configuration
   static const int maxListingImages = 10;
@@ -351,18 +358,16 @@ class ImageUploadService {
     try {
       debugPrint('[ImageUploadService] Uploading to $bucket/$path ($mimeType)');
 
-      // Upload to Supabase Storage
-      await _storage.from(bucket).uploadBinary(
-            path,
-            bytes,
-            fileOptions: FileOptions(
-              contentType: mimeType,
-              upsert: true, // Overwrite if exists
-            ),
-          );
-
-      // Get public URL
-      final publicUrl = _storage.from(bucket).getPublicUrl(path);
+      // An S3 upload hands back its own durable URL (with a generation, so a
+      // replaced avatar busts caches); Supabase's is computed as before.
+      final publicUrl = await storage.upload(
+            bucket: bucket,
+            path: path,
+            bytes: bytes,
+            contentType: mimeType,
+            upsert: true, // Overwrite if exists
+          ) ??
+          storage.publicUrl(bucket, path);
 
       debugPrint('[ImageUploadService] Upload successful: $publicUrl');
 
@@ -370,7 +375,7 @@ class ImageUploadService {
         publicUrl: publicUrl,
         storagePath: path,
       );
-    } on StorageException catch (e) {
+    } on StorageFailure catch (e) {
       debugPrint('[ImageUploadService] Storage error: ${e.message}');
       return UploadResult.failure(e.message);
     } catch (e) {
@@ -661,9 +666,8 @@ class ImageUploadService {
   Future<String?> signedDocumentUrl(String filePath,
       {int expiresIn = 3600}) async {
     try {
-      return await _storage
-          .from(StorageBuckets.documents)
-          .createSignedUrl(filePath, expiresIn);
+      return await storage.signedUrl(StorageBuckets.documents, filePath,
+          expiresIn: expiresIn);
     } catch (e) {
       debugPrint('[ImageUploadService] signedDocumentUrl failed: $e');
       return null;
@@ -854,7 +858,7 @@ class ImageUploadService {
   /// Delete a file from storage
   Future<bool> _deleteFile(String bucket, String path) async {
     try {
-      await _storage.from(bucket).remove([path]);
+      await storage.remove(bucket, [path]);
       debugPrint('[ImageUploadService] Deleted: $bucket/$path');
       return true;
     } catch (e) {

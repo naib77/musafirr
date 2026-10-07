@@ -21,6 +21,14 @@ if [ -n "${SUPABASE_ANON_KEY:-}" ]; then
   DEFINES="$DEFINES --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
   echo "Supabase anon key -> (supplied via environment)"
 fi
+# The storage signer defaults to {SUPABASE_URL}/functions/v1/storage-signer
+# (lib/services/storage/routing_storage_provider.dart). Set it to override.
+# Storage is S3-only: there is no Supabase-Storage build, so an EMPTY value
+# makes the build refuse to store anything.
+if [ -n "${STORAGE_SIGNER_URL+x}" ]; then
+  DEFINES="$DEFINES --dart-define=STORAGE_SIGNER_URL=$STORAGE_SIGNER_URL"
+  echo "Storage signer    -> ${STORAGE_SIGNER_URL:-(EMPTY: storage will refuse)}"
+fi
 
 # $DEFINES is deliberately unquoted: it must word-split into separate flags.
 # shellcheck disable=SC2086

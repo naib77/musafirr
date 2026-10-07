@@ -16,7 +16,7 @@ do $e$ begin if not exists (select 1 from pg_type where typname='app_role' and t
 do $e$ begin if not exists (select 1 from pg_type where typname='booking_status' and typnamespace='public'::regnamespace) then
   create type public.booking_status as enum ('pending', 'confirmed', 'rejected', 'active', 'completed', 'cancelled', 'no_show'); end if; end $e$;
 do $e$ begin if not exists (select 1 from pg_type where typname='listing_type' and typnamespace='public'::regnamespace) then
-  create type public.listing_type as enum ('seat', 'room', 'fullHouse', 'turf'); end if; end $e$;
+  create type public.listing_type as enum ('seat', 'room', 'fullHouse', 'turf', 'hotel'); end if; end $e$;
 do $e$ begin if not exists (select 1 from pg_type where typname='notification_priority' and typnamespace='public'::regnamespace) then
   create type public.notification_priority as enum ('low', 'normal', 'high', 'urgent'); end if; end $e$;
 do $e$ begin if not exists (select 1 from pg_type where typname='notification_status' and typnamespace='public'::regnamespace) then
@@ -364,10 +364,13 @@ create table if not exists public.listing_addresses (
   exact_address text,
   latitude numeric,
   longitude numeric,
-  updated_at timestamp with time zone default now() not null
+  updated_at timestamp with time zone default now() not null,
+  contact_phones text[]
 );
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_addresses_pkey' and conrelid='public.listing_addresses'::regclass) then
   alter table public.listing_addresses add constraint listing_addresses_pkey PRIMARY KEY (listing_id); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_addresses_contact_phones_shape' and conrelid='public.listing_addresses'::regclass) then
+  alter table public.listing_addresses add constraint listing_addresses_contact_phones_shape CHECK (((contact_phones IS NULL) OR (((cardinality(contact_phones) >= 1) AND (cardinality(contact_phones) <= 5)) AND (array_position(contact_phones, NULL::text) IS NULL) AND (array_to_string(contact_phones, ','::text) ~ '^\+[0-9]{8,15}(,\+[0-9]{8,15})*$'::text)))); end if; end $c$;
 create table if not exists public.listing_availability_blocks (
   id uuid default gen_random_uuid() not null,
   listing_id uuid not null,
@@ -405,6 +408,23 @@ do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_f
   alter table public.listing_facilities add constraint listing_facilities_listing_id_facility_id_key UNIQUE (listing_id, facility_id); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_facilities_pkey' and conrelid='public.listing_facilities'::regclass) then
   alter table public.listing_facilities add constraint listing_facilities_pkey PRIMARY KEY (id); end if; end $c$;
+create table if not exists public.listing_trade_licences (
+  listing_id uuid not null,
+  owner_id uuid not null,
+  document_path text not null,
+  licence_number text,
+  status verification_status default 'pending'::verification_status not null,
+  submitted_at timestamp with time zone default now() not null,
+  reviewed_at timestamp with time zone,
+  reviewed_by uuid,
+  rejection_reason text
+);
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_trade_licences_pkey' and conrelid='public.listing_trade_licences'::regclass) then
+  alter table public.listing_trade_licences add constraint listing_trade_licences_pkey PRIMARY KEY (listing_id); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_trade_licences_number_len' and conrelid='public.listing_trade_licences'::regclass) then
+  alter table public.listing_trade_licences add constraint listing_trade_licences_number_len CHECK (((licence_number IS NULL) OR ((char_length(licence_number) >= 1) AND (char_length(licence_number) <= 60)))); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_trade_licences_status_submitted' and conrelid='public.listing_trade_licences'::regclass) then
+  alter table public.listing_trade_licences add constraint listing_trade_licences_status_submitted CHECK ((status <> 'none'::verification_status)); end if; end $c$;
 create table if not exists public.listing_units (
   id uuid default gen_random_uuid() not null,
   listing_id uuid not null,
@@ -475,14 +495,28 @@ create table if not exists public.listings (
   suspended_hidden boolean default false not null,
   hourly_slots integer[],
   hourly_window_start time without time zone,
-  hourly_window_end time without time zone
+  hourly_window_end time without time zone,
+  hotel_star_rating smallint,
+  hotel_front_desk_24h boolean,
+  hotel_id_required boolean,
+  size_sqft integer,
+  bathroom_kind text,
+  toilet_kind text,
+  instant_book boolean default false not null,
+  property_id uuid
 );
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_pkey' and conrelid='public.listings'::regclass) then
   alter table public.listings add constraint listings_pkey PRIMARY KEY (id); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_bathroom_kind_valid' and conrelid='public.listings'::regclass) then
+  alter table public.listings add constraint listings_bathroom_kind_valid CHECK (((bathroom_kind IS NULL) OR (bathroom_kind = ANY (ARRAY['attached'::text, 'common'::text])))); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_hotel_fields_only_on_hotel' and conrelid='public.listings'::regclass) then
+  alter table public.listings add constraint listings_hotel_fields_only_on_hotel CHECK (((listing_type = 'hotel'::listing_type) OR ((hotel_star_rating IS NULL) AND (hotel_front_desk_24h IS NULL) AND (hotel_id_required IS NULL)))); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_hotel_star_rating_valid' and conrelid='public.listings'::regclass) then
+  alter table public.listings add constraint listings_hotel_star_rating_valid CHECK (((hotel_star_rating IS NULL) OR ((hotel_star_rating >= 1) AND (hotel_star_rating <= 5)))); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_hourly_slots_sane' and conrelid='public.listings'::regclass) then
   alter table public.listings add constraint listings_hourly_slots_sane CHECK (((hourly_slots IS NULL) OR (((cardinality(hourly_slots) >= 1) AND (cardinality(hourly_slots) <= 12)) AND (1 <= ALL (hourly_slots)) AND (168 >= ALL (hourly_slots))))); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_hourly_window_pair' and conrelid='public.listings'::regclass) then
-  alter table public.listings add constraint listings_hourly_window_pair CHECK ((((hourly_window_start IS NULL) = (hourly_window_end IS NULL)) AND ((hourly_window_start IS NULL) OR (hourly_window_start < hourly_window_end)))); end if; end $c$;
+  alter table public.listings add constraint listings_hourly_window_pair CHECK ((((hourly_window_start IS NULL) = (hourly_window_end IS NULL)) AND ((hourly_window_start IS NULL) OR ((hourly_window_start <> hourly_window_end) AND (hourly_window_start < '24:00:00'::time without time zone))))); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_max_adults_positive' and conrelid='public.listings'::regclass) then
   alter table public.listings add constraint listings_max_adults_positive CHECK (((max_adults IS NULL) OR (max_adults >= 1))); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_max_children_nonneg' and conrelid='public.listings'::regclass) then
@@ -491,6 +525,10 @@ do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_
   alter table public.listings add constraint listings_max_infants_nonneg CHECK (((max_infants IS NULL) OR (max_infants >= 0))); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_max_pets_nonneg' and conrelid='public.listings'::regclass) then
   alter table public.listings add constraint listings_max_pets_nonneg CHECK (((max_pets IS NULL) OR (max_pets >= 0))); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_size_sqft_valid' and conrelid='public.listings'::regclass) then
+  alter table public.listings add constraint listings_size_sqft_valid CHECK (((size_sqft IS NULL) OR ((size_sqft >= 1) AND (size_sqft <= 20000)))); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_toilet_kind_valid' and conrelid='public.listings'::regclass) then
+  alter table public.listings add constraint listings_toilet_kind_valid CHECK (((toilet_kind IS NULL) OR (toilet_kind = ANY (ARRAY['commode'::text, 'indian'::text])))); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_turf_fields_only_on_turf' and conrelid='public.listings'::regclass) then
   alter table public.listings add constraint listings_turf_fields_only_on_turf CHECK (((listing_type = 'turf'::listing_type) OR ((turf_sport IS NULL) AND (turf_format IS NULL) AND (turf_surface IS NULL)))); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_turf_format_valid' and conrelid='public.listings'::regclass) then
@@ -723,6 +761,61 @@ do $c$ begin if not exists (select 1 from pg_constraint where conname='profiles_
   alter table public.profiles add constraint profiles_message_language_check CHECK ((message_language = ANY (ARRAY['en'::text, 'bn'::text]))); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='response_rate_range' and conrelid='public.profiles'::regclass) then
   alter table public.profiles add constraint response_rate_range CHECK (((response_rate IS NULL) OR ((response_rate >= 0) AND (response_rate <= 100)))); end if; end $c$;
+create table if not exists public.properties (
+  id uuid default gen_random_uuid() not null,
+  owner_id uuid not null,
+  kind text default 'hotel'::text not null,
+  name text not null,
+  description text,
+  area text,
+  city text,
+  country text,
+  postal_code text,
+  landmark text,
+  latitude numeric,
+  longitude numeric,
+  check_in_time text,
+  check_out_time text,
+  hotel_star_rating smallint,
+  hotel_front_desk_24h boolean,
+  hotel_id_required boolean,
+  image_urls text[] default '{}'::text[] not null,
+  created_at timestamp with time zone default now() not null,
+  updated_at timestamp with time zone default now() not null
+);
+do $c$ begin if not exists (select 1 from pg_constraint where conname='properties_pkey' and conrelid='public.properties'::regclass) then
+  alter table public.properties add constraint properties_pkey PRIMARY KEY (id); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='properties_description_len' and conrelid='public.properties'::regclass) then
+  alter table public.properties add constraint properties_description_len CHECK (((description IS NULL) OR (char_length(description) <= 5000))); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='properties_images_cap' and conrelid='public.properties'::regclass) then
+  alter table public.properties add constraint properties_images_cap CHECK ((cardinality(image_urls) <= 30)); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='properties_kind_valid' and conrelid='public.properties'::regclass) then
+  alter table public.properties add constraint properties_kind_valid CHECK ((kind = 'hotel'::text)); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='properties_name_len' and conrelid='public.properties'::regclass) then
+  alter table public.properties add constraint properties_name_len CHECK (((char_length(btrim(name)) >= 1) AND (char_length(btrim(name)) <= 120))); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='properties_star_rating_valid' and conrelid='public.properties'::regclass) then
+  alter table public.properties add constraint properties_star_rating_valid CHECK (((hotel_star_rating IS NULL) OR ((hotel_star_rating >= 1) AND (hotel_star_rating <= 5)))); end if; end $c$;
+create table if not exists public.property_addresses (
+  property_id uuid not null,
+  house_no text,
+  street text,
+  exact_address text,
+  latitude numeric,
+  longitude numeric,
+  updated_at timestamp with time zone default now() not null,
+  contact_phones text[]
+);
+do $c$ begin if not exists (select 1 from pg_constraint where conname='property_addresses_pkey' and conrelid='public.property_addresses'::regclass) then
+  alter table public.property_addresses add constraint property_addresses_pkey PRIMARY KEY (property_id); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='property_addresses_contact_phones_shape' and conrelid='public.property_addresses'::regclass) then
+  alter table public.property_addresses add constraint property_addresses_contact_phones_shape CHECK (((contact_phones IS NULL) OR (((cardinality(contact_phones) >= 1) AND (cardinality(contact_phones) <= 5)) AND (array_position(contact_phones, NULL::text) IS NULL) AND (array_to_string(contact_phones, ','::text) ~ '^\+[0-9]{8,15}(,\+[0-9]{8,15})*$'::text)))); end if; end $c$;
+create table if not exists public.property_facilities (
+  property_id uuid not null,
+  facility_id uuid not null,
+  created_at timestamp with time zone default now() not null
+);
+do $c$ begin if not exists (select 1 from pg_constraint where conname='property_facilities_pkey' and conrelid='public.property_facilities'::regclass) then
+  alter table public.property_facilities add constraint property_facilities_pkey PRIMARY KEY (property_id, facility_id); end if; end $c$;
 create table if not exists public.push_tokens (
   id uuid default gen_random_uuid() not null,
   user_id uuid not null,
@@ -869,6 +962,67 @@ do $c$ begin if not exists (select 1 from pg_constraint where conname='sms_suppr
   alter table public.sms_suppressions add constraint sms_suppressions_pkey PRIMARY KEY (phone); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='sms_suppressions_phone_canonical' and conrelid='public.sms_suppressions'::regclass) then
   alter table public.sms_suppressions add constraint sms_suppressions_phone_canonical CHECK ((phone ~ '^01[3-9][0-9]{8}$'::text)); end if; end $c$;
+create table if not exists public.storage_assets (
+  id uuid default gen_random_uuid() not null,
+  bucket text not null,
+  path text not null,
+  owner_id uuid not null,
+  generation integer default 1 not null,
+  mime_type text not null,
+  size_bytes bigint not null,
+  sha256 text not null,
+  business_created_at timestamp with time zone default now() not null,
+  retention_deadline timestamp with time zone,
+  state text default 'active'::text not null,
+  supabase_path text,
+  s3_bucket text,
+  s3_key text,
+  s3_version text,
+  updated_at timestamp with time zone default now() not null
+);
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_assets_bucket_path_key' and conrelid='public.storage_assets'::regclass) then
+  alter table public.storage_assets add constraint storage_assets_bucket_path_key UNIQUE (bucket, path); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_assets_pkey' and conrelid='public.storage_assets'::regclass) then
+  alter table public.storage_assets add constraint storage_assets_pkey PRIMARY KEY (id); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_assets_check' and conrelid='public.storage_assets'::regclass) then
+  alter table public.storage_assets add constraint storage_assets_check CHECK (((s3_bucket IS NULL) = (s3_key IS NULL))); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_assets_sha256_check' and conrelid='public.storage_assets'::regclass) then
+  alter table public.storage_assets add constraint storage_assets_sha256_check CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text)); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_assets_state_check' and conrelid='public.storage_assets'::regclass) then
+  alter table public.storage_assets add constraint storage_assets_state_check CHECK ((state = ANY (ARRAY['active'::text, 'deleting'::text, 'deleted'::text]))); end if; end $c$;
+create table if not exists public.storage_upload_intents (
+  id uuid default gen_random_uuid() not null,
+  user_id uuid not null,
+  bucket text not null,
+  path text not null,
+  upsert boolean not null,
+  mime_type text not null,
+  size_bytes bigint not null,
+  idempotency_key text not null,
+  staging_key text not null,
+  committed_key text not null,
+  state text default 'pending'::text not null,
+  reject_reason text,
+  claimed_at timestamp with time zone,
+  asset_id uuid,
+  created_at timestamp with time zone default now() not null,
+  expires_at timestamp with time zone default (now() + '00:15:00'::interval) not null,
+  finalized_at timestamp with time zone
+);
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_upload_intents_committed_key_key' and conrelid='public.storage_upload_intents'::regclass) then
+  alter table public.storage_upload_intents add constraint storage_upload_intents_committed_key_key UNIQUE (committed_key); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_upload_intents_staging_key_key' and conrelid='public.storage_upload_intents'::regclass) then
+  alter table public.storage_upload_intents add constraint storage_upload_intents_staging_key_key UNIQUE (staging_key); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_upload_intents_user_id_idempotency_key_key' and conrelid='public.storage_upload_intents'::regclass) then
+  alter table public.storage_upload_intents add constraint storage_upload_intents_user_id_idempotency_key_key UNIQUE (user_id, idempotency_key); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_upload_intents_pkey' and conrelid='public.storage_upload_intents'::regclass) then
+  alter table public.storage_upload_intents add constraint storage_upload_intents_pkey PRIMARY KEY (id); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_upload_intents_idempotency_key_check' and conrelid='public.storage_upload_intents'::regclass) then
+  alter table public.storage_upload_intents add constraint storage_upload_intents_idempotency_key_check CHECK (((length(idempotency_key) >= 8) AND (length(idempotency_key) <= 128))); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_upload_intents_size_bytes_check' and conrelid='public.storage_upload_intents'::regclass) then
+  alter table public.storage_upload_intents add constraint storage_upload_intents_size_bytes_check CHECK ((size_bytes > 0)); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_upload_intents_state_check' and conrelid='public.storage_upload_intents'::regclass) then
+  alter table public.storage_upload_intents add constraint storage_upload_intents_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'finalizing'::text, 'finalized'::text, 'rejected'::text]))); end if; end $c$;
 create table if not exists public.typing_indicators (
   conversation_id uuid not null,
   user_id uuid not null,
@@ -990,10 +1144,18 @@ do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_f
   alter table public.listing_facilities add constraint listing_facilities_facility_id_fkey FOREIGN KEY (facility_id) REFERENCES facilities(id) ON DELETE CASCADE; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_facilities_listing_id_fkey' and conrelid='public.listing_facilities'::regclass) then
   alter table public.listing_facilities add constraint listing_facilities_listing_id_fkey FOREIGN KEY (listing_id) REFERENCES listings(id) ON DELETE CASCADE; end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_trade_licences_listing_id_fkey' and conrelid='public.listing_trade_licences'::regclass) then
+  alter table public.listing_trade_licences add constraint listing_trade_licences_listing_id_fkey FOREIGN KEY (listing_id) REFERENCES listings(id) ON DELETE CASCADE; end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_trade_licences_owner_id_fkey' and conrelid='public.listing_trade_licences'::regclass) then
+  alter table public.listing_trade_licences add constraint listing_trade_licences_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES profiles(id) ON DELETE CASCADE; end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_trade_licences_reviewed_by_fkey' and conrelid='public.listing_trade_licences'::regclass) then
+  alter table public.listing_trade_licences add constraint listing_trade_licences_reviewed_by_fkey FOREIGN KEY (reviewed_by) REFERENCES profiles(id); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_units_listing_id_fkey' and conrelid='public.listing_units'::regclass) then
   alter table public.listing_units add constraint listing_units_listing_id_fkey FOREIGN KEY (listing_id) REFERENCES listings(id) ON DELETE CASCADE; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_owner_id_fkey' and conrelid='public.listings'::regclass) then
   alter table public.listings add constraint listings_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES profiles(id) ON DELETE SET NULL; end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_property_id_fkey' and conrelid='public.listings'::regclass) then
+  alter table public.listings add constraint listings_property_id_fkey FOREIGN KEY (property_id) REFERENCES properties(id); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='message_templates_host_id_fkey' and conrelid='public.message_templates'::regclass) then
   alter table public.message_templates add constraint message_templates_host_id_fkey FOREIGN KEY (host_id) REFERENCES profiles(id) ON DELETE CASCADE; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='messages_conversation_id_fkey' and conrelid='public.messages'::regclass) then
@@ -1028,6 +1190,14 @@ do $c$ begin if not exists (select 1 from pg_constraint where conname='profiles_
   alter table public.profiles add constraint profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='profiles_suspended_by_fkey' and conrelid='public.profiles'::regclass) then
   alter table public.profiles add constraint profiles_suspended_by_fkey FOREIGN KEY (suspended_by) REFERENCES profiles(id) ON DELETE SET NULL; end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='properties_owner_id_fkey' and conrelid='public.properties'::regclass) then
+  alter table public.properties add constraint properties_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES profiles(id) ON DELETE CASCADE; end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='property_addresses_property_id_fkey' and conrelid='public.property_addresses'::regclass) then
+  alter table public.property_addresses add constraint property_addresses_property_id_fkey FOREIGN KEY (property_id) REFERENCES properties(id) ON DELETE CASCADE; end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='property_facilities_facility_id_fkey' and conrelid='public.property_facilities'::regclass) then
+  alter table public.property_facilities add constraint property_facilities_facility_id_fkey FOREIGN KEY (facility_id) REFERENCES facilities(id) ON DELETE CASCADE; end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='property_facilities_property_id_fkey' and conrelid='public.property_facilities'::regclass) then
+  alter table public.property_facilities add constraint property_facilities_property_id_fkey FOREIGN KEY (property_id) REFERENCES properties(id) ON DELETE CASCADE; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='push_tokens_user_id_fkey' and conrelid='public.push_tokens'::regclass) then
   alter table public.push_tokens add constraint push_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='read_cursors_conversation_id_fkey' and conrelid='public.read_cursors'::regclass) then
@@ -1064,6 +1234,12 @@ do $c$ begin if not exists (select 1 from pg_constraint where conname='sms_recip
   alter table public.sms_recipients add constraint sms_recipients_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE SET NULL; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='sms_suppressions_created_by_fkey' and conrelid='public.sms_suppressions'::regclass) then
   alter table public.sms_suppressions add constraint sms_suppressions_created_by_fkey FOREIGN KEY (created_by) REFERENCES profiles(id) ON DELETE SET NULL; end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_assets_bucket_fkey' and conrelid='public.storage_assets'::regclass) then
+  alter table public.storage_assets add constraint storage_assets_bucket_fkey FOREIGN KEY (bucket) REFERENCES storage.buckets(id); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_upload_intents_bucket_fkey' and conrelid='public.storage_upload_intents'::regclass) then
+  alter table public.storage_upload_intents add constraint storage_upload_intents_bucket_fkey FOREIGN KEY (bucket) REFERENCES storage.buckets(id); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_upload_intents_user_id_fkey' and conrelid='public.storage_upload_intents'::regclass) then
+  alter table public.storage_upload_intents add constraint storage_upload_intents_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='typing_indicators_conversation_id_fkey' and conrelid='public.typing_indicators'::regclass) then
   alter table public.typing_indicators add constraint typing_indicators_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='typing_indicators_user_id_fkey' and conrelid='public.typing_indicators'::regclass) then
@@ -1095,6 +1271,73 @@ AS $function$
            'Wednesday', 'বুধবার'), 'Thursday', 'বৃহস্পতিবার'),
            'Friday', 'শুক্রবার'), 'Saturday', 'শনিবার');
 $function$;
+
+CREATE OR REPLACE FUNCTION public.add_listing_units(p_listing_id uuid, p_labels text[], p_name_unnamed boolean DEFAULT false)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_labels text[];
+  v_label  text;
+  v_unit   uuid;
+  v_total  int;
+begin
+  perform public.fn_lock_own_listing(p_listing_id);
+
+  select coalesce(array_agg(btrim(l) order by o), '{}') into v_labels
+    from unnest(p_labels) with ordinality t(l, o)
+   where nullif(btrim(l), '') is not null;
+  if cardinality(v_labels) = 0 or cardinality(v_labels) > 200 then
+    raise exception 'Add between 1 and 200 rooms at a time'
+      using errcode = '22023', hint = 'unit_count_range';
+  end if;
+  if exists (select 1 from unnest(v_labels) l where char_length(l) > 40) then
+    raise exception 'A room name is at most 40 characters'
+      using errcode = '22023', hint = 'room_label_invalid';
+  end if;
+  if (select count(distinct lower(l)) from unnest(v_labels) l) <> cardinality(v_labels) then
+    raise exception 'The same room name is listed twice'
+      using errcode = '22023', hint = 'room_label_duplicate';
+  end if;
+
+  foreach v_label in array v_labels loop
+    v_unit := null;
+    select id into v_unit from public.listing_units
+     where listing_id = p_listing_id and lower(btrim(label)) = lower(v_label);
+    if v_unit is not null then
+      update public.listing_units set is_active = true
+       where id = v_unit and not is_active;
+      if not found then
+        raise exception 'This listing already has a room named %', v_label
+          using errcode = '23505', hint = 'room_label_taken';
+      end if;
+      continue;
+    end if;
+
+    if p_name_unnamed then
+      select u.id into v_unit from public.listing_units u
+       where u.listing_id = p_listing_id and u.is_active and u.label is null
+         and not exists (select 1 from public.bookings b where b.unit_id = u.id)
+       order by u.created_at, u.id
+       limit 1;
+    end if;
+    if v_unit is not null then
+      update public.listing_units set label = v_label where id = v_unit;
+    else
+      insert into public.listing_units (listing_id, label) values (p_listing_id, v_label);
+    end if;
+  end loop;
+
+  select count(*) into v_total from public.listing_units
+   where listing_id = p_listing_id and is_active;
+  if v_total > 500 then
+    raise exception 'A listing has between 1 and 500 units'
+      using errcode = '22023', hint = 'unit_count_range';
+  end if;
+  return v_total;
+end $function$;
 
 CREATE OR REPLACE FUNCTION public.add_payout_method(p_channel text, p_account_name text, p_account_number text, p_bank_name text DEFAULT NULL::text, p_branch_name text DEFAULT NULL::text, p_routing_number text DEFAULT NULL::text)
  RETURNS uuid
@@ -2109,8 +2352,8 @@ begin
     or (p_back_path is not null and not exists(select 1 from public.owner_documents where user_id=p_user_id and document_type='nid_back' and file_path=p_back_path))
     or (p_back_path is null and exists(select 1 from public.owner_documents where user_id=p_user_id and document_type='nid_back')) then
     raise exception 'Documents changed. Refresh the review queue'; end if;
-  if not exists(select 1 from storage.objects where bucket_id='documents' and name=p_front_path)
-    or (p_back_path is not null and not exists(select 1 from storage.objects where bucket_id='documents' and name=p_back_path)) then
+  if not exists(select 1 from public.storage_object_meta('documents',p_front_path))
+    or (p_back_path is not null and not exists(select 1 from public.storage_object_meta('documents',p_back_path))) then
     raise exception 'Document evidence is unavailable'; end if;
   update public.owner_documents set verified_at=now(),verified_by=auth.uid(),rejection_reason=null
     where user_id=p_user_id and document_type in ('nid_front','nid_back');
@@ -2299,7 +2542,7 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.block_listing_dates(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone, p_note text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION public.block_listing_dates(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone, p_note text DEFAULT NULL::text, p_unit_id uuid DEFAULT NULL::uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -2331,9 +2574,22 @@ begin
   -- the host believing they are free on a date a guest is already holding, and
   -- the guest with a booking the host has mentally cancelled. Make them decline
   -- it explicitly instead.
+  -- 151: a unit block names one room. It must be this listing's (the
+  -- trigger checks too; this says it in a sentence), and only that room's
+  -- bookings stand in its way -- blocking 104 for repairs must not be
+  -- refused because 101 is occupied.
+  if p_unit_id is not null and not exists (
+    select 1 from public.listing_units u
+    where u.id = p_unit_id and u.listing_id = p_listing_id
+  ) then
+    raise exception 'That room is not part of this listing'
+      using errcode = '22023', hint = 'unit_mismatch';
+  end if;
+
   if exists (
     select 1 from public.bookings b
     where b.listing_id = p_listing_id
+      and (p_unit_id is null or b.unit_id = p_unit_id)
       and b.booking_status in ('pending', 'confirmed', 'active')
       and tstzrange(b.starts_at, b.ends_at, '[)')
           && tstzrange(p_starts_at, p_ends_at, '[)')
@@ -2348,9 +2604,10 @@ begin
   -- collision — the wrong sentence for the wrong problem.
   begin
     insert into public.listing_availability_blocks
-      (listing_id, starts_at, ends_at, note, created_by)
+      (listing_id, unit_id, starts_at, ends_at, note, created_by)
     values
-      (p_listing_id, p_starts_at, p_ends_at, nullif(trim(coalesce(p_note, '')), ''), v_uid)
+      (p_listing_id, p_unit_id, p_starts_at, p_ends_at,
+       nullif(trim(coalesce(p_note, '')), ''), v_uid)
     returning * into v_block;
   exception
     -- listing_blocks_no_overlap. Reachable by a double-tap or two devices, and
@@ -2789,13 +3046,21 @@ begin
   insert into public.bookings (
     listing_id, unit_id, tenant_id, tenant_name,
     starts_at, ends_at, pricing_unit, unit_count,
-    total_price, guest_count, booking_status,
+    total_price, guest_count, booking_status, confirmed_at,
     listing_title, listing_image_url, listing_city,
     coupon_code, discount_amount
   ) values (
     p_listing_id, v_unit, v_uid, coalesce(p_tenant_name, ''),
     p_starts_at, p_ends_at, p_pricing_unit::pricing_unit, v_qty,
-    v_total, p_guest_count, 'pending',
+    v_total, p_guest_count,
+    -- 151: an instant-book listing skips the accept window. Inserted as
+    -- confirmed rather than inserted pending and then updated, because that
+    -- update would run enforce_booking_update_rules as the GUEST, who may
+    -- not confirm anything -- and a bypass for it is a hole every other
+    -- update could reach.
+    (case when v_listing.instant_book then 'confirmed' else 'pending' end)
+      ::public.booking_status,
+    case when v_listing.instant_book then now() end,
     v_listing.title, p_listing_image_url, v_listing.city,
     case when v_coupon_id is not null then upper(trim(p_coupon_code)) end,
     case when v_coupon_id is not null then v_discount else 0 end
@@ -2810,6 +3075,143 @@ begin
   return to_jsonb(v_booking);
 end;
 $function$;
+
+CREATE OR REPLACE FUNCTION public.deactivate_listing_unit(p_unit_id uuid)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_listing uuid;
+  v_active  boolean;
+begin
+  select listing_id into v_listing from public.listing_units where id = p_unit_id;
+  if not found then
+    raise exception 'Room not found' using errcode = 'P0002', hint = 'unit_not_found';
+  end if;
+  perform public.fn_lock_own_listing(v_listing);
+  -- Locked after the listing, waiting: a booking mid-flight on this room
+  -- finishes first and is then seen below (150's ordering).
+  select is_active into v_active from public.listing_units where id = p_unit_id for update;
+
+  if v_active then
+    if (select count(*) from public.listing_units
+         where listing_id = v_listing and is_active) <= 1 then
+      raise exception 'A listing keeps at least one room'
+        using errcode = '22023', hint = 'unit_count_range';
+    end if;
+    if exists (select 1 from public.bookings b
+                where b.unit_id = p_unit_id
+                  and b.booking_status in ('pending', 'confirmed', 'active')
+                  and b.ends_at > now()) then
+      raise exception 'This room has an upcoming booking'
+        using errcode = '22023', hint = 'units_in_use';
+    end if;
+    update public.listing_units set is_active = false where id = p_unit_id;
+  end if;
+
+  return (select count(*)::int from public.listing_units
+           where listing_id = v_listing and is_active);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.delete_property(p_property_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_owner uuid;
+begin
+  select owner_id into v_owner
+    from public.properties where id = p_property_id for update;
+  if not found then
+    raise exception 'Hotel not found' using errcode = 'P0002', hint = 'property_not_found';
+  end if;
+  if v_owner is distinct from auth.uid() and not public.is_admin() then
+    raise exception 'Only the host can delete this hotel'
+      using errcode = '42501', hint = 'property_owner_mismatch';
+  end if;
+
+  -- Lock every room type before the booking check, same reason as above.
+  perform 1 from public.listings where property_id = p_property_id for update;
+
+  if exists (
+    select 1 from public.bookings b
+      join public.listings l on l.id = b.listing_id
+     where l.property_id = p_property_id
+       and b.booking_status in ('pending', 'confirmed', 'active')
+  ) then
+    raise exception 'This hotel has upcoming or current bookings'
+      using errcode = '23514', hint = 'property_has_bookings';
+  end if;
+
+  begin
+    -- Types first: property_id has no ON DELETE action (153). Their
+    -- licences, units, addresses and blocks cascade with them; the hotel's
+    -- address and facilities cascade with the property.
+    delete from public.listings where property_id = p_property_id;
+    delete from public.properties where id = p_property_id;
+  exception when foreign_key_violation then
+    raise exception 'This hotel has payment history and cannot be deleted'
+      using errcode = '23503', hint = 'property_has_history';
+  end;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.delete_room_type(p_listing_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v       public.listings;
+  v_heir  uuid;
+begin
+  -- Ownership + row lock (153). The lock serialises with booking creation,
+  -- which reads the listing row.
+  v := public.fn_lock_own_listing(p_listing_id);
+
+  if v.property_id is null then
+    raise exception 'This is not a hotel room type'
+      using errcode = '22023', hint = 'not_a_room_type';
+  end if;
+
+  if exists (
+    select 1 from public.bookings b
+     where b.listing_id = p_listing_id
+       and b.booking_status in ('pending', 'confirmed', 'active')
+  ) then
+    raise exception 'This room type has upcoming or current bookings'
+      using errcode = '23514', hint = 'listing_has_bookings';
+  end if;
+
+  -- Hand the hotel's licence to the next-oldest type, so the "oldest type
+  -- holds it" rule the dashboard reads keeps holding. Only when the heir has
+  -- none of its own (listing_id is the primary key).
+  if exists (select 1 from public.listing_trade_licences where listing_id = p_listing_id) then
+    select l.id into v_heir
+      from public.listings l
+     where l.property_id = v.property_id
+       and l.id <> p_listing_id
+     order by l.created_at, l.id
+     limit 1;
+    if v_heir is not null
+       and not exists (select 1 from public.listing_trade_licences where listing_id = v_heir) then
+      update public.listing_trade_licences
+         set listing_id = v_heir
+       where listing_id = p_listing_id;
+    end if;
+  end if;
+
+  begin
+    delete from public.listings where id = p_listing_id;
+  exception when foreign_key_violation then
+    raise exception 'This room type has payment history and cannot be deleted'
+      using errcode = '23503', hint = 'listing_has_history';
+  end;
+end $function$;
 
 CREATE OR REPLACE FUNCTION public.enforce_booking_update_rules()
  RETURNS trigger
@@ -3398,6 +3800,27 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.fn_copy_property_address(p_property_id uuid, p_listing_id uuid DEFAULT NULL::uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  insert into public.listing_addresses
+    (listing_id, house_no, flat_floor, street, exact_address, latitude, longitude, contact_phones)
+  select l.id, a.house_no, null, a.street, a.exact_address, a.latitude, a.longitude, a.contact_phones
+    from public.property_addresses a
+    join public.listings l on l.property_id = a.property_id
+   where a.property_id = p_property_id
+     and (p_listing_id is null or l.id = p_listing_id)
+  on conflict (listing_id) do update
+    set house_no = excluded.house_no, flat_floor = null, street = excluded.street,
+        exact_address = excluded.exact_address,
+        latitude = excluded.latitude, longitude = excluded.longitude,
+        contact_phones = excluded.contact_phones;
+end $function$;
+
 CREATE OR REPLACE FUNCTION public.fn_deactivate_device_tokens()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -3707,6 +4130,144 @@ begin
   return new;
 end $function$;
 
+CREATE OR REPLACE FUNCTION public.fn_listing_facility_keep_hotel_row()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if exists (select 1
+               from public.listings l
+               join public.property_facilities pf on pf.property_id = l.property_id
+              where l.id = old.listing_id and pf.facility_id = old.facility_id) then
+    return null;
+  end if;
+  return old;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.fn_listing_facility_skip_duplicate()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if exists (select 1 from public.listing_facilities lf
+              where lf.listing_id = new.listing_id and lf.facility_id = new.facility_id) then
+    return null;
+  end if;
+  return new;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.fn_listing_property_address()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if new.property_id is not null
+     and (tg_op = 'INSERT' or old.property_id is distinct from new.property_id) then
+    perform public.fn_copy_property_address(new.property_id, new.id);
+  end if;
+  return null;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.fn_listing_property_facilities()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if new.property_id is not null
+     and (tg_op = 'INSERT' or new.property_id is distinct from old.property_id) then
+    insert into public.listing_facilities (listing_id, facility_id)
+    select new.id, pf.facility_id from public.property_facilities pf
+     where pf.property_id = new.property_id
+    on conflict (listing_id, facility_id) do nothing;
+  end if;
+  return null;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.fn_listing_property_inherit()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_p public.properties;
+begin
+  if tg_op = 'UPDATE' and old.property_id is not null
+     and new.property_id is distinct from old.property_id then
+    raise exception 'A room type cannot leave its hotel'
+      using errcode = '42501', hint = 'property_fixed';
+  end if;
+  if new.property_id is null then
+    return new;
+  end if;
+
+  select * into v_p from public.properties where id = new.property_id;
+  if not found then
+    raise exception 'Hotel not found' using errcode = 'P0002', hint = 'property_not_found';
+  end if;
+  if v_p.owner_id is distinct from new.owner_id then
+    raise exception 'A room type belongs to the hotel''s own host'
+      using errcode = '42501', hint = 'property_owner_mismatch';
+  end if;
+  if new.listing_type::text <> 'hotel' then
+    raise exception 'A hotel''s room types are hotel listings'
+      using errcode = '22023', hint = 'property_child_type';
+  end if;
+
+  -- Joining a hotel (insert, or adopting an existing listing): its active
+  -- room names must not collide with the hotel's.
+  if (tg_op = 'INSERT' or old.property_id is null) and exists (
+       select 1 from public.listing_units mine
+         join public.listing_units theirs
+           on lower(btrim(theirs.label)) = lower(btrim(mine.label))
+         join public.listings l on l.id = theirs.listing_id
+        where mine.listing_id = new.id and mine.is_active and mine.label is not null
+          and theirs.is_active and l.property_id = new.property_id and l.id <> new.id) then
+    raise exception 'A room of this type has a name the hotel already uses'
+      using errcode = '23505', hint = 'room_label_taken';
+  end if;
+
+  new.area                 := v_p.area;
+  new.city                 := v_p.city;
+  new.country              := v_p.country;
+  new.postal_code          := v_p.postal_code;
+  new.landmark             := v_p.landmark;
+  new.latitude             := v_p.latitude;
+  new.longitude            := v_p.longitude;
+  new.check_in_time        := v_p.check_in_time;
+  new.check_out_time       := v_p.check_out_time;
+  new.hotel_star_rating    := v_p.hotel_star_rating;
+  new.hotel_front_desk_24h := v_p.hotel_front_desk_24h;
+  new.hotel_id_required    := v_p.hotel_id_required;
+  return new;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.fn_lock_own_listing(p_listing_id uuid)
+ RETURNS listings
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v public.listings;
+begin
+  select * into v from public.listings where id = p_listing_id for update;
+  if not found then
+    raise exception 'Listing not found' using errcode = 'P0002', hint = 'listing_not_found';
+  end if;
+  if v.owner_id is distinct from auth.uid() and not public.is_admin() then
+    raise exception 'Only the host can change this listing''s rooms'
+      using errcode = '42501', hint = 'not_listing_owner';
+  end if;
+  return v;
+end $function$;
+
 CREATE OR REPLACE FUNCTION public.fn_messages_block_guard()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -3916,6 +4477,89 @@ begin
   return null;
 end;
 $function$;
+
+CREATE OR REPLACE FUNCTION public.fn_property_address_copy_all()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  perform public.fn_copy_property_address(new.property_id);
+  return null;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.fn_property_address_touch()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  new.updated_at := now();
+  return new;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.fn_property_facility_push()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if tg_op = 'INSERT' then
+    insert into public.listing_facilities (listing_id, facility_id)
+    select l.id, new.facility_id from public.listings l
+     where l.property_id = new.property_id
+    on conflict (listing_id, facility_id) do nothing;
+    return null;
+  end if;
+  -- Hotel-wide means hotel-wide: removing it from the hotel removes it from
+  -- every room type, including one that had it ticked before 155. The guard
+  -- lets these through because the property_facilities row is already gone.
+  delete from public.listing_facilities lf
+   using public.listings l
+   where l.id = lf.listing_id and l.property_id = old.property_id
+     and lf.facility_id = old.facility_id;
+  return null;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.fn_property_normalise()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+begin
+  if tg_op = 'UPDATE' and new.owner_id is distinct from old.owner_id then
+    raise exception 'A hotel cannot change owner'
+      using errcode = '42501', hint = 'property_owner_fixed';
+  end if;
+  new.name := btrim(new.name);
+  new.latitude  := public.snap_coordinate(new.latitude);
+  new.longitude := public.snap_coordinate(new.longitude);
+  new.updated_at := now();
+  return new;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.fn_property_push_down()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  update public.listings
+     set area = new.area, city = new.city, country = new.country,
+         postal_code = new.postal_code, landmark = new.landmark,
+         latitude = new.latitude, longitude = new.longitude,
+         check_in_time = new.check_in_time, check_out_time = new.check_out_time,
+         hotel_star_rating = new.hotel_star_rating,
+         hotel_front_desk_24h = new.hotel_front_desk_24h,
+         hotel_id_required = new.hotel_id_required,
+         updated_at = now()
+   where property_id = new.id;
+  return null;
+end $function$;
 
 CREATE OR REPLACE FUNCTION public.fn_rate_limit_hit(p_bucket text, p_limit integer, p_window_seconds integer)
  RETURNS jsonb
@@ -4200,6 +4844,32 @@ begin
   return new;
 end;
 $function$;
+
+CREATE OR REPLACE FUNCTION public.fn_unit_label_unique_in_property()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_prop uuid;
+begin
+  if not new.is_active or new.label is null then
+    return new;
+  end if;
+  select property_id into v_prop from public.listings where id = new.listing_id;
+  if v_prop is null then
+    return new;
+  end if;
+  perform 1 from public.properties where id = v_prop for update;
+  if exists (select 1 from public.listing_units u
+               join public.listings l on l.id = u.listing_id
+              where l.property_id = v_prop and u.is_active and u.id <> new.id
+                and lower(btrim(u.label)) = lower(btrim(new.label))) then
+    raise exception 'This hotel already has a room named %', new.label
+      using errcode = '23505', hint = 'room_label_taken';
+  end if;
+  return new;
+end $function$;
 
 CREATE OR REPLACE FUNCTION public.fn_users_blocked(p_a uuid, p_b uuid)
  RETURNS boolean
@@ -4667,9 +5337,13 @@ begin
     select coalesce(b.tenant_name, gp.full_name, 'Guest'),
            coalesce(public.fn_identity_phone(gp.id), gp.mobile),
            coalesce(hp.full_name, 'Host'),
-           coalesce(public.fn_identity_phone(hp.id), hp.mobile)
+           -- 160/162: the first number the host put on THIS listing. Definer,
+           -- so listing_addresses' RLS does not apply; the status check above
+           -- is the gate, and it is the same gate can_see_listing_address uses.
+           coalesce(la.contact_phones[1], public.fn_identity_phone(hp.id), hp.mobile)
     from public.bookings b
     join public.listings l on l.id = b.listing_id
+    left join public.listing_addresses la on la.listing_id = l.id
     left join public.profiles gp on gp.id = b.tenant_id
     left join public.profiles hp on hp.id = l.owner_id
     where b.id = p_booking_id;
@@ -5006,9 +5680,11 @@ declare
   v_hours   integer;
   v_floor   integer;
   v_slots   integer[];
-  v_start_l timestamp;
-  v_end_l   timestamp;
-  v_end_t   time;
+  v_ws      numeric;
+  v_we      numeric;
+  v_len     numeric;
+  v_off     numeric;
+  v_dur     numeric;
 begin
   select * into v_l from public.listings where id = p_listing_id;
   if not found then
@@ -5052,16 +5728,21 @@ begin
       using errcode = '22023', hint = 'hourly_slot';
   end if;
 
-  -- Day-use window, on one Asia/Dhaka calendar day. A stay ending exactly at
-  -- midnight is "24:00" of the day it started, which `time` can hold.
+  -- Day-use window, Asia/Dhaka wall clock, in minutes after midnight. The
+  -- window runs forwards from its start to the next occurrence of its end:
+  -- 09:00-21:00 is 720 minutes, 22:00-02:00 wraps midnight and is 240.
+  -- `time '24:00'` reads as 1440, so 18:00-24:00 is 360 as before. The stay
+  -- must start inside the window and finish by its end; an offset taken
+  -- mod 1440 makes a start before the window land past its end, and a stay
+  -- longer than the window can never fit.
   if v_l.hourly_window_start is not null then
-    v_start_l := p_starts_at at time zone 'Asia/Dhaka';
-    v_end_l   := p_ends_at   at time zone 'Asia/Dhaka';
-    v_end_t   := case when v_end_l::time = time '00:00' and v_end_l::date = v_start_l::date + 1
-                      then time '24:00' else v_end_l::time end;
-    if (v_end_l::date <> v_start_l::date and v_end_t <> time '24:00')
-       or v_start_l::time < v_l.hourly_window_start
-       or v_end_t > v_l.hourly_window_end then
+    v_ws  := extract(epoch from v_l.hourly_window_start) / 60;
+    v_we  := extract(epoch from v_l.hourly_window_end) / 60;
+    v_len := case when v_we > v_ws then v_we - v_ws else 1440 - v_ws + v_we end;
+    v_off := mod(extract(epoch from (p_starts_at at time zone 'Asia/Dhaka')::time) / 60
+                 - v_ws + 1440, 1440);
+    v_dur := extract(epoch from (p_ends_at - p_starts_at)) / 60;
+    if v_off + v_dur > v_len then
       raise exception 'Hourly stays here run between % and %',
         to_char(v_l.hourly_window_start, 'HH24:MI'), to_char(v_l.hourly_window_end, 'HH24:MI')
         using errcode = '22023', hint = 'hourly_window';
@@ -5177,6 +5858,26 @@ AS $function$
   order by blk.starts_at;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.listing_licence_verified(p_listing_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select exists (
+    select 1
+      from public.listings me
+      join public.listings l
+        on l.id = me.id or (me.property_id is not null and l.property_id = me.property_id)
+      join public.listing_trade_licences t on t.listing_id = l.id
+     where me.id = p_listing_id
+       and me.listing_type::text = 'hotel'
+       and l.listing_type::text = 'hotel'
+       and t.status = 'verified'
+       and exists (select 1 from public.storage_object_meta('documents', t.document_path))
+  );
+$function$;
+
 CREATE OR REPLACE FUNCTION public.listing_rooms_left(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone)
  RETURNS integer
  LANGUAGE sql
@@ -5202,6 +5903,16 @@ AS $function$
           where blk.unit_id = u.id
             and tstzrange(blk.starts_at, blk.ends_at, '[)') && tstzrange(p_starts_at, p_ends_at, '[)')))
   end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.listing_unit_count(p_listing_id uuid)
+ RETURNS integer
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+  select count(*)::int from public.listing_units
+   where listing_id = p_listing_id and is_active;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.mark_all_notifications_read(p_user_id uuid)
@@ -5329,6 +6040,54 @@ BEGIN
   RETURN migrated;
 END;
 $function$;
+
+CREATE OR REPLACE FUNCTION public.move_listing_unit(p_unit_id uuid, p_to_listing_id uuid)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_unit   public.listing_units;
+  v_from   public.listings;
+  v_to     public.listings;
+  v_target uuid;
+begin
+  select * into v_unit from public.listing_units where id = p_unit_id;
+  if not found or not v_unit.is_active then
+    raise exception 'Room not found' using errcode = 'P0002', hint = 'unit_not_found';
+  end if;
+  if v_unit.listing_id = p_to_listing_id then
+    return p_unit_id;
+  end if;
+  -- Both listings, in id order so two opposite moves cannot deadlock.
+  if v_unit.listing_id < p_to_listing_id then
+    v_from := public.fn_lock_own_listing(v_unit.listing_id);
+    v_to   := public.fn_lock_own_listing(p_to_listing_id);
+  else
+    v_to   := public.fn_lock_own_listing(p_to_listing_id);
+    v_from := public.fn_lock_own_listing(v_unit.listing_id);
+  end if;
+  if v_from.property_id is null or v_from.property_id is distinct from v_to.property_id then
+    raise exception 'A room moves only between types of the same hotel'
+      using errcode = '22023', hint = 'unit_move_other_property';
+  end if;
+
+  perform public.deactivate_listing_unit(p_unit_id);
+
+  select id into v_target from public.listing_units
+   where listing_id = p_to_listing_id
+     and lower(btrim(label)) is not distinct from lower(btrim(v_unit.label))
+     and label is not null;
+  if v_target is not null then
+    update public.listing_units set is_active = true where id = v_target;
+  else
+    insert into public.listing_units (listing_id, label)
+    values (p_to_listing_id, v_unit.label)
+    returning id into v_target;
+  end if;
+  return v_target;
+end $function$;
 
 CREATE OR REPLACE FUNCTION public.nearby_landmarks(p_lat double precision, p_lng double precision, p_limit integer DEFAULT 5, p_type text DEFAULT NULL::text)
  RETURNS SETOF jsonb
@@ -5563,6 +6322,18 @@ BEGIN
                 COALESCE(guest_record.full_name, 'A guest'),
                 COALESCE(listing_record.title, 'your property'));
             notification_type := 'booking_request';
+            notification_priority := 'high';
+            target_user_id := listing_record.owner_id;
+            action_url := '/host/reservations/' || NEW.id;
+
+        -- 151: an instant booking is born confirmed. Without this arm it fell
+        -- through to ELSE and the host heard nothing about a guest arriving.
+        WHEN TG_OP = 'INSERT' AND NEW.booking_status = 'confirmed' THEN
+            notification_title := 'New Instant Booking';
+            notification_body := format('%s booked %s',
+                COALESCE(guest_record.full_name, 'A guest'),
+                COALESCE(listing_record.title, 'your property'));
+            notification_type := 'booking_confirmed';
             notification_priority := 'high';
             target_user_id := listing_record.owner_id;
             action_url := '/host/reservations/' || NEW.id;
@@ -5820,12 +6591,17 @@ CREATE OR REPLACE FUNCTION public.orphan_face_evidence()
 AS $function$
 begin
   perform public.fn_require_service_role();
-  return query select o.name from storage.objects o where o.bucket_id='face-evidence'
-    and not exists(select 1 from public.face_verification_attempts a
-      where a.id::text=split_part(o.name,'/',2) and a.user_id::text=split_part(o.name,'/',1))
-    limit 100;
-end;
-$function$;
+  return query
+  select n.name from (
+    select o.name from storage.objects o where o.bucket_id = 'face-evidence'
+    union
+    select a.path from public.storage_assets a
+     where a.bucket = 'face-evidence' and a.state <> 'deleted'
+  ) n
+  where not exists (select 1 from public.face_verification_attempts a
+    where a.id::text = split_part(n.name, '/', 2) and a.user_id::text = split_part(n.name, '/', 1))
+  limit 100;
+end $function$;
 
 CREATE OR REPLACE FUNCTION public.otp_log_attempts(p_id uuid, p_attempts integer)
  RETURNS void
@@ -5897,6 +6673,71 @@ begin
   return v_deleted;
 end;
 $function$;
+
+CREATE OR REPLACE FUNCTION public.reassign_booking_unit(p_booking_id uuid, p_unit_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_booking public.bookings%rowtype;
+  v_owner   uuid;
+begin
+  select * into v_booking from public.bookings where id = p_booking_id for update;
+  if not found then
+    raise exception 'Booking not found' using errcode = 'P0002', hint = 'booking_not_found';
+  end if;
+
+  select owner_id into v_owner from public.listings where id = v_booking.listing_id;
+  if v_owner is distinct from auth.uid() and not public.is_admin() then
+    raise exception 'Only the host can move a booking to another room'
+      using errcode = '42501', hint = 'not_listing_owner';
+  end if;
+
+  if v_booking.booking_status not in ('pending', 'confirmed', 'active') then
+    raise exception 'A % booking cannot be moved', v_booking.booking_status
+      using errcode = '22023', hint = 'booking_not_live';
+  end if;
+  if v_booking.unit_id = p_unit_id then
+    return to_jsonb(v_booking);
+  end if;
+
+  perform 1 from public.listing_units u
+   where u.id = p_unit_id and u.listing_id = v_booking.listing_id and u.is_active
+   for update;
+  if not found then
+    raise exception 'That room is not an active room of this listing'
+      using errcode = '22023', hint = 'unit_mismatch';
+  end if;
+
+  -- Listing-wide blocks need no check: the booking already sits inside them
+  -- or not, whichever room it is in.
+  if exists (
+    select 1 from public.listing_availability_blocks blk
+    where blk.unit_id = p_unit_id
+      and tstzrange(blk.starts_at, blk.ends_at, '[)')
+          && tstzrange(v_booking.starts_at, v_booking.ends_at, '[)')
+  ) then
+    raise exception 'That room is blocked for these dates'
+      using errcode = '23P01', hint = 'unit_blocked';
+  end if;
+
+  perform set_config('musafir.unit_reassign', 'on', true);
+  begin
+    update public.bookings set unit_id = p_unit_id
+     where id = p_booking_id
+     returning * into v_booking;
+  exception when exclusion_violation then
+    raise exception 'That room already has a booking in these dates'
+      using errcode = '23P01', hint = 'unit_taken';
+  end;
+  -- Transaction-local already; cleared so nothing later in the same
+  -- transaction inherits the permission.
+  perform set_config('musafir.unit_reassign', '', true);
+
+  return to_jsonb(v_booking);
+end $function$;
 
 CREATE OR REPLACE FUNCTION public.record_disbursement(p_user_id uuid, p_payout_method_id uuid, p_amount numeric, p_kind text, p_booking_id uuid DEFAULT NULL::uuid, p_reference text DEFAULT NULL::text, p_note text DEFAULT NULL::text, p_status text DEFAULT 'sent'::text)
  RETURNS uuid
@@ -6212,6 +7053,44 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.review_trade_licence(p_listing_id uuid, p_document_path text, p_approve boolean, p_reason text DEFAULT NULL::text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_row public.listing_trade_licences;
+begin
+  if auth.uid() is null or not public.is_admin() then
+    raise exception 'Only an admin can review a licence' using errcode = '42501';
+  end if;
+
+  select * into v_row from public.listing_trade_licences
+   where listing_id = p_listing_id for update;
+  if not found or v_row.status <> 'pending'
+     or v_row.document_path is distinct from p_document_path then
+    raise exception 'Submission changed. Refresh the review queue'
+      using errcode = '40001', hint = 'licence_changed';
+  end if;
+  if v_row.owner_id = auth.uid() then
+    raise exception 'Another admin must review your own listing'
+      using errcode = '42501', hint = 'own_listing';
+  end if;
+  if not p_approve and nullif(btrim(p_reason), '') is null then
+    raise exception 'Say why, so the host can fix it'
+      using errcode = '22023', hint = 'reason_required';
+  end if;
+
+  update public.listing_trade_licences
+     set status = case when p_approve then 'verified' else 'rejected' end::public.verification_status,
+         reviewed_at = now(),
+         reviewed_by = auth.uid(),
+         rejection_reason = case when p_approve then null else btrim(p_reason) end
+   where listing_id = p_listing_id;
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.revoke_device(p_device_id text)
  RETURNS boolean
  LANGUAGE plpgsql
@@ -6440,13 +7319,41 @@ AS $function$
             else public.is_booking_available(l.id, p_check_in, p_check_out)
           end
   ),
+  -- One result per hotel (154). A hotel's room types are separate listings
+  -- (153), and before this each one was its own card, so Sea Crown showed up
+  -- three times in a row. Collapse to the cheapest type that matched every
+  -- filter above (dates and party included, so the price shown is one the
+  -- guest can actually book) and say how many types matched. A listing with
+  -- no property is its own group, so nothing else changes.
+  --
+  -- Done here, before the tier choice, the ordering and limit/offset:
+  -- collapsing after paging would return short pages and could split a
+  -- hotel across two of them. The tie-breaks keep the pick deterministic, so
+  -- the same type wins on every page.
+  ranked as (
+    select b.*,
+           count(*) over (partition by coalesce((b.row_l).property_id, b.lid))
+             as types_matching,
+           row_number() over (
+             partition by coalesce((b.row_l).property_id, b.lid)
+             order by least((b.row_l).hourly_rate, (b.row_l).daily_rate,
+                            (b.row_l).monthly_rate) asc nulls last,
+                      coalesce(b.rating, 0) desc,
+                      (b.row_l).created_at asc,
+                      b.lid
+           ) as pick
+    from base b
+  ),
+  collapsed as (
+    select * from ranked where pick = 1
+  ),
   -- Smallest tier that contains at least one match (null → nearest fallback).
-  -- Reads `base`, so an unavailable listing cannot win a tier and then be
+  -- Reads `collapsed` (so `base`), so an unavailable listing cannot win a tier and then be
   -- filtered out of it, which would answer a dated search with an empty ring.
   chosen as (
     select min(r) as radius
     from unnest(coalesce(p_radii, '{}'::integer[])) r
-    where (select min(dist) from base) <= r
+    where (select min(dist) from collapsed) <= r
   )
   select to_jsonb(b.row_l) || jsonb_build_object(
     'host_avatar_url', b.host_avatar,
@@ -6464,9 +7371,31 @@ AS $function$
       from public.listing_facilities lf
       join public.facilities f on f.id = lf.facility_id
       where lf.listing_id = b.lid
-    ), '[]'::jsonb)
+    ), '[]'::jsonb),
+    -- Null for a listing outside a hotel. The name comes through the
+    -- properties select policy (this is an invoker function), which shows a
+    -- hotel exactly when it has a live room type: the same condition that
+    -- let this row through.
+    'property_name',
+      (select p.name from public.properties p where p.id = (b.row_l).property_id),
+    'room_types_matching',
+      case when (b.row_l).property_id is not null then b.types_matching end,
+    -- A hotel's card shows the hotel (159). The row is the cheapest room
+    -- type's listing, so its image_urls were that room's photos -- and which
+    -- room wins changes with dates and filters, so the same hotel's picture
+    -- changed between searches. Overridden here (jsonb || keeps the right
+    -- side) rather than added as a new key so every bundle already in the
+    -- field gets it without a rebuild. Safe because a hotel row opens
+    -- HotelScreen, which loads its own data; this array only feeds the card.
+    -- A hotel with no photos of its own falls back to the room's.
+    'image_urls',
+      coalesce(
+        (select to_jsonb(p.image_urls) from public.properties p
+         where p.id = (b.row_l).property_id
+           and cardinality(p.image_urls) > 0),
+        to_jsonb((b.row_l).image_urls))
   )
-  from base b
+  from collapsed b
   where p_radii is null
      or (select radius from chosen) is null            -- fallback: nearest N
      or b.dist <= (select radius from chosen)
@@ -7350,6 +8279,83 @@ BEGIN
 END;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.set_listing_unit_count(p_listing_id uuid, p_count integer)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_owner  uuid;
+  v_active int;
+  v_need   int;
+  v_ids    uuid[];
+  v_free   uuid[];
+begin
+  if p_count is null or p_count < 1 or p_count > 500 then
+    raise exception 'A listing has between 1 and 500 units'
+      using errcode = '22023', hint = 'unit_count_range';
+  end if;
+
+  select owner_id into v_owner from public.listings
+   where id = p_listing_id for update;
+  if not found then
+    raise exception 'Listing not found' using errcode = 'P0002', hint = 'listing_not_found';
+  end if;
+  if v_owner is distinct from auth.uid() and not public.is_admin() then
+    raise exception 'Only the host can change how many units a listing has'
+      using errcode = '42501', hint = 'not_listing_owner';
+  end if;
+
+  select count(*) into v_active from public.listing_units
+   where listing_id = p_listing_id and is_active;
+
+  if p_count > v_active then
+    v_need := p_count - v_active;
+    update public.listing_units set is_active = true
+     where id in (select id from public.listing_units
+                   where listing_id = p_listing_id and not is_active
+                   order by created_at, id limit v_need);
+    get diagnostics v_active = row_count;
+    v_need := v_need - v_active;
+    if v_need > 0 then
+      insert into public.listing_units (listing_id)
+      select p_listing_id from generate_series(1, v_need);
+    end if;
+
+  elsif p_count < v_active then
+    v_need := v_active - p_count;
+    -- Lock every active unit first (waiting on any booking mid-flight), then
+    -- judge them; a two-step so the bookings check runs after the locks.
+    select array_agg(id) into v_ids from (
+      select id from public.listing_units
+       where listing_id = p_listing_id and is_active
+       order by id for update) s;
+
+    select array_agg(id) into v_free from (
+      select u.id from public.listing_units u
+       where u.id = any(v_ids)
+         and not exists (
+           select 1 from public.bookings b
+            where b.unit_id = u.id
+              and b.booking_status in ('pending', 'confirmed', 'active')
+              and b.ends_at > now())
+       order by u.created_at desc, u.id desc
+       limit v_need) s;
+
+    if coalesce(array_length(v_free, 1), 0) < v_need then
+      raise exception 'Only % of the % units to remove have no upcoming booking',
+        coalesce(array_length(v_free, 1), 0), v_need
+        using errcode = '22023', hint = 'units_in_use';
+    end if;
+
+    update public.listing_units set is_active = false where id = any(v_free);
+  end if;
+
+  return (select count(*)::int from public.listing_units
+           where listing_id = p_listing_id and is_active);
+end $function$;
+
 CREATE OR REPLACE FUNCTION public.set_payout_method_verification(p_id uuid, p_status verification_status, p_rejection_reason text DEFAULT NULL::text)
  RETURNS void
  LANGUAGE plpgsql
@@ -7463,6 +8469,407 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.storage_begin_delete(p_bucket text, p_path text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_a public.storage_assets;
+begin
+  select * into v_a from public.storage_assets
+   where bucket = p_bucket and path = p_path and state <> 'deleted'
+   for update;
+  if not found then return null; end if;
+  if not public.storage_can_delete(v_a.bucket, v_a.path, v_a.owner_id) then
+    raise exception 'Not allowed to delete this' using errcode = '42501', hint = 'storage_denied';
+  end if;
+  update public.storage_assets set state = 'deleting', updated_at = now() where id = v_a.id;
+  return jsonb_build_object('asset_id', v_a.id, 's3_bucket', v_a.s3_bucket,
+    's3_key', v_a.s3_key, 's3_version', v_a.s3_version, 'supabase_path', v_a.supabase_path);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.storage_begin_upload(p_bucket text, p_path text, p_mime_type text, p_size_bytes bigint, p_upsert boolean, p_idempotency_key text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_uid uuid := auth.uid();
+  v_limit bigint;
+  v_types text[];
+  v_mode text;
+  v_intent public.storage_upload_intents;
+  v_id uuid := gen_random_uuid();
+begin
+  if v_uid is null then
+    raise exception 'Sign in to upload' using errcode = '42501', hint = 'storage_denied';
+  end if;
+  select b.file_size_limit, b.allowed_mime_types into v_limit, v_types
+    from storage.buckets b where b.id = p_bucket;
+  if not found then
+    raise exception 'Unknown bucket' using errcode = '22023', hint = 'storage_bucket';
+  end if;
+  if not public.storage_path_ok(p_path) then
+    raise exception 'Invalid path' using errcode = '22023', hint = 'storage_path';
+  end if;
+  -- The bucket limits are the live ones, read from Supabase's own bucket
+  -- config, so the two providers cannot disagree about what fits.
+  if p_size_bytes is null or p_size_bytes <= 0
+     or (v_limit is not null and p_size_bytes > v_limit) then
+    raise exception 'File is too large' using errcode = '22023', hint = 'storage_too_large';
+  end if;
+  if v_types is not null and not (p_mime_type = any (v_types)) then
+    raise exception 'File type not allowed' using errcode = '22023', hint = 'storage_mime';
+  end if;
+
+  select * into v_intent from public.storage_upload_intents i
+   where i.user_id = v_uid and i.idempotency_key = p_idempotency_key;
+  if found then
+    if (v_intent.bucket, v_intent.path, v_intent.mime_type, v_intent.size_bytes, v_intent.upsert)
+       is distinct from (p_bucket, p_path, p_mime_type, p_size_bytes, p_upsert) then
+      raise exception 'Idempotency key reused for a different upload'
+        using errcode = '22023', hint = 'storage_idempotency_mismatch';
+    end if;
+    if v_intent.state = 'pending' and v_intent.expires_at > now() then
+      return jsonb_build_object('intent_id', v_intent.id, 'staging_key', v_intent.staging_key,
+        'mime_type', v_intent.mime_type, 'size_bytes', v_intent.size_bytes,
+        'expires_at', v_intent.expires_at, 'state', v_intent.state);
+    end if;
+    if v_intent.state in ('finalizing', 'finalized') then
+      return jsonb_build_object('intent_id', v_intent.id, 'state', v_intent.state);
+    end if;
+    raise exception 'Upload expired; start again' using errcode = '22023', hint = 'storage_expired';
+  end if;
+
+  v_mode := public.storage_write_mode(p_bucket, p_path, coalesce(p_upsert, false));
+  if v_mode = 'exists' then
+    raise exception 'The resource already exists' using errcode = '23505', hint = 'storage_exists';
+  elsif v_mode = 'denied' then
+    raise exception 'Not allowed to upload here' using errcode = '42501', hint = 'storage_denied';
+  end if;
+
+  insert into public.storage_upload_intents (id, user_id, bucket, path, upsert, mime_type,
+         size_bytes, idempotency_key, staging_key, committed_key)
+  values (v_id, v_uid, p_bucket, p_path, coalesce(p_upsert, false), p_mime_type, p_size_bytes,
+          p_idempotency_key, 'staging/' || v_id, p_bucket || '/' || p_path || '@' || v_id)
+  returning * into v_intent;
+  return jsonb_build_object('intent_id', v_intent.id, 'staging_key', v_intent.staging_key,
+    'mime_type', v_intent.mime_type, 'size_bytes', v_intent.size_bytes,
+    'expires_at', v_intent.expires_at, 'state', v_intent.state);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.storage_can_delete(p_bucket text, p_path text, p_owner uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  select auth.uid() is not null and case p_bucket
+    when 'avatars' then public.storage_file_name(p_path) like auth.uid()::text || '.%'
+                     or public.is_admin()
+    when 'listing-images' then p_owner = auth.uid() or public.is_admin()
+    when 'chat-attachments' then p_owner = auth.uid() or public.is_admin()
+    when 'documents' then public.storage_first_folder(p_path) = auth.uid()::text
+                      and split_part(p_path, '/', 2) <> 'nid'
+    else false end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_can_insert(p_bucket text, p_path text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  select auth.uid() is not null and case p_bucket
+    when 'avatars' then public.storage_file_name(p_path) like auth.uid()::text || '.%'
+                     or public.is_admin()
+    when 'listing-images' then public.can_upload_listing_image() or public.is_admin()
+    when 'chat-attachments' then true
+    when 'documents' then public.storage_first_folder(p_path) = auth.uid()::text
+    when 'face-evidence' then exists (
+      select 1 from public.face_verification_attempts a
+       where a.user_id = auth.uid() and a.status = 'draft' and a.expires_at > now()
+         and p_path in (a.user_id || '/' || a.id || '/selfie.jpg',
+                        a.user_id || '/' || a.id || '/clip.webm',
+                        a.user_id || '/' || a.id || '/clip.mp4'))
+    else false end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_can_read(p_bucket text, p_path text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  select case p_bucket
+    when 'avatars' then true
+    when 'listing-images' then true
+    when 'chat-attachments' then true
+    when 'documents' then auth.uid() is not null and (
+      public.storage_first_folder(p_path) = auth.uid()::text or public.is_admin())
+    when 'face-evidence' then auth.uid() is not null and (
+      public.storage_first_folder(p_path) = auth.uid()::text or public.is_admin())
+    else false end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_can_replace(p_bucket text, p_path text, p_owner uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  select auth.uid() is not null and case p_bucket
+    when 'avatars' then public.storage_file_name(p_path) like auth.uid()::text || '.%'
+                     or public.is_admin()
+    when 'listing-images' then p_owner = auth.uid() or public.is_admin()
+    when 'documents' then public.storage_first_folder(p_path) = auth.uid()::text
+                      and split_part(p_path, '/', 2) <> 'nid'
+    else false end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_claim_intent(p_intent_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_i public.storage_upload_intents;
+  v_mode text;
+begin
+  select * into v_i from public.storage_upload_intents
+   where id = p_intent_id and user_id = auth.uid()
+   for update;
+  if not found then
+    raise exception 'Upload not found' using errcode = '22023', hint = 'storage_not_found';
+  end if;
+  if v_i.state = 'finalized' then
+    return jsonb_build_object('state', 'finalized', 'asset_id', v_i.asset_id,
+      'bucket', v_i.bucket, 'path', v_i.path);
+  end if;
+  if v_i.state = 'rejected' then
+    raise exception 'Upload was rejected' using errcode = '22023', hint = 'storage_rejected';
+  end if;
+  -- A claim abandoned by a crashed finalizer may be retaken after two
+  -- minutes; a live one may not.
+  if v_i.state = 'finalizing' and v_i.claimed_at > now() - interval '2 minutes' then
+    raise exception 'Upload is already being finalized' using errcode = '55P03', hint = 'storage_busy';
+  end if;
+  if v_i.state = 'pending' and v_i.expires_at <= now() then
+    raise exception 'Upload expired; start again' using errcode = '22023', hint = 'storage_expired';
+  end if;
+  v_mode := public.storage_write_mode(v_i.bucket, v_i.path, v_i.upsert);
+  if v_mode = 'exists' then
+    raise exception 'The resource already exists' using errcode = '23505', hint = 'storage_exists';
+  elsif v_mode = 'denied' then
+    raise exception 'Not allowed to upload here' using errcode = '42501', hint = 'storage_denied';
+  end if;
+  update public.storage_upload_intents set state = 'finalizing', claimed_at = now()
+   where id = v_i.id;
+  return jsonb_build_object('state', 'finalizing', 'intent_id', v_i.id,
+    'bucket', v_i.bucket, 'path', v_i.path, 'mime_type', v_i.mime_type,
+    'size_bytes', v_i.size_bytes, 'staging_key', v_i.staging_key,
+    'committed_key', v_i.committed_key);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.storage_commit_upload(p_intent_id uuid, p_size_bytes bigint, p_sha256 text, p_mime_type text, p_s3_bucket text, p_s3_key text, p_s3_version text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_i public.storage_upload_intents;
+  v_a public.storage_assets;
+begin
+  select * into v_i from public.storage_upload_intents where id = p_intent_id for update;
+  if not found then
+    raise exception 'Upload not found' using errcode = '22023', hint = 'storage_not_found';
+  end if;
+  if v_i.state = 'finalized' then
+    select * into v_a from public.storage_assets where id = v_i.asset_id;
+    return jsonb_build_object('asset_id', v_a.id, 'bucket', v_a.bucket, 'path', v_a.path,
+      'generation', v_a.generation);
+  end if;
+  if v_i.state <> 'finalizing' then
+    raise exception 'Upload is not being finalized' using errcode = '22023', hint = 'storage_state';
+  end if;
+  if p_size_bytes <> v_i.size_bytes or p_mime_type <> v_i.mime_type
+     or p_s3_key <> v_i.committed_key then
+    raise exception 'Uploaded object does not match its ticket'
+      using errcode = '22023', hint = 'storage_mismatch';
+  end if;
+
+  insert into public.storage_assets as a (bucket, path, owner_id, mime_type, size_bytes,
+         sha256, s3_bucket, s3_key, s3_version)
+  values (v_i.bucket, v_i.path, v_i.user_id, v_i.mime_type, p_size_bytes,
+          p_sha256, p_s3_bucket, p_s3_key, p_s3_version)
+  on conflict (bucket, path) do update set
+    generation = a.generation + 1,
+    -- A replacement keeps the original owner (an admin fixing a host's
+    -- photo does not take it over); a path re-created after deletion
+    -- belongs to whoever created it.
+    owner_id = case when a.state = 'deleted' then excluded.owner_id else a.owner_id end,
+    business_created_at = case when a.state = 'deleted' then now() else a.business_created_at end,
+    mime_type = excluded.mime_type, size_bytes = excluded.size_bytes,
+    sha256 = excluded.sha256, s3_bucket = excluded.s3_bucket, s3_key = excluded.s3_key,
+    s3_version = excluded.s3_version, state = 'active', updated_at = now()
+  returning * into v_a;
+
+  update public.storage_upload_intents
+     set state = 'finalized', finalized_at = now(), asset_id = v_a.id
+   where id = v_i.id;
+  return jsonb_build_object('asset_id', v_a.id, 'bucket', v_a.bucket, 'path', v_a.path,
+    'generation', v_a.generation);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.storage_existing_owner(p_bucket text, p_path text)
+ RETURNS TABLE(found boolean, owner_id uuid)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  select true, a.owner_id from public.storage_assets a
+   where a.bucket = p_bucket and a.path = p_path and a.state <> 'deleted'
+  union all
+  select true, o.owner from storage.objects o
+   where o.bucket_id = p_bucket and o.name = p_path
+     and not exists (select 1 from public.storage_assets a
+                      where a.bucket = p_bucket and a.path = p_path)
+  limit 1;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_file_name(p_path text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO ''
+AS $function$
+  select regexp_replace(p_path, '^.*/', '');
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_finish_delete(p_asset_id uuid)
+ RETURNS void
+ LANGUAGE sql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  update public.storage_assets set state = 'deleted', updated_at = now()
+   where id = p_asset_id and state = 'deleting';
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_first_folder(p_path text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO ''
+AS $function$
+  select case when position('/' in p_path) > 0 then split_part(p_path, '/', 1) end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_object_meta(p_bucket text, p_path text)
+ RETURNS TABLE(owner_id uuid, mime_type text, size_bytes bigint)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  select a.owner_id, a.mime_type, a.size_bytes from public.storage_assets a
+   where a.bucket = p_bucket and a.path = p_path and a.state = 'active'
+  union all
+  select o.owner, o.metadata->>'mimetype', (o.metadata->>'size')::bigint
+    from storage.objects o
+   where o.bucket_id = p_bucket and o.name = p_path
+     and not exists (select 1 from public.storage_assets a
+                      where a.bucket = p_bucket and a.path = p_path)
+  limit 1;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_path_ok(p_path text)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO ''
+AS $function$
+  select p_path is not null
+     and length(p_path) between 1 and 512
+     and p_path !~ '(^/|/$|//|\\)'
+     and p_path !~ '(^|/)\.\.?(/|$)'
+     and p_path ~ '^[A-Za-z0-9._/-]+$';
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_purge_begin(p_bucket text, p_paths text[])
+ RETURNS TABLE(asset_id uuid, path text, s3_bucket text, s3_key text, s3_version text)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+begin
+  return query
+  update public.storage_assets a set state = 'deleting', updated_at = now()
+   where a.bucket = p_bucket and a.path = any(p_paths) and a.state <> 'deleted'
+     and a.s3_key is not null
+  returning a.id, a.path, a.s3_bucket, a.s3_key, a.s3_version;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.storage_reject_intent(p_intent_id uuid, p_reason text)
+ RETURNS void
+ LANGUAGE sql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  update public.storage_upload_intents
+     set state = 'rejected', reject_reason = left(p_reason, 200)
+   where id = p_intent_id and state in ('pending', 'finalizing');
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_release_intent(p_intent_id uuid)
+ RETURNS void
+ LANGUAGE sql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  update public.storage_upload_intents set state = 'pending', claimed_at = null
+   where id = p_intent_id and state = 'finalizing';
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_resolve_reads(p_refs jsonb)
+ RETURNS TABLE(bucket text, path text, s3_bucket text, s3_key text, s3_version text, generation integer)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  select a.bucket, a.path, a.s3_bucket, a.s3_key, a.s3_version, a.generation
+    from jsonb_to_recordset(coalesce(p_refs, '[]'::jsonb)) as r(bucket text, path text)
+    join public.storage_assets a on a.bucket = r.bucket and a.path = r.path
+   where a.state = 'active' and a.s3_key is not null
+     and public.storage_can_read(a.bucket, a.path)
+   limit 100;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_write_mode(p_bucket text, p_path text, p_upsert boolean)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_found boolean;
+  v_owner uuid;
+begin
+  select e.found, e.owner_id into v_found, v_owner
+    from public.storage_existing_owner(p_bucket, p_path) e;
+  if coalesce(v_found, false) then
+    if not p_upsert then return 'exists'; end if;
+    return case when public.storage_can_replace(p_bucket, p_path, v_owner)
+                then 'replace' else 'denied' end;
+  end if;
+  return case when public.storage_can_insert(p_bucket, p_path)
+              then 'insert' else 'denied' end;
+end $function$;
+
 CREATE OR REPLACE FUNCTION public.submit_address_verification(p_address_line text)
  RETURNS void
  LANGUAGE plpgsql
@@ -7509,15 +8916,15 @@ begin
   if a.status='pending' then return; end if;
   if a.status<>'draft' or a.expires_at<=now() then raise exception 'Attempt expired. Start again'; end if;
   selfie := a.user_id::text||'/'||a.id::text||'/selfie.jpg';
-  if not exists(select 1 from storage.objects where bucket_id='face-evidence' and name=selfie
-    and (metadata->>'size')::bigint between 100 and 524288 and metadata->>'mimetype'='image/jpeg') then
+  if not exists(select 1 from public.storage_object_meta('face-evidence',selfie) m
+    where m.size_bytes between 100 and 524288 and m.mime_type='image/jpeg') then
     raise exception 'Selfie upload is missing or invalid'; end if;
   if a.method='guided' then
     if p_clip_extension is null or p_clip_extension not in ('webm','mp4') then raise exception 'Invalid video format'; end if;
     clip := a.user_id::text||'/'||a.id::text||'/clip.'||p_clip_extension;
-    if not exists(select 1 from storage.objects where bucket_id='face-evidence' and name=clip
-      and (metadata->>'size')::bigint between 100 and 8388608
-      and metadata->>'mimetype'='video/'||p_clip_extension) then raise exception 'Video upload is missing or invalid'; end if;
+    if not exists(select 1 from public.storage_object_meta('face-evidence',clip) m
+      where m.size_bytes between 100 and 8388608
+      and m.mime_type='video/'||p_clip_extension) then raise exception 'Video upload is missing or invalid'; end if;
   end if;
   -- No client liveness boolean is trusted. The admin must review the media.
   update public.face_verification_attempts set status='pending', submitted_at=now(),
@@ -7546,15 +8953,15 @@ begin
   foreach path in array array[p_front_path,p_back_path] loop
     if path is null then continue; end if;
     if path not like uid::text||'/nid/%' then raise exception 'Invalid document owner' using errcode='42501'; end if;
-    select metadata->>'mimetype' into mime from storage.objects where bucket_id='documents' and name=path
-      and (metadata->>'size')::bigint between 100 and 5242880;
+    select m.mime_type into mime from public.storage_object_meta('documents',path) m
+      where m.size_bytes between 100 and 5242880;
     if not found or mime not in ('image/jpeg','image/png') or mime is null then raise exception 'Upload a JPG or PNG of each side, under 5 MB'; end if;
   end loop;
   -- A replacement with a single-sided document must not inherit an old back.
   -- Stored historical image bytes are preserved; only the current slot changes.
   if p_back_path is null then delete from public.owner_documents where user_id=uid and document_type='nid_back'; end if;
   insert into public.owner_documents(user_id,document_type,file_path,mime_type,uploaded_at,verified_at,verified_by,rejection_reason)
-    select uid,sides.slot,sides.file_path,(select metadata->>'mimetype' from storage.objects where bucket_id='documents' and name=sides.file_path),now(),null,null,null
+    select uid,sides.slot,sides.file_path,(select m.mime_type from public.storage_object_meta('documents',sides.file_path) m),now(),null,null,null
     from (values ('nid_front',p_front_path),('nid_back',p_back_path)) sides(slot,file_path) where sides.file_path is not null
     on conflict(user_id,document_type) do update set file_path=excluded.file_path,mime_type=excluded.mime_type,
       uploaded_at=excluded.uploaded_at,verified_at=null,verified_by=null,rejection_reason=null;
@@ -7569,6 +8976,73 @@ CREATE OR REPLACE FUNCTION public.submit_nid_verification(p_front_path text, p_b
  SET search_path TO 'public'
 AS $function$
   select public.submit_identity_document('nid',p_front_path,p_back_path,null);
+$function$;
+
+CREATE OR REPLACE FUNCTION public.submit_trade_licence(p_listing_id uuid, p_document_path text, p_licence_number text DEFAULT NULL::text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_uid uuid := auth.uid();
+  v_listing public.listings;
+  v_mime text;
+  v_size bigint;
+  v_owner uuid;
+  v_number text := nullif(btrim(p_licence_number), '');
+begin
+  if v_uid is null then
+    raise exception 'Sign in first' using errcode = '42501';
+  end if;
+
+  select * into v_listing from public.listings where id = p_listing_id;
+  if not found or v_listing.owner_id is distinct from v_uid then
+    raise exception 'You can only add a licence to your own listing'
+      using errcode = '42501', hint = 'not_listing_owner';
+  end if;
+  if v_listing.listing_type::text <> 'hotel' then
+    raise exception 'A trade licence is for hotel listings'
+      using errcode = '22023', hint = 'not_a_hotel';
+  end if;
+  if v_number is not null and char_length(v_number) > 60 then
+    raise exception 'The licence number is too long'
+      using errcode = '22023', hint = 'licence_number_invalid';
+  end if;
+
+  -- The path is the uploader's own folder AND the storage layer recorded them
+  -- as the owner: the path alone is a string anyone can type (database-security.md).
+  if p_document_path is null or p_document_path not like v_uid::text || '/trade_licence/%' then
+    raise exception 'Invalid document' using errcode = '42501', hint = 'document_not_owned';
+  end if;
+  select m.owner_id, m.mime_type, m.size_bytes
+    into v_owner, v_mime, v_size
+    from public.storage_object_meta('documents', p_document_path) m;
+  if found and v_owner is distinct from v_uid then
+    raise exception 'Invalid document' using errcode = '42501', hint = 'document_not_owned';
+  end if;
+  if not found or v_mime is null
+     or v_mime not in ('image/jpeg', 'image/png', 'application/pdf')
+     or v_size is null or v_size not between 100 and 5242880 then
+    raise exception 'Upload a JPG, PNG or PDF of the licence, under 5 MB'
+      using errcode = '22023', hint = 'document_invalid';
+  end if;
+
+  insert into public.listing_trade_licences
+    (listing_id, owner_id, document_path, licence_number, status, submitted_at,
+     reviewed_at, reviewed_by, rejection_reason)
+  values (p_listing_id, v_uid, p_document_path, v_number, 'pending', now(),
+          null, null, null)
+  on conflict (listing_id) do update
+    set owner_id = excluded.owner_id,
+        document_path = excluded.document_path,
+        licence_number = excluded.licence_number,
+        status = 'pending',
+        submitted_at = now(),
+        reviewed_at = null,
+        reviewed_by = null,
+        rejection_reason = null;
+end;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.sweep_sms_campaigns()
@@ -8088,10 +9562,12 @@ CREATE INDEX IF NOT EXISTS host_ledger_type_idx ON public.host_ledger_entries US
 CREATE INDEX IF NOT EXISTS idx_landmarks_geog ON public.landmarks USING gist (geog);
 CREATE INDEX IF NOT EXISTS idx_landmarks_type ON public.landmarks USING btree (type) WHERE is_active;
 CREATE INDEX IF NOT EXISTS listing_availability_blocks_listing_idx ON public.listing_availability_blocks USING btree (listing_id, starts_at);
+CREATE INDEX IF NOT EXISTS listing_trade_licences_pending_idx ON public.listing_trade_licences USING btree (submitted_at) WHERE (status = 'pending'::verification_status);
 CREATE INDEX IF NOT EXISTS listing_units_listing_active_idx ON public.listing_units USING btree (listing_id) WHERE is_active;
 CREATE INDEX IF NOT EXISTS idx_listings_geog ON public.listings USING gist (geog);
 CREATE INDEX IF NOT EXISTS idx_listings_purpose_tags ON public.listings USING gin (purpose_tags);
 CREATE INDEX IF NOT EXISTS listings_location_idx ON public.listings USING gist (location);
+CREATE INDEX IF NOT EXISTS listings_property_idx ON public.listings USING btree (property_id) WHERE (property_id IS NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON public.messages USING btree (conversation_id);
 CREATE INDEX IF NOT EXISTS idx_messages_created_at ON public.messages USING btree (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notification_campaigns_created ON public.notification_campaigns USING btree (created_at DESC);
@@ -8116,6 +9592,8 @@ CREATE INDEX IF NOT EXISTS payout_methods_pending_idx ON public.payout_methods U
 CREATE INDEX IF NOT EXISTS payout_methods_user_live_idx ON public.payout_methods USING btree (user_id) WHERE (retired_at IS NULL);
 CREATE INDEX IF NOT EXISTS profiles_address_verification_status_idx ON public.profiles USING btree (address_verification_status) WHERE (address_verification_status <> 'none'::verification_status);
 CREATE INDEX IF NOT EXISTS profiles_is_host_idx ON public.profiles USING btree (is_host) WHERE (is_host = true);
+CREATE INDEX IF NOT EXISTS properties_owner_idx ON public.properties USING btree (owner_id);
+CREATE INDEX IF NOT EXISTS property_facilities_facility_idx ON public.property_facilities USING btree (facility_id);
 CREATE INDEX IF NOT EXISTS idx_push_tokens_active ON public.push_tokens USING btree (user_id, is_active) WHERE (is_active = true);
 CREATE INDEX IF NOT EXISTS idx_push_tokens_token ON public.push_tokens USING btree (token);
 CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON public.push_tokens USING btree (user_id);
@@ -8156,6 +9634,7 @@ alter table public.listing_addresses enable row level security;
 alter table public.listing_availability_blocks enable row level security;
 alter table public.listing_checkin_details enable row level security;
 alter table public.listing_facilities enable row level security;
+alter table public.listing_trade_licences enable row level security;
 alter table public.listing_units enable row level security;
 alter table public.listings enable row level security;
 alter table public.message_templates enable row level security;
@@ -8168,6 +9647,9 @@ alter table public.owner_documents enable row level security;
 alter table public.payments enable row level security;
 alter table public.payout_methods enable row level security;
 alter table public.profiles enable row level security;
+alter table public.properties enable row level security;
+alter table public.property_addresses enable row level security;
+alter table public.property_facilities enable row level security;
 alter table public.push_tokens enable row level security;
 alter table public.read_cursors enable row level security;
 alter table public.reports enable row level security;
@@ -8176,6 +9658,8 @@ alter table public.scheduled_message_sends enable row level security;
 alter table public.sms_campaigns enable row level security;
 alter table public.sms_recipients enable row level security;
 alter table public.sms_suppressions enable row level security;
+alter table public.storage_assets enable row level security;
+alter table public.storage_upload_intents enable row level security;
 alter table public.typing_indicators enable row level security;
 alter table public.user_blocks enable row level security;
 alter table public.user_devices enable row level security;
@@ -8392,6 +9876,10 @@ create policy "listing_facilities_admin_all" on public.listing_facilities
   as permissive for all to public
   using (is_admin())
   with check (is_admin());
+drop policy if exists "listing_trade_licences_owner_select" on public.listing_trade_licences;
+create policy "listing_trade_licences_owner_select" on public.listing_trade_licences
+  as permissive for select to authenticated
+  using (((owner_id = auth.uid()) OR is_admin()));
 drop policy if exists "listing_units_owner_all" on public.listing_units;
 create policy "listing_units_owner_all" on public.listing_units
   as permissive for all to authenticated
@@ -8542,6 +10030,52 @@ drop policy if exists "profiles_insert_self" on public.profiles;
 create policy "profiles_insert_self" on public.profiles
   as permissive for insert to authenticated
   with check ((auth.uid() = id));
+drop policy if exists "properties_owner_delete" on public.properties;
+create policy "properties_owner_delete" on public.properties
+  as permissive for delete to authenticated
+  using ((owner_id = auth.uid()));
+drop policy if exists "properties_owner_insert" on public.properties;
+create policy "properties_owner_insert" on public.properties
+  as permissive for insert to authenticated
+  with check ((owner_id = auth.uid()));
+drop policy if exists "properties_owner_update" on public.properties;
+create policy "properties_owner_update" on public.properties
+  as permissive for update to authenticated
+  using (((owner_id = auth.uid()) OR is_admin()))
+  with check (((owner_id = auth.uid()) OR is_admin()));
+drop policy if exists "properties_select" on public.properties;
+create policy "properties_select" on public.properties
+  as permissive for select to anon, authenticated
+  using (((owner_id = auth.uid()) OR is_admin() OR (EXISTS ( SELECT 1
+   FROM listings l
+  WHERE ((l.property_id = properties.id) AND l.is_active AND (NOT COALESCE(l.suspended_hidden, false)))))));
+drop policy if exists "property_addresses_owner_all" on public.property_addresses;
+create policy "property_addresses_owner_all" on public.property_addresses
+  as permissive for all to authenticated
+  using (((EXISTS ( SELECT 1
+   FROM properties p
+  WHERE ((p.id = property_addresses.property_id) AND (p.owner_id = auth.uid())))) OR is_admin()))
+  with check (((EXISTS ( SELECT 1
+   FROM properties p
+  WHERE ((p.id = property_addresses.property_id) AND (p.owner_id = auth.uid())))) OR is_admin()));
+drop policy if exists "property_facilities_owner_delete" on public.property_facilities;
+create policy "property_facilities_owner_delete" on public.property_facilities
+  as permissive for delete to authenticated
+  using (((EXISTS ( SELECT 1
+   FROM properties p
+  WHERE ((p.id = property_facilities.property_id) AND (p.owner_id = auth.uid())))) OR is_admin()));
+drop policy if exists "property_facilities_owner_insert" on public.property_facilities;
+create policy "property_facilities_owner_insert" on public.property_facilities
+  as permissive for insert to authenticated
+  with check (((EXISTS ( SELECT 1
+   FROM properties p
+  WHERE ((p.id = property_facilities.property_id) AND (p.owner_id = auth.uid())))) OR is_admin()));
+drop policy if exists "property_facilities_select" on public.property_facilities;
+create policy "property_facilities_select" on public.property_facilities
+  as permissive for select to anon, authenticated
+  using ((EXISTS ( SELECT 1
+   FROM properties p
+  WHERE (p.id = property_facilities.property_id))));
 drop policy if exists "push_tokens_delete_own" on public.push_tokens;
 create policy "push_tokens_delete_own" on public.push_tokens
   as permissive for delete to public
@@ -8693,10 +10227,16 @@ do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_set_landmark_geog' and c.relname='landmarks' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_set_landmark_geog BEFORE INSERT OR UPDATE OF latitude, longitude ON public.landmarks FOR EACH ROW EXECUTE FUNCTION set_landmark_geog() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_touch_listing_address' and c.relname='listing_addresses' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_touch_listing_address BEFORE UPDATE ON public.listing_addresses FOR EACH ROW EXECUTE FUNCTION touch_listing_address() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_block_unit_consistent' and c.relname='listing_availability_blocks' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_block_unit_consistent BEFORE INSERT OR UPDATE ON public.listing_availability_blocks FOR EACH ROW EXECUTE FUNCTION fn_block_unit_consistent() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_listing_facility_keep_hotel_row' and c.relname='listing_facilities' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_listing_facility_keep_hotel_row BEFORE DELETE ON public.listing_facilities FOR EACH ROW EXECUTE FUNCTION fn_listing_facility_keep_hotel_row() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_listing_facility_skip_duplicate' and c.relname='listing_facilities' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_listing_facility_skip_duplicate BEFORE INSERT ON public.listing_facilities FOR EACH ROW EXECUTE FUNCTION fn_listing_facility_skip_duplicate() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_unit_label_unique_in_property' and c.relname='listing_units' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_unit_label_unique_in_property BEFORE INSERT OR UPDATE OF label, is_active, listing_id ON public.listing_units FOR EACH ROW EXECUTE FUNCTION fn_unit_label_unique_in_property() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='a_listing_property_inherit' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER a_listing_property_inherit BEFORE INSERT OR UPDATE ON public.listings FOR EACH ROW EXECUTE FUNCTION fn_listing_property_inherit() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='enforce_listing_public_location' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER enforce_listing_public_location BEFORE INSERT OR UPDATE ON public.listings FOR EACH ROW EXECUTE FUNCTION enforce_listing_public_location() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='listing_location_trigger' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER listing_location_trigger BEFORE INSERT OR UPDATE ON public.listings FOR EACH ROW EXECUTE FUNCTION update_listing_location() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_freeze_listing_reputation' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_freeze_listing_reputation BEFORE INSERT OR UPDATE ON public.listings FOR EACH ROW EXECUTE FUNCTION fn_freeze_listing_reputation() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_listing_default_unit' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_listing_default_unit AFTER INSERT ON public.listings FOR EACH ROW EXECUTE FUNCTION fn_listing_default_unit() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_listing_property_address' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_listing_property_address AFTER INSERT OR UPDATE OF property_id ON public.listings FOR EACH ROW EXECUTE FUNCTION fn_listing_property_address() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_listing_property_facilities' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_listing_property_facilities AFTER INSERT OR UPDATE OF property_id ON public.listings FOR EACH ROW EXECUTE FUNCTION fn_listing_property_facilities() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_refuse_suspended_writer' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_refuse_suspended_writer BEFORE INSERT OR UPDATE ON public.listings FOR EACH ROW EXECUTE FUNCTION fn_refuse_suspended_writer() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_set_listing_geog' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_set_listing_geog BEFORE INSERT OR UPDATE OF latitude, longitude ON public.listings FOR EACH ROW EXECUTE FUNCTION set_listing_geog() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_set_listing_host_available' and c.relname='listings' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_set_listing_host_available BEFORE INSERT ON public.listings FOR EACH ROW EXECUTE FUNCTION set_listing_host_available() $q$; end if; end $t$;
@@ -8722,6 +10262,12 @@ do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_guard_suspension_columns' and c.relname='profiles' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_guard_suspension_columns BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION fn_guard_suspension_columns() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_guard_verification_verdicts' and c.relname='profiles' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_guard_verification_verdicts BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION fn_guard_verification_verdicts() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_sync_listings_host_available' and c.relname='profiles' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_sync_listings_host_available AFTER UPDATE OF is_available ON public.profiles FOR EACH ROW EXECUTE FUNCTION sync_listings_host_available() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_property_normalise' and c.relname='properties' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_property_normalise BEFORE INSERT OR UPDATE ON public.properties FOR EACH ROW EXECUTE FUNCTION fn_property_normalise() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_property_push_down' and c.relname='properties' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_property_push_down AFTER UPDATE ON public.properties FOR EACH ROW EXECUTE FUNCTION fn_property_push_down() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_refuse_suspended_writer' and c.relname='properties' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_refuse_suspended_writer BEFORE INSERT OR UPDATE ON public.properties FOR EACH ROW EXECUTE FUNCTION fn_refuse_suspended_writer() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_property_address_copy' and c.relname='property_addresses' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_property_address_copy AFTER INSERT OR UPDATE ON public.property_addresses FOR EACH ROW EXECUTE FUNCTION fn_property_address_copy_all() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_property_address_touch' and c.relname='property_addresses' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_property_address_touch BEFORE INSERT OR UPDATE ON public.property_addresses FOR EACH ROW EXECUTE FUNCTION fn_property_address_touch() $q$; end if; end $t$;
+do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_property_facility_push' and c.relname='property_facilities' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_property_facility_push AFTER INSERT OR DELETE ON public.property_facilities FOR EACH ROW EXECUTE FUNCTION fn_property_facility_push() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='push_tokens_updated_at' and c.relname='push_tokens' and n.nspname='public') then execute $q$ CREATE TRIGGER push_tokens_updated_at BEFORE UPDATE ON public.push_tokens FOR EACH ROW EXECUTE FUNCTION update_notifications_updated_at() $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_audit_reports_ins' and c.relname='reports' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_audit_reports_ins AFTER INSERT ON public.reports FOR EACH ROW EXECUTE FUNCTION fn_audit('safety') $q$; end if; end $t$;
 do $t$ begin if not exists (select 1 from pg_trigger x join pg_class c on c.oid=x.tgrelid join pg_namespace n on n.oid=c.relnamespace where x.tgname='trg_audit_reports_upd' and c.relname='reports' and n.nspname='public') then execute $q$ CREATE TRIGGER trg_audit_reports_upd AFTER UPDATE ON public.reports FOR EACH ROW WHEN (((old.status IS DISTINCT FROM new.status) OR (old.resolution_note IS DISTINCT FROM new.resolution_note) OR (old.resolved_by IS DISTINCT FROM new.resolved_by))) EXECUTE FUNCTION fn_audit('safety') $q$; end if; end $t$;
@@ -8821,8 +10367,11 @@ revoke all on table public.listing_facilities from public, anon, authenticated, 
 grant delete, insert, references, select, trigger, truncate, update on table public.listing_facilities to anon;
 grant delete, insert, references, select, trigger, truncate, update on table public.listing_facilities to authenticated;
 grant delete, insert, references, select, trigger, truncate, update on table public.listing_facilities to service_role;
+revoke all on table public.listing_trade_licences from public, anon, authenticated, service_role;
+grant references, select, trigger, truncate on table public.listing_trade_licences to authenticated;
+grant delete, insert, references, select, trigger, truncate, update on table public.listing_trade_licences to service_role;
 revoke all on table public.listing_units from public, anon, authenticated, service_role;
-grant delete, insert, references, select, trigger, truncate, update on table public.listing_units to authenticated;
+grant references, select, trigger, truncate on table public.listing_units to authenticated;
 grant delete, insert, references, select, trigger, truncate, update on table public.listing_units to service_role;
 revoke all on table public.listings from public, anon, authenticated, service_role;
 grant delete, insert, references, select, trigger, truncate, update on table public.listings to anon;
@@ -8865,6 +10414,17 @@ grant delete, insert, references, select, trigger, truncate, update on table pub
 revoke all on table public.profiles from public, anon, authenticated, service_role;
 grant delete, insert, references, select, trigger, truncate, update on table public.profiles to authenticated;
 grant delete, insert, references, select, trigger, truncate, update on table public.profiles to service_role;
+revoke all on table public.properties from public, anon, authenticated, service_role;
+grant delete, insert, references, select, trigger, truncate, update on table public.properties to service_role;
+grant select on table public.properties to anon;
+grant delete, insert, select, update on table public.properties to authenticated;
+revoke all on table public.property_addresses from public, anon, authenticated, service_role;
+grant delete, insert, references, select, trigger, truncate, update on table public.property_addresses to service_role;
+grant delete, insert, select, update on table public.property_addresses to authenticated;
+revoke all on table public.property_facilities from public, anon, authenticated, service_role;
+grant delete, insert, references, select, trigger, truncate, update on table public.property_facilities to service_role;
+grant select on table public.property_facilities to anon;
+grant delete, insert, select on table public.property_facilities to authenticated;
 revoke all on table public.push_tokens from public, anon, authenticated, service_role;
 grant delete, insert, references, select, trigger, truncate, update on table public.push_tokens to anon;
 grant delete, insert, references, select, trigger, truncate, update on table public.push_tokens to authenticated;
@@ -8897,6 +10457,10 @@ revoke all on table public.sms_suppressions from public, anon, authenticated, se
 grant delete, insert, references, select, trigger, truncate, update on table public.sms_suppressions to anon;
 grant delete, insert, references, select, trigger, truncate, update on table public.sms_suppressions to authenticated;
 grant delete, insert, references, select, trigger, truncate, update on table public.sms_suppressions to service_role;
+revoke all on table public.storage_assets from public, anon, authenticated, service_role;
+grant delete, insert, references, select, trigger, truncate, update on table public.storage_assets to service_role;
+revoke all on table public.storage_upload_intents from public, anon, authenticated, service_role;
+grant delete, insert, references, select, trigger, truncate, update on table public.storage_upload_intents to service_role;
 revoke all on table public.typing_indicators from public, anon, authenticated, service_role;
 grant delete, insert, references, select, trigger, truncate, update on table public.typing_indicators to anon;
 grant delete, insert, references, select, trigger, truncate, update on table public.typing_indicators to authenticated;
@@ -8937,12 +10501,16 @@ revoke all on table public.public_profiles from public, anon, authenticated, ser
 grant references, select, trigger, truncate on table public.public_profiles to anon;
 grant references, select, trigger, truncate on table public.public_profiles to authenticated;
 grant delete, insert, references, select, trigger, truncate, update on table public.public_profiles to service_role;
+grant update (label) on public.listing_units to authenticated;
 grant update (label) on public.user_devices to authenticated;
 revoke all on function public._localize_date_bn(d text) from public, anon, authenticated, service_role;
 grant execute on function public._localize_date_bn(d text) to public;
 grant execute on function public._localize_date_bn(d text) to anon;
 grant execute on function public._localize_date_bn(d text) to authenticated;
 grant execute on function public._localize_date_bn(d text) to service_role;
+revoke all on function public.add_listing_units(p_listing_id uuid, p_labels text[], p_name_unnamed boolean) from public, anon, authenticated, service_role;
+grant execute on function public.add_listing_units(p_listing_id uuid, p_labels text[], p_name_unnamed boolean) to service_role;
+grant execute on function public.add_listing_units(p_listing_id uuid, p_labels text[], p_name_unnamed boolean) to authenticated;
 revoke all on function public.add_payout_method(p_channel text, p_account_name text, p_account_number text, p_bank_name text, p_branch_name text, p_routing_number text) from public, anon, authenticated, service_role;
 grant execute on function public.add_payout_method(p_channel text, p_account_name text, p_account_number text, p_bank_name text, p_branch_name text, p_routing_number text) to authenticated;
 grant execute on function public.add_payout_method(p_channel text, p_account_name text, p_account_number text, p_bank_name text, p_branch_name text, p_routing_number text) to service_role;
@@ -9009,10 +10577,9 @@ revoke all on function public.auto_complete_elapsed_bookings() from public, anon
 grant execute on function public.auto_complete_elapsed_bookings() to service_role;
 revoke all on function public.auto_reveal_old_reviews() from public, anon, authenticated, service_role;
 grant execute on function public.auto_reveal_old_reviews() to service_role;
-revoke all on function public.block_listing_dates(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone, p_note text) from public, anon, authenticated, service_role;
-grant execute on function public.block_listing_dates(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone, p_note text) to anon;
-grant execute on function public.block_listing_dates(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone, p_note text) to authenticated;
-grant execute on function public.block_listing_dates(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone, p_note text) to service_role;
+revoke all on function public.block_listing_dates(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone, p_note text, p_unit_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.block_listing_dates(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone, p_note text, p_unit_id uuid) to service_role;
+grant execute on function public.block_listing_dates(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone, p_note text, p_unit_id uuid) to authenticated;
 revoke all on function public.booking_accept_window_hours() from public, anon, authenticated, service_role;
 grant execute on function public.booking_accept_window_hours() to service_role;
 revoke all on function public.can_publish_listings() from public, anon, authenticated, service_role;
@@ -9047,6 +10614,15 @@ revoke all on function public.create_marketplace_booking(p_listing_id uuid, p_st
 grant execute on function public.create_marketplace_booking(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone, p_pricing_unit text, p_guest_count integer, p_tenant_name text, p_coupon_code text, p_listing_image_url text) to anon;
 grant execute on function public.create_marketplace_booking(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone, p_pricing_unit text, p_guest_count integer, p_tenant_name text, p_coupon_code text, p_listing_image_url text) to authenticated;
 grant execute on function public.create_marketplace_booking(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone, p_pricing_unit text, p_guest_count integer, p_tenant_name text, p_coupon_code text, p_listing_image_url text) to service_role;
+revoke all on function public.deactivate_listing_unit(p_unit_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.deactivate_listing_unit(p_unit_id uuid) to service_role;
+grant execute on function public.deactivate_listing_unit(p_unit_id uuid) to authenticated;
+revoke all on function public.delete_property(p_property_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.delete_property(p_property_id uuid) to service_role;
+grant execute on function public.delete_property(p_property_id uuid) to authenticated;
+revoke all on function public.delete_room_type(p_listing_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.delete_room_type(p_listing_id uuid) to service_role;
+grant execute on function public.delete_room_type(p_listing_id uuid) to authenticated;
 revoke all on function public.enforce_booking_update_rules() from public, anon, authenticated, service_role;
 grant execute on function public.enforce_booking_update_rules() to public;
 grant execute on function public.enforce_booking_update_rules() to anon;
@@ -9097,6 +10673,8 @@ grant execute on function public.fn_canonical_bd_phone(p_raw text) to public;
 grant execute on function public.fn_canonical_bd_phone(p_raw text) to anon;
 grant execute on function public.fn_canonical_bd_phone(p_raw text) to authenticated;
 grant execute on function public.fn_canonical_bd_phone(p_raw text) to service_role;
+revoke all on function public.fn_copy_property_address(p_property_id uuid, p_listing_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.fn_copy_property_address(p_property_id uuid, p_listing_id uuid) to service_role;
 revoke all on function public.fn_deactivate_device_tokens() from public, anon, authenticated, service_role;
 grant execute on function public.fn_deactivate_device_tokens() to public;
 grant execute on function public.fn_deactivate_device_tokens() to anon;
@@ -9144,6 +10722,24 @@ grant execute on function public.fn_listing_default_unit() to public;
 grant execute on function public.fn_listing_default_unit() to anon;
 grant execute on function public.fn_listing_default_unit() to authenticated;
 grant execute on function public.fn_listing_default_unit() to service_role;
+revoke all on function public.fn_listing_facility_keep_hotel_row() from public, anon, authenticated, service_role;
+grant execute on function public.fn_listing_facility_keep_hotel_row() to service_role;
+revoke all on function public.fn_listing_facility_skip_duplicate() from public, anon, authenticated, service_role;
+grant execute on function public.fn_listing_facility_skip_duplicate() to service_role;
+revoke all on function public.fn_listing_property_address() from public, anon, authenticated, service_role;
+grant execute on function public.fn_listing_property_address() to public;
+grant execute on function public.fn_listing_property_address() to anon;
+grant execute on function public.fn_listing_property_address() to authenticated;
+grant execute on function public.fn_listing_property_address() to service_role;
+revoke all on function public.fn_listing_property_facilities() from public, anon, authenticated, service_role;
+grant execute on function public.fn_listing_property_facilities() to service_role;
+revoke all on function public.fn_listing_property_inherit() from public, anon, authenticated, service_role;
+grant execute on function public.fn_listing_property_inherit() to public;
+grant execute on function public.fn_listing_property_inherit() to anon;
+grant execute on function public.fn_listing_property_inherit() to authenticated;
+grant execute on function public.fn_listing_property_inherit() to service_role;
+revoke all on function public.fn_lock_own_listing(p_listing_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.fn_lock_own_listing(p_listing_id uuid) to service_role;
 revoke all on function public.fn_messages_block_guard() from public, anon, authenticated, service_role;
 grant execute on function public.fn_messages_block_guard() to service_role;
 revoke all on function public.fn_msisdn(p_canonical text) from public, anon, authenticated, service_role;
@@ -9163,6 +10759,28 @@ grant execute on function public.fn_post_disbursement_ledger() to public;
 grant execute on function public.fn_post_disbursement_ledger() to anon;
 grant execute on function public.fn_post_disbursement_ledger() to authenticated;
 grant execute on function public.fn_post_disbursement_ledger() to service_role;
+revoke all on function public.fn_property_address_copy_all() from public, anon, authenticated, service_role;
+grant execute on function public.fn_property_address_copy_all() to public;
+grant execute on function public.fn_property_address_copy_all() to anon;
+grant execute on function public.fn_property_address_copy_all() to authenticated;
+grant execute on function public.fn_property_address_copy_all() to service_role;
+revoke all on function public.fn_property_address_touch() from public, anon, authenticated, service_role;
+grant execute on function public.fn_property_address_touch() to public;
+grant execute on function public.fn_property_address_touch() to anon;
+grant execute on function public.fn_property_address_touch() to authenticated;
+grant execute on function public.fn_property_address_touch() to service_role;
+revoke all on function public.fn_property_facility_push() from public, anon, authenticated, service_role;
+grant execute on function public.fn_property_facility_push() to service_role;
+revoke all on function public.fn_property_normalise() from public, anon, authenticated, service_role;
+grant execute on function public.fn_property_normalise() to public;
+grant execute on function public.fn_property_normalise() to anon;
+grant execute on function public.fn_property_normalise() to authenticated;
+grant execute on function public.fn_property_normalise() to service_role;
+revoke all on function public.fn_property_push_down() from public, anon, authenticated, service_role;
+grant execute on function public.fn_property_push_down() to public;
+grant execute on function public.fn_property_push_down() to anon;
+grant execute on function public.fn_property_push_down() to authenticated;
+grant execute on function public.fn_property_push_down() to service_role;
 revoke all on function public.fn_rate_limit_hit(p_bucket text, p_limit integer, p_window_seconds integer) from public, anon, authenticated, service_role;
 grant execute on function public.fn_rate_limit_hit(p_bucket text, p_limit integer, p_window_seconds integer) to service_role;
 revoke all on function public.fn_refresh_listing_rating() from public, anon, authenticated, service_role;
@@ -9209,6 +10827,11 @@ grant execute on function public.fn_touch_disbursements() to public;
 grant execute on function public.fn_touch_disbursements() to anon;
 grant execute on function public.fn_touch_disbursements() to authenticated;
 grant execute on function public.fn_touch_disbursements() to service_role;
+revoke all on function public.fn_unit_label_unique_in_property() from public, anon, authenticated, service_role;
+grant execute on function public.fn_unit_label_unique_in_property() to public;
+grant execute on function public.fn_unit_label_unique_in_property() to anon;
+grant execute on function public.fn_unit_label_unique_in_property() to authenticated;
+grant execute on function public.fn_unit_label_unique_in_property() to service_role;
 revoke all on function public.fn_users_blocked(p_a uuid, p_b uuid) from public, anon, authenticated, service_role;
 grant execute on function public.fn_users_blocked(p_a uuid, p_b uuid) to service_role;
 revoke all on function public.fn_validate_app_setting() from public, anon, authenticated, service_role;
@@ -9373,10 +10996,17 @@ revoke all on function public.listing_blocked_ranges(p_listing_id uuid) from pub
 grant execute on function public.listing_blocked_ranges(p_listing_id uuid) to anon;
 grant execute on function public.listing_blocked_ranges(p_listing_id uuid) to authenticated;
 grant execute on function public.listing_blocked_ranges(p_listing_id uuid) to service_role;
+revoke all on function public.listing_licence_verified(p_listing_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.listing_licence_verified(p_listing_id uuid) to anon;
+grant execute on function public.listing_licence_verified(p_listing_id uuid) to authenticated;
+grant execute on function public.listing_licence_verified(p_listing_id uuid) to service_role;
 revoke all on function public.listing_rooms_left(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone) from public, anon, authenticated, service_role;
 grant execute on function public.listing_rooms_left(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone) to anon;
 grant execute on function public.listing_rooms_left(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone) to authenticated;
 grant execute on function public.listing_rooms_left(p_listing_id uuid, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone) to service_role;
+revoke all on function public.listing_unit_count(p_listing_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.listing_unit_count(p_listing_id uuid) to authenticated;
+grant execute on function public.listing_unit_count(p_listing_id uuid) to service_role;
 revoke all on function public.mark_all_notifications_read(p_user_id uuid) from public, anon, authenticated, service_role;
 grant execute on function public.mark_all_notifications_read(p_user_id uuid) to public;
 grant execute on function public.mark_all_notifications_read(p_user_id uuid) to anon;
@@ -9391,6 +11021,9 @@ grant execute on function public.max_devices_per_user() to service_role;
 grant execute on function public.max_devices_per_user() to anon;
 revoke all on function public.migrate_conversation_participants() from public, anon, authenticated, service_role;
 grant execute on function public.migrate_conversation_participants() to service_role;
+revoke all on function public.move_listing_unit(p_unit_id uuid, p_to_listing_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.move_listing_unit(p_unit_id uuid, p_to_listing_id uuid) to service_role;
+grant execute on function public.move_listing_unit(p_unit_id uuid, p_to_listing_id uuid) to authenticated;
 revoke all on function public.nearby_landmarks(p_lat double precision, p_lng double precision, p_limit integer, p_type text) from public, anon, authenticated, service_role;
 grant execute on function public.nearby_landmarks(p_lat double precision, p_lng double precision, p_limit integer, p_type text) to public;
 grant execute on function public.nearby_landmarks(p_lat double precision, p_lng double precision, p_limit integer, p_type text) to anon;
@@ -9439,6 +11072,9 @@ revoke all on function public.reap_edge_rate_limits() from public, anon, authent
 grant execute on function public.reap_edge_rate_limits() to service_role;
 revoke all on function public.reap_stale_devices() from public, anon, authenticated, service_role;
 grant execute on function public.reap_stale_devices() to service_role;
+revoke all on function public.reassign_booking_unit(p_booking_id uuid, p_unit_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.reassign_booking_unit(p_booking_id uuid, p_unit_id uuid) to service_role;
+grant execute on function public.reassign_booking_unit(p_booking_id uuid, p_unit_id uuid) to authenticated;
 revoke all on function public.record_disbursement(p_user_id uuid, p_payout_method_id uuid, p_amount numeric, p_kind text, p_booking_id uuid, p_reference text, p_note text, p_status text) from public, anon, authenticated, service_role;
 grant execute on function public.record_disbursement(p_user_id uuid, p_payout_method_id uuid, p_amount numeric, p_kind text, p_booking_id uuid, p_reference text, p_note text, p_status text) to authenticated;
 grant execute on function public.record_disbursement(p_user_id uuid, p_payout_method_id uuid, p_amount numeric, p_kind text, p_booking_id uuid, p_reference text, p_note text, p_status text) to service_role;
@@ -9459,6 +11095,9 @@ grant execute on function public.retire_payout_method(p_id uuid) to service_role
 revoke all on function public.review_face_verification(p_attempt_id uuid, p_evidence_version uuid, p_decision text, p_note text) from public, anon, authenticated, service_role;
 grant execute on function public.review_face_verification(p_attempt_id uuid, p_evidence_version uuid, p_decision text, p_note text) to authenticated;
 grant execute on function public.review_face_verification(p_attempt_id uuid, p_evidence_version uuid, p_decision text, p_note text) to service_role;
+revoke all on function public.review_trade_licence(p_listing_id uuid, p_document_path text, p_approve boolean, p_reason text) from public, anon, authenticated, service_role;
+grant execute on function public.review_trade_licence(p_listing_id uuid, p_document_path text, p_approve boolean, p_reason text) to authenticated;
+grant execute on function public.review_trade_licence(p_listing_id uuid, p_document_path text, p_approve boolean, p_reason text) to service_role;
 revoke all on function public.revoke_device(p_device_id text) from public, anon, authenticated, service_role;
 grant execute on function public.revoke_device(p_device_id text) to service_role;
 grant execute on function public.revoke_device(p_device_id text) to authenticated;
@@ -9544,6 +11183,9 @@ grant execute on function public.set_listing_host_available() to public;
 grant execute on function public.set_listing_host_available() to anon;
 grant execute on function public.set_listing_host_available() to authenticated;
 grant execute on function public.set_listing_host_available() to service_role;
+revoke all on function public.set_listing_unit_count(p_listing_id uuid, p_count integer) from public, anon, authenticated, service_role;
+grant execute on function public.set_listing_unit_count(p_listing_id uuid, p_count integer) to service_role;
+grant execute on function public.set_listing_unit_count(p_listing_id uuid, p_count integer) to authenticated;
 revoke all on function public.set_payout_method_verification(p_id uuid, p_status verification_status, p_rejection_reason text) from public, anon, authenticated, service_role;
 grant execute on function public.set_payout_method_verification(p_id uuid, p_status verification_status, p_rejection_reason text) to authenticated;
 grant execute on function public.set_payout_method_verification(p_id uuid, p_status verification_status, p_rejection_reason text) to service_role;
@@ -9563,6 +11205,49 @@ grant execute on function public.snap_coordinate(p_degrees numeric) to service_r
 revoke all on function public.start_face_verification(p_method text) from public, anon, authenticated, service_role;
 grant execute on function public.start_face_verification(p_method text) to authenticated;
 grant execute on function public.start_face_verification(p_method text) to service_role;
+revoke all on function public.storage_begin_delete(p_bucket text, p_path text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_begin_delete(p_bucket text, p_path text) to service_role;
+grant execute on function public.storage_begin_delete(p_bucket text, p_path text) to authenticated;
+revoke all on function public.storage_begin_upload(p_bucket text, p_path text, p_mime_type text, p_size_bytes bigint, p_upsert boolean, p_idempotency_key text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_begin_upload(p_bucket text, p_path text, p_mime_type text, p_size_bytes bigint, p_upsert boolean, p_idempotency_key text) to service_role;
+grant execute on function public.storage_begin_upload(p_bucket text, p_path text, p_mime_type text, p_size_bytes bigint, p_upsert boolean, p_idempotency_key text) to authenticated;
+revoke all on function public.storage_can_delete(p_bucket text, p_path text, p_owner uuid) from public, anon, authenticated, service_role;
+grant execute on function public.storage_can_delete(p_bucket text, p_path text, p_owner uuid) to service_role;
+revoke all on function public.storage_can_insert(p_bucket text, p_path text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_can_insert(p_bucket text, p_path text) to service_role;
+revoke all on function public.storage_can_read(p_bucket text, p_path text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_can_read(p_bucket text, p_path text) to service_role;
+revoke all on function public.storage_can_replace(p_bucket text, p_path text, p_owner uuid) from public, anon, authenticated, service_role;
+grant execute on function public.storage_can_replace(p_bucket text, p_path text, p_owner uuid) to service_role;
+revoke all on function public.storage_claim_intent(p_intent_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.storage_claim_intent(p_intent_id uuid) to service_role;
+grant execute on function public.storage_claim_intent(p_intent_id uuid) to authenticated;
+revoke all on function public.storage_commit_upload(p_intent_id uuid, p_size_bytes bigint, p_sha256 text, p_mime_type text, p_s3_bucket text, p_s3_key text, p_s3_version text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_commit_upload(p_intent_id uuid, p_size_bytes bigint, p_sha256 text, p_mime_type text, p_s3_bucket text, p_s3_key text, p_s3_version text) to service_role;
+revoke all on function public.storage_existing_owner(p_bucket text, p_path text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_existing_owner(p_bucket text, p_path text) to service_role;
+revoke all on function public.storage_file_name(p_path text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_file_name(p_path text) to service_role;
+revoke all on function public.storage_finish_delete(p_asset_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.storage_finish_delete(p_asset_id uuid) to service_role;
+revoke all on function public.storage_first_folder(p_path text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_first_folder(p_path text) to service_role;
+revoke all on function public.storage_object_meta(p_bucket text, p_path text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_object_meta(p_bucket text, p_path text) to service_role;
+revoke all on function public.storage_path_ok(p_path text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_path_ok(p_path text) to service_role;
+revoke all on function public.storage_purge_begin(p_bucket text, p_paths text[]) from public, anon, authenticated, service_role;
+grant execute on function public.storage_purge_begin(p_bucket text, p_paths text[]) to service_role;
+revoke all on function public.storage_reject_intent(p_intent_id uuid, p_reason text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_reject_intent(p_intent_id uuid, p_reason text) to service_role;
+revoke all on function public.storage_release_intent(p_intent_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.storage_release_intent(p_intent_id uuid) to service_role;
+revoke all on function public.storage_resolve_reads(p_refs jsonb) from public, anon, authenticated, service_role;
+grant execute on function public.storage_resolve_reads(p_refs jsonb) to service_role;
+grant execute on function public.storage_resolve_reads(p_refs jsonb) to anon;
+grant execute on function public.storage_resolve_reads(p_refs jsonb) to authenticated;
+revoke all on function public.storage_write_mode(p_bucket text, p_path text, p_upsert boolean) from public, anon, authenticated, service_role;
+grant execute on function public.storage_write_mode(p_bucket text, p_path text, p_upsert boolean) to service_role;
 revoke all on function public.submit_address_verification(p_address_line text) from public, anon, authenticated, service_role;
 grant execute on function public.submit_address_verification(p_address_line text) to authenticated;
 grant execute on function public.submit_address_verification(p_address_line text) to service_role;
@@ -9575,6 +11260,9 @@ grant execute on function public.submit_identity_document(p_document_type text, 
 revoke all on function public.submit_nid_verification(p_front_path text, p_back_path text) from public, anon, authenticated, service_role;
 grant execute on function public.submit_nid_verification(p_front_path text, p_back_path text) to authenticated;
 grant execute on function public.submit_nid_verification(p_front_path text, p_back_path text) to service_role;
+revoke all on function public.submit_trade_licence(p_listing_id uuid, p_document_path text, p_licence_number text) from public, anon, authenticated, service_role;
+grant execute on function public.submit_trade_licence(p_listing_id uuid, p_document_path text, p_licence_number text) to authenticated;
+grant execute on function public.submit_trade_licence(p_listing_id uuid, p_document_path text, p_licence_number text) to service_role;
 revoke all on function public.sweep_sms_campaigns() from public, anon, authenticated, service_role;
 grant execute on function public.sweep_sms_campaigns() to service_role;
 revoke all on function public.sync_listings_host_available() from public, anon, authenticated, service_role;
