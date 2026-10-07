@@ -43,9 +43,10 @@ apply supabase/baseline/live_seed.sql
 # to live, so replaying a migration on top of it would apply it twice. Add a
 # number here the moment you write a migration, and clear it again once it is
 # applied to live and the baseline has been regenerated.
-# Last cleared 2026-10-02, after 146–148 went live (amenity split, listing
-# units, two-layer hourly policy).
-NEWER_MIGRATIONS="${NEWER_MIGRATIONS:-150 151 152 153 154 155 156 157 158 159}"
+# Last cleared 2026-10-07, after 150–162 went live and the baseline was
+# re-dumped (hotels, S3 storage cutover, hotel card photo, contact phones,
+# overnight hourly window).
+NEWER_MIGRATIONS="${NEWER_MIGRATIONS:-}"
 echo "== migrations newer than live"
 for m in ${NEWER_MIGRATIONS:-}; do
   f=$(ls supabase/migrations/${m}_*.sql | head -1)

@@ -217,6 +217,8 @@ class _MusafirAppState extends State<MusafirApp> {
       _lastAuthedUserId = null;
 
       // User logged out - clear all per-user state and deactivate FCM token.
+      // The repository keeps the public feed and swaps in the anonymous first
+      // page itself; Explore never goes blank on the way out.
       notificationState.clear();
       favoritesState.clearAll();
       messagingState.clear();

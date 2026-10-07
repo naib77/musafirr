@@ -290,6 +290,34 @@ void main() {
       expect(r.refusalFor(7, start: at(18)), HourlyRefusal.window);
     });
 
+    group('window 22:00–02:00 runs past midnight (161)', () {
+      final r = rule(
+        type: ListingType.room,
+        minHours: 1,
+        windowStart: '22:00',
+        windowEnd: '02:00',
+      );
+
+      test('a stay across midnight inside the window is allowed', () {
+        expect(r.check(4, start: at(22)), isNull);
+        expect(r.check(2, start: at(23)), isNull);
+      });
+
+      test('a stay starting after midnight belongs to the window', () {
+        expect(r.check(1, start: at(1)), isNull);
+        expect(r.check(2, start: at(0)), isNull);
+      });
+
+      test('outside either end is refused', () {
+        expect(r.refusalFor(1, start: at(21)), HourlyRefusal.window);
+        expect(r.refusalFor(2, start: at(1)), HourlyRefusal.window);
+        expect(r.refusalFor(5, start: at(22)), HourlyRefusal.window);
+        expect(r.refusalFor(1, start: noon), HourlyRefusal.window);
+        expect(r.check(1, start: at(21)),
+            'Hourly stays here run between 22:00 and 02:00');
+      });
+    });
+
     test('with no window, a stay may cross midnight', () {
       final r = rule(type: ListingType.room, minHours: 1);
       expect(r.check(6, start: at(22)), isNull);
@@ -429,7 +457,7 @@ void main() {
       );
     });
 
-    test('window must be both ends, parseable, and start < end', () {
+    test('window must be both ends, parseable, and non-empty', () {
       String? err(String start, String end) => hourlyHostFieldsError(
             hourlyEnabled: true,
             windowStartText: start,
@@ -443,10 +471,13 @@ void main() {
           'Set both ends of the hourly window, or leave both empty.');
       expect(err('9am', '21:00'),
           'Hourly window times must look like 09:00 (24-hour clock).');
-      expect(
-          err('21:00', '09:00'), 'The hourly window must end after it starts.');
-      expect(
-          err('09:00', '09:00'), 'The hourly window must end after it starts.');
+      // An end before the start wraps past midnight (161).
+      expect(err('22:00', '02:00'), isNull);
+      expect(err('21:00', '09:00'), isNull);
+      expect(err('09:00', '09:00'),
+          'The hourly window cannot start and end at the same time.');
+      expect(err('24:00', '02:00'),
+          'The hourly window cannot start at 24:00; use 00:00.');
       expect(err('09:00', '21:00'), isNull);
       expect(err('18:00', '24:00'), isNull);
       expect(err('', ''), isNull);

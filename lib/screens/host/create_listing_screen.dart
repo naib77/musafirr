@@ -17,6 +17,8 @@ import '../../services/booking/hourly_policy.dart';
 import '../../services/image_upload_service.dart';
 import '../../state/auth_state.dart';
 import '../../widgets/app_text_field.dart';
+import '../../widgets/clock_text_field.dart';
+import '../../widgets/contact_phones_field.dart';
 import '../../widgets/image_picker_grid.dart';
 import '../../widgets/location_picker.dart';
 import '../../widgets/modern_banner.dart';
@@ -162,6 +164,12 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   final _flatFloorController = TextEditingController();
   final _houseNoController = TextEditingController();
   final _streetController = TextEditingController();
+
+  /// 160/162. The first is prefilled with the host's login phone and
+  /// editable (Jev, 0.97); more can be added up to five, each normalised to
+  /// `+880…` on save and stored on the gated address row. A
+  /// room type inside a hotel has none of its own -- the hotel's is copied.
+  final _contactPhones = ContactPhonesController();
   final _areaController = TextEditingController();
   final _cityController = TextEditingController(text: 'Dhaka');
   final _postalCodeController = TextEditingController();
@@ -241,6 +249,11 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
       if (p.checkInTime != null) _checkInTimeController.text = p.checkInTime!;
       if (p.checkOutTime != null) {
         _checkOutTimeController.text = p.checkOutTime!;
+      }
+    } else {
+      final phone = widget.authState.currentUser?.phone;
+      if (phone != null && phone.isNotEmpty) {
+        _contactPhones.setStored([phone]);
       }
     }
     final d = widget.duplicateFrom;
@@ -327,6 +340,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
     _flatFloorController.dispose();
     _houseNoController.dispose();
     _streetController.dispose();
+    _contactPhones.dispose();
     _areaController.dispose();
     _cityController.dispose();
     _postalCodeController.dispose();
@@ -401,6 +415,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
           flatFloorController: _flatFloorController,
           houseNoController: _houseNoController,
           streetController: _streetController,
+          contactPhones: _contactPhones,
           areaController: _areaController,
           cityController: _cityController,
           postalCodeController: _postalCodeController,
@@ -551,6 +566,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
       _WizardStep.type => true,
       _WizardStep.basics => _titleController.text.trim().isNotEmpty,
       _WizardStep.location => _streetController.text.trim().isNotEmpty &&
+          _contactPhones.error == null &&
           _areaController.text.trim().isNotEmpty &&
           _cityController.text.trim().isNotEmpty &&
           _pinConfirmed,
@@ -709,6 +725,8 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         flatFloor: _emptyToNull(_flatFloorController.text),
         houseNo: _emptyToNull(_houseNoController.text),
         street: _emptyToNull(_streetController.text),
+        // canProceed already refused anything normalise would throw on.
+        contactPhones: _contactPhones.normalized(),
         area: _emptyToNull(_areaController.text),
         postalCode: _emptyToNull(_postalCodeController.text),
         landmark: _emptyToNull(_landmarkController.text),
@@ -1189,6 +1207,7 @@ class _LocationStep extends StatelessWidget {
     required this.flatFloorController,
     required this.houseNoController,
     required this.streetController,
+    required this.contactPhones,
     required this.areaController,
     required this.cityController,
     required this.postalCodeController,
@@ -1203,6 +1222,7 @@ class _LocationStep extends StatelessWidget {
   final TextEditingController flatFloorController;
   final TextEditingController houseNoController;
   final TextEditingController streetController;
+  final ContactPhonesController contactPhones;
   final TextEditingController areaController;
   final TextEditingController cityController;
   final TextEditingController postalCodeController;
@@ -1300,6 +1320,10 @@ class _LocationStep extends StatelessWidget {
             hint: 'e.g., Near Banani Bridge',
             onChanged: (_) => onChanged(),
           ),
+          const SizedBox(height: 16),
+          // 160/162. In the location step because they are disclosed with
+          // the address: only a guest the host has accepted gets to dial them.
+          ContactPhonesField(controller: contactPhones, onChanged: onChanged),
           const SizedBox(height: 16),
           if (pinConfirmed)
             OutlinedButton.icon(
@@ -2140,7 +2164,7 @@ class _HouseRulesStep extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: AppTextField(
+                  child: ClockTextField(
                     controller: checkInTimeController,
                     label: 'Check-in time',
                     hint: 'e.g. 2:00 PM',
@@ -2148,7 +2172,7 @@ class _HouseRulesStep extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: AppTextField(
+                  child: ClockTextField(
                     controller: checkOutTimeController,
                     label: 'Check-out time',
                     hint: 'e.g. 11:00 AM',

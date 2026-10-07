@@ -1,3 +1,5 @@
+import '../services/contact_phone.dart';
+
 /// A listing's real street address and coordinates.
 ///
 /// Kept out of [Listing] on purpose. `public.listings` holds only the
@@ -20,6 +22,7 @@ class ListingExactAddress {
     this.address,
     this.latitude,
     this.longitude,
+    this.contactPhones = const [],
   });
 
   final String listingId;
@@ -29,6 +32,11 @@ class ListingExactAddress {
 
   /// The full composed line as the host entered it.
   final String? address;
+
+  /// 160/162. The host's contact numbers for this listing, `+880…`,
+  /// disclosed on the same terms as the address (a column of the same row).
+  /// Not part of [isEmpty]: a number alone is still a disclosure.
+  final List<String> contactPhones;
 
   /// The real coordinates — not the snapped ones on [Listing].
   final double? latitude;
@@ -54,6 +62,7 @@ class ListingExactAddress {
       address: json['exact_address'] as String?,
       latitude: (json['latitude'] as num?)?.toDouble(),
       longitude: (json['longitude'] as num?)?.toDouble(),
+      contactPhones: contactPhonesFromJson(json['contact_phones']),
     );
   }
 
@@ -65,5 +74,8 @@ class ListingExactAddress {
         'exact_address': address,
         'latitude': latitude,
         'longitude': longitude,
+        // An empty list is stored as null: the column has one spelling for
+        // "no numbers" (162).
+        'contact_phones': contactPhones.isEmpty ? null : contactPhones,
       };
 }
