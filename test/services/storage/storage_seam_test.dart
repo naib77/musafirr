@@ -15,9 +15,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class _FakeStorage implements StorageProvider {
   final calls = <String>[];
   StorageFailure? failWith;
+  String? storedUrl;
 
   @override
-  Future<void> upload({
+  Future<String?> upload({
     required String bucket,
     required String path,
     required Uint8List bytes,
@@ -26,6 +27,7 @@ class _FakeStorage implements StorageProvider {
   }) async {
     calls.add('upload $bucket/$path $contentType upsert=$upsert');
     if (failWith != null) throw failWith!;
+    return storedUrl;
   }
 
   @override
@@ -98,6 +100,17 @@ void main() {
       );
     });
 
+    test('signer media URL gives the key without the generation', () {
+      const media = 'http://127.0.0.1:54321/functions/v1/storage-signer/media';
+      expect(
+        storagePathFromUrl('$media/$bucket/abc/a%20b.jpg?g=3', bucket: bucket),
+        'abc/a b.jpg',
+      );
+      expect(storagePathFromUrl('$media/avatars/u.webp?g=1', bucket: bucket),
+          isNull);
+      expect(storagePathFromUrl('$media/$bucket/', bucket: bucket), isNull);
+    });
+
     test('another bucket, external images and junk are not ours', () {
       for (final url in [
         '$base/object/public/avatars/u.webp',
@@ -161,6 +174,20 @@ void main() {
       expect(result.storagePath, 'u1/address/proof.pdf');
       expect(
           result.publicUrl, endsWith('/public/documents/u1/address/proof.pdf'));
+    });
+
+    test('a URL minted by the provider wins over the computed one', () async {
+      final dir = await Directory.systemTemp.createTemp('seam');
+      addTearDown(() => dir.delete(recursive: true));
+      final file = File('${dir.path}/p.pdf')..writeAsBytesSync([1]);
+      fake.storedUrl = 'https://signer/media/documents/u1/p.pdf?g=2';
+
+      final result = await service.uploadPlatformFile(
+        file: PlatformFile(name: 'p.pdf', size: 1, path: file.path),
+        bucket: StorageBuckets.documents,
+        path: 'u1/p.pdf',
+      );
+      expect(result.publicUrl, fake.storedUrl);
     });
 
     test('a storage failure becomes a failed result carrying its message',

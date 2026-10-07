@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/currency/currency.dart';
 import '../../widgets/app_text_field.dart';
+import '../../widgets/clock_text_field.dart';
 
 /// Validates the three plan rates for a listing. Returns a user-facing message,
 /// or null if valid. Shared by the create and edit listing flows.
@@ -226,22 +227,25 @@ class HourlyScheduleFields extends StatelessWidget {
         const SizedBox(height: 12),
         Row(
           children: [
+            // 24h here because the stored column is `time` and the existing
+            // parser/tests speak HH:MM; the dial is a convenience, typing is
+            // kept because 24:00 (midnight end) has no dial spelling.
             Expanded(
-              child: AppTextField(
+              child: ClockTextField(
                 controller: windowStartController,
                 label: 'Hourly from',
                 hint: '09:00',
-                keyboardType: TextInputType.datetime,
+                use24h: true,
                 onChanged: (_) => onChanged(),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: AppTextField(
+              child: ClockTextField(
                 controller: windowEndController,
                 label: 'Hourly until',
                 hint: '21:00',
-                keyboardType: TextInputType.datetime,
+                use24h: true,
                 onChanged: (_) => onChanged(),
               ),
             ),
@@ -249,8 +253,9 @@ class HourlyScheduleFields extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          'Optional. Hourly stays must start and end inside this window on '
-          'the same day (24-hour clock; 24:00 means midnight).',
+          'Optional. Hourly stays must start and end inside this window. '
+          'It may run past midnight, like 22:00 to 02:00 (pick on the '
+          'clock, or type 24:00 for midnight).',
           style: theme.textTheme.bodySmall?.copyWith(color: mutedColor),
         ),
       ],

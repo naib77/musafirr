@@ -85,12 +85,37 @@ class _MainShellState extends State<MainShell> {
     super.initState();
     _appModeState = widget.appModeState ?? AppModeStateNotifier();
     ShellNavState.instance.addListener(_onShellNavRequest);
+    _wasLoggedIn = widget.authState.isLoggedIn;
+    widget.authState.addListener(_onAuthChanged);
   }
 
   @override
   void dispose() {
     ShellNavState.instance.removeListener(_onShellNavRequest);
+    widget.authState.removeListener(_onAuthChanged);
     super.dispose();
+  }
+
+  // Signed in as of the last auth notification. Only the signed-in ->
+  // signed-out edge resets the shell; repeat notifications are ignored.
+  bool _wasLoggedIn = false;
+
+  /// After a log-out, land on Explore. The shell is not rebuilt on an auth
+  /// change (app.dart keeps it mounted on purpose), so without this the guest
+  /// stayed on whatever tab they logged out from -- usually Profile, now a
+  /// sign-in prompt -- with any screen they had pushed (Login & security)
+  /// still on top. Covers every way out: both log-out buttons and a session
+  /// ended from another device.
+  void _onAuthChanged() {
+    final loggedIn = widget.authState.isLoggedIn;
+    final signedOut = _wasLoggedIn && !loggedIn;
+    _wasLoggedIn = loggedIn;
+    if (!signedOut || !mounted) return;
+    setState(() {
+      _guestTabIndex = 0;
+      _hostTabIndex = 0;
+    });
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   /// Applies a tab-switch requested by a deep screen (booking sheet, notification

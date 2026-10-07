@@ -3,11 +3,11 @@ import 'package:flutter/foundation.dart';
 /// The transport under every uploaded file: put bytes, name them, sign them,
 /// remove them.
 ///
-/// Stage 1 of `docs/plans/aws-s3-storage-migration.md`. Today the only
-/// implementation is [SupabaseStorageProvider], and every caller must behave
-/// exactly as it did when it talked to `supabase.storage` directly — this seam
-/// exists so an S3 implementation can be routed in per bucket later without
-/// touching the upload services, their result shapes or their progress UI.
+/// Stage 1 of `docs/plans/aws-s3-storage-migration.md`. Implementations:
+/// [SupabaseStorageProvider] (legacy, kept through coexistence and rollback),
+/// `S3StorageProvider` (the storage-signer) and `RoutingStorageProvider`,
+/// which picks between them per bucket. Callers get one through
+/// `defaultStorageProvider()` and never learn which one served them.
 ///
 /// Buckets and paths here are the *logical* names the app already uses
 /// (`listing-images`, `{listingId}/{file}`). A future provider maps them to
@@ -18,7 +18,11 @@ abstract class StorageProvider {
   /// With [upsert] false an existing object is a [StorageConflict], not an
   /// overwrite: face evidence relies on that to make a retried submit find
   /// the already-uploaded immutable capture instead of replacing it.
-  Future<void> upload({
+  ///
+  /// Returns the durable URL to store for the object when the provider minted
+  /// one (S3 media URLs carry a generation, so a replaced avatar busts caches),
+  /// or null when [publicUrl] is the answer, as it always was for Supabase.
+  Future<String?> upload({
     required String bucket,
     required String path,
     required Uint8List bytes,

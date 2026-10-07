@@ -76,6 +76,11 @@ class SupabaseMusafirRepository extends ChangeNotifier
   bool _hasMoreListings = true;
   bool _isLoadingListings = false;
 
+  /// Whose own listings [_loadOwnListings] merged into [_listings]. Remembered
+  /// so [clearSession] can pull exactly those back out after the user is
+  /// gone — by then `auth.currentUser` is already null.
+  String? _ownListingsUserId;
+
   // Pagination state - Bookings
   DateTime? _bookingsCursor;
   bool _hasMoreBookings = true;
@@ -119,16 +124,45 @@ class SupabaseMusafirRepository extends ChangeNotifier
     _listingsOffset = 0;
     _hasMoreListings = true;
     _isLoadingListings = false;
+    _ownListingsUserId = null;
     _bookingsCursor = null;
     _hasMoreBookings = true;
     _isLoadingBookings = false;
     _currentBookingsUserId = null;
   }
 
-  /// Clear all cached data on logout.
-  void clearSession() {
-    _clearCaches();
+  /// Drop the signed-out user's data without blanking the public feed.
+  ///
+  /// Logout used to go through [_clearCaches] alone, which emptied the listing
+  /// cache and notified — but unlike login ([resetForAuthChange]) nothing
+  /// refetched, so Explore sat on "No listings found" until a pull-to-refresh,
+  /// and with nothing to scroll the load-more trigger could never fire.
+  ///
+  /// The feed is public data, so it stays on screen. Only the per-user caches
+  /// go, plus the host's own listings: [_loadOwnListings] pulls those in
+  /// regardless of `host_available`, so paused/unpublished ones would
+  /// otherwise linger for whoever browses next on this device. The anonymous
+  /// first page is then fetched and swapped in once it arrives, the same
+  /// non-blanking way every other refresh works (Jev, 2026-10-07: 0.97 for
+  /// this over clear-then-spinner). No realtime channel for a signed-out
+  /// session — it only carries bookings.
+  Future<void> clearSession() async {
+    _bookingsChannel?.unsubscribe();
+    _bookingsChannel = null;
+    _bookings = [];
+    _reviews = [];
+    _users.clear();
+    _blockedUserIds.clear();
+    _cachedBookingCounts = null;
+    _bookingsCursor = null;
+    _hasMoreBookings = true;
+    _isLoadingBookings = false;
+    _currentBookingsUserId = null;
+    final ownId = _ownListingsUserId;
+    _ownListingsUserId = null;
+    if (ownId != null) _listings.removeWhere((l) => l.hostId == ownId);
     notifyListeners();
+    await Future.wait([resetListingsPagination(), _refreshReviews()]);
   }
 
   /// Re-initialize for a (possibly different) logged-in user: drop the previous
@@ -364,6 +398,7 @@ class SupabaseMusafirRepository extends ChangeNotifier
       final ownIds = own.map((l) => l.id).toSet();
       _listings.removeWhere((l) => ownIds.contains(l.id));
       _listings.addAll(own);
+      _ownListingsUserId = userId;
       notifyListeners();
     } catch (e) {
       debugPrint('Error loading own listings: $e');
@@ -825,6 +860,10 @@ class SupabaseMusafirRepository extends ChangeNotifier
   @override
   Future<ListingExactAddress?> fetchListingExactAddress(
       String listingId) async {
+    // Signed-out viewers can never be entitled (093 revoked anon's grant
+    // outright, so the request is a guaranteed 401 that the browser console
+    // paints red). Skip it: the answer is "area only" either way.
+    if (_client.auth.currentSession == null) return null;
     try {
       final row = await _client
           .from('listing_addresses')
@@ -853,6 +892,8 @@ class SupabaseMusafirRepository extends ChangeNotifier
       houseNo: listing.houseNo,
       flatFloor: listing.flatFloor,
       street: listing.street,
+      // 160/162: disclosed with the address, so they ride on the same row.
+      contactPhones: listing.contactPhones,
       // The composed line, built from the parts the host actually entered —
       // NOT listing.address, which by now may already be the redacted form the
       // server handed back.

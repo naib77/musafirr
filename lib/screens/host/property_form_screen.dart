@@ -12,6 +12,8 @@ import '../../services/image_upload_service.dart';
 import '../../services/storage/storage_url.dart';
 import '../../state/auth_state.dart';
 import '../../widgets/app_text_field.dart';
+import '../../widgets/clock_text_field.dart';
+import '../../widgets/contact_phones_field.dart';
 import '../../widgets/host/hotel_details_fields.dart';
 import '../../widgets/image_picker_grid.dart';
 import '../../widgets/location_picker.dart';
@@ -49,6 +51,12 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
   final _description = TextEditingController();
   final _houseNo = TextEditingController();
   final _street = TextEditingController();
+
+  /// 160/162. Shown as the host types them; normalised to `+880…` on save.
+  /// For a new hotel the first starts as the host's login phone (Jev, 0.97: prefilled,
+  /// editable) because that is the right answer for most single-owner
+  /// hotels and a front desk can overwrite it.
+  final _contactPhones = ContactPhonesController();
   final _area = TextEditingController();
   final _city = TextEditingController(text: 'Dhaka');
   final _postalCode = TextEditingController();
@@ -81,7 +89,13 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
   void initState() {
     super.initState();
     final p = widget.property;
-    if (p == null) return;
+    if (p == null) {
+      final phone = widget.authState.currentUser?.phone;
+      if (phone != null && phone.isNotEmpty) {
+        _contactPhones.setStored([phone]);
+      }
+      return;
+    }
     _name.text = p.name;
     _description.text = p.description ?? '';
     _area.text = p.area ?? '';
@@ -114,6 +128,9 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
       setState(() {
         _houseNo.text = a.houseNo ?? '';
         _street.text = a.street ?? '';
+        if (a.contactPhones.isNotEmpty) {
+          _contactPhones.setStored(a.contactPhones);
+        }
         if (a.latitude != null && a.longitude != null) {
           _latitude = a.latitude!;
           _longitude = a.longitude!;
@@ -140,12 +157,15 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
     ]) {
       c.dispose();
     }
+    _contactPhones.dispose();
     super.dispose();
   }
 
   String? _error() {
     if (_name.text.trim().isEmpty) return 'Add the hotel\'s name.';
     if (_street.text.trim().isEmpty) return 'Add the road / street.';
+    final phoneError = _contactPhones.error;
+    if (phoneError != null) return phoneError;
     if (_area.text.trim().isEmpty) return 'Add the area / locality.';
     if (_city.text.trim().isEmpty) return 'Add the city.';
     if (!_pinConfirmed) return 'Set the hotel\'s location on the map.';
@@ -279,6 +299,8 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
       ),
       latitude: _latitude,
       longitude: _longitude,
+      // _error() has already refused anything normalise would throw on.
+      contactPhones: _contactPhones.normalized(),
     );
 
     try {
@@ -417,6 +439,13 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
               onChanged: touch,
             ),
             const SizedBox(height: 16),
+            // 160/162. Lives with the address because it is disclosed with
+            // it: only a guest the host has accepted gets to dial them.
+            ContactPhonesField(
+              controller: _contactPhones,
+              onChanged: () => touch(''),
+            ),
+            const SizedBox(height: 16),
             AppTextField(
               controller: _area,
               label: 'Area / Locality',
@@ -461,7 +490,7 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
             Row(
               children: [
                 Expanded(
-                  child: AppTextField(
+                  child: ClockTextField(
                     controller: _checkIn,
                     label: 'Check-in time',
                     hint: 'e.g. 2:00 PM',
@@ -469,7 +498,7 @@ class _PropertyFormScreenState extends State<PropertyFormScreen> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: AppTextField(
+                  child: ClockTextField(
                     controller: _checkOut,
                     label: 'Check-out time',
                     hint: 'e.g. 12:00 PM',

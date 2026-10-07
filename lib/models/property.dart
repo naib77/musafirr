@@ -1,3 +1,4 @@
+import '../services/contact_phone.dart';
 import 'facility.dart';
 import 'hotel_details.dart';
 import 'listing.dart';
@@ -147,6 +148,7 @@ class PropertyAddress {
     this.exactAddress,
     this.latitude,
     this.longitude,
+    this.contactPhones = const [],
   });
 
   factory PropertyAddress.fromJson(Map<String, dynamic> json) {
@@ -156,6 +158,7 @@ class PropertyAddress {
       exactAddress: json['exact_address'] as String?,
       latitude: (json['latitude'] as num?)?.toDouble(),
       longitude: (json['longitude'] as num?)?.toDouble(),
+      contactPhones: contactPhonesFromJson(json['contact_phones']),
     );
   }
 
@@ -165,6 +168,10 @@ class PropertyAddress {
   final double? latitude;
   final double? longitude;
 
+  /// 160/162. The hotel's contact numbers (`+880…`), copied onto every room
+  /// type's address row by the database, the way the address itself is.
+  final List<String> contactPhones;
+
   Map<String, dynamic> toJson(String propertyId) => {
         'property_id': propertyId,
         'house_no': houseNo,
@@ -172,6 +179,7 @@ class PropertyAddress {
         'exact_address': exactAddress,
         'latitude': latitude,
         'longitude': longitude,
+        'contact_phones': contactPhones.isEmpty ? null : contactPhones,
       };
 }
 

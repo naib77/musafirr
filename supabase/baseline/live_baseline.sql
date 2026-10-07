@@ -364,10 +364,13 @@ create table if not exists public.listing_addresses (
   exact_address text,
   latitude numeric,
   longitude numeric,
-  updated_at timestamp with time zone default now() not null
+  updated_at timestamp with time zone default now() not null,
+  contact_phones text[]
 );
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_addresses_pkey' and conrelid='public.listing_addresses'::regclass) then
   alter table public.listing_addresses add constraint listing_addresses_pkey PRIMARY KEY (listing_id); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='listing_addresses_contact_phones_shape' and conrelid='public.listing_addresses'::regclass) then
+  alter table public.listing_addresses add constraint listing_addresses_contact_phones_shape CHECK (((contact_phones IS NULL) OR (((cardinality(contact_phones) >= 1) AND (cardinality(contact_phones) <= 5)) AND (array_position(contact_phones, NULL::text) IS NULL) AND (array_to_string(contact_phones, ','::text) ~ '^\+[0-9]{8,15}(,\+[0-9]{8,15})*$'::text)))); end if; end $c$;
 create table if not exists public.listing_availability_blocks (
   id uuid default gen_random_uuid() not null,
   listing_id uuid not null,
@@ -513,7 +516,7 @@ do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_hourly_slots_sane' and conrelid='public.listings'::regclass) then
   alter table public.listings add constraint listings_hourly_slots_sane CHECK (((hourly_slots IS NULL) OR (((cardinality(hourly_slots) >= 1) AND (cardinality(hourly_slots) <= 12)) AND (1 <= ALL (hourly_slots)) AND (168 >= ALL (hourly_slots))))); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_hourly_window_pair' and conrelid='public.listings'::regclass) then
-  alter table public.listings add constraint listings_hourly_window_pair CHECK ((((hourly_window_start IS NULL) = (hourly_window_end IS NULL)) AND ((hourly_window_start IS NULL) OR (hourly_window_start < hourly_window_end)))); end if; end $c$;
+  alter table public.listings add constraint listings_hourly_window_pair CHECK ((((hourly_window_start IS NULL) = (hourly_window_end IS NULL)) AND ((hourly_window_start IS NULL) OR ((hourly_window_start <> hourly_window_end) AND (hourly_window_start < '24:00:00'::time without time zone))))); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_max_adults_positive' and conrelid='public.listings'::regclass) then
   alter table public.listings add constraint listings_max_adults_positive CHECK (((max_adults IS NULL) OR (max_adults >= 1))); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='listings_max_children_nonneg' and conrelid='public.listings'::regclass) then
@@ -799,10 +802,13 @@ create table if not exists public.property_addresses (
   exact_address text,
   latitude numeric,
   longitude numeric,
-  updated_at timestamp with time zone default now() not null
+  updated_at timestamp with time zone default now() not null,
+  contact_phones text[]
 );
 do $c$ begin if not exists (select 1 from pg_constraint where conname='property_addresses_pkey' and conrelid='public.property_addresses'::regclass) then
   alter table public.property_addresses add constraint property_addresses_pkey PRIMARY KEY (property_id); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='property_addresses_contact_phones_shape' and conrelid='public.property_addresses'::regclass) then
+  alter table public.property_addresses add constraint property_addresses_contact_phones_shape CHECK (((contact_phones IS NULL) OR (((cardinality(contact_phones) >= 1) AND (cardinality(contact_phones) <= 5)) AND (array_position(contact_phones, NULL::text) IS NULL) AND (array_to_string(contact_phones, ','::text) ~ '^\+[0-9]{8,15}(,\+[0-9]{8,15})*$'::text)))); end if; end $c$;
 create table if not exists public.property_facilities (
   property_id uuid not null,
   facility_id uuid not null,
@@ -956,6 +962,67 @@ do $c$ begin if not exists (select 1 from pg_constraint where conname='sms_suppr
   alter table public.sms_suppressions add constraint sms_suppressions_pkey PRIMARY KEY (phone); end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='sms_suppressions_phone_canonical' and conrelid='public.sms_suppressions'::regclass) then
   alter table public.sms_suppressions add constraint sms_suppressions_phone_canonical CHECK ((phone ~ '^01[3-9][0-9]{8}$'::text)); end if; end $c$;
+create table if not exists public.storage_assets (
+  id uuid default gen_random_uuid() not null,
+  bucket text not null,
+  path text not null,
+  owner_id uuid not null,
+  generation integer default 1 not null,
+  mime_type text not null,
+  size_bytes bigint not null,
+  sha256 text not null,
+  business_created_at timestamp with time zone default now() not null,
+  retention_deadline timestamp with time zone,
+  state text default 'active'::text not null,
+  supabase_path text,
+  s3_bucket text,
+  s3_key text,
+  s3_version text,
+  updated_at timestamp with time zone default now() not null
+);
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_assets_bucket_path_key' and conrelid='public.storage_assets'::regclass) then
+  alter table public.storage_assets add constraint storage_assets_bucket_path_key UNIQUE (bucket, path); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_assets_pkey' and conrelid='public.storage_assets'::regclass) then
+  alter table public.storage_assets add constraint storage_assets_pkey PRIMARY KEY (id); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_assets_check' and conrelid='public.storage_assets'::regclass) then
+  alter table public.storage_assets add constraint storage_assets_check CHECK (((s3_bucket IS NULL) = (s3_key IS NULL))); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_assets_sha256_check' and conrelid='public.storage_assets'::regclass) then
+  alter table public.storage_assets add constraint storage_assets_sha256_check CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text)); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_assets_state_check' and conrelid='public.storage_assets'::regclass) then
+  alter table public.storage_assets add constraint storage_assets_state_check CHECK ((state = ANY (ARRAY['active'::text, 'deleting'::text, 'deleted'::text]))); end if; end $c$;
+create table if not exists public.storage_upload_intents (
+  id uuid default gen_random_uuid() not null,
+  user_id uuid not null,
+  bucket text not null,
+  path text not null,
+  upsert boolean not null,
+  mime_type text not null,
+  size_bytes bigint not null,
+  idempotency_key text not null,
+  staging_key text not null,
+  committed_key text not null,
+  state text default 'pending'::text not null,
+  reject_reason text,
+  claimed_at timestamp with time zone,
+  asset_id uuid,
+  created_at timestamp with time zone default now() not null,
+  expires_at timestamp with time zone default (now() + '00:15:00'::interval) not null,
+  finalized_at timestamp with time zone
+);
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_upload_intents_committed_key_key' and conrelid='public.storage_upload_intents'::regclass) then
+  alter table public.storage_upload_intents add constraint storage_upload_intents_committed_key_key UNIQUE (committed_key); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_upload_intents_staging_key_key' and conrelid='public.storage_upload_intents'::regclass) then
+  alter table public.storage_upload_intents add constraint storage_upload_intents_staging_key_key UNIQUE (staging_key); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_upload_intents_user_id_idempotency_key_key' and conrelid='public.storage_upload_intents'::regclass) then
+  alter table public.storage_upload_intents add constraint storage_upload_intents_user_id_idempotency_key_key UNIQUE (user_id, idempotency_key); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_upload_intents_pkey' and conrelid='public.storage_upload_intents'::regclass) then
+  alter table public.storage_upload_intents add constraint storage_upload_intents_pkey PRIMARY KEY (id); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_upload_intents_idempotency_key_check' and conrelid='public.storage_upload_intents'::regclass) then
+  alter table public.storage_upload_intents add constraint storage_upload_intents_idempotency_key_check CHECK (((length(idempotency_key) >= 8) AND (length(idempotency_key) <= 128))); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_upload_intents_size_bytes_check' and conrelid='public.storage_upload_intents'::regclass) then
+  alter table public.storage_upload_intents add constraint storage_upload_intents_size_bytes_check CHECK ((size_bytes > 0)); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_upload_intents_state_check' and conrelid='public.storage_upload_intents'::regclass) then
+  alter table public.storage_upload_intents add constraint storage_upload_intents_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'finalizing'::text, 'finalized'::text, 'rejected'::text]))); end if; end $c$;
 create table if not exists public.typing_indicators (
   conversation_id uuid not null,
   user_id uuid not null,
@@ -1167,6 +1234,12 @@ do $c$ begin if not exists (select 1 from pg_constraint where conname='sms_recip
   alter table public.sms_recipients add constraint sms_recipients_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE SET NULL; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='sms_suppressions_created_by_fkey' and conrelid='public.sms_suppressions'::regclass) then
   alter table public.sms_suppressions add constraint sms_suppressions_created_by_fkey FOREIGN KEY (created_by) REFERENCES profiles(id) ON DELETE SET NULL; end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_assets_bucket_fkey' and conrelid='public.storage_assets'::regclass) then
+  alter table public.storage_assets add constraint storage_assets_bucket_fkey FOREIGN KEY (bucket) REFERENCES storage.buckets(id); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_upload_intents_bucket_fkey' and conrelid='public.storage_upload_intents'::regclass) then
+  alter table public.storage_upload_intents add constraint storage_upload_intents_bucket_fkey FOREIGN KEY (bucket) REFERENCES storage.buckets(id); end if; end $c$;
+do $c$ begin if not exists (select 1 from pg_constraint where conname='storage_upload_intents_user_id_fkey' and conrelid='public.storage_upload_intents'::regclass) then
+  alter table public.storage_upload_intents add constraint storage_upload_intents_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='typing_indicators_conversation_id_fkey' and conrelid='public.typing_indicators'::regclass) then
   alter table public.typing_indicators add constraint typing_indicators_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE; end if; end $c$;
 do $c$ begin if not exists (select 1 from pg_constraint where conname='typing_indicators_user_id_fkey' and conrelid='public.typing_indicators'::regclass) then
@@ -2279,8 +2352,8 @@ begin
     or (p_back_path is not null and not exists(select 1 from public.owner_documents where user_id=p_user_id and document_type='nid_back' and file_path=p_back_path))
     or (p_back_path is null and exists(select 1 from public.owner_documents where user_id=p_user_id and document_type='nid_back')) then
     raise exception 'Documents changed. Refresh the review queue'; end if;
-  if not exists(select 1 from storage.objects where bucket_id='documents' and name=p_front_path)
-    or (p_back_path is not null and not exists(select 1 from storage.objects where bucket_id='documents' and name=p_back_path)) then
+  if not exists(select 1 from public.storage_object_meta('documents',p_front_path))
+    or (p_back_path is not null and not exists(select 1 from public.storage_object_meta('documents',p_back_path))) then
     raise exception 'Document evidence is unavailable'; end if;
   update public.owner_documents set verified_at=now(),verified_by=auth.uid(),rejection_reason=null
     where user_id=p_user_id and document_type in ('nid_front','nid_back');
@@ -3735,8 +3808,8 @@ CREATE OR REPLACE FUNCTION public.fn_copy_property_address(p_property_id uuid, p
 AS $function$
 begin
   insert into public.listing_addresses
-    (listing_id, house_no, flat_floor, street, exact_address, latitude, longitude)
-  select l.id, a.house_no, null, a.street, a.exact_address, a.latitude, a.longitude
+    (listing_id, house_no, flat_floor, street, exact_address, latitude, longitude, contact_phones)
+  select l.id, a.house_no, null, a.street, a.exact_address, a.latitude, a.longitude, a.contact_phones
     from public.property_addresses a
     join public.listings l on l.property_id = a.property_id
    where a.property_id = p_property_id
@@ -3744,7 +3817,8 @@ begin
   on conflict (listing_id) do update
     set house_no = excluded.house_no, flat_floor = null, street = excluded.street,
         exact_address = excluded.exact_address,
-        latitude = excluded.latitude, longitude = excluded.longitude;
+        latitude = excluded.latitude, longitude = excluded.longitude,
+        contact_phones = excluded.contact_phones;
 end $function$;
 
 CREATE OR REPLACE FUNCTION public.fn_deactivate_device_tokens()
@@ -5263,9 +5337,13 @@ begin
     select coalesce(b.tenant_name, gp.full_name, 'Guest'),
            coalesce(public.fn_identity_phone(gp.id), gp.mobile),
            coalesce(hp.full_name, 'Host'),
-           coalesce(public.fn_identity_phone(hp.id), hp.mobile)
+           -- 160/162: the first number the host put on THIS listing. Definer,
+           -- so listing_addresses' RLS does not apply; the status check above
+           -- is the gate, and it is the same gate can_see_listing_address uses.
+           coalesce(la.contact_phones[1], public.fn_identity_phone(hp.id), hp.mobile)
     from public.bookings b
     join public.listings l on l.id = b.listing_id
+    left join public.listing_addresses la on la.listing_id = l.id
     left join public.profiles gp on gp.id = b.tenant_id
     left join public.profiles hp on hp.id = l.owner_id
     where b.id = p_booking_id;
@@ -5602,9 +5680,11 @@ declare
   v_hours   integer;
   v_floor   integer;
   v_slots   integer[];
-  v_start_l timestamp;
-  v_end_l   timestamp;
-  v_end_t   time;
+  v_ws      numeric;
+  v_we      numeric;
+  v_len     numeric;
+  v_off     numeric;
+  v_dur     numeric;
 begin
   select * into v_l from public.listings where id = p_listing_id;
   if not found then
@@ -5648,16 +5728,21 @@ begin
       using errcode = '22023', hint = 'hourly_slot';
   end if;
 
-  -- Day-use window, on one Asia/Dhaka calendar day. A stay ending exactly at
-  -- midnight is "24:00" of the day it started, which `time` can hold.
+  -- Day-use window, Asia/Dhaka wall clock, in minutes after midnight. The
+  -- window runs forwards from its start to the next occurrence of its end:
+  -- 09:00-21:00 is 720 minutes, 22:00-02:00 wraps midnight and is 240.
+  -- `time '24:00'` reads as 1440, so 18:00-24:00 is 360 as before. The stay
+  -- must start inside the window and finish by its end; an offset taken
+  -- mod 1440 makes a start before the window land past its end, and a stay
+  -- longer than the window can never fit.
   if v_l.hourly_window_start is not null then
-    v_start_l := p_starts_at at time zone 'Asia/Dhaka';
-    v_end_l   := p_ends_at   at time zone 'Asia/Dhaka';
-    v_end_t   := case when v_end_l::time = time '00:00' and v_end_l::date = v_start_l::date + 1
-                      then time '24:00' else v_end_l::time end;
-    if (v_end_l::date <> v_start_l::date and v_end_t <> time '24:00')
-       or v_start_l::time < v_l.hourly_window_start
-       or v_end_t > v_l.hourly_window_end then
+    v_ws  := extract(epoch from v_l.hourly_window_start) / 60;
+    v_we  := extract(epoch from v_l.hourly_window_end) / 60;
+    v_len := case when v_we > v_ws then v_we - v_ws else 1440 - v_ws + v_we end;
+    v_off := mod(extract(epoch from (p_starts_at at time zone 'Asia/Dhaka')::time) / 60
+                 - v_ws + 1440, 1440);
+    v_dur := extract(epoch from (p_ends_at - p_starts_at)) / 60;
+    if v_off + v_dur > v_len then
       raise exception 'Hourly stays here run between % and %',
         to_char(v_l.hourly_window_start, 'HH24:MI'), to_char(v_l.hourly_window_end, 'HH24:MI')
         using errcode = '22023', hint = 'hourly_window';
@@ -5789,8 +5874,7 @@ AS $function$
        and me.listing_type::text = 'hotel'
        and l.listing_type::text = 'hotel'
        and t.status = 'verified'
-       and exists (select 1 from storage.objects o
-                    where o.bucket_id = 'documents' and o.name = t.document_path)
+       and exists (select 1 from public.storage_object_meta('documents', t.document_path))
   );
 $function$;
 
@@ -6507,12 +6591,17 @@ CREATE OR REPLACE FUNCTION public.orphan_face_evidence()
 AS $function$
 begin
   perform public.fn_require_service_role();
-  return query select o.name from storage.objects o where o.bucket_id='face-evidence'
-    and not exists(select 1 from public.face_verification_attempts a
-      where a.id::text=split_part(o.name,'/',2) and a.user_id::text=split_part(o.name,'/',1))
-    limit 100;
-end;
-$function$;
+  return query
+  select n.name from (
+    select o.name from storage.objects o where o.bucket_id = 'face-evidence'
+    union
+    select a.path from public.storage_assets a
+     where a.bucket = 'face-evidence' and a.state <> 'deleted'
+  ) n
+  where not exists (select 1 from public.face_verification_attempts a
+    where a.id::text = split_part(n.name, '/', 2) and a.user_id::text = split_part(n.name, '/', 1))
+  limit 100;
+end $function$;
 
 CREATE OR REPLACE FUNCTION public.otp_log_attempts(p_id uuid, p_attempts integer)
  RETURNS void
@@ -7290,7 +7379,21 @@ AS $function$
     'property_name',
       (select p.name from public.properties p where p.id = (b.row_l).property_id),
     'room_types_matching',
-      case when (b.row_l).property_id is not null then b.types_matching end
+      case when (b.row_l).property_id is not null then b.types_matching end,
+    -- A hotel's card shows the hotel (159). The row is the cheapest room
+    -- type's listing, so its image_urls were that room's photos -- and which
+    -- room wins changes with dates and filters, so the same hotel's picture
+    -- changed between searches. Overridden here (jsonb || keeps the right
+    -- side) rather than added as a new key so every bundle already in the
+    -- field gets it without a rebuild. Safe because a hotel row opens
+    -- HotelScreen, which loads its own data; this array only feeds the card.
+    -- A hotel with no photos of its own falls back to the room's.
+    'image_urls',
+      coalesce(
+        (select to_jsonb(p.image_urls) from public.properties p
+         where p.id = (b.row_l).property_id
+           and cardinality(p.image_urls) > 0),
+        to_jsonb((b.row_l).image_urls))
   )
   from collapsed b
   where p_radii is null
@@ -8366,6 +8469,407 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.storage_begin_delete(p_bucket text, p_path text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_a public.storage_assets;
+begin
+  select * into v_a from public.storage_assets
+   where bucket = p_bucket and path = p_path and state <> 'deleted'
+   for update;
+  if not found then return null; end if;
+  if not public.storage_can_delete(v_a.bucket, v_a.path, v_a.owner_id) then
+    raise exception 'Not allowed to delete this' using errcode = '42501', hint = 'storage_denied';
+  end if;
+  update public.storage_assets set state = 'deleting', updated_at = now() where id = v_a.id;
+  return jsonb_build_object('asset_id', v_a.id, 's3_bucket', v_a.s3_bucket,
+    's3_key', v_a.s3_key, 's3_version', v_a.s3_version, 'supabase_path', v_a.supabase_path);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.storage_begin_upload(p_bucket text, p_path text, p_mime_type text, p_size_bytes bigint, p_upsert boolean, p_idempotency_key text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_uid uuid := auth.uid();
+  v_limit bigint;
+  v_types text[];
+  v_mode text;
+  v_intent public.storage_upload_intents;
+  v_id uuid := gen_random_uuid();
+begin
+  if v_uid is null then
+    raise exception 'Sign in to upload' using errcode = '42501', hint = 'storage_denied';
+  end if;
+  select b.file_size_limit, b.allowed_mime_types into v_limit, v_types
+    from storage.buckets b where b.id = p_bucket;
+  if not found then
+    raise exception 'Unknown bucket' using errcode = '22023', hint = 'storage_bucket';
+  end if;
+  if not public.storage_path_ok(p_path) then
+    raise exception 'Invalid path' using errcode = '22023', hint = 'storage_path';
+  end if;
+  -- The bucket limits are the live ones, read from Supabase's own bucket
+  -- config, so the two providers cannot disagree about what fits.
+  if p_size_bytes is null or p_size_bytes <= 0
+     or (v_limit is not null and p_size_bytes > v_limit) then
+    raise exception 'File is too large' using errcode = '22023', hint = 'storage_too_large';
+  end if;
+  if v_types is not null and not (p_mime_type = any (v_types)) then
+    raise exception 'File type not allowed' using errcode = '22023', hint = 'storage_mime';
+  end if;
+
+  select * into v_intent from public.storage_upload_intents i
+   where i.user_id = v_uid and i.idempotency_key = p_idempotency_key;
+  if found then
+    if (v_intent.bucket, v_intent.path, v_intent.mime_type, v_intent.size_bytes, v_intent.upsert)
+       is distinct from (p_bucket, p_path, p_mime_type, p_size_bytes, p_upsert) then
+      raise exception 'Idempotency key reused for a different upload'
+        using errcode = '22023', hint = 'storage_idempotency_mismatch';
+    end if;
+    if v_intent.state = 'pending' and v_intent.expires_at > now() then
+      return jsonb_build_object('intent_id', v_intent.id, 'staging_key', v_intent.staging_key,
+        'mime_type', v_intent.mime_type, 'size_bytes', v_intent.size_bytes,
+        'expires_at', v_intent.expires_at, 'state', v_intent.state);
+    end if;
+    if v_intent.state in ('finalizing', 'finalized') then
+      return jsonb_build_object('intent_id', v_intent.id, 'state', v_intent.state);
+    end if;
+    raise exception 'Upload expired; start again' using errcode = '22023', hint = 'storage_expired';
+  end if;
+
+  v_mode := public.storage_write_mode(p_bucket, p_path, coalesce(p_upsert, false));
+  if v_mode = 'exists' then
+    raise exception 'The resource already exists' using errcode = '23505', hint = 'storage_exists';
+  elsif v_mode = 'denied' then
+    raise exception 'Not allowed to upload here' using errcode = '42501', hint = 'storage_denied';
+  end if;
+
+  insert into public.storage_upload_intents (id, user_id, bucket, path, upsert, mime_type,
+         size_bytes, idempotency_key, staging_key, committed_key)
+  values (v_id, v_uid, p_bucket, p_path, coalesce(p_upsert, false), p_mime_type, p_size_bytes,
+          p_idempotency_key, 'staging/' || v_id, p_bucket || '/' || p_path || '@' || v_id)
+  returning * into v_intent;
+  return jsonb_build_object('intent_id', v_intent.id, 'staging_key', v_intent.staging_key,
+    'mime_type', v_intent.mime_type, 'size_bytes', v_intent.size_bytes,
+    'expires_at', v_intent.expires_at, 'state', v_intent.state);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.storage_can_delete(p_bucket text, p_path text, p_owner uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  select auth.uid() is not null and case p_bucket
+    when 'avatars' then public.storage_file_name(p_path) like auth.uid()::text || '.%'
+                     or public.is_admin()
+    when 'listing-images' then p_owner = auth.uid() or public.is_admin()
+    when 'chat-attachments' then p_owner = auth.uid() or public.is_admin()
+    when 'documents' then public.storage_first_folder(p_path) = auth.uid()::text
+                      and split_part(p_path, '/', 2) <> 'nid'
+    else false end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_can_insert(p_bucket text, p_path text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  select auth.uid() is not null and case p_bucket
+    when 'avatars' then public.storage_file_name(p_path) like auth.uid()::text || '.%'
+                     or public.is_admin()
+    when 'listing-images' then public.can_upload_listing_image() or public.is_admin()
+    when 'chat-attachments' then true
+    when 'documents' then public.storage_first_folder(p_path) = auth.uid()::text
+    when 'face-evidence' then exists (
+      select 1 from public.face_verification_attempts a
+       where a.user_id = auth.uid() and a.status = 'draft' and a.expires_at > now()
+         and p_path in (a.user_id || '/' || a.id || '/selfie.jpg',
+                        a.user_id || '/' || a.id || '/clip.webm',
+                        a.user_id || '/' || a.id || '/clip.mp4'))
+    else false end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_can_read(p_bucket text, p_path text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  select case p_bucket
+    when 'avatars' then true
+    when 'listing-images' then true
+    when 'chat-attachments' then true
+    when 'documents' then auth.uid() is not null and (
+      public.storage_first_folder(p_path) = auth.uid()::text or public.is_admin())
+    when 'face-evidence' then auth.uid() is not null and (
+      public.storage_first_folder(p_path) = auth.uid()::text or public.is_admin())
+    else false end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_can_replace(p_bucket text, p_path text, p_owner uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  select auth.uid() is not null and case p_bucket
+    when 'avatars' then public.storage_file_name(p_path) like auth.uid()::text || '.%'
+                     or public.is_admin()
+    when 'listing-images' then p_owner = auth.uid() or public.is_admin()
+    when 'documents' then public.storage_first_folder(p_path) = auth.uid()::text
+                      and split_part(p_path, '/', 2) <> 'nid'
+    else false end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_claim_intent(p_intent_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_i public.storage_upload_intents;
+  v_mode text;
+begin
+  select * into v_i from public.storage_upload_intents
+   where id = p_intent_id and user_id = auth.uid()
+   for update;
+  if not found then
+    raise exception 'Upload not found' using errcode = '22023', hint = 'storage_not_found';
+  end if;
+  if v_i.state = 'finalized' then
+    return jsonb_build_object('state', 'finalized', 'asset_id', v_i.asset_id,
+      'bucket', v_i.bucket, 'path', v_i.path);
+  end if;
+  if v_i.state = 'rejected' then
+    raise exception 'Upload was rejected' using errcode = '22023', hint = 'storage_rejected';
+  end if;
+  -- A claim abandoned by a crashed finalizer may be retaken after two
+  -- minutes; a live one may not.
+  if v_i.state = 'finalizing' and v_i.claimed_at > now() - interval '2 minutes' then
+    raise exception 'Upload is already being finalized' using errcode = '55P03', hint = 'storage_busy';
+  end if;
+  if v_i.state = 'pending' and v_i.expires_at <= now() then
+    raise exception 'Upload expired; start again' using errcode = '22023', hint = 'storage_expired';
+  end if;
+  v_mode := public.storage_write_mode(v_i.bucket, v_i.path, v_i.upsert);
+  if v_mode = 'exists' then
+    raise exception 'The resource already exists' using errcode = '23505', hint = 'storage_exists';
+  elsif v_mode = 'denied' then
+    raise exception 'Not allowed to upload here' using errcode = '42501', hint = 'storage_denied';
+  end if;
+  update public.storage_upload_intents set state = 'finalizing', claimed_at = now()
+   where id = v_i.id;
+  return jsonb_build_object('state', 'finalizing', 'intent_id', v_i.id,
+    'bucket', v_i.bucket, 'path', v_i.path, 'mime_type', v_i.mime_type,
+    'size_bytes', v_i.size_bytes, 'staging_key', v_i.staging_key,
+    'committed_key', v_i.committed_key);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.storage_commit_upload(p_intent_id uuid, p_size_bytes bigint, p_sha256 text, p_mime_type text, p_s3_bucket text, p_s3_key text, p_s3_version text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_i public.storage_upload_intents;
+  v_a public.storage_assets;
+begin
+  select * into v_i from public.storage_upload_intents where id = p_intent_id for update;
+  if not found then
+    raise exception 'Upload not found' using errcode = '22023', hint = 'storage_not_found';
+  end if;
+  if v_i.state = 'finalized' then
+    select * into v_a from public.storage_assets where id = v_i.asset_id;
+    return jsonb_build_object('asset_id', v_a.id, 'bucket', v_a.bucket, 'path', v_a.path,
+      'generation', v_a.generation);
+  end if;
+  if v_i.state <> 'finalizing' then
+    raise exception 'Upload is not being finalized' using errcode = '22023', hint = 'storage_state';
+  end if;
+  if p_size_bytes <> v_i.size_bytes or p_mime_type <> v_i.mime_type
+     or p_s3_key <> v_i.committed_key then
+    raise exception 'Uploaded object does not match its ticket'
+      using errcode = '22023', hint = 'storage_mismatch';
+  end if;
+
+  insert into public.storage_assets as a (bucket, path, owner_id, mime_type, size_bytes,
+         sha256, s3_bucket, s3_key, s3_version)
+  values (v_i.bucket, v_i.path, v_i.user_id, v_i.mime_type, p_size_bytes,
+          p_sha256, p_s3_bucket, p_s3_key, p_s3_version)
+  on conflict (bucket, path) do update set
+    generation = a.generation + 1,
+    -- A replacement keeps the original owner (an admin fixing a host's
+    -- photo does not take it over); a path re-created after deletion
+    -- belongs to whoever created it.
+    owner_id = case when a.state = 'deleted' then excluded.owner_id else a.owner_id end,
+    business_created_at = case when a.state = 'deleted' then now() else a.business_created_at end,
+    mime_type = excluded.mime_type, size_bytes = excluded.size_bytes,
+    sha256 = excluded.sha256, s3_bucket = excluded.s3_bucket, s3_key = excluded.s3_key,
+    s3_version = excluded.s3_version, state = 'active', updated_at = now()
+  returning * into v_a;
+
+  update public.storage_upload_intents
+     set state = 'finalized', finalized_at = now(), asset_id = v_a.id
+   where id = v_i.id;
+  return jsonb_build_object('asset_id', v_a.id, 'bucket', v_a.bucket, 'path', v_a.path,
+    'generation', v_a.generation);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.storage_existing_owner(p_bucket text, p_path text)
+ RETURNS TABLE(found boolean, owner_id uuid)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  select true, a.owner_id from public.storage_assets a
+   where a.bucket = p_bucket and a.path = p_path and a.state <> 'deleted'
+  union all
+  select true, o.owner from storage.objects o
+   where o.bucket_id = p_bucket and o.name = p_path
+     and not exists (select 1 from public.storage_assets a
+                      where a.bucket = p_bucket and a.path = p_path)
+  limit 1;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_file_name(p_path text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO ''
+AS $function$
+  select regexp_replace(p_path, '^.*/', '');
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_finish_delete(p_asset_id uuid)
+ RETURNS void
+ LANGUAGE sql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  update public.storage_assets set state = 'deleted', updated_at = now()
+   where id = p_asset_id and state = 'deleting';
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_first_folder(p_path text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO ''
+AS $function$
+  select case when position('/' in p_path) > 0 then split_part(p_path, '/', 1) end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_object_meta(p_bucket text, p_path text)
+ RETURNS TABLE(owner_id uuid, mime_type text, size_bytes bigint)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  select a.owner_id, a.mime_type, a.size_bytes from public.storage_assets a
+   where a.bucket = p_bucket and a.path = p_path and a.state = 'active'
+  union all
+  select o.owner, o.metadata->>'mimetype', (o.metadata->>'size')::bigint
+    from storage.objects o
+   where o.bucket_id = p_bucket and o.name = p_path
+     and not exists (select 1 from public.storage_assets a
+                      where a.bucket = p_bucket and a.path = p_path)
+  limit 1;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_path_ok(p_path text)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO ''
+AS $function$
+  select p_path is not null
+     and length(p_path) between 1 and 512
+     and p_path !~ '(^/|/$|//|\\)'
+     and p_path !~ '(^|/)\.\.?(/|$)'
+     and p_path ~ '^[A-Za-z0-9._/-]+$';
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_purge_begin(p_bucket text, p_paths text[])
+ RETURNS TABLE(asset_id uuid, path text, s3_bucket text, s3_key text, s3_version text)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+begin
+  return query
+  update public.storage_assets a set state = 'deleting', updated_at = now()
+   where a.bucket = p_bucket and a.path = any(p_paths) and a.state <> 'deleted'
+     and a.s3_key is not null
+  returning a.id, a.path, a.s3_bucket, a.s3_key, a.s3_version;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.storage_reject_intent(p_intent_id uuid, p_reason text)
+ RETURNS void
+ LANGUAGE sql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  update public.storage_upload_intents
+     set state = 'rejected', reject_reason = left(p_reason, 200)
+   where id = p_intent_id and state in ('pending', 'finalizing');
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_release_intent(p_intent_id uuid)
+ RETURNS void
+ LANGUAGE sql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  update public.storage_upload_intents set state = 'pending', claimed_at = null
+   where id = p_intent_id and state = 'finalizing';
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_resolve_reads(p_refs jsonb)
+ RETURNS TABLE(bucket text, path text, s3_bucket text, s3_key text, s3_version text, generation integer)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+  select a.bucket, a.path, a.s3_bucket, a.s3_key, a.s3_version, a.generation
+    from jsonb_to_recordset(coalesce(p_refs, '[]'::jsonb)) as r(bucket text, path text)
+    join public.storage_assets a on a.bucket = r.bucket and a.path = r.path
+   where a.state = 'active' and a.s3_key is not null
+     and public.storage_can_read(a.bucket, a.path)
+   limit 100;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.storage_write_mode(p_bucket text, p_path text, p_upsert boolean)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_found boolean;
+  v_owner uuid;
+begin
+  select e.found, e.owner_id into v_found, v_owner
+    from public.storage_existing_owner(p_bucket, p_path) e;
+  if coalesce(v_found, false) then
+    if not p_upsert then return 'exists'; end if;
+    return case when public.storage_can_replace(p_bucket, p_path, v_owner)
+                then 'replace' else 'denied' end;
+  end if;
+  return case when public.storage_can_insert(p_bucket, p_path)
+              then 'insert' else 'denied' end;
+end $function$;
+
 CREATE OR REPLACE FUNCTION public.submit_address_verification(p_address_line text)
  RETURNS void
  LANGUAGE plpgsql
@@ -8412,15 +8916,15 @@ begin
   if a.status='pending' then return; end if;
   if a.status<>'draft' or a.expires_at<=now() then raise exception 'Attempt expired. Start again'; end if;
   selfie := a.user_id::text||'/'||a.id::text||'/selfie.jpg';
-  if not exists(select 1 from storage.objects where bucket_id='face-evidence' and name=selfie
-    and (metadata->>'size')::bigint between 100 and 524288 and metadata->>'mimetype'='image/jpeg') then
+  if not exists(select 1 from public.storage_object_meta('face-evidence',selfie) m
+    where m.size_bytes between 100 and 524288 and m.mime_type='image/jpeg') then
     raise exception 'Selfie upload is missing or invalid'; end if;
   if a.method='guided' then
     if p_clip_extension is null or p_clip_extension not in ('webm','mp4') then raise exception 'Invalid video format'; end if;
     clip := a.user_id::text||'/'||a.id::text||'/clip.'||p_clip_extension;
-    if not exists(select 1 from storage.objects where bucket_id='face-evidence' and name=clip
-      and (metadata->>'size')::bigint between 100 and 8388608
-      and metadata->>'mimetype'='video/'||p_clip_extension) then raise exception 'Video upload is missing or invalid'; end if;
+    if not exists(select 1 from public.storage_object_meta('face-evidence',clip) m
+      where m.size_bytes between 100 and 8388608
+      and m.mime_type='video/'||p_clip_extension) then raise exception 'Video upload is missing or invalid'; end if;
   end if;
   -- No client liveness boolean is trusted. The admin must review the media.
   update public.face_verification_attempts set status='pending', submitted_at=now(),
@@ -8449,15 +8953,15 @@ begin
   foreach path in array array[p_front_path,p_back_path] loop
     if path is null then continue; end if;
     if path not like uid::text||'/nid/%' then raise exception 'Invalid document owner' using errcode='42501'; end if;
-    select metadata->>'mimetype' into mime from storage.objects where bucket_id='documents' and name=path
-      and (metadata->>'size')::bigint between 100 and 5242880;
+    select m.mime_type into mime from public.storage_object_meta('documents',path) m
+      where m.size_bytes between 100 and 5242880;
     if not found or mime not in ('image/jpeg','image/png') or mime is null then raise exception 'Upload a JPG or PNG of each side, under 5 MB'; end if;
   end loop;
   -- A replacement with a single-sided document must not inherit an old back.
   -- Stored historical image bytes are preserved; only the current slot changes.
   if p_back_path is null then delete from public.owner_documents where user_id=uid and document_type='nid_back'; end if;
   insert into public.owner_documents(user_id,document_type,file_path,mime_type,uploaded_at,verified_at,verified_by,rejection_reason)
-    select uid,sides.slot,sides.file_path,(select metadata->>'mimetype' from storage.objects where bucket_id='documents' and name=sides.file_path),now(),null,null,null
+    select uid,sides.slot,sides.file_path,(select m.mime_type from public.storage_object_meta('documents',sides.file_path) m),now(),null,null,null
     from (values ('nid_front',p_front_path),('nid_back',p_back_path)) sides(slot,file_path) where sides.file_path is not null
     on conflict(user_id,document_type) do update set file_path=excluded.file_path,mime_type=excluded.mime_type,
       uploaded_at=excluded.uploaded_at,verified_at=null,verified_by=null,rejection_reason=null;
@@ -8506,15 +9010,14 @@ begin
       using errcode = '22023', hint = 'licence_number_invalid';
   end if;
 
-  -- The path is the uploader's own folder AND Storage stamped them as the
-  -- owner: the path alone is a string anyone can type (database-security.md).
+  -- The path is the uploader's own folder AND the storage layer recorded them
+  -- as the owner: the path alone is a string anyone can type (database-security.md).
   if p_document_path is null or p_document_path not like v_uid::text || '/trade_licence/%' then
     raise exception 'Invalid document' using errcode = '42501', hint = 'document_not_owned';
   end if;
-  select o.owner, o.metadata->>'mimetype', (o.metadata->>'size')::bigint
+  select m.owner_id, m.mime_type, m.size_bytes
     into v_owner, v_mime, v_size
-    from storage.objects o
-   where o.bucket_id = 'documents' and o.name = p_document_path;
+    from public.storage_object_meta('documents', p_document_path) m;
   if found and v_owner is distinct from v_uid then
     raise exception 'Invalid document' using errcode = '42501', hint = 'document_not_owned';
   end if;
@@ -9155,6 +9658,8 @@ alter table public.scheduled_message_sends enable row level security;
 alter table public.sms_campaigns enable row level security;
 alter table public.sms_recipients enable row level security;
 alter table public.sms_suppressions enable row level security;
+alter table public.storage_assets enable row level security;
+alter table public.storage_upload_intents enable row level security;
 alter table public.typing_indicators enable row level security;
 alter table public.user_blocks enable row level security;
 alter table public.user_devices enable row level security;
@@ -9952,6 +10457,10 @@ revoke all on table public.sms_suppressions from public, anon, authenticated, se
 grant delete, insert, references, select, trigger, truncate, update on table public.sms_suppressions to anon;
 grant delete, insert, references, select, trigger, truncate, update on table public.sms_suppressions to authenticated;
 grant delete, insert, references, select, trigger, truncate, update on table public.sms_suppressions to service_role;
+revoke all on table public.storage_assets from public, anon, authenticated, service_role;
+grant delete, insert, references, select, trigger, truncate, update on table public.storage_assets to service_role;
+revoke all on table public.storage_upload_intents from public, anon, authenticated, service_role;
+grant delete, insert, references, select, trigger, truncate, update on table public.storage_upload_intents to service_role;
 revoke all on table public.typing_indicators from public, anon, authenticated, service_role;
 grant delete, insert, references, select, trigger, truncate, update on table public.typing_indicators to anon;
 grant delete, insert, references, select, trigger, truncate, update on table public.typing_indicators to authenticated;
@@ -10696,6 +11205,49 @@ grant execute on function public.snap_coordinate(p_degrees numeric) to service_r
 revoke all on function public.start_face_verification(p_method text) from public, anon, authenticated, service_role;
 grant execute on function public.start_face_verification(p_method text) to authenticated;
 grant execute on function public.start_face_verification(p_method text) to service_role;
+revoke all on function public.storage_begin_delete(p_bucket text, p_path text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_begin_delete(p_bucket text, p_path text) to service_role;
+grant execute on function public.storage_begin_delete(p_bucket text, p_path text) to authenticated;
+revoke all on function public.storage_begin_upload(p_bucket text, p_path text, p_mime_type text, p_size_bytes bigint, p_upsert boolean, p_idempotency_key text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_begin_upload(p_bucket text, p_path text, p_mime_type text, p_size_bytes bigint, p_upsert boolean, p_idempotency_key text) to service_role;
+grant execute on function public.storage_begin_upload(p_bucket text, p_path text, p_mime_type text, p_size_bytes bigint, p_upsert boolean, p_idempotency_key text) to authenticated;
+revoke all on function public.storage_can_delete(p_bucket text, p_path text, p_owner uuid) from public, anon, authenticated, service_role;
+grant execute on function public.storage_can_delete(p_bucket text, p_path text, p_owner uuid) to service_role;
+revoke all on function public.storage_can_insert(p_bucket text, p_path text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_can_insert(p_bucket text, p_path text) to service_role;
+revoke all on function public.storage_can_read(p_bucket text, p_path text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_can_read(p_bucket text, p_path text) to service_role;
+revoke all on function public.storage_can_replace(p_bucket text, p_path text, p_owner uuid) from public, anon, authenticated, service_role;
+grant execute on function public.storage_can_replace(p_bucket text, p_path text, p_owner uuid) to service_role;
+revoke all on function public.storage_claim_intent(p_intent_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.storage_claim_intent(p_intent_id uuid) to service_role;
+grant execute on function public.storage_claim_intent(p_intent_id uuid) to authenticated;
+revoke all on function public.storage_commit_upload(p_intent_id uuid, p_size_bytes bigint, p_sha256 text, p_mime_type text, p_s3_bucket text, p_s3_key text, p_s3_version text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_commit_upload(p_intent_id uuid, p_size_bytes bigint, p_sha256 text, p_mime_type text, p_s3_bucket text, p_s3_key text, p_s3_version text) to service_role;
+revoke all on function public.storage_existing_owner(p_bucket text, p_path text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_existing_owner(p_bucket text, p_path text) to service_role;
+revoke all on function public.storage_file_name(p_path text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_file_name(p_path text) to service_role;
+revoke all on function public.storage_finish_delete(p_asset_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.storage_finish_delete(p_asset_id uuid) to service_role;
+revoke all on function public.storage_first_folder(p_path text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_first_folder(p_path text) to service_role;
+revoke all on function public.storage_object_meta(p_bucket text, p_path text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_object_meta(p_bucket text, p_path text) to service_role;
+revoke all on function public.storage_path_ok(p_path text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_path_ok(p_path text) to service_role;
+revoke all on function public.storage_purge_begin(p_bucket text, p_paths text[]) from public, anon, authenticated, service_role;
+grant execute on function public.storage_purge_begin(p_bucket text, p_paths text[]) to service_role;
+revoke all on function public.storage_reject_intent(p_intent_id uuid, p_reason text) from public, anon, authenticated, service_role;
+grant execute on function public.storage_reject_intent(p_intent_id uuid, p_reason text) to service_role;
+revoke all on function public.storage_release_intent(p_intent_id uuid) from public, anon, authenticated, service_role;
+grant execute on function public.storage_release_intent(p_intent_id uuid) to service_role;
+revoke all on function public.storage_resolve_reads(p_refs jsonb) from public, anon, authenticated, service_role;
+grant execute on function public.storage_resolve_reads(p_refs jsonb) to service_role;
+grant execute on function public.storage_resolve_reads(p_refs jsonb) to anon;
+grant execute on function public.storage_resolve_reads(p_refs jsonb) to authenticated;
+revoke all on function public.storage_write_mode(p_bucket text, p_path text, p_upsert boolean) from public, anon, authenticated, service_role;
+grant execute on function public.storage_write_mode(p_bucket text, p_path text, p_upsert boolean) to service_role;
 revoke all on function public.submit_address_verification(p_address_line text) from public, anon, authenticated, service_role;
 grant execute on function public.submit_address_verification(p_address_line text) to authenticated;
 grant execute on function public.submit_address_verification(p_address_line text) to service_role;

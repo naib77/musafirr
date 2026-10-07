@@ -178,7 +178,8 @@ class HourlyRule {
 
   /// Day-use window as minutes after local midnight, both set or both null.
   /// `1440` is "24:00": a stay may end exactly at midnight of the day it
-  /// started and still be inside the window.
+  /// started and still be inside the window. An end before the start wraps
+  /// past midnight (22:00-02:00, 161).
   final int? windowStartMinutes;
   final int? windowEndMinutes;
 
@@ -227,14 +228,15 @@ class HourlyRule {
     final s = slots;
     if (s != null && !s.contains(hours)) return HourlyRefusal.slot;
     if (hasWindow) {
-      final startMin = start.hour * 60 + start.minute;
-      final endMin = startMin + hours * 60;
-      // Past 24:00 is the next day: no cross-midnight slots.
-      if (endMin > 1440 ||
-          startMin < windowStartMinutes! ||
-          endMin > windowEndMinutes!) {
-        return HourlyRefusal.window;
-      }
+      // 161's arithmetic, minute for minute: the window runs forwards from
+      // its start to the next occurrence of its end, so 22:00-02:00 is 240
+      // minutes across midnight. The offset is taken mod a day, which puts a
+      // start before the window past its end.
+      final ws = windowStartMinutes!;
+      final we = windowEndMinutes!;
+      final length = we > ws ? we - ws : 1440 - ws + we;
+      final offset = (start.hour * 60 + start.minute - ws + 1440) % 1440;
+      if (offset + hours * 60 > length) return HourlyRefusal.window;
     }
     return null;
   }
@@ -374,8 +376,13 @@ String? hourlyHostFieldsError({
     if (start == null || end == null) {
       return 'Hourly window times must look like 09:00 (24-hour clock).';
     }
-    if (start >= end) {
-      return 'The hourly window must end after it starts.';
+    // An end before the start is a window across midnight (161); only
+    // an empty window and a 24:00 start are meaningless.
+    if (start == end) {
+      return 'The hourly window cannot start and end at the same time.';
+    }
+    if (start == 1440) {
+      return 'The hourly window cannot start at 24:00; use 00:00.';
     }
   }
   if (slotsText.trim().isNotEmpty && parseHourlySlotsText(slotsText) == null) {

@@ -3,7 +3,7 @@
 --
 -- Pins 148: the hourly policy. The platform floor beats the host's min_hours,
 -- a slotted type takes only its slots, the host may narrow but not widen,
--- the day-use window is one Asia/Dhaka day, and a disabled type is refused
+-- the day-use window is Asia/Dhaka wall clock (161: it may wrap midnight), and a disabled type is refused
 -- even with a rate set. Refusals are checked by SQLSTATE and `hint`, never
 -- by message text. The fixture table in section 3 is the same one
 -- test/services/hourly_policy_test.dart feeds HourlyPolicy.resolve.
@@ -161,6 +161,13 @@ select pg_temp.check_true(pg_temp.book(:GV,:L1,pg_temp.dhaka('2026-12-13','23:00
 update public.listings set hourly_window_start='18:00', hourly_window_end='24:00' where id=:L1;
 select pg_temp.check_true(pg_temp.book(:GV,:L1,pg_temp.dhaka('2026-12-14','22:00'),2)='OK','window: ending at midnight counts as 24:00 of the same day');
 select pg_temp.check_true(pg_temp.book(:GV,:L1,pg_temp.dhaka('2026-12-15','23:00'),2)='REFUSED 22023 hourly_window','window: past midnight is the next day');
+-- 161: a window may wrap past midnight; 22:00-02:00 is one 4-hour window
+update public.listings set hourly_window_start='22:00', hourly_window_end='02:00' where id=:L1;
+select pg_temp.check_true(pg_temp.book(:GV,:L1,pg_temp.dhaka('2026-12-17','22:00'),4)='OK','161: 22:00-02:00 exactly fills an overnight window');
+select pg_temp.check_true(pg_temp.book(:GV,:L1,pg_temp.dhaka('2026-12-19','01:00'),1)='OK','161: a start after midnight belongs to the window');
+select pg_temp.check_true(pg_temp.book(:GV,:L1,pg_temp.dhaka('2026-12-23','21:00'),2)='REFUSED 22023 hourly_window','161: starting before an overnight window');
+select pg_temp.check_true(pg_temp.book(:GV,:L1,pg_temp.dhaka('2026-12-24','01:00'),2)='REFUSED 22023 hourly_window','161: running past an overnight window''s end');
+select pg_temp.check_true(pg_temp.book(:GV,:L1,pg_temp.dhaka('2026-12-25','12:00'),2)='REFUSED 22023 hourly_window','161: midday is outside an overnight window');
 update public.listings set hourly_window_start=null, hourly_window_end=null where id=:L1;
 -- windows are checked AFTER the floor, so a short stay gets the floor's message
 update public.listings set hourly_window_start='09:00', hourly_window_end='21:00', min_hours=3 where id=:L1;
@@ -178,7 +185,9 @@ select pg_temp.set_policy(public.hourly_policy_defaults()::text);
 select pg_temp.check_true(pg_temp.try_server(format('update public.listings set hourly_slots=%L where id=%L','{}',:L1)) like 'REFUSED 23514%','an empty slot array is refused (null means inherit)');
 select pg_temp.check_true(pg_temp.try_server(format('update public.listings set hourly_slots=%L where id=%L','{0,6}',:L1)) like 'REFUSED 23514%','a zero-hour slot is refused');
 select pg_temp.check_true(pg_temp.try_server(format('update public.listings set hourly_window_start=%L where id=%L','09:00',:L1)) like 'REFUSED 23514%','a window needs both ends');
-select pg_temp.check_true(pg_temp.try_server(format('update public.listings set hourly_window_start=%L, hourly_window_end=%L where id=%L','21:00','09:00',:L1)) like 'REFUSED 23514%','a window must run forwards');
+select pg_temp.check_true(pg_temp.try_server(format('update public.listings set hourly_window_start=%L, hourly_window_end=%L where id=%L','21:00','09:00',:L1))='OK','161: an end before the start is an overnight window');
+select pg_temp.check_true(pg_temp.try_server(format('update public.listings set hourly_window_start=%L, hourly_window_end=%L where id=%L','09:00','09:00',:L1)) like 'REFUSED 23514%','161: an empty window is refused');
+select pg_temp.check_true(pg_temp.try_server(format('update public.listings set hourly_window_start=%L, hourly_window_end=%L where id=%L','24:00','02:00',:L1)) like 'REFUSED 23514%','161: a window cannot start at 24:00');
 select pg_temp.check_true(pg_temp.try_server(format('update public.listings set hourly_window_start=%L, hourly_window_end=%L where id=%L','09:00','24:00',:L1))='OK','24:00 is a valid window end');
 update public.listings set hourly_window_start=null, hourly_window_end=null where id=:L1;
 -- the host can set these through RLS as themselves

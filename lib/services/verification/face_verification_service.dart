@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../storage/storage_provider.dart';
-import '../storage/supabase_storage_provider.dart';
+import '../storage/routing_storage_provider.dart';
 
 class FaceAttempt {
   const FaceAttempt(
@@ -78,7 +78,7 @@ class FaceReviewUnavailable implements Exception {
 class FaceVerificationService implements FaceVerificationRepository {
   FaceVerificationService({SupabaseClient? client, StorageProvider? storage})
       : _providedClient = client,
-        _storage = storage ?? SupabaseStorageProvider(client: client);
+        _storage = storage ?? defaultStorageProvider(client: client);
   final SupabaseClient? _providedClient;
   final StorageProvider _storage;
   SupabaseClient get _client => _providedClient ?? Supabase.instance.client;

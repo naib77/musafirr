@@ -33,6 +33,7 @@ class Listing {
     this.flatFloor,
     this.houseNo,
     this.street,
+    this.contactPhones = const [],
     this.area,
     this.postalCode,
     this.landmark,
@@ -110,6 +111,13 @@ class Listing {
   final String? flatFloor;
   final String? houseNo;
   final String? street;
+
+  /// 160/162. The host's contact numbers for this listing, `+880…`, at most
+  /// five. Like the door parts above they are NOT a `listings` column: the
+  /// repository writes them to `listing_addresses`, so they are disclosed
+  /// when the address is, and the list is empty on any listing read back
+  /// from `listings`.
+  final List<String> contactPhones;
   final String? area;
   final String? postalCode;
   final String? landmark;
@@ -329,6 +337,7 @@ class Listing {
     String? flatFloor,
     String? houseNo,
     String? street,
+    List<String>? contactPhones,
     String? area,
     String? postalCode,
     String? landmark,
@@ -378,6 +387,7 @@ class Listing {
       flatFloor: flatFloor ?? this.flatFloor,
       houseNo: houseNo ?? this.houseNo,
       street: street ?? this.street,
+      contactPhones: contactPhones ?? this.contactPhones,
       area: area ?? this.area,
       postalCode: postalCode ?? this.postalCode,
       landmark: landmark ?? this.landmark,
@@ -439,6 +449,7 @@ class Listing {
       flatFloor: flatFloor,
       houseNo: houseNo,
       street: street,
+      contactPhones: contactPhones,
       area: area,
       postalCode: postalCode,
       landmark: landmark,
